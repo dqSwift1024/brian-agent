@@ -248,8 +248,9 @@ export class InfoCoreService {
       { field: 'work_id', value: input.work_id || '' },
       { field: 'interact_id', value: input.interact_id || '' },
       { field: 'info_id', value: infoId },
-      { field: 'info_creator_id', value: input.info_creator_id || '' },
+      { field: 'info_type', value: input.info_type || '' },
       { field: 'info_creator_role', value: input.info_creator_role || '' },
+      { field: 'info_creator_id', value: input.info_creator_id || '' },
       { field: 'info', value: input.info },
       { field: 'info_length', value: input.info.length },
       { field: 'pin', value: 0 },
@@ -625,6 +626,9 @@ export class InfoCoreService {
     }
     if (input.info_creator_role) {
       conditions.push({ field: 'info_creator_role', operator: Operator.EQ, value: input.info_creator_role });
+    }
+    if (input.info_type) {
+      conditions.push({ field: 'info_type', operator: Operator.EQ, value: input.info_type });
     }
     if (input.info_id) {
       conditions.push({ field: 'info_id', operator: Operator.EQ, value: input.info_id });
@@ -1932,8 +1936,9 @@ export class InfoCoreService {
       work_id: raw['work_id'] as string,
       interact_id: raw['interact_id'] as string,
       info_id: raw['info_id'] as string,
-      info_creator_id: raw['info_creator_id'] as string,
+      info_type: raw['info_type'] as string,
       info_creator_role: raw['info_creator_role'] as string,
+      info_creator_id: raw['info_creator_id'] as string,
       info: raw['info'] as string,
       info_length: raw['info_length'] as number,
       pin: raw['pin'] as number,

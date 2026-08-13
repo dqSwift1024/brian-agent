@@ -219,21 +219,22 @@ SelfLearning Application 是系统的自主学习引擎，负责驱动系统从�
 2. 确保 `"self_learning"` session 存在（首次调用时自动创建）：
    a. 调用 RelationDBProvider.selectOneDB 查询 `chat_session` 表（库名=chat），session_id=`"self_learning"`；
    b. 若不存在，调用 RelationDBProvider.insertDB 创建系统内置会话记录 `{ session_id: "self_learning", session_title: "系统自主学习" }`；
-3. 调用 RelationDBProvider.selectOneDB 查询 `self_learning_config` 表获取 `document_split_threshold`（默认 5000 字符）；
-4. 若文件字符数 > `document_split_threshold`，执行分块策略：
-   a. 按 Markdown 标题（`##` 或 `#`）分隔为多个章节块（chunk）；
-   b. 每个章节块作为独立的学习单元处理；
-   c. 若单个章节块仍超过阈值，按固定大小（`document_split_threshold` 字符）继续切分；
-   d. 各分块按顺序依次学习，前一个分块完成后再处理下一个；
+3. 调用 RelationDBProvider.selectOneDB 查询 `self_learning_config` 表获取 `document_split_threshold`（默认 5000 字符）和 `chunk_overlap_ratio`（默认 0.2）；
+4. 若文件字符数 > `document_split_threshold`，调用 ChunkProvider.chunkText 执行分块：
+   a. 使用滑动窗口 + 重叠机制分块（窗口大小 = `document_split_threshold`，重叠比例 = `chunk_overlap_ratio`）；
+   b. 每个分块作为独立的学习单元处理；
 5. 将当前块内容作为用户输入，构建一个学习 work 请求：
-   - session_id：使用系统内置的 `"self_learning"` session；
-   - user_query：`"请学习以下文档内容并提取关键知识：\n\n{块内容}"`；
+   - session_id：使用系统内置的 `"self_learning_session"` session；
+   - session_type：`"self_learning"`；
+   - user_query：当前分块内容；
    - force_orchestration_strategy：根据块大小选择（< `document_split_threshold` → SIMPLE，≥ `document_split_threshold` → PLANNING）；
-6. 调用 OrchestrationEntry.receiveWorkAsync 异步提交学习 work；
+   - info_type：`REQUEST`；
+   - info_creator_role：`LEARNING`；
+   - info_creator_id：空字符串；
+6. 调用 OrchestrationEntry.receiveWorkAsync 异步提交学习 work（学习内容由上游指定消息角色为 LEARNING，避免与用户消息混淆）；
 7. Work 执行完成后，Orchestration 层会通过 WriterAgent 生成学习总结，通过 EvolutorAgent 评估学习质量；
-8. 调用 InfoCore.saveInfo 将学习产生的知识保存为 info（info_creator_role=AGENT，标记为学习产出）；
-9. 所有分块处理完成后，更新 `self_learning_file` 表该文件状态为 COMPLETED，记录 learned_at；
-10. 若任一阶段学习失败（Orchestration 返回 FAILED），记录错误信息，状态置为 FAILED；
+8. 所有分块处理完成后，更新 `self_learning_file` 表该文件状态为 COMPLETED，记录 learned_at；
+9. 若任一阶段学习失败（Orchestration 返回 FAILED），记录错误信息，状态置为 FAILED；
 
 ### 3.4. Tag 图维护
 
@@ -623,6 +624,7 @@ SelfLearning 模块的配置通过 Config Application 统一管理（`/api/confi
 | tag_aging_cron | `self_learning.tag_aging_cron` | STRING | "0 0 2 * * *" | Tag 老化 cron 表达式 |
 | orphan_tag_check_cron | `self_learning.orphan_tag_check_cron` | STRING | "0 0 3 * * *" | 孤立 Tag 检测 cron |
 | document_split_threshold | `self_learning.document_split_threshold` | INT | 5000 | 文档拆分阈值（字符数） |
+| chunk_overlap_ratio | `self_learning.chunk_overlap_ratio` | DOUBLE | 0.2 | 分块重叠比例（0-1） |
 
 **处理流程**：
 
@@ -772,6 +774,7 @@ SelfLearning 模块的配置通过 Config Application 统一管理（`/api/confi
 | tag_aging_cron | Tag 老化 cron | VARCHAR | N | | 默认 "0 0 2 * * *" |
 | orphan_tag_check_cron | 孤立 Tag 检测 cron | VARCHAR | N | | 默认 "0 0 3 * * *" |
 | document_split_threshold | 文档拆分阈值（字数） | INT | N | | 默认 5000 |
+| chunk_overlap_ratio | 分块重叠比例 | DOUBLE | N | | 默认 0.2 |
 
 ## 6. 前端页面需求覆盖
 

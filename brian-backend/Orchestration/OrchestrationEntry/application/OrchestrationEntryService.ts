@@ -82,8 +82,9 @@ export class OrchestrationEntryService {
       session_id: input.session_id,
       work_id: workId,
       interact_id: interactId,
-      info_creator_id: 'USER',
-      info_creator_role: 'REQUEST',
+      info_type: input.info_type ?? 'REQUEST',
+      info_creator_role: input.info_creator_role ?? 'USER',
+      info_creator_id: input.info_creator_id ?? '',
       info: input.user_query,
     });
     try {
@@ -156,8 +157,9 @@ export class OrchestrationEntryService {
         session_id: input.session_id,
         work_id: workId,
         interact_id: interactId,
+        info_type: 'RESPONSE',
+        info_creator_role: 'AGENT',
         info_creator_id: workId,
-        info_creator_role: 'RESPONSE',
         info: finalResponse,
       });
       await this.infoCore.saveInfo(saveRespInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, new SaveInfoOutput());
@@ -239,7 +241,7 @@ export class OrchestrationEntryService {
       { field: 'cancel_reason', value: '' },
       { field: 'error_message', value: '' },
       { field: 'final_response', value: '' },
-      { field: 'metadata', value: JSON.stringify({ job_id: jobId, async: true, callback_queue: input.callback_queue }) },
+      { field: 'metadata', value: JSON.stringify({ job_id: jobId, async: true, callback_queue: input.callback_queue, session_type: input.session_type, info_type: input.info_type, info_creator_id: input.info_creator_id, info_creator_role: input.info_creator_role }) },
     ];
 
     const insInput = Object.assign(new InsertDBInput(), {
@@ -262,6 +264,10 @@ export class OrchestrationEntryService {
               work_id: workId,
               interact_id: interactId,
               session_id: input.session_id,
+              session_type: input.session_type,
+              info_type: input.info_type,
+              info_creator_id: input.info_creator_id,
+              info_creator_role: input.info_creator_role,
               user_query: input.user_query,
               force_orchestration_strategy: input.force_orchestration_strategy,
               callback_queue: input.callback_queue,
@@ -285,6 +291,9 @@ export class OrchestrationEntryService {
                     session_id: payload.session_id as string,
                     user_query: payload.user_query as string,
                     force_orchestration_strategy: payload.force_orchestration_strategy as string | undefined,
+                    info_type: payload.info_type as string | undefined,
+                    info_creator_id: payload.info_creator_id as string | undefined,
+                    info_creator_role: payload.info_creator_role as string | undefined,
                   });
                   const rwOutput = new ReceiveWorkOutput();
                   await this.receiveWork(rwInput, context, rwOutput);
@@ -319,6 +328,9 @@ export class OrchestrationEntryService {
               session_id: input.session_id,
               user_query: input.user_query,
               force_orchestration_strategy: input.force_orchestration_strategy,
+              info_type: input.info_type,
+              info_creator_id: input.info_creator_id,
+              info_creator_role: input.info_creator_role,
             });
             const rwOutput = new ReceiveWorkOutput();
             await this.receiveWork(rwInput, context, rwOutput);
@@ -337,6 +349,9 @@ export class OrchestrationEntryService {
             session_id: input.session_id,
             user_query: input.user_query,
             force_orchestration_strategy: input.force_orchestration_strategy,
+            info_type: input.info_type,
+            info_creator_id: input.info_creator_id,
+            info_creator_role: input.info_creator_role,
           });
           const rwOutput = new ReceiveWorkOutput();
           await this.receiveWork(rwInput, context, rwOutput);

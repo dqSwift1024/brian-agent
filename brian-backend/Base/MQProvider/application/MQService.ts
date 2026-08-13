@@ -77,6 +77,36 @@ export class MQService {
   }
 
   /**
+   * 启用/禁用 MQ 组件。
+   */
+  async enableMQ(
+    input: EnableMQInput,
+    _context: MQContext,
+    _output: EnableMQOutput,
+  ): Promise<boolean> {
+    if (this.closed) {
+      throw new ComponentDisabledError('MQ');
+    }
+    this.enabled = input.enable;
+    await this.config.set('enabled', input.enable, 'BOOLEAN');
+    return true;
+  }
+
+  /**
+   * 终态关闭 MQ 组件（不可恢复）。
+   */
+  async closeMQ(
+    _input: CloseMQInput,
+    _context: MQContext,
+    _output: CloseMQOutput,
+  ): Promise<boolean> {
+    this.closed = true;
+    this.enabled = false;
+    await this.config.set('enabled', false, 'BOOLEAN');
+    return true;
+  }
+
+  /**
    * 校验组件是否启用，未启用时抛出 ComponentDisabledError。
    * 已终态关闭时抛出 ComponentDisabledError。
    */

@@ -118,7 +118,7 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 2. 将 `context_data`、`history` 与 `think_prompt_template_id` 调用 PromptsProvider.execPrompt 构建 Think prompt；
 3. 将 Soul 内容作为 system message 拼接到 prompt 前方；
 4. 调用 LLMProvider.execLLM 执行推理，获取 reasoning 和 next_action；
-5. 调用 InfoCore.saveInfo 保存 Think 的结果（info_creator_role=AGENT，parent_info_ids 关联之前的 context）；
+5. 调用 InfoCore.saveInfo 保存 Think 的结果（info_type=THINK，info_creator_role=AGENT，parent_info_ids 关联之前的 context）；
 6. 从 LLMProvider 返回中提取 token_usage 和耗时，写入 output 返回；
 7. 通过 AOP 自动记录 elapsed_ms；
 
@@ -151,7 +151,7 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
    b. 调用 MCPProvider.execMcp，传入 `tool_id` 和 `params`，执行 MCP 调用；
    c. 获取执行结果写入 `result`；
 4. 若 `tool_type` 为 NONE（Think 阶段决定不需要工具）：直接返回空 result；
-5. 调用 InfoCore.saveInfo 保存 Act 的执行结果（info_creator_role=SKILL 或 MCP，parent_info_ids 关联 Think 的 msg_id）；
+5. 调用 InfoCore.saveInfo 保存 Act 的执行结果（SKILL：info_type=SKILL、info_creator_role=SKILL；MCP：info_type=MCP、info_creator_role=MCP；parent_info_ids 关联 Think 的 msg_id）；
 6. 将执行结果写入 output 返回；
 
 #### 2.3.3. Reflect（反思）
@@ -206,7 +206,7 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 2. 将 `task_content`、`history` 与 `answer_prompt_template_id` 调用 PromptsProvider.execPrompt 构建 Answer prompt；
 3. 将 Soul 内容作为 system message 拼接；
 4. 调用 LLMProvider.execLLM 生成结构化最终答案；
-5. 调用 InfoCore.saveInfo 保存 Answer 的结果（info_creator_role=RESPONSE）；
+5. 调用 InfoCore.saveInfo 保存 Answer 的结果（info_type=RESPONSE，info_creator_role=AGENT）；
 6. 将答案写入 output 返回；
 
 ### 2.4. 获取执行追踪（getTrace）
@@ -233,7 +233,7 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 **处理流程**：
 
-1. 调用 InfoCore.lastNInfo 根据 trace_id（通过 info_creator_role 过滤）获取本次执行的所有信息记录；
+1. 调用 InfoCore.lastNInfo 根据 trace_id（通过 info_creator_id 过滤）获取本次执行的所有信息记录；
 2. 按迭代顺序重组 Think → Act → Reflect 的执行序列；
 3. 汇总计算 total_token_usage 和 total_elapsed_ms；
 4. 将结构化追踪数据写入 output 返回；

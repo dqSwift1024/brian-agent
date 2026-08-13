@@ -82,8 +82,9 @@ export class ChatService {
         session_id: input.session_id,
         work_id: workId,
         interact_id: interactId,
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_type: 'REQUEST',
+        info_creator_role: 'USER',
+        info_creator_id: '',
         info: input.msg_content,
         parent_info_ids: input.citing_msg_ids ?? [],
       });
@@ -148,8 +149,9 @@ export class ChatService {
         session_id: input.session_id,
         work_id: workId,
         interact_id: interactId,
+        info_type: 'RESPONSE',
+        info_creator_role: 'AGENT',
         info_creator_id: workId,
-        info_creator_role: 'RESPONSE',
         info: finalResponse,
       });
       await this.infoCore.saveInfo(
@@ -229,8 +231,9 @@ export class ChatService {
         session_id: input.session_id,
         work_id: workId,
         interact_id: interactId,
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_type: 'REQUEST',
+        info_creator_role: 'USER',
+        info_creator_id: '',
         info: input.msg_content,
         parent_info_ids: input.citing_msg_ids ?? [],
       });
@@ -306,8 +309,9 @@ export class ChatService {
         session_id: input.session_id,
         work_id: workId,
         interact_id: interactId,
+        info_type: 'RESPONSE',
+        info_creator_role: 'AGENT',
         info_creator_id: workId,
-        info_creator_role: 'RESPONSE',
         info: finalResponse,
       });
       await this.infoCore.saveInfo(
@@ -716,6 +720,7 @@ export class ChatService {
 
       messages.push({
         info_id: row.info_id,
+        info_type: row.info_type,
         info_creator_role: row.info_creator_role,
         info: row.info,
         created: row.created,
@@ -782,6 +787,7 @@ export class ChatService {
 
       messages.push({
         info_id: row.info_id,
+        info_type: row.info_type,
         info_creator_role: row.info_creator_role,
         info: row.info,
         summary,

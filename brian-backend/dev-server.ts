@@ -51,6 +51,17 @@ import { ChatSchemaInitializer } from './Application/Chat/infrastructure/ChatSch
 import { ConfigAccess } from './Application/Config/access/ConfigAccess';
 import { SelfLearningAccess } from './Application/SelfLearning/access/SelfLearningAccess';
 import { UserProfileAccess } from './Application/UserProfile/access/UserProfileAccess';
+import {
+  UserProfileContext,
+  GetUserProfileInput, GetUserProfileOutput,
+  GenerateProfileInput, GenerateProfileOutput,
+  SaveUserPreferenceInput, SaveUserPreferenceOutput,
+  GetProfileHistoryInput, GetProfileHistoryOutput,
+  GetProfileByVersionInput, GetProfileByVersionOutput,
+  ConfigProfileDirectionInput, ConfigProfileDirectionOutput,
+  DeleteProfileDirectionInput, DeleteProfileDirectionOutput,
+  GetProfileDirectionInput, GetProfileDirectionOutput,
+} from './Application/UserProfile/domain/types';
 import { VisualizationAccess } from './Application/Visualization/access/VisualizationAccess';
 
 // Config types
@@ -235,7 +246,8 @@ async function buildContext() {
   const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
 
   const selfLearningAccess = new SelfLearningAccess(relationDb, graphDBAccess, mqAccess, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, logger);
-  const userProfileAccess = new UserProfileAccess(relationDb, llmAccess, promptsAccess, infoCore, llmCore, writerAgent, evolutorAgent, logger);
+  const userProfileAccess = new UserProfileAccess(relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess, logger);
+  await userProfileAccess.initialize();
   const visualizationAccess = new VisualizationAccess(relationDb, llmAccess, soulAccess, skillAccess, graphDBAccess, infoCore, agentLibrary, agentBuilder, agentExecution, orchestrationExecution, orchestrationVisualization, jsonNode, logger);
 
   // Config
@@ -1448,9 +1460,70 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && pathname === '/api/feedback') { sendJson(res, 200, { success: true });
 
       // ===== Profile Routes =====
-      } else if (method === 'GET' && /\/api\/profile\//.test(pathname)) { sendJson(res, 200, { language: 'zh-CN', style: 'friendly', depth: 'detailed', format: 'markdown' });
-      } else if (method === 'PUT' && /\/api\/profile\//.test(pathname)) { sendJson(res, 200, { success: true });
-
+      } else if (method === 'GET' && pathname === '/api/profile') {
+        const input = Object.assign(new GetUserProfileInput(), {
+          session_id: params.get('session_id') || undefined,
+          version: params.get('version') ? parseInt(params.get('version')!, 10) : undefined,
+        });
+        const output = new GetUserProfileOutput();
+        await ctx.userProfileAccess.getUserProfile(input, new UserProfileContext(), output);
+        sendJson(res, 200, output);
+      } else if (method === 'POST' && pathname === '/api/profile/generate') {
+        const input = Object.assign(new GenerateProfileInput(), {
+          session_id: body.session_id || undefined,
+          directions: Array.isArray(body.directions) ? body.directions : undefined,
+        });
+        const output = new GenerateProfileOutput();
+        await ctx.userProfileAccess.generateProfile(input, new UserProfileContext(), output);
+        sendJson(res, 200, output.profile);
+      } else if (method === 'POST' && pathname === '/api/profile/preference') {
+        const input = Object.assign(new SaveUserPreferenceInput(), {
+          session_id: body.session_id,
+          language: body.language,
+          style: body.style,
+          depth: body.depth,
+          format: body.format,
+          additional_preferences: body.additional_preferences,
+        });
+        const output = new SaveUserPreferenceOutput();
+        await ctx.userProfileAccess.saveUserPreference(input, new UserProfileContext(), output);
+        sendJson(res, 200, { success: true });
+      } else if (method === 'GET' && pathname === '/api/profile/history') {
+        const input = Object.assign(new GetProfileHistoryInput(), {
+          session_id: params.get('session_id') || undefined,
+          limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined,
+        });
+        const output = new GetProfileHistoryOutput();
+        await ctx.userProfileAccess.getProfileHistory(input, new UserProfileContext(), output);
+        sendJson(res, 200, { history: output.history });
+      } else if (method === 'GET' && pathname.startsWith('/api/profile/version/')) {
+        const versionStr = pathname.split('/').pop()!;
+        const version = parseInt(versionStr, 10);
+        if (isNaN(version)) { sendJson(res, 400, { error: 'Invalid version' }); return; }
+        const input = Object.assign(new GetProfileByVersionInput(), {
+          version,
+          session_id: params.get('session_id') || undefined,
+        });
+        const output = new GetProfileByVersionOutput();
+        await ctx.userProfileAccess.getProfileByVersion(input, new UserProfileContext(), output);
+        sendJson(res, 200, output.profile);
+      } else if (method === 'GET' && pathname === '/api/profile/direction') {
+        const input = new GetProfileDirectionInput();
+        const output = new GetProfileDirectionOutput();
+        await ctx.userProfileAccess.getProfileDirection(input, new UserProfileContext(), output);
+        sendJson(res, 200, { directions: output.directions });
+      } else if (method === 'POST' && pathname === '/api/profile/direction') {
+        const input = Object.assign(new ConfigProfileDirectionInput(), {
+          directions: Array.isArray(body.directions) ? body.directions : [],
+        });
+        const output = new ConfigProfileDirectionOutput();
+        await ctx.userProfileAccess.configProfileDirection(input, new UserProfileContext(), output);
+        sendJson(res, 200, { success: true });
+      } else if (method === 'DELETE' && pathname === '/api/profile/direction') {
+        const input = Object.assign(new DeleteProfileDirectionInput(), { direction_key: body.direction_key });
+        const output = new DeleteProfileDirectionOutput();
+        await ctx.userProfileAccess.deleteProfileDirection(input, new UserProfileContext(), output);
+        sendJson(res, 200, { success: true });
       // ===== Monitor Routes =====
       } else if (method === 'GET' && pathname === '/api/monitor/health-all') {
         sendJson(res, 200, {

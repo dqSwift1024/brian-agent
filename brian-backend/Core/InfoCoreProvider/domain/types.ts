@@ -29,8 +29,9 @@ export interface InfoRawRecord {
   work_id: string;
   interact_id: string;
   info_id: string;
-  info_creator_id: string;
+  info_type: string;
   info_creator_role: string;
+  info_creator_id: string;
   info: string;
   info_length: number;
   pin: number;
@@ -152,8 +153,9 @@ export class SaveInfoInput extends Input {
   session_id!: string;
   work_id!: string;
   interact_id!: string;
-  info_creator_id!: string;
-  info_creator_role!: string;
+  info_type!: string;
+  info_creator_role?: string;
+  info_creator_id?: string;
   info!: string;
   parent_info_ids?: string[];
 }
@@ -227,8 +229,9 @@ export class LastNInfoInput extends Input {
   session_id?: string;
   work_id?: string;
   interact_id?: string;
-  info_creator_id?: string;
+  info_type?: string;
   info_creator_role?: string;
+  info_creator_id?: string;
   info_id?: string;
   lastN!: number;
 }

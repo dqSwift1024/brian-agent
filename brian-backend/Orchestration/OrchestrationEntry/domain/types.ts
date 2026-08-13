@@ -11,6 +11,9 @@ export class ReceiveWorkInput extends Input {
   user_query!: string;
   force_orchestration_strategy?: string;
   user_profile?: Record<string, unknown>;
+  info_type?: string;
+  info_creator_id?: string;
+  info_creator_role?: string;
 }
 
 export class ReceiveWorkOutput extends Output {
@@ -37,6 +40,10 @@ export class ReceiveWorkAsyncInput extends Input {
   user_query!: string;
   callback_queue?: string;
   force_orchestration_strategy?: string;
+  session_type?: string;
+  info_type?: string;
+  info_creator_id?: string;
+  info_creator_role?: string;
 }
 
 export class ReceiveWorkAsyncOutput extends Output {

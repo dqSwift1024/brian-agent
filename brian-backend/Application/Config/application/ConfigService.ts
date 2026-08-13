@@ -261,6 +261,24 @@ export class ConfigService {
   async initRegistrations(): Promise<number> {
     const existing = await this.relationDb.count(CONFIG_REGISTRY_TABLE, []);
     if (existing > 0) {
+      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
+        { field: 'updated', value: Date.now() },
+        { field: 'readable', value: 0 },
+      ], [
+        { field: 'config_key', operator: Operator.EQ, value: 'self_learning.conversation_weight' },
+      ]);
+      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
+        { field: 'updated', value: Date.now() },
+        { field: 'config_name', value: '画像分析 Prompt' },
+      ], [
+        { field: 'config_key', operator: Operator.EQ, value: 'user_profile.profile_analysis_prompt_template_id' },
+      ]);
+      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
+        { field: 'updated', value: Date.now() },
+        { field: 'config_description', value: '自动生成画像的调度间隔' },
+      ], [
+        { field: 'config_key', operator: Operator.EQ, value: 'user_profile.auto_generate_interval_ms' },
+      ]);
       return existing;
     }
     const input = new RegisterConfigInput();
@@ -1512,13 +1530,26 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('chat.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('chat.max_messages_per_session')) input.max_messages_per_session = Number(value);
+      else if (prefix.startsWith('chat.sse_heartbeat_interval_ms')) input.sse_heartbeat_interval_ms = Number(value);
+      else if (prefix.startsWith('chat.default_history_lastN')) input.default_history_lastN = Number(value);
       const output: any = {};
       await this.chatAccess.configChat(input, {} as any, output);
       return;
     }
     if (prefix.startsWith('self_learning.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('self_learning.random_factor')) input.random_factor = Number(value);
+      else if (prefix.startsWith('self_learning.document_weight')) input.document_weight = Number(value);
+      else if (prefix.startsWith('self_learning.conversation_weight')) input.conversation_weight = Number(value);
+      else if (prefix.startsWith('self_learning.tag_maintenance_weight')) input.tag_maintenance_weight = Number(value);
+      else if (prefix.startsWith('self_learning.learning_interval_ms')) input.learning_interval_ms = Number(value);
+      else if (prefix.startsWith('self_learning.default_learning_rate')) input.default_learning_rate = Number(value);
+      else if (prefix.startsWith('self_learning.tag_connection_check_interval_ms')) input.tag_connection_check_interval_ms = Number(value);
+      else if (prefix.startsWith('self_learning.tag_aging_cron')) input.tag_aging_cron = value as string;
+      else if (prefix.startsWith('self_learning.orphan_tag_check_cron')) input.orphan_tag_check_cron = value as string;
+      else if (prefix.startsWith('self_learning.document_split_threshold')) input.document_split_threshold = Number(value);
       const output: any = {};
       await this.selfLearningAccess.configSelfLearning(input, {} as any, output);
       return;

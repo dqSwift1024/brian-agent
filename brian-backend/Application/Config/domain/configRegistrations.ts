@@ -19,8 +19,8 @@ function orch(mod: string, cat: string, key: string, name: string, type: string,
   return { layer: 'ORCHESTRATION', module: mod, category: cat, config_key: `orchestration.${mod}.${key}`, config_name: name, config_type: type, config_default: def, config_description: desc, config_enum_values: enumVals };
 }
 
-function app(mod: string, cat: string, key: string, name: string, type: string, def: unknown, desc?: string, enumVals?: unknown[]): ConfigRegistration {
-  return { layer: 'APPLICATION', module: mod, category: cat, config_key: `${mod}.${key}`, config_name: name, config_type: type, config_default: def, config_description: desc, config_enum_values: enumVals };
+function app(mod: string, cat: string, key: string, name: string, type: string, def: unknown, desc?: string, enumVals?: unknown[], readable?: boolean, writable?: boolean): ConfigRegistration {
+  return { layer: 'APPLICATION', module: mod, category: cat, config_key: `${mod}.${key}`, config_name: name, config_type: type, config_default: def, config_description: desc, config_enum_values: enumVals, readable, writable };
 }
 
 function agent(mod: string, cat: string, key: string, name: string, type: string, def: unknown, desc?: string, enumVals?: unknown[]): ConfigRegistration {
@@ -141,7 +141,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   base('graphdb_provider', 'basic', 'enabled', '图数据库启用', 'BOOLEAN', true, '图数据库是否启用'),
   base('graphdb_provider', 'aging', 'retention_days', '激活统计保留天数', 'INT', 30, '老化观察窗口'),
   base('graphdb_provider', 'aging', 'min_activation_count', '窗口内最小激活次数阈值', 'INT', 5),
-  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'STRING', 'user_query'),
+  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'ENUM', 'user_query', '边激活事件的默认触发来源', ['所有触发事件', '用户交互触发', '标签维护触发', '自定义事件触发']),
   base('graphdb_provider', 'basic', 'default_weight', '默认边权重', 'DOUBLE', 1.0),
   base('graphdb_provider', 'basic', 'default_depth', '默认遍历深度', 'INT', 1),
   base('graphdb_provider', 'basic', 'default_only_active', '默认仅遍历激活边', 'BOOLEAN', true),
@@ -255,24 +255,25 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
 
   // --- Chat ---
   app('chat', 'basic', 'max_messages_per_session', '每会话最大消息数', 'INT', 1000),
-  app('chat', 'basic', 'sse_heartbeat_interval_ms', 'SSE 心跳间隔（ms）', 'INT', 30000, '30 秒'),
+  app('chat', 'basic', 'sse_heartbeat_interval_ms', 'SSE 心跳间隔（ms）', 'INT', 30000, 'SSE 长连接保活心跳间隔'),
   app('chat', 'basic', 'default_history_lastN', '默认历史消息数', 'INT', 50, '聊天上下文携带的历史消息数'),
 
   // --- SelfLearning ---
   app('self_learning', 'weight', 'random_factor', '随机因子', 'INT', 10),
   app('self_learning', 'weight', 'document_weight', '文档权重', 'INT', 40),
-  app('self_learning', 'weight', 'conversation_weight', '会话权重', 'INT', 30),
+  app('self_learning', 'weight', 'conversation_weight', '会话权重', 'INT', 30, '会话学习权重（已隐藏）', undefined, false),
   app('self_learning', 'weight', 'tag_maintenance_weight', '标签维护权重', 'INT', 30),
-  app('self_learning', 'interval', 'learning_interval_ms', '学习间隔（ms）', 'INT', 600000, '10 分钟'),
-  app('self_learning', 'basic', 'default_learning_rate', '默认学习率', 'INT', 5),
-  app('self_learning', 'interval', 'tag_connection_check_interval_ms', '标签关联检查间隔（ms）', 'INT', 1800000, '30 分钟'),
+  app('self_learning', 'interval', 'learning_interval_ms', '学习间隔（ms）', 'INT', 600000, '自学习任务调度间隔时间'),
+  app('self_learning', 'basic', 'default_learning_rate', '学习率', 'INT', 5, '每次文档学习 tick 中每个知识库最多处理的 PENDING 文件数。知识库级别 learning_rate 优先'),
+  app('self_learning', 'interval', 'tag_connection_check_interval_ms', '标签关联检查间隔（ms）', 'INT', 1800000, '标签关联关系检查间隔时间'),
   app('self_learning', 'interval', 'tag_aging_cron', '标签老化 Cron', 'STRING', '0 0 2 * * *', '每天凌晨 2:00'),
   app('self_learning', 'interval', 'orphan_tag_check_cron', '孤立标签检查 Cron', 'STRING', '0 0 3 * * *', '每天凌晨 3:00'),
-  app('self_learning', 'basic', 'document_split_threshold', '文档分割阈值', 'INT', 5000),
+  app('self_learning', 'basic', 'document_split_threshold', '文档分割阈值（字符数）', 'INT', 5000, '文档内容长度超过此值时触发 ChunkProvider 分块'),
+  app('self_learning', 'basic', 'chunk_overlap_ratio', '分块重叠比例', 'DOUBLE', 0.2, 'ChunkProvider 分块时相邻块的文本重叠比例，取值 0-1'),
 
   // --- UserProfile ---
-  app('user_profile', 'basic', 'auto_generate_interval_ms', '自动生成间隔（ms）', 'INT', 86400000, '24 小时'),
-  app('user_profile', 'basic', 'profile_analysis_prompt_template_id', '画像分析 Prompt 模板 ID', 'STRING', ''),
+  app('user_profile', 'basic', 'auto_generate_interval_ms', '自动生成间隔（ms）', 'INT', 86400000, '自动生成画像的调度间隔'),
+  app('user_profile', 'basic', 'profile_analysis_prompt_template_id', '画像分析 Prompt', 'STRING', ''),
   app('user_profile', 'basic', 'max_conversation_sample_count', '最大会话采样数', 'INT', 500),
   app('user_profile', 'basic', 'profile_retention_versions', '画像保留版本数', 'INT', 20),
   app('user_profile', 'basic', 'min_confidence_threshold', '最小置信度阈值', 'DOUBLE', 0.5),

@@ -11,7 +11,7 @@ import {
   Operator, DataObject, DBContext, IdGenerator,
   type Logger, type Condition,
 } from '@brian-agent/base';
-import type { GraphDBAccess } from '@brian-agent/base';
+import type { GraphDBAccess, ChunkAccess } from '@brian-agent/base';
 import type {
   InfoCoreAccess, MQCoreAccess, LLMCoreAccess,
 } from '@brian-agent/core';
@@ -27,9 +27,9 @@ import {
   ActivateGraphEdgeInput, ActivateGraphEdgeOutput,
   AgeGraphEdgeInput, AgeGraphEdgeOutput,
   GraphContext, GraphTarget, GraphDirection,
+  ChunkTextInput, ChunkTextOutput, ChunkContext,
 } from '@brian-agent/base';
 import {
-  SaveInfoInput, SaveInfoOutput,
   GraphTagInput, GraphTagOutput,
   LastNInfoInput, LastNInfoOutput,
   InfoCoreContext,
@@ -78,6 +78,7 @@ export class SelfLearningService {
     private readonly writerAgent: WriterAgentAccess,
     private readonly orchestrationEntry: OrchestrationEntryAccess,
     private readonly graphDBAccess: GraphDBAccess,
+    private readonly chunkAccess: ChunkAccess,
     private readonly mqAccess: any,
     private readonly logger?: Logger,
   ) {}
@@ -391,7 +392,7 @@ export class SelfLearningService {
       const countInput = Object.assign(new CountDBInput(), {
         table: 'info_raw',
         conditions: [
-          { field: 'info_creator_role', operator: Operator.EQ, value: 'REQUEST' },
+          { field: 'info_type', operator: Operator.EQ, value: 'REQUEST' },
           { field: 'created', operator: Operator.GE, value: threshold },
         ] as Condition[],
       });
@@ -573,13 +574,20 @@ export class SelfLearningService {
 
       const config = await this.getConfig();
       const splitThreshold = (config.document_split_threshold as number) ?? 5000;
+      const overlapRatio = (config.chunk_overlap_ratio as number) ?? 0.2;
 
       let chunks: string[];
       if (content.length > splitThreshold) {
-        chunks = this.splitByHeaders(content);
-        if (chunks.length <= 1) {
-          chunks = this.splitBySize(content, splitThreshold);
-        }
+        const chunkOutput = new ChunkTextOutput();
+        await this.chunkAccess.chunkText(
+          Object.assign(new ChunkTextInput(), {
+            content,
+            config: { windowSize: splitThreshold, overlapRatio },
+          }),
+          new ChunkContext(),
+          chunkOutput,
+        );
+        chunks = chunkOutput.chunks.map(c => c.content);
       } else {
         chunks = [content];
       }
@@ -592,22 +600,15 @@ export class SelfLearningService {
 
         const recvInput = Object.assign(new ReceiveWorkAsyncInput(), {
           session_id: sessionId,
-          user_input: trimmed,
-          orchestration_strategy: strategy,
+          session_type: 'self_learning',
+          user_query: trimmed,
+          force_orchestration_strategy: strategy,
+          info_type: 'REQUEST',
+          info_creator_role: 'LEARNING',
+          info_creator_id: '',
         });
         const recvOutput = Object.assign(new ReceiveWorkAsyncOutput(), {});
         await this.orchestrationEntry.receiveWorkAsync(recvInput, new OrchestrationEntryContext(), recvOutput);
-
-        const saveInput = Object.assign(new SaveInfoInput(), {
-          session_id: sessionId,
-          work_id: recvOutput.work_id || '',
-          interact_id: '',
-          info_creator_id: 'self_learning',
-          info_creator_role: 'system',
-          info: trimmed,
-        });
-        const saveOutput = Object.assign(new SaveInfoOutput(), {});
-        await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), saveOutput);
       }
 
       await this.updateFileStatus(fileId, 'COMPLETED', null);
@@ -642,6 +643,7 @@ export class SelfLearningService {
         { field: 'updated', value: now },
         { field: 'session_id', value: sessionId },
         { field: 'session_name', value: 'Self Learning' },
+        { field: 'session_type', value: 'self_learning' },
         { field: 'is_active', value: 1 },
       ]);
     }
@@ -1481,7 +1483,7 @@ export class SelfLearningService {
       'random_factor', 'document_weight', 'conversation_weight',
       'tag_maintenance_weight', 'learning_interval_ms', 'default_learning_rate',
       'tag_connection_check_interval_ms', 'tag_aging_cron',
-      'orphan_tag_check_cron', 'document_split_threshold',
+      'orphan_tag_check_cron', 'document_split_threshold', 'chunk_overlap_ratio',
     ];
 
     for (const field of fields) {

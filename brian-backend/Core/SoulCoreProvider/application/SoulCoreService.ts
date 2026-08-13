@@ -720,7 +720,7 @@ export class SoulCoreService {
 
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
-      { id: llmId, prompt, params: { temperature: 0.1, max_tokens: 256 } },
+      { id: llmId, params: { prompt, temperature: 0.1, max_tokens: 256 } },
       new LLMContext(),
       llmOutput,
     );

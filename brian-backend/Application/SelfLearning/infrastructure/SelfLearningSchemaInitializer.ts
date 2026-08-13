@@ -12,6 +12,7 @@ export class SelfLearningSchemaInitializer {
         updated INTEGER NOT NULL,
         session_id TEXT UNIQUE NOT NULL,
         session_name TEXT,
+        session_type TEXT DEFAULT 'user',
         is_active INTEGER DEFAULT 1
       )
     `);
@@ -151,7 +152,8 @@ export class SelfLearningSchemaInitializer {
         tag_connection_check_interval_ms INTEGER DEFAULT 1800000,
         tag_aging_cron TEXT DEFAULT '0 0 2 * * *',
         orphan_tag_check_cron TEXT DEFAULT '0 0 3 * * *',
-        document_split_threshold INTEGER DEFAULT 5000
+        document_split_threshold INTEGER DEFAULT 5000,
+        chunk_overlap_ratio REAL DEFAULT 0.2
       )
     `);
 
@@ -172,6 +174,7 @@ export class SelfLearningSchemaInitializer {
         { field: 'tag_aging_cron', value: '0 0 2 * * *' },
         { field: 'orphan_tag_check_cron', value: '0 0 3 * * *' },
         { field: 'document_split_threshold', value: 5000 },
+        { field: 'chunk_overlap_ratio', value: 0.2 },
       ]);
     }
 

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -127,6 +127,7 @@ const navSections: NavSection[] = [
       { key: 'app-chat', label: '对话', icon: MessageCircle, type: 'params', configModule: 'chat', configCategories: ['basic'] },
       { key: 'app-selflearning', label: '自学习', icon: GraduationCap, type: 'params', configModule: 'self_learning', configCategories: ['basic', 'weight', 'interval'] },
       { key: 'app-profile', label: '用户画像', icon: User, type: 'params', configModule: 'user_profile', configCategories: ['basic'] },
+      { key: 'app-profile-direction', label: '画像维度', icon: Layers, type: 'entity', entityType: 'profile-direction' },
       { key: 'app-visualization', label: '可视化', icon: BarChart3, type: 'params', configModule: 'visualization', configCategories: ['basic'] },
     ],
   },
@@ -365,7 +366,7 @@ const graphSearchMaxDepth = ref(2)
 const graphSearchOnlyActive = ref(true)
 const graphSearching = ref(false)
 const graphSearchError = ref('')
-const graphSearchResult = ref<{ root_tags: Array<{ tag: string; info_ids: string[] }>; paths: Array<{ root_tag: string; root_id: string; nodes: Array<{ id: string; tag: string; info_ids: string[]; depth: number }>; edges: Array<{ from_id: string; to_id: string; weight: number; active: boolean }> }> } | null>(null)
+const graphSearchResult = ref<{ root_tags: Array<{ tag: string; info_ids: string[] }>; paths: Array<{ root_tag: string; root_id: string; nodes: Array<{ id: string; tag: string; info_ids: string[]; depth: number }>; edges: Array<{ from_id: string; to_id: string; weight: number; active: boolean; compositeWeight: number }> }> } | null>(null)
 
 async function runGraphSearch() {
   const q = graphSearchQuery.value.trim()
@@ -1385,6 +1386,97 @@ async function handleToggleSoul(soulId: string) {
   } catch (e: unknown) {
     showToast(e instanceof Error ? e.message : '操作失败')
   }
+}
+
+
+// ============================================================
+// 画像维度 数据
+// ============================================================
+
+interface ProfileDirection {
+  id: string; direction_key: string; direction_name: string; direction_description: string;
+  weight: number; enable: number;
+  prompt_template_id: string; llm_temperature: number; llm_max_tokens: number; llm_id: string;
+}
+
+const profileDirections = ref<ProfileDirection[]>([])
+const profileDirsLoading = ref(false)
+const profileDirModalVisible = ref(false)
+const editingProfileDir = ref<ProfileDirection | null>(null)
+const profileDirForm = ref({ direction_key: '', direction_name: '', direction_description: '', weight: 10, enable: true, prompt_template_id: '', llm_temperature: 0.3, llm_max_tokens: 512, llm_id: '' })
+const profileDirSaving = ref(false)
+
+async function loadProfileDirections() {
+  profileDirsLoading.value = true
+  try {
+    const resp = await fetchApi<{ directions: ProfileDirection[] }>('/profile/direction')
+    profileDirections.value = resp.directions || []
+  } catch { profileDirections.value = [] }
+  finally { profileDirsLoading.value = false }
+}
+
+function openProfileDirModal(d?: ProfileDirection) {
+  if (d) {
+    editingProfileDir.value = d
+    profileDirForm.value = {
+      direction_key: d.direction_key, direction_name: d.direction_name,
+      direction_description: d.direction_description || '', weight: d.weight,
+      enable: !!d.enable, prompt_template_id: d.prompt_template_id || '',
+      llm_temperature: d.llm_temperature ?? 0.3, llm_max_tokens: d.llm_max_tokens ?? 512,
+      llm_id: d.llm_id || '',
+    }
+  } else {
+    editingProfileDir.value = null
+    profileDirForm.value = { direction_key: '', direction_name: '', direction_description: '', weight: 10, enable: true, prompt_template_id: '', llm_temperature: 0.3, llm_max_tokens: 512, llm_id: '' }
+  }
+  profileDirModalVisible.value = true
+}
+
+function closeProfileDirModal() { profileDirModalVisible.value = false; editingProfileDir.value = null }
+
+async function saveProfileDir() {
+  if (!profileDirForm.value.direction_key.trim() || !profileDirForm.value.direction_name.trim()) return
+  profileDirSaving.value = true
+  try {
+    await fetchApi('/profile/direction', {
+      method: 'POST',
+      body: JSON.stringify({ directions: [{
+        direction_key: profileDirForm.value.direction_key.trim(),
+        direction_name: profileDirForm.value.direction_name.trim(),
+        direction_description: profileDirForm.value.direction_description.trim() || undefined,
+        weight: profileDirForm.value.weight,
+        enable: profileDirForm.value.enable,
+        prompt_template_id: profileDirForm.value.prompt_template_id.trim() || undefined,
+        llm_temperature: profileDirForm.value.llm_temperature,
+        llm_max_tokens: profileDirForm.value.llm_max_tokens,
+        llm_id: profileDirForm.value.llm_id.trim() || undefined,
+      }] }),
+    })
+    showToast(editingProfileDir.value ? '已更新' : '已创建', 'success')
+    closeProfileDirModal()
+    await loadProfileDirections()
+  } catch (e: unknown) { showToast(e instanceof Error ? e.message : '保存失败') }
+  finally { profileDirSaving.value = false }
+}
+
+async function deleteProfileDir(dirKey: string) {
+  if (!confirm('确定删除此维度？已生成的历史数据不受影响。')) return
+  try {
+    await fetchApi('/profile/direction', { method: 'DELETE', body: JSON.stringify({ direction_key: dirKey }) })
+    showToast('已删除', 'success')
+    await loadProfileDirections()
+  } catch (e: unknown) { showToast(e instanceof Error ? e.message : '删除失败') }
+}
+
+async function toggleProfileDir(dir: ProfileDirection) {
+  const newVal = !dir.enable
+  try {
+    await fetchApi('/profile/direction', {
+      method: 'POST',
+      body: JSON.stringify({ directions: [{ direction_key: dir.direction_key, direction_name: dir.direction_name, weight: dir.weight, enable: newVal }] }),
+    })
+    dir.enable = newVal ? 1 : 0
+  } catch (e: unknown) { showToast(e instanceof Error ? e.message : '操作失败') }
 }
 
 // ============================================================
@@ -2695,6 +2787,7 @@ async function addBookmarkFromCDT() {
 onMounted(() => {
   loadConfigTree()
   loadPrompts()
+  loadModels()
 })
 
 function handleKeydown(e: KeyboardEvent) {
@@ -2733,6 +2826,7 @@ watch(activeSubSection, async (val) => {
       case 'orch-strategy': await loadOrchStrategies(); break
       case 'cdt-status': await loadCDTStatus(); break
       case 'cdt-page': await loadCDTStatus(); await loadBookmarks(); setupRemotePasteListener(); break
+      case 'profile-direction': await loadProfileDirections(); break
     }
   } else if (sub?.type === 'params') {
     await loadConfigTree()
@@ -3262,7 +3356,7 @@ watch(activeSubSection, async (val) => {
                       <p v-if="item.config_description" class="text-xs text-apple-gray-400 dark:text-apple-gray-500 mt-0.5">
                         {{ item.config_description }}
                         <template v-if="isTimeConfig(item.config_key) && getConfigPrimitiveValue(item) !== undefined">
-                          · {{ formatDurationMs(getConfigPrimitiveValue(item)) }}
+                          · {{ formatDurationMs(getConfigPrimitiveValue(item) as string | number) }}
                         </template>
                       </p>
                       <p class="text-[10px] font-mono text-apple-gray-400 dark:text-apple-gray-500 mt-0.5">{{ item.config_key }}</p>
@@ -3282,6 +3376,12 @@ watch(activeSubSection, async (val) => {
                         <template v-else-if="item.config_type === 'ENUM' && item.config_enum_values">
                           <select v-model="editingParamValue" :class="inputClass + ' !w-32 !py-1.5'">
                             <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ v }}</option>
+                          </select>
+                        </template>
+                        <template v-else-if="item.config_key.endsWith('llm_id')">
+                          <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
+                            <option value="">选择模型</option>
+                            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.modelName || m.id }}</option>
                           </select>
                         </template>
                         <template v-else-if="item.config_key.endsWith('prompt_template_id')">
@@ -4304,7 +4404,124 @@ watch(activeSubSection, async (val) => {
           </div>
         </div>
 
-        <div v-if="isEntityView && !['provider', 'model', 'soul', 'skill', 'mcp', 'mcp-provider', 'mcp-stats', 'agent', 'prompt', 'orch-strategy', 'cdt-status', 'cdt-page'].includes(currentEntityType || '')" class="px-5 pb-6">
+        <div v-if="isEntityView && currentEntityType === 'profile-direction'" class="px-5 pb-6">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-xs text-apple-gray-400">{{ profileDirections.length }} 个维度</span>
+            <button class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors" @click="openProfileDirModal()">
+              <Plus :size="13" /> 添加维度
+            </button>
+          </div>
+          <div v-if="profileDirsLoading" class="flex justify-center py-16"><Loader2 :size="24" class="animate-spin text-brian-blue" /></div>
+          <div v-else-if="profileDirections.length === 0" class="flex flex-col items-center justify-center py-16">
+            <Layers :size="28" class="text-apple-gray-400 mb-3" />
+            <p class="text-sm text-apple-gray-500">暂无画像维度</p>
+          </div>
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              v-for="d in profileDirections" :key="d.id"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+            >
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Layers :size="18" /></div>
+                  <div class="min-w-0">
+                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ d.direction_name }}</h3>
+                    <p class="text-[11px] text-apple-gray-400">{{ d.direction_key }}</p>
+                  </div>
+                </div>
+                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="d.enable ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
+              </div>
+              <div class="space-y-1.5 mb-3">
+                <div class="flex justify-between text-xs text-apple-gray-500">
+                  <span>权重: {{ d.weight }}</span>
+                  <span v-if="d.llm_id">LLM: {{ d.llm_id.slice(0, 12) }}...</span>
+                  <span>Temp: {{ d.llm_temperature ?? 0.3 }}</span>
+                  <span>Tokens: {{ d.llm_max_tokens ?? 512 }}</span>
+                </div>
+                <p v-if="d.prompt_template_id" class="text-xs text-apple-gray-400 truncate" :title="d.prompt_template_id">
+                  Prompt: {{ getPromptTitle(d.prompt_template_id) }}
+                </p>
+                <p class="text-xs text-apple-gray-400 line-clamp-2">{{ d.direction_description || '暂无描述' }}</p>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
+                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openProfileDirModal(d)"><Pencil :size="11" /> 编辑</button>
+                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="d.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="toggleProfileDir(d)">
+                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="d.enable ? 'translate-x-4' : ''" />
+                </button>
+                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="deleteProfileDir(d.direction_key)"><Trash2 :size="11" /> 删除</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: 添加/编辑维度 -->
+          <Teleport to="body">
+            <div v-if="profileDirModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="closeProfileDirModal">
+              <div class="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-apple-gray-800 shadow-xl p-6">
+                <h3 class="text-lg font-semibold mb-4">{{ editingProfileDir ? '编辑维度' : '添加维度' }}</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="block text-xs font-medium text-apple-gray-500 mb-1">维度标识 (Key)</label>
+                    <input v-model="profileDirForm.direction_key" :class="inputClass" placeholder="如 tech_stack" :disabled="!!editingProfileDir" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-apple-gray-500 mb-1">维度名称</label>
+                    <input v-model="profileDirForm.direction_name" :class="inputClass" placeholder="如 技术栈偏好" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-apple-gray-500 mb-1">描述</label>
+                    <textarea v-model="profileDirForm.direction_description" :class="inputClass" rows="2" placeholder="维度描述" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-apple-gray-500 mb-1">权重 (0-100)</label>
+                      <input v-model.number="profileDirForm.weight" type="number" min="0" max="100" :class="inputClass" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-apple-gray-500 mb-1">启用</label>
+                      <select v-model="profileDirForm.enable" :class="inputClass">
+                        <option :value="true">启用</option>
+                        <option :value="false">禁用</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="border-t border-apple-gray-100 dark:border-apple-gray-700 pt-3">
+                    <p class="text-xs font-medium text-apple-gray-500 mb-2">LLM 配置（生成画像时使用）</p>
+                    <div class="space-y-2">
+                      <div>
+                        <label class="block text-xs text-apple-gray-400 mb-0.5">Prompt 模板 ID</label>
+                        <input v-model="profileDirForm.prompt_template_id" :class="inputClass + ' !text-xs'" placeholder="留空使用全局 Prompt" />
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-xs text-apple-gray-400 mb-0.5">温度 (Temperature)</label>
+                          <input v-model.number="profileDirForm.llm_temperature" type="number" step="0.1" min="0" max="2" :class="inputClass + ' !text-xs'" />
+                        </div>
+                        <div>
+                          <label class="block text-xs text-apple-gray-400 mb-0.5">Max Tokens</label>
+                          <input v-model.number="profileDirForm.llm_max_tokens" type="number" min="1" max="4096" :class="inputClass + ' !text-xs'" />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-apple-gray-400 mb-0.5">LLM 模型 ID（留空自动匹配）</label>
+                        <input v-model="profileDirForm.llm_id" :class="inputClass + ' !text-xs'" placeholder="留空则自动匹配最优模型" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-5 pt-4 border-t border-apple-gray-100 dark:border-apple-gray-700">
+                  <button class="px-4 py-2 text-sm rounded-lg border border-apple-gray-200 dark:border-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-50 dark:hover:bg-apple-gray-700 transition-colors" @click="closeProfileDirModal">取消</button>
+                  <button class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 disabled:opacity-50 transition-colors" :disabled="profileDirSaving" @click="saveProfileDir">
+                    <Loader2 v-if="profileDirSaving" :size="14" class="animate-spin" />
+                    <Save v-else :size="14" />
+                    {{ editingProfileDir ? '保存' : '创建' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Teleport>
+        </div>
+
+        <div v-if="isEntityView && !['provider', 'model', 'soul', 'skill', 'mcp', 'mcp-provider', 'mcp-stats', 'agent', 'prompt', 'orch-strategy', 'cdt-status', 'cdt-page', 'profile-direction'].includes(currentEntityType || '')" class="px-5 pb-6">
           <div class="flex flex-col items-center justify-center py-16 text-center">
             <Settings :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">该实体类型（{{ currentEntityType }}）的管理功能正在开发中</p>

@@ -85,7 +85,7 @@ import {
  *
  * const output = new SaveInfoOutput();
  * await infoCore.saveInfo(
- *   { session_id: 's1', work_id: '', interact_id: '', info_creator_id: 'u1', info_creator_role: 'user', info: '...' },
+ *   { session_id: 's1', work_id: '', interact_id: '', info_type: 'REQUEST', info_creator_role: 'USER', info_creator_id: '', info: '...' },
  *   new InfoCoreContext(),
  *   output,
  * );

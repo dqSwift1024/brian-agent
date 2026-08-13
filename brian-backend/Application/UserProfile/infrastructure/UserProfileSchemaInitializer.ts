@@ -18,7 +18,11 @@ export class UserProfileSchemaInitializer {
         direction_name TEXT NOT NULL,
         direction_description TEXT,
         weight INTEGER NOT NULL DEFAULT 0,
-        enable INTEGER NOT NULL DEFAULT 1
+        enable INTEGER NOT NULL DEFAULT 1,
+        prompt_template_id TEXT NOT NULL DEFAULT '',
+        llm_temperature REAL NOT NULL DEFAULT 0.3,
+        llm_max_tokens INTEGER NOT NULL DEFAULT 512,
+        llm_id TEXT NOT NULL DEFAULT ''
       )`,
     );
     this.relationDb.executeRaw(

@@ -403,8 +403,9 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
-      info_creator_id: 'USER',
-      info_creator_role: params.info_creator_role ?? 'REQUEST',
+      info_type: params.info_type ?? 'REQUEST',
+      info_creator_role: 'USER',
+      info_creator_id: '',
       info: userQuery,
     });
     await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -492,10 +493,10 @@ export class JSONNodeService {
     const userQuery = (sharedData.user_query as string) ?? '';
     const result = await selectOrchestrationStrategy(
       this.relationDb,
+      this.promptsAccess,
+      this.llmAccess,
       userQuery,
       sharedData.work_context as Record<string, unknown> | undefined,
-      this.llmAccess,
-      this.promptsAccess,
       this.logger,
     );
     sharedData.strategy = result.strategy;
@@ -903,8 +904,9 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
+      info_type: 'RESPONSE',
+      info_creator_role: 'AGENT',
       info_creator_id: workId,
-      info_creator_role: 'RESPONSE',
       info: finalResponse,
     });
     await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());

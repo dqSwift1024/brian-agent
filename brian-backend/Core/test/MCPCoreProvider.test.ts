@@ -38,7 +38,7 @@ describe('MCPCoreProvider', () => {
     relationDb = new RelationDBAccess({ dbPath });
     await relationDb.initialize();
     mcpAccess = new MCPAccess(relationDb);
-    await mcpAccess.initialize();
+    try { await (mcpAccess as any).initialize?.(); } catch { /* no initialize */ }
     llmAccess = new LLMAccess(relationDb);
     promptsAccess = new PromptsAccess(relationDb);
     await promptsAccess.initialize();

@@ -4,6 +4,8 @@ export {
   UserProfileContext,
   ConfigProfileDirectionInput,
   ConfigProfileDirectionOutput,
+  DeleteProfileDirectionInput,
+  DeleteProfileDirectionOutput,
   GetProfileDirectionInput,
   GetProfileDirectionOutput,
   GetUserProfileInput,

@@ -78,6 +78,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
   "messages": [
     {
       "info_id": "info_uuid",
+      "info_type": "REQUEST",
       "info_creator_role": "USER",
       "info": "用户消息内容",
       "info_length": 100,
@@ -91,6 +92,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
     },
     {
       "info_id": "info_uuid_2",
+      "info_type": "RESPONSE",
       "info_creator_role": "AGENT",
       "info": "Agent 输出内容",
       "info_length": 500,
@@ -133,6 +135,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
     "nodes": [
       {
         "info_id": "info_uuid",
+        "info_type": "REQUEST",
         "info_creator_role": "USER",
         "info_summary": "用户消息摘要（前50字）",
         "created": "2026-07-30T10:00:00.000Z",
@@ -354,6 +357,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
     "nodes": [
       {
         "info_id": "info_uuid",
+        "info_type": "REQUEST",
         "info_creator_role": "USER",
         "info_summary": "用户消息摘要（前50字）",
         "created": "2026-07-30T10:00:00.000Z",

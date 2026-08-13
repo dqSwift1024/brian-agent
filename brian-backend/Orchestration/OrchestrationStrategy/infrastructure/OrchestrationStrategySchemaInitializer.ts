@@ -9,7 +9,7 @@ const SIMPLE_JSONNODE_DEFINITION = JSON.stringify({
     {
       node_id: 'node_1',
       node_type: 'SAVE_USER_INPUT',
-      params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' },
+      params: { info_type: 'REQUEST', update_work_status: 'PROCESSING' },
       next: 'node_2',
       on_error: 'node_8',
     },
@@ -72,7 +72,7 @@ const PLANNING_JSONNODE_DEFINITION = JSON.stringify({
     {
       node_id: 'node_1',
       node_type: 'SAVE_USER_INPUT',
-      params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' },
+      params: { info_type: 'REQUEST', update_work_status: 'PROCESSING' },
       next: 'node_2',
       on_error: 'node_12',
     },

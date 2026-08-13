@@ -92,7 +92,6 @@ onUnmounted(() => {
             class="px-3 py-2 rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue"
             @change="updateMode(($event.target as HTMLSelectElement).value)"
           >
-            <option value="from-conversation">从对话学习</option>
             <option value="from-document">从文档学习</option>
             <option value="tag-graph">Tag图维护</option>
           </select>

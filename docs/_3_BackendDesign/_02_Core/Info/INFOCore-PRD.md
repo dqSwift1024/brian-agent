@@ -17,9 +17,10 @@
   - session_id：标识用户的一个会话（必选）
   - work_id：标识一次完整的问答工作（必选）
   - interact_id：标识工作执行过程中的一次问答（必选）
-  - info_creator_id：信息的产生人ID（必选）
-  - info_creator_role：信息产生人角色；REQUEST,AGENT,MCP,SKILL,LLM,RESPONSE（必选）
-  - info：信息内容；USER角色就是用户发送的角色；AGENT就是AGENT产生的内容；MCP就是调用MCP后的结果；SKILL就是调用SKILL后的结果；LLM就是LLM的回答；RESPONSE为一次工作给用户的最终返回内容（必选）
+  - info_type：信息类型；REQUEST（用户请求/编排输入）、RESPONSE（模型/编排最终回复）、THINK（Agent 思考）、SKILL（技能调用结果）、MCP（MCP 调用结果）、ACT（Agent 行动/执行）、REFLECT（Agent 反思）（必选）
+  - info_creator_role：信息产生方角色；USER（用户）、LEARNING（自学习）、AGENT（Agent）、SKILL（技能）、MCP（MCP 工具）（可选，默认空）
+  - info_creator_id：信息产生方实例 ID，UUID 类型；USER 与 LEARNING 为空字符串，AGENT/SKILL/MCP 为各自实例 ID（可选，默认空）
+  - info：信息内容（必选）
   - parent_info_ids：父级信息ID列表（可选）
 - context：SaveInfoContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：SaveInfoOutput（继承 Output），承载返回内容：
@@ -27,7 +28,7 @@
 **处理流程**：
 
 1. 生成 `info_id`（UUID），计算 `info_length = len(info)`；
-2. 调用 RelationDBProvider.insertDB 将 `{ session_id, work_id, interact_id, info_id, info_creator_id, info_creator_role, info, info_length, pin: false }` 写入 `info_raw` 表；
+2. 调用 RelationDBProvider.insertDB 将 `{ session_id, work_id, interact_id, info_id, info_type, info_creator_role, info_creator_id, info, info_length, pin: false }` 写入 `info_raw` 表；
 3. 若 `parent_info_ids` 非空，遍历列表：
    a. 对每个 `parent_info_id`，调用 RelationDBProvider.insertDB 将引用关系 `{ session_id, info_id, citing_info_id: info_id, cited_info_id: parent_info_id }` 写入 `info_graph` 表；
 4. 将 `info_id` 写入 output 返回，主流程结束；
@@ -302,19 +303,20 @@
   - work_id：标识一次完整的问答工作（可选）
   - interact_id：标识工作执行过程中的一次问答（可选）
   - info_id：信息 ID（可选）
-  - info_creator_id：信息的产生人ID（可选）
-  - info_creator_role：信息产生人角色；USER、AGENT、MCP、SKILL、LLM（可选）
+  - info_type：信息类型（REQUEST/RESPONSE/THINK/SKILL/MCP/ACT/REFLECT）（可选）
+  - info_creator_role：信息产生方角色（USER/LEARNING/AGENT/SKILL/MCP）（可选）
+  - info_creator_id：信息产生方实例 ID（可选）
   - lastN：最近的N条信息（必选）
 - context：LastNInfoContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：LastNInfoOutput（继承 Output），承载返回内容：
   - info_list：信息内容列表
 **处理流程**：
 
-1. 构建查询条件（Condition）：将入参中所有非空字段（session_id, work_id, interact_id, info_id, info_creator_id, info_creator_role）作为 AND 条件，调用 RelationDBProvider.selectDB 按 created 倒序查询 `info_raw` 表，LIMIT lastN；
+1. 构建查询条件（Condition）：将入参中所有非空字段（session_id, work_id, interact_id, info_id, info_type, info_creator_role, info_creator_id）作为 AND 条件，调用 RelationDBProvider.selectDB 按 created 倒序查询 `info_raw` 表，LIMIT lastN；
 2. 遍历查询结果，对每条记录：
    a. 若 info 字段不为空：视为完整信息，直接加入结果列表；
    b. 若 info 字段为空（已被老化清理）：调用 RelationDBProvider.selectOneDB 查询 `info_summary` 表根据 info_id 获取摘要文本，将摘要作为本条信息内容加入结果列表；若摘要也不存在则跳过本条；
-3. 返回处理后的信息内容列表（含 info_id, info_creator_role, created, info 字段），写入 output 返回；
+3. 返回处理后的信息内容列表（含 info_id, info_type, info_creator_role, created, info 字段），写入 output 返回；
 
 ### 2.5.2. 图状获取last n信息（graphNInfo）
 
@@ -527,8 +529,9 @@
 | work_id | 问答工作ID | UUID | N | | |
 | interact_id | 交互ID | UUID | N | | |
 | info_id | 信息ID | UUID | N | | |
-| info_creator_id | 信息产生人ID | UUID | N | | |
-| info_creator_role | 信息产生人角色 | VARCHAR | N | | |
+| info_type | 信息类型 | VARCHAR | N | 普通索引 | REQUEST/RESPONSE/THINK/SKILL/MCP/ACT/REFLECT |
+| info_creator_role | 信息产生方角色 | VARCHAR | N | | USER/LEARNING/AGENT/SKILL/MCP |
+| info_creator_id | 信息产生方实例ID | UUID | N | 普通索引 | USER/LEARNING 为空 |
 | info | 信息内容 | TEXT | N | | |
 | info_length | 信息长度 | INT | N | | |
 | pin | 是否钉住本消息 | BOOL | N | | |

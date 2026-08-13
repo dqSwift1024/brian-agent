@@ -94,6 +94,7 @@ export class GetChatHistoryInput extends Input {
 export class GetChatHistoryOutput extends Output {
   messages: Array<{
     info_id: string;
+    info_type: string;
     info_creator_role: string;
     info: string;
     created: number;
@@ -113,6 +114,7 @@ export class SearchMessageInput extends Input {
 export class SearchMessageOutput extends Output {
   messages: Array<{
     info_id: string;
+    info_type: string;
     info_creator_role: string;
     info: string;
     summary: string;

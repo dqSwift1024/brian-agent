@@ -18,15 +18,17 @@ import type { WriterAgentAccess } from '@brian-agent/agent';
 import {
   SaveUserProfileInput, SaveUserProfileOutput, GetUserProfileInput as WriterGetUserProfileInput,
   GetUserProfileOutput as WriterGetUserProfileOutput,
+  WriterAgentContext,
 } from '@brian-agent/agent';
 import type { EvolutorAgentAccess } from '@brian-agent/agent';
-import type { GetEvaluationInput, GetEvaluationOutput } from '@brian-agent/agent';
+import { GetEvaluationInput, GetEvaluationOutput } from '@brian-agent/agent';
 import { EvolutorAgentContext } from '@brian-agent/agent';
 import {
   USER_PROFILE_DIRECTION_TABLE, USER_PROFILE_RECORD_TABLE,
   USER_PROFILE_DIMENSION_DATA_TABLE, USER_PROFILE_CONFIG_TABLE,
   UserProfileContext,
   ConfigProfileDirectionInput, ConfigProfileDirectionOutput,
+  DeleteProfileDirectionInput, DeleteProfileDirectionOutput,
   GetProfileDirectionInput, GetProfileDirectionOutput,
   GetUserProfileInput, GetUserProfileOutput,
   GenerateProfileInput, GenerateProfileOutput,
@@ -63,6 +65,10 @@ export class UserProfileService {
           { field: 'direction_description', value: dir.direction_description ?? '' },
           { field: 'weight', value: dir.weight },
           { field: 'enable', value: dir.enable ? 1 : 0 },
+          { field: 'prompt_template_id', value: dir.prompt_template_id ?? (existing.prompt_template_id as string) ?? '' },
+          { field: 'llm_temperature', value: dir.llm_temperature ?? (existing.llm_temperature as number) ?? 0.3 },
+          { field: 'llm_max_tokens', value: dir.llm_max_tokens ?? (existing.llm_max_tokens as number) ?? 512 },
+          { field: 'llm_id', value: dir.llm_id ?? (existing.llm_id as string) ?? '' },
           { field: 'updated', value: now },
         ];
         await this.relationDb.update(USER_PROFILE_DIRECTION_TABLE, data, [
@@ -78,9 +84,24 @@ export class UserProfileService {
           { field: 'direction_description', value: dir.direction_description ?? '' },
           { field: 'weight', value: dir.weight },
           { field: 'enable', value: dir.enable ? 1 : 0 },
+          { field: 'prompt_template_id', value: dir.prompt_template_id ?? '' },
+          { field: 'llm_temperature', value: dir.llm_temperature ?? 0.3 },
+          { field: 'llm_max_tokens', value: dir.llm_max_tokens ?? 512 },
+          { field: 'llm_id', value: dir.llm_id ?? '' },
         ]);
       }
     }
+    return true;
+  }
+
+  async deleteProfileDirection(
+    input: DeleteProfileDirectionInput,
+    _ctx: UserProfileContext,
+    _output: DeleteProfileDirectionOutput,
+  ): Promise<boolean> {
+    await this.relationDb.delete(USER_PROFILE_DIRECTION_TABLE, [
+      { field: 'direction_key', operator: Operator.EQ, value: input.direction_key },
+    ]);
     return true;
   }
 
@@ -110,7 +131,7 @@ export class UserProfileService {
         const wo = new WriterGetUserProfileOutput();
         await this.writerAgent.getUserProfile(
           Object.assign(new WriterGetUserProfileInput(), { session_id: sessionId }),
-          new (await this.writerCtx())(),
+          new WriterAgentContext(),
           wo,
         );
         writerPreferences = wo.user_profile;
@@ -141,10 +162,10 @@ export class UserProfileService {
     for (const dir of enabledDirs) {
       const key = String(dir.direction_key);
       try {
-        const result = await this.aggregateDimension(key, sessionId, writerPreferences);
+        const result = await this.aggregateDimension(key, sessionId, writerPreferences, latestRecord);
         dimensions[key] = result;
       } catch {
-        dimensions[key] = { value: null, confidence: 0, evidence: [] };
+        // skip failed dimensions
       }
     }
 
@@ -211,7 +232,7 @@ export class UserProfileService {
     } catch { /* best-effort */ }
 
     const conversationText = (lastNOut.list ?? [])
-      .map((r) => `${r.info_creator_role}: ${r.info}`)
+      .map((r) => `${r.info_type}: ${r.info}`)
       .join('\n');
 
     const targetDirs = input.directions && input.directions.length > 0
@@ -233,7 +254,7 @@ export class UserProfileService {
       const name = String(dir.direction_name);
       try {
         const analysis = await this.analyzeDimensionWithLLM(
-          key, name, conversationText, config,
+          key, name, conversationText, dir, config,
         );
         dimensionData.push({
           direction_key: key,
@@ -284,7 +305,7 @@ export class UserProfileService {
         const saveOut = new SaveUserProfileOutput();
         await this.writerAgent.saveUserProfile(
           Object.assign(new SaveUserProfileInput(), { session_id: sessionId }),
-          new (await this.writerCtx())(),
+          new WriterAgentContext(),
           saveOut,
         );
       } catch { /* best-effort */ }
@@ -346,7 +367,7 @@ export class UserProfileService {
         format: input.format,
         additional_preferences: input.additional_preferences,
       }),
-      new (await this.writerCtx())(),
+      new WriterAgentContext(),
       saveOut,
     );
     return true;
@@ -399,9 +420,14 @@ export class UserProfileService {
       { field: 'profile_record_id', operator: Operator.EQ, value: record.id },
     ]);
 
+    const config = await this.getConfig();
+    const minConfidence = Number(config.min_confidence_threshold ?? 0.5);
+
     const dimensions: Record<string, unknown> = {};
     for (const d of dimRows) {
       const key = String(d.direction_key);
+      const confidence = Number(d.confidence);
+      if (confidence < minConfidence) continue;
       let value: unknown = null;
       let evidence: unknown = [];
       try { value = JSON.parse(String(d.dimension_value ?? 'null')); } catch { value = d.dimension_value; }
@@ -409,7 +435,7 @@ export class UserProfileService {
       dimensions[key] = {
         value,
         evidence,
-        confidence: Number(d.confidence),
+        confidence,
       };
     }
 
@@ -468,11 +494,6 @@ export class UserProfileService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
-
-  private async writerCtx(): Promise<new () => any> {
-    const { WriterAgentContext } = await import('@brian-agent/agent');
-    return WriterAgentContext;
-  }
 
   private async queryTable(
     table: string,
@@ -553,6 +574,7 @@ export class UserProfileService {
     writerPreferences: {
       language: string; style: string; depth: string; format: string; additional_preferences: string;
     } | null,
+    latestRecord: Record<string, unknown> | null,
   ): Promise<{ value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }> {
     switch (key) {
       case 'language_preference':
@@ -566,7 +588,40 @@ export class UserProfileService {
       case 'feedback_sensitivity':
         return this.aggregateFeedbackSensitivity();
       default:
-        return { value: null, confidence: 0, evidence: [] };
+        return this.aggregateCustomDimension(key, latestRecord);
+    }
+  }
+
+  private async aggregateCustomDimension(
+    key: string,
+    latestRecord: Record<string, unknown> | null,
+  ): Promise<{ value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }> {
+    if (!latestRecord?.id) {
+      return { value: null, confidence: 0, evidence: [{ source: 'no_generated_data' }] };
+    }
+
+    try {
+      const dimRows = await this.queryTable(USER_PROFILE_DIMENSION_DATA_TABLE, [
+        { field: 'profile_record_id', operator: Operator.EQ, value: latestRecord.id },
+        { field: 'direction_key', operator: Operator.EQ, value: key },
+      ]);
+      if (dimRows.length === 0) {
+        return { value: null, confidence: 0, evidence: [{ source: 'no_generated_data' }] };
+      }
+
+      const d = dimRows[0];
+      let value: unknown = null;
+      let evidence: unknown = [];
+      try { value = JSON.parse(String(d.dimension_value ?? 'null')); } catch { value = d.dimension_value; }
+      try { evidence = JSON.parse(String(d.evidence ?? '[]')); } catch { evidence = d.evidence; }
+
+      return {
+        value,
+        confidence: Number(d.confidence),
+        evidence: [{ source: 'generated_profile', version: latestRecord.version }],
+      };
+    } catch {
+      return { value: null, confidence: 0, evidence: [{ source: 'error' }] };
     }
   }
 
@@ -682,7 +737,7 @@ export class UserProfileService {
       try {
         const countRows = this.relationDb.queryRaw(
           `SELECT COUNT(*) as cnt, AVG(info_length) as avg_len FROM info_raw
-           WHERE session_id = ? AND info_creator_role = 'USER'`,
+           WHERE session_id = ? AND info_type = 'REQUEST'`,
           [sessionId],
         );
         if (countRows.length > 0) {
@@ -715,8 +770,8 @@ export class UserProfileService {
     let avgOverall = 0;
 
     try {
-      const evalOut = new (await this.getEvalOutputClass())();
-      const evalIn = Object.assign(new (await this.getEvalInputClass())(), {});
+      const evalOut = new GetEvaluationOutput();
+      const evalIn = Object.assign(new GetEvaluationInput(), {});
       await this.evolutorAgent.getEvaluation(evalIn, new EvolutorAgentContext(), evalOut);
       const evaluations = (evalOut as any).evaluations ?? [];
       evaluationCount = evaluations.length;
@@ -784,9 +839,10 @@ export class UserProfileService {
     directionKey: string,
     directionName: string,
     conversationText: string,
+    dirConfig: Record<string, unknown>,
     config: Record<string, unknown>,
   ): Promise<{ value: unknown; confidence: number; evidence: unknown[] }> {
-    const templateId = String(config.profile_analysis_prompt_template_id ?? '');
+    const templateId = String(dirConfig.prompt_template_id ?? config.profile_analysis_prompt_template_id ?? '');
 
     let prompt: string;
     if (templateId) {
@@ -813,64 +869,54 @@ export class UserProfileService {
     }
 
     try {
-      const matchOut = new MatchLLMOutput();
-      await this.llmCore.matchLLM(
-        Object.assign(new MatchLLMInput(), {
-          agent_id: 'user_profile_generation',
-          context_id: 'user_profile',
-          interact_id: IdGenerator.generate(),
-        }),
-        new LLMCoreContext(),
-        matchOut,
-      );
+      const dirLlmId = String(dirConfig.llm_id ?? '');
+      let llmId: string;
 
-      const llmId = matchOut.llm_id;
+      if (dirLlmId) {
+        llmId = dirLlmId;
+      } else {
+        const matchOut = new MatchLLMOutput();
+        await this.llmCore.matchLLM(
+          Object.assign(new MatchLLMInput(), {
+            agent_id: 'user_profile_generation',
+            context_id: 'user_profile',
+            interact_id: IdGenerator.generate(),
+          }),
+          new LLMCoreContext(),
+          matchOut,
+        );
+        llmId = matchOut.llm_id || '';
+      }
       if (!llmId) {
         return { value: this.statisticalFallback(directionKey, conversationText), confidence: 0.2, evidence: [] };
       }
 
-      const llmProviderId = (matchOut.llm as Record<string, unknown> | null)?.llm_provider_id as string | undefined;
-      if (llmProviderId) {
-        try {
-          const quotaOut = new CheckLLMQuotaOutput();
-          await this.llmCore.checkLLMQuota(
-            Object.assign(new CheckLLMQuotaInput(), { llm_provider_id: llmProviderId }),
-            new LLMCoreContext(),
-            quotaOut,
-          );
-          if (quotaOut.quota.daily.available <= 0) {
-            return { value: this.statisticalFallback(directionKey, conversationText), confidence: 0.2, evidence: [{ source: 'quota_exhausted' }] };
-          }
-        } catch {
-          /* best-effort: proceed even if quota check fails */
-        }
-      }
+      const temperature = Number(dirConfig.llm_temperature ?? 0.3);
+      const maxTokens = Number(dirConfig.llm_max_tokens ?? 512);
 
       const llmOut = new ExecLLMOutput();
       await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), {
           id: llmId,
-          params: { prompt, temperature: 0.3, max_tokens: 512 },
+          params: { prompt, temperature, max_tokens: maxTokens },
         }),
         new LLMContext(),
         llmOut,
       );
 
-      if (llmProviderId) {
-        try {
-          const estimatedTokens = Math.ceil((prompt.length + (llmOut.result?.length ?? 0)) / 4);
-          await this.llmCore.recordLLMUsage(
-            Object.assign(new RecordLLMUsageInput(), {
-              llm_provider_id: llmProviderId,
-              tokens_used: estimatedTokens,
-              call_count: 1,
-            }),
-            new LLMCoreContext(),
-            new RecordLLMUsageOutput(),
-          );
-        } catch {
-          /* best-effort usage recording */
-        }
+      try {
+        const estimatedTokens = Math.ceil((prompt.length + (llmOut.result?.length ?? 0)) / 4);
+        await this.llmCore.recordLLMUsage(
+          Object.assign(new RecordLLMUsageInput(), {
+            llm_provider_id: 'user_profile_generation',
+            tokens_used: estimatedTokens,
+            call_count: 1,
+          }),
+          new LLMCoreContext(),
+          new RecordLLMUsageOutput(),
+        );
+      } catch {
+        /* best-effort usage recording */
       }
 
       const resultText = llmOut.result || '';
@@ -987,15 +1033,5 @@ Return ONLY valid JSON, no other text.`;
         ]);
       }
     } catch { /* best-effort */ }
-  }
-
-  private async getEvalInputClass(): Promise<new () => any> {
-    const { GetEvaluationInput } = await import('@brian-agent/agent');
-    return GetEvaluationInput;
-  }
-
-  private async getEvalOutputClass(): Promise<new () => any> {
-    const { GetEvaluationOutput } = await import('@brian-agent/agent');
-    return GetEvaluationOutput;
   }
 }

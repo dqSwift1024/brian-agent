@@ -311,3 +311,47 @@ export interface MQStats {
   failed: number
   total: number
 }
+
+// ============================================================
+// 用户画像 types
+// ============================================================
+
+export interface ProfileDimension {
+  value: unknown
+  confidence: number
+  evidence: Array<Record<string, unknown>>
+  stability?: 'stable' | 'drifting' | 'emerging'
+}
+
+export interface ProfileEvolutionItem {
+  version: number
+  generated_at: number
+  profile_summary: string
+  change_summary: string
+}
+
+export interface UserProfileData {
+  session_id?: string
+  profile_version: number
+  generated_at: number
+  dimensions: Record<string, ProfileDimension>
+  profile_summary: string
+  evolution_trend: ProfileEvolutionItem[]
+}
+
+export interface ProfileHistoryItem {
+  id: string
+  version: number
+  session_id: string
+  generated_at: number
+  profile_summary: string
+  change_summary: string
+}
+
+export interface ProfileVersionData {
+  version: number
+  generated_at: number
+  session_id: string
+  dimensions: Record<string, ProfileDimension>
+  profile_summary: string
+}

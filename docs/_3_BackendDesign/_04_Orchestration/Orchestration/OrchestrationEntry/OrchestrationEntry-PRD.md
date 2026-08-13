@@ -34,7 +34,7 @@
    b. 调用 RelationDBProvider.insertDB 向 `orchestration_work` 表插入工作记录：`{ work_id, interact_id, session_id, user_query, status: "CREATED" }`；
 
 2. **保存用户请求**
-   a. 调用 InfoCore.saveInfo，传入 `{ session_id, work_id, interact_id, info_creator_id: "USER", info_creator_role: "REQUEST", info: user_query }`，记录用户的原始输入；
+   a. 调用 InfoCore.saveInfo，传入 `{ session_id, work_id, interact_id, info_type: "REQUEST", info_creator_role: "USER", info_creator_id: "", info: user_query }`，记录用户的原始输入（消息角色由上游调用方通过 `info_type`/`info_creator_role`/`info_creator_id` 指定，默认 REQUEST/USER/空）；
 
 3. **选择编排策略**
    a. 若 `force_orchestration_strategy` 非空，直接使用入参指定的策略；
@@ -52,7 +52,7 @@
    c. 若编排策略执行失败，将 status 置为 "FAILED"，记录错误信息并返回 false；
 
 7. **完成工作**
-   a. 调用 InfoCore.saveInfo，传入 `{ session_id, work_id, interact_id, info_creator_id: work_id, info_creator_role: "RESPONSE", info: final_response }`；
+   a. 调用 InfoCore.saveInfo，传入 `{ session_id, work_id, interact_id, info_type: "RESPONSE", info_creator_role: "AGENT", info_creator_id: work_id, info: final_response }`；
    b. 调用 RelationDBProvider.updateDB 将 status 置为 "COMPLETED"；
    c. 将 work_id、interact_id、orchestration_strategy、final_response 写入 output 返回；
 

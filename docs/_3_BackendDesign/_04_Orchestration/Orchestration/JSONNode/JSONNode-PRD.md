@@ -81,13 +81,13 @@
 **参数**：
 ```json
 {
-  "info_creator_role": "REQUEST",
+  "info_type": "REQUEST",
   "update_work_status": "CREATED"
 }
 ```
 
 **处理逻辑**：
-1. 调用 InfoCore.saveInfo 将输入内容（来自执行上下文的 user_query）保存为 REQUEST 角色；
+1. 调用 InfoCore.saveInfo 将输入内容（来自执行上下文的 user_query）保存为 info_type=REQUEST、info_creator_role=USER；
 2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status；
 
 ### 3.2. BUILD_WORK_CONTEXT — 构建工作上下文
@@ -330,7 +330,7 @@ Simple 编排策略使用 JSONNode 的声明式定义：
     {
       "node_id": "node_1",
       "node_type": "SAVE_USER_INPUT",
-      "params": { "info_creator_role": "REQUEST", "update_work_status": "PROCESSING" },
+      "params": { "info_type": "REQUEST", "update_work_status": "PROCESSING" },
       "next": "node_2",
       "on_error": "node_8"
     },
@@ -397,7 +397,7 @@ Simple 编排策略使用 JSONNode 的声明式定义：
     {
       "node_id": "node_1",
       "node_type": "SAVE_USER_INPUT",
-      "params": { "info_creator_role": "REQUEST", "update_work_status": "PROCESSING" },
+      "params": { "info_type": "REQUEST", "update_work_status": "PROCESSING" },
       "next": "node_2",
       "on_error": "node_10"
     },

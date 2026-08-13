@@ -335,8 +335,9 @@ export class OrchestrationExecutionService {
         session_id: context.session_id ?? '',
         work_id,
         interact_id,
-        info_creator_id: agent_id,
+        info_type: 'ACT',
         info_creator_role: 'AGENT',
+        info_creator_id: agent_id,
         info: `${task_content} → ${execOutput.answer}`,
       });
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());

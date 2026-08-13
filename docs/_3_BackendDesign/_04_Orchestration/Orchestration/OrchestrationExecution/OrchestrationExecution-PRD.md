@@ -111,7 +111,7 @@
 4. 获取 answer、iterations、trace_id；
 5. 调用 RelationDBProvider.updateDB 更新 `orchestration_agent_execution` 表记录（status=COMPLETED，answer，iterations，trace_id）；
 6. 调用 AgentLibrary.recordAgentUsage 记录本次使用；
- 7. 调用 InfoCore.saveInfo 保存 Agent 本次执行的任务与结果：`{ session_id, work_id, interact_id, info_creator_id: agent_id, info_creator_role: "AGENT", info: "{ task_content } → { answer }" }`；
+ 7. 调用 InfoCore.saveInfo 保存 Agent 本次执行的任务与结果：`{ session_id, work_id, interact_id, info_type: "ACT", info_creator_role: "AGENT", info_creator_id: agent_id, info: "{ task_content } → { answer }" }`；
 8. 将 answer、trace_id、iterations、elapsed_ms 写入 output 返回；
 
 ### 2.3. 执行 DAG（execDAG）
@@ -140,7 +140,7 @@
 
 2. **DAG 执行循环**
    a. 若 `max_concurrent > 1`（并发执行模式）：
-       - 从 ready_queue 弹出最多 max_concurrent 个 Agent，并行调用 execSingleAgent 执行（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_creator_role=AGENT 持久化）；
+        - 从 ready_queue 弹出最多 max_concurrent 个 Agent，并行调用 execSingleAgent 执行（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_type=ACT、info_creator_role=AGENT 持久化）；
       - 每个 Agent 执行完成后：
         - 将其 output 存入 agent_outputs；
         - 遍历其下游邻接 Agent，将入度减 1；
@@ -151,7 +151,7 @@
         ```
         增强的 task_content = "上游Agent完成的工作摘要：\n{上游输出1}\n{上游输出2}\n---\n当前任务：{原始 task_content}"
         ```
-       - 调用 execSingleAgent 执行该 Agent，将 `task_content` 替换为增强后的内容；（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_creator_role=AGENT 持久化）
+       - 调用 execSingleAgent 执行该 Agent，将 `task_content` 替换为增强后的内容；（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_type=ACT、info_creator_role=AGENT 持久化）
       - 将其 output 存入 agent_outputs；
       - 遍历其下游邻接 Agent，将入度减 1；
       - 若下游 Agent 入度变为 0，将其加入 ready_queue；

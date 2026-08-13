@@ -41,3 +41,6 @@
 `context_id`：上下文快照 ID，AgentContext 模块在每次调用 buildAgentContext 时生成的 UUID，用于唯一标识一次上下文构建的元数据快照，支持后续追溯和可视化；
 `snapshot`：上下文快照，AgentContext 模块持久化的某次执行上下文元数据记录，包含 context_id、session_id、agent_id、work_id、trace_id、context_total_count、context_sources_summary，不存储 info 内容本身；
 `source`：上下文来源分类，标识 info 记录在上下文中的来源渠道；有效值包括 pinned（钉住消息）、timeline（时间线关联）、tag_relative（标签相关性）、similarity（语义相似度）、keyword（关键词匹配）、random（随机采样）；
+`info_type`：信息类型，标识一条 info 记录"是什么"，用于区分请求、回复与 Agent 执行过程中的中间产物；有效值包括 REQUEST（用户请求/编排输入）、RESPONSE（模型/编排的最终回复）、THINK（Agent 思考）、SKILL（技能调用结果）、MCP（MCP 调用结果）、ACT（Agent 行动/执行）、REFLECT（Agent 反思）；
+`info_creator_role`：信息产生方角色，标识一条 info 记录"是谁产生的"；有效值包括 USER（用户）、LEARNING（自学习）、AGENT（Agent）、SKILL（技能）、MCP（MCP 工具）；
+`info_creator_id`：信息产生方实例 ID，标识具体哪个实例产生了该 info；UUID 类型，可为空；USER 与 LEARNING 没有具体实例，其值为空字符串；AGENT、SKILL、MCP 对应各自的实例 ID（如 agent_id、skill_id、mcp_id）；

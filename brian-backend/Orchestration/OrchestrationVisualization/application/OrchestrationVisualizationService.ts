@@ -678,7 +678,7 @@ export class OrchestrationVisualizationService {
       ]);
       for (const row of rows) {
         const id = row.id as string;
-        if (id) roles[id] = (row.info_creator_role as string) ?? 'AGENT';
+        if (id) roles[id] = (row.info_type as string) ?? 'ACT';
       }
     } catch { /* degrade gracefully */ }
     return roles;

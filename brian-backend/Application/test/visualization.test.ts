@@ -41,7 +41,7 @@ function insInfoRaw(db: RelationDBAccess, o: Record<string, unknown>) {
   const defaults: Record<string, unknown> = {
     id: genId(), created: now(), updated: now(),
     session_id: 'sess-1', work_id: 'work-1', interact_id: 'inter-1',
-    info_id: genId(), info_creator_id: 'creator-1', info_creator_role: 'USER',
+    info_id: genId(), info_type: 'REQUEST', info_creator_role: 'USER', info_creator_id: 'creator-1',
     info: 'Hello world', info_length: 11, pin: 0,
   };
   for (const [k, dv] of Object.entries(defaults)) {
@@ -156,7 +156,7 @@ describe('VisualizationService', () => {
   describe('getVisualizedMessages', () => {
     it('TC-VIS-001: by session_id returns messages with extended fields', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1',
-        info_id: 'info-1', info_creator_role: 'USER', info: 'Hello', info_length: 11 });
+        info_id: 'info-1', info_type: 'REQUEST', info: 'Hello', info_length: 11 });
 
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
@@ -169,7 +169,7 @@ describe('VisualizationService', () => {
       expect(m.session_id).toBe('sess-1');
       expect(m.work_id).toBe('work-1');
       expect(m.info_id).toBe('info-1');
-      expect(m.info_creator_role).toBe('USER');
+      expect(m.info_type).toBe('REQUEST');
       expect(m.info).toBe('Hello');
       expect(m.info_length).toBe(11);
       expect(m).toHaveProperty('parent_info_ids');
@@ -239,7 +239,7 @@ describe('VisualizationService', () => {
     });
 
     it('TC-VIS-007: include_context_source=true for AGENT msg', async () => {
-      insInfoRaw(ctxEnv.db, { info_id: 'info-agent', info_creator_role: 'AGENT' });
+      insInfoRaw(ctxEnv.db, { info_id: 'info-agent', info_type: 'RESPONSE', info_creator_role: 'AGENT' });
       insInfoContextConfig(ctxEnv.db, { total: 10, base_timeline_count: 10 });
 
       const input = new GetVisualizedMessagesInput();
@@ -254,7 +254,7 @@ describe('VisualizationService', () => {
     });
 
     it('TC-VIS-008: include_context_source=true for USER msg -> no context_source', async () => {
-      insInfoRaw(ctxEnv.db, { info_id: 'info-user', info_creator_role: 'USER' });
+      insInfoRaw(ctxEnv.db, { info_id: 'info-user', info_type: 'REQUEST' });
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
       input.include_context_source = true;
@@ -1075,9 +1075,9 @@ describe('VisualizationService', () => {
   describe('getVisualizedMessageDAG', () => {
     it('TC-VIS-095: Get DAG -> graph(nodes+edges) + metadata', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-user',
-        info_creator_role: 'USER', info: 'Q', info_length: 1 });
+        info_type: 'REQUEST', info: 'Q', info_length: 1 });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-agent',
-        info_creator_role: 'AGENT', info: 'A', info_length: 1 });
+        info_type: 'RESPONSE', info: 'A', info_length: 1 });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1103,9 +1103,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-097: include_question_answer_edges=true (default) -> QA edges', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-user',
-        info_creator_role: 'USER', info: 'Q', info_length: 1 });
+        info_type: 'REQUEST', info: 'Q', info_length: 1 });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-agent',
-        info_creator_role: 'AGENT', info: 'A', info_length: 1 });
+        info_type: 'RESPONSE', info: 'A', info_length: 1 });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1118,9 +1118,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-098: include_question_answer_edges=false -> no QA', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-user',
-        info_creator_role: 'USER', info: 'Q', info_length: 1 });
+        info_type: 'REQUEST', info: 'Q', info_length: 1 });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-agent',
-        info_creator_role: 'AGENT', info: 'A', info_length: 1 });
+        info_type: 'RESPONSE', info: 'A', info_length: 1 });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1132,8 +1132,8 @@ describe('VisualizationService', () => {
     });
 
     it('TC-VIS-099: include_citation_edges=true (default) -> CITATION edges', async () => {
-      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a', info_creator_role: 'AGENT', info: 'A' });
-      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_creator_role: 'AGENT', info: 'B' });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a', info_type: 'RESPONSE', info: 'A' });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_type: 'RESPONSE', info: 'B' });
       insInfoGraph(ctxEnv.db, 'info-a', 'info-b');
 
       const input = new GetVisualizedMessageDAGInput();
@@ -1147,7 +1147,7 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-100: include_citation_edges=false -> no citation', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a', info: 'A' });
-      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_creator_role: 'AGENT', info: 'B' });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_type: 'RESPONSE', info: 'B' });
       insInfoGraph(ctxEnv.db, 'info-a', 'info-b');
 
       const input = new GetVisualizedMessageDAGInput();
@@ -1161,9 +1161,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-101: Only QA edges', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-q',
-        info_creator_role: 'USER', info: 'Q' });
+        info_type: 'REQUEST', info: 'Q' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-a',
-        info_creator_role: 'AGENT', info: 'A' });
+        info_type: 'RESPONSE', info: 'A' });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1178,9 +1178,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-102: Only citation edges', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-q',
-        info_creator_role: 'USER', info: 'Q' });
+        info_type: 'REQUEST', info: 'Q' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a',
-        info_creator_role: 'AGENT', info: 'A' });
+        info_type: 'RESPONSE', info: 'A' });
       insInfoGraph(ctxEnv.db, 'info-q', 'info-a');
 
       const input = new GetVisualizedMessageDAGInput();
@@ -1208,9 +1208,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-104: Same work_id -> QUESTION_ANSWER edge', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-s', info_id: 'info-q',
-        info_creator_role: 'USER', info: 'Q' });
+        info_type: 'REQUEST', info: 'Q' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-s', info_id: 'info-a',
-        info_creator_role: 'AGENT', info: 'A' });
+        info_type: 'RESPONSE', info: 'A' });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1224,9 +1224,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-105: Cross-work citation -> CITATION edge', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-A', info_id: 'info-citing',
-        info_creator_role: 'AGENT', info: 'C' });
+        info_type: 'RESPONSE', info: 'C' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-B', info_id: 'info-cited',
-        info_creator_role: 'AGENT', info: 'D' });
+        info_type: 'RESPONSE', info: 'D' });
       insInfoGraph(ctxEnv.db, 'info-citing', 'info-cited');
 
       const input = new GetVisualizedMessageDAGInput();
@@ -1241,7 +1241,7 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-106: Nodes have all properties', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', interact_id: 'inter-1',
-        info_id: 'info-1', info_creator_role: 'USER', info: 'Hello', info_length: 5 });
+        info_id: 'info-1', info_type: 'REQUEST', info: 'Hello', info_length: 5 });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1253,15 +1253,15 @@ describe('VisualizationService', () => {
       expect(node).toHaveProperty('info_id', 'info-1');
       expect(node).toHaveProperty('work_id', 'work-1');
       expect(node).toHaveProperty('interact_id', 'inter-1');
-      expect(node).toHaveProperty('info_creator_role', 'USER');
+      expect(node).toHaveProperty('info_type', 'REQUEST');
       expect(node).toHaveProperty('info_summary');
     });
 
     it('TC-VIS-107: metadata has counts', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-user',
-        info_creator_role: 'USER', info: 'Q' });
+        info_type: 'REQUEST', info: 'Q' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-agent',
-        info_creator_role: 'AGENT', info: 'A' });
+        info_type: 'RESPONSE', info: 'A' });
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1383,7 +1383,7 @@ describe('VisualizationService', () => {
     });
 
     it('TC-VIS-127: Query info -> returns message content', async () => {
-      insInfoRaw(ctxEnv.db, { info_id: 'info-1', info: 'message content', info_creator_role: 'USER' });
+      insInfoRaw(ctxEnv.db, { info_id: 'info-1', info: 'message content', info_type: 'REQUEST' });
 
       const input = new GetResourceInput();
       input.resource_type = 'info';

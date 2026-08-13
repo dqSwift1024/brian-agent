@@ -2,8 +2,16 @@ import { Input, Context, Output } from '@brian-agent/base';
 
 export class UserProfileContext extends Context { session_id?: string; }
 
-export class ConfigProfileDirectionInput extends Input { directions!: Array<{ direction_key: string; direction_name: string; direction_description?: string; weight: number; enable: boolean; }>; }
+export class ConfigProfileDirectionInput extends Input {
+  directions!: Array<{
+    direction_key: string; direction_name: string; direction_description?: string;
+    weight: number; enable: boolean;
+    prompt_template_id?: string; llm_temperature?: number; llm_max_tokens?: number; llm_id?: string;
+  }>;
+}
 export class ConfigProfileDirectionOutput extends Output {}
+export class DeleteProfileDirectionInput extends Input { direction_key!: string; }
+export class DeleteProfileDirectionOutput extends Output {}
 
 export class GetProfileDirectionInput extends Input {}
 export class GetProfileDirectionOutput extends Output { directions: Array<Record<string, unknown>> = []; }

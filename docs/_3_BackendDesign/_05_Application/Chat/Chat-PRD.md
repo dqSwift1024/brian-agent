@@ -91,7 +91,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 1. 校验 `session_id` 和 `msg_content` 非空；
 2. 调用 `checkSessionOverflow` 检查会话是否已溢出（消息数超过上限），若溢出则返回错误；
 3. 生成 `work_id` 和 `interact_id`（UUID）；
-4. 调用 InfoCore.saveInfo 保存用户输入消息（info_creator_role=REQUEST）；
+4. 调用 InfoCore.saveInfo 保存用户输入消息（info_type=REQUEST、info_creator_role=USER、info_creator_id 为空）；
 5. 若 `citing_msg_ids` 非空，在 InfoCore.saveInfo 中传入 parent_info_ids 建立引用关系；
 6. 通过 SSE 推送 `loading` 事件（含 work_id）；
 7. 调用 OrchestrationEntry.receiveWork 提交工作（传入 session_id、user_query、force_orchestration_strategy）；
@@ -248,7 +248,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - page_size（INT，可选）：每页记录数
 
 **输出**：
-- messages：消息列表 [{ info_id, info_creator_role, info, created, pin, citing_count }]
+- messages：消息列表 [{ info_id, info_type, info_creator_role, info, created, pin, citing_count }]
 - total：总记录数
 
 **处理流程**：
@@ -270,7 +270,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - page_size（INT，可选）：每页记录数
 
 **输出**：
-- messages：消息列表 [{ info_id, info_creator_role, info, summary, created, session_id }]
+- messages：消息列表 [{ info_id, info_type, info_creator_role, info, summary, created, session_id }]
 - total：总记录数
 
 **处理流程**：
@@ -307,7 +307,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - session_id（STRING，必选）：会话 ID
 
 **输出**：
-- graph_structure：{ nodes: [{ info_id, info_creator_role, created, pin }], edges: [{ citing_info_id, cited_info_id }] }
+- graph_structure：{ nodes: [{ info_id, info_type, info_creator_role, created, pin }], edges: [{ citing_info_id, cited_info_id }] }
 
 **处理流程**：
 

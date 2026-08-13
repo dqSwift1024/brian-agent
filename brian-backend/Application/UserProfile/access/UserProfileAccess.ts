@@ -7,6 +7,7 @@ import { UserProfileService } from '../application/UserProfileService';
 import {
   UserProfileContext,
   ConfigProfileDirectionInput, ConfigProfileDirectionOutput,
+  DeleteProfileDirectionInput, DeleteProfileDirectionOutput,
   GetProfileDirectionInput, GetProfileDirectionOutput,
   GetUserProfileInput, GetUserProfileOutput,
   GenerateProfileInput, GenerateProfileOutput,
@@ -44,6 +45,13 @@ export class UserProfileAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.configProfileDirection(i, c, o);
+  }
+
+  async deleteProfileDirection(
+    i: DeleteProfileDirectionInput, c: UserProfileContext, o: DeleteProfileDirectionOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.deleteProfileDirection(i, c, o);
   }
 
   async getProfileDirection(

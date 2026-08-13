@@ -43,25 +43,28 @@ UserProfile Application 是用户画像的管理和展示层，负责：
 **URL**：`POST /api/profile/direction`
 
 **入参（ConfigProfileDirectionInput extends Input）**：
-- directions：画像维度列表 [{ direction_key, direction_name, direction_description, weight, enable }]
+- directions：画像维度列表 [{ direction_key, direction_name, direction_description, weight, enable, prompt_template_id, llm_temperature, llm_max_tokens, llm_id }]
 
 | 维度字段 | 类型 | 说明 |
 |---------|------|------|
-| direction_key | STRING | 维度唯一标识（如 "language_preference"、"reply_style"、"knowledge_interest"） |
-| direction_name | STRING | 维度显示名称（如"语言偏好"、"回复风格偏好"、"知识兴趣领域"） |
+| direction_key | STRING | 维度唯一标识（如 "industry"、"knowledge_domain"、"writing_style"） |
+| direction_name | STRING | 维度显示名称（如"行业"、"知识领域"、"文风"） |
 | direction_description | STRING | 维度描述 |
 | weight | INT | 维度权重（0-100），影响画像生成时该维度的分析深度 |
 | enable | BOOLEAN | 是否启用该维度 |
+| prompt_template_id | STRING | 维度专属 Prompt 模板 ID（可选，留空回退全局配置） |
+| llm_temperature | DOUBLE | LLM 调用温度（可选，默认 0.3） |
+| llm_max_tokens | INT | LLM 最大输出 Token（可选，默认 512） |
+| llm_id | STRING | 指定 LLM 模型 ID（可选，留空自动匹配） |
 
 **内置维度**：
 
 | direction_key | direction_name | 说明 | 默认权重 |
 |--------------|---------------|------|---------|
-| language_preference | 语言偏好 | 用户偏好的语言（中文/英文）及语言风格 | 20 |
-| reply_style | 回复风格偏好 | 用户偏好的回复风格（简洁/详细/创意/专业） | 25 |
-| knowledge_interest | 知识兴趣领域 | 用户关注的知识领域和话题（基于 Tag 分析） | 30 |
-| interaction_habit | 交互习惯 | 用户与系统的交互模式（提问频率、引用频率、反馈行为） | 15 |
-| feedback_sensitivity | 反馈敏感度 | 用户对系统回复的满意度倾向 | 10 |
+| industry | 行业 | 用户所属的基础行业，随数据积累逐步细化 | 30 |
+| knowledge_domain | 知识领域 | 用户掌握的基础知识领域，随数据积累逐步细化 | 30 |
+| writing_style | 文风 | 用户输入的表达风格特征 | 20 |
+| learning_tendency | 学习倾向 | 用户学习偏向广度还是深度 | 20 |
 
 **处理流程**：
 
@@ -76,12 +79,26 @@ UserProfile Application 是用户画像的管理和展示层，负责：
 **URL**：`GET /api/profile/direction`
 
 **输出**：
-- directions：画像维度列表 [{ direction_key, direction_name, direction_description, weight, enable, last_updated }]
+- directions：画像维度列表 [{ direction_key, direction_name, direction_description, weight, enable, prompt_template_id, llm_temperature, llm_max_tokens, llm_id, last_updated }]
 
 **处理流程**：
 
 1. 调用 RelationDBProvider.selectDB 查询 `user_profile_direction` 表；
 2. 返回维度列表；
+
+#### 3.1.3. 删除画像维度（deleteProfileDirection）
+
+**功能**：删除指定的画像维度
+
+**URL**：`DELETE /api/profile/direction`
+
+**入参（DeleteProfileDirectionInput extends Input）**：
+- direction_key：维度唯一标识（必选）
+
+**处理流程**：
+
+1. 调用 RelationDBProvider.delete 按 direction_key 删除 `user_profile_direction` 表记录；
+2. 已生成的历史维度数据不受影响（`user_profile_dimension_data` 表保留）；
 
 ### 3.2. 画像数据管理
 
@@ -328,11 +345,15 @@ UserProfile 模块的配置通过 Config Application 统一管理（`/api/config
 | id | 数据唯一标识 | UUID | N | 主键 | |
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
-| direction_key | 维度唯一标识 | VARCHAR | N | 唯一索引 | 如 "language_preference" |
+| direction_key | 维度唯一标识 | VARCHAR | N | 唯一索引 | 如 "industry"、"knowledge_domain" |
 | direction_name | 维度显示名称 | VARCHAR | N | | |
 | direction_description | 维度描述 | TEXT | Y | | |
 | weight | 维度权重 | INT | N | | 0-100 |
 | enable | 是否启用 | BOOLEAN | N | | 默认 true |
+| prompt_template_id | 维度专属 Prompt 模板 ID | VARCHAR | Y | | 留空回退全局配置 |
+| llm_temperature | LLM 调用温度 | DOUBLE | N | | 默认 0.3 |
+| llm_max_tokens | LLM 最大输出 Token | INT | N | | 默认 512 |
+| llm_id | 指定 LLM 模型 ID | VARCHAR | Y | | 留空自动匹配 |
 
 ### 5.2. 画像记录表（SQLite）
 

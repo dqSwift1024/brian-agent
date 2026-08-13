@@ -66,3 +66,6 @@ export * from './CDTProvider';
 
 // BookmarkProvider
 export * from './BookmarkProvider';
+
+// ChunkProvider
+export * from './ChunkProvider';

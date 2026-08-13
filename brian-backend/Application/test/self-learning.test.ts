@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   RelationDBAccess,
   SelectOneDBInput, SelectOneDBOutput, DBContext, Operator,
+  ChunkAccess,
 } from '@brian-agent/base';
 import { SelfLearningService } from '../SelfLearning/application/SelfLearningService';
 import {
@@ -39,6 +40,7 @@ describe('SelfLearningService', () => {
   let orchestrationEntry: any;
   let graphDb: any;
   let mq: any;
+  let chunkAccess: ChunkAccess;
   let logger: any;
   let service: SelfLearningService;
   const tempDirs: string[] = [];
@@ -55,6 +57,7 @@ describe('SelfLearningService', () => {
     orchestrationEntry = ctx.orchestrationEntry;
     graphDb = ctx.graphDBAccess;
     mq = ctx.mqAccess;
+    chunkAccess = new ChunkAccess(logger);
     logger = ctx.logger;
 
     initSelfLearningSchema(db);
@@ -79,7 +82,7 @@ describe('SelfLearningService', () => {
     service = new SelfLearningService(
       db, infoCore, mqCore, llmCore,
       evolutorAgent, writerAgent, orchestrationEntry,
-      graphDb, mq, logger,
+      graphDb, chunkAccess, mq, logger,
     );
   });
 
@@ -1230,24 +1233,28 @@ describe('SelfLearningService', () => {
       expect(selOutput.row?.status).toBe('FAILED');
     });
 
-    it('TC-SL-088: Learning result saved via infoCore.saveInfo', async () => {
-      vi.spyOn(infoCore, 'saveInfo').mockResolvedValue(true);
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+    it('TC-SL-088: Learning result submitted via receiveWorkAsync with LEARNING role', async () => {
+      const recvCalls: any[] = [];
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
         o.work_id = 'mock-work-id';
+        recvCalls.push(i);
         return true;
       });
       const file = makeFileRecord();
 
       await (service as any).handleDocumentLearning(file);
 
-      expect(infoCore.saveInfo).toHaveBeenCalled();
+      expect(recvCalls.length).toBeGreaterThanOrEqual(1);
+      expect(recvCalls[0].info_type).toBe('REQUEST');
+      expect(recvCalls[0].info_creator_role).toBe('LEARNING');
+      expect(recvCalls[0].info_creator_id).toBe('');
     });
 
     it('TC-SL-089: Chunked learning sequential — chunks processed in order', async () => {
       const callOrder: string[] = [];
       vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
         o.work_id = 'mock-work-id';
-        callOrder.push((i.user_input as string).substring(0, 20).trim());
+        callOrder.push((i.user_query as string).substring(0, 20).trim());
         return true;
       });
       const content = '## A\n' + 'x'.repeat(5000) + '\n## B\n' + 'y'.repeat(5000) + '\n## C\n' + 'z'.repeat(5000) + '\n';
@@ -1262,7 +1269,7 @@ describe('SelfLearningService', () => {
 
       expect(callOrder.length).toBeGreaterThanOrEqual(3);
       expect(callOrder[0]).toContain('A');
-      expect(callOrder[callOrder.length - 1]).toContain('C');
+      expect(callOrder[callOrder.length - 1]).toContain('z');
     });
 
     it('TC-SL-090: Learning rate control — each call processes one file', async () => {

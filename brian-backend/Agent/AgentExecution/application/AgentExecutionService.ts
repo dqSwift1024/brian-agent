@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess,
 } from '@brian-agent/base';
 import {
@@ -258,8 +258,9 @@ export class AgentExecutionService {
             session_id: sessionId,
             work_id: input.work_id || ctx.work_id || '',
             interact_id: input.interact_id || ctx.interact_id || '',
-            info_creator_id: input.agent_id,
+            info_type: 'ACT',
             info_creator_role: 'AGENT',
+            info_creator_id: input.agent_id,
             info: JSON.stringify({
               type: 'trace',
               trace_id: traceId,
@@ -428,9 +429,9 @@ export class AgentExecutionService {
     const parsed = parseJsonObject(llmOut.result);
     output.reasoning = String(parsed?.reasoning ?? llmOut.result);
     output.next_action = JSON.stringify(parsed?.next_action ?? { tool_type: 'NONE' });
-    output.token_usage = Number((llmOut.usage as Record<string, unknown> | undefined)?.total_tokens ?? 0);
+    output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
-    await this.saveStepInfo(ctx, input.agent_id, 'THINK', output.reasoning);
+    await this.saveStepInfo(ctx, 'THINK', 'AGENT', input.agent_id, output.reasoning);
     return true;
   }
 
@@ -462,7 +463,7 @@ export class AgentExecutionService {
       output.result = typeof skillOut.result === 'string'
         ? skillOut.result
         : JSON.stringify(skillOut.result ?? {});
-      await this.saveStepInfo(ctx, input.agent_id, 'SKILL', output.result);
+      await this.saveStepInfo(ctx, 'SKILL', 'SKILL', toolId, output.result);
       return true;
     }
 
@@ -480,12 +481,12 @@ export class AgentExecutionService {
       output.result = typeof mcpOut.result === 'string'
         ? mcpOut.result
         : JSON.stringify(mcpOut.result ?? {});
-      await this.saveStepInfo(ctx, input.agent_id, 'MCP', output.result);
+      await this.saveStepInfo(ctx, 'MCP', 'MCP', toolId, output.result);
       return true;
     }
 
     output.result = 'No external tool required';
-    await this.saveStepInfo(ctx, input.agent_id, 'ACT', output.result);
+    await this.saveStepInfo(ctx, 'ACT', 'AGENT', input.agent_id, output.result);
     return true;
   }
 
@@ -530,8 +531,8 @@ export class AgentExecutionService {
     const parsed = parseJsonObject(llmOut.result);
     output.should_continue = Boolean(parsed?.should_continue ?? true);
     output.reflection = String(parsed?.reflection ?? llmOut.result);
-    output.token_usage = Number((llmOut.usage as Record<string, unknown> | undefined)?.total_tokens ?? 0);
-    await this.saveStepInfo(ctx, input.agent_id, 'REFLECT', output.reflection);
+    output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
+    await this.saveStepInfo(ctx, 'REFLECT', 'AGENT', input.agent_id, output.reflection);
     return true;
   }
 
@@ -564,7 +565,7 @@ export class AgentExecutionService {
       llmOut,
     );
     output.answer = llmOut.result || '';
-    output.token_usage = Number((llmOut.usage as Record<string, unknown> | undefined)?.total_tokens ?? 0);
+    output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
     if (ctx.session_id) {
       try {
@@ -573,8 +574,9 @@ export class AgentExecutionService {
             session_id: ctx.session_id,
             work_id: ctx.work_id || '',
             interact_id: ctx.interact_id || '',
+            info_type: 'RESPONSE',
+            info_creator_role: 'AGENT',
             info_creator_id: input.agent_id,
-            info_creator_role: 'RESPONSE',
             info: output.answer,
           }),
           new InfoCoreContext(),
@@ -763,6 +765,11 @@ export class AgentExecutionService {
       agent: { agent_id: string; llm_id: string; soul_id: string };
       skillIds: string[];
       mcpIds: string[];
+      skills: { id: string; brief: string; work: string }[];
+      mcps: { id: string; title: string; brief: string }[];
+      toolsJson: string;
+      agentName: string;
+      domain: string;
       contextData: string;
       maxFromRule: number;
       config: AgentExecutionConfigRecord | null;
@@ -827,6 +834,11 @@ export class AgentExecutionService {
       agent: { agent_id: string; llm_id: string; soul_id: string };
       skillIds: string[];
       mcpIds: string[];
+      skills: { id: string; brief: string; work: string }[];
+      mcps: { id: string; title: string; brief: string }[];
+      toolsJson: string;
+      agentName: string;
+      domain: string;
       contextData: string;
       maxFromRule: number;
       config: AgentExecutionConfigRecord | null;
@@ -1211,8 +1223,9 @@ export class AgentExecutionService {
 
   private async saveStepInfo(
     ctx: AgentExecutionContext,
-    agentId: string,
-    role: string,
+    infoType: string,
+    creatorRole: string,
+    creatorId: string,
     info: string,
   ): Promise<void> {
     if (!ctx.session_id) return;
@@ -1222,8 +1235,9 @@ export class AgentExecutionService {
           session_id: ctx.session_id,
           work_id: ctx.work_id || '',
           interact_id: ctx.interact_id || '',
-          info_creator_id: agentId,
-          info_creator_role: role,
+          info_type: infoType,
+          info_creator_role: creatorRole,
+          info_creator_id: creatorId,
           info,
         }),
         new InfoCoreContext(),

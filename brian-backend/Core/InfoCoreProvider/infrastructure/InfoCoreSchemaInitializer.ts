@@ -48,8 +48,9 @@ export class InfoCoreSchemaInitializer {
         "work_id"           TEXT    NOT NULL,
         "interact_id"       TEXT    NOT NULL,
         "info_id"           TEXT    NOT NULL,
-        "info_creator_id"   TEXT    NOT NULL,
-        "info_creator_role" TEXT    NOT NULL,
+        "info_type"         TEXT    NOT NULL,
+        "info_creator_role" TEXT    NOT NULL DEFAULT '',
+        "info_creator_id"   TEXT    NOT NULL DEFAULT '',
         "info"              TEXT    NOT NULL,
         "info_length"       INTEGER NOT NULL DEFAULT 0,
         "pin"               INTEGER NOT NULL DEFAULT 0
@@ -60,6 +61,9 @@ export class InfoCoreSchemaInitializer {
     );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_interact_id" ON "${INFO_RAW_TABLE}" ("interact_id")`,
+    );
+    this.relationDb.executeRaw(
+      `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_info_type" ON "${INFO_RAW_TABLE}" ("info_type")`,
     );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_info_creator_id" ON "${INFO_RAW_TABLE}" ("info_creator_id")`,

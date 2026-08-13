@@ -183,6 +183,7 @@ export class ConfigSelfLearningInput extends Input {
   tag_aging_cron?: string;
   orphan_tag_check_cron?: string;
   document_split_threshold?: number;
+  chunk_overlap_ratio?: number;
 }
 
 export class ConfigSelfLearningOutput extends Output {

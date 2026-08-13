@@ -42,8 +42,9 @@ async function insertInfoRawRow(db: RelationDBAccess, sessionId: string, infoId:
     { field: 'work_id', value: 'test-work-id' },
     { field: 'interact_id', value: 'test-interact-id' },
     { field: 'info_id', value: infoId },
-    { field: 'info_creator_id', value: 'USER' },
-    { field: 'info_creator_role', value: 'REQUEST' },
+    { field: 'info_type', value: 'REQUEST' },
+    { field: 'info_creator_role', value: 'USER' },
+    { field: 'info_creator_id', value: '' },
     { field: 'info', value: info },
     { field: 'info_length', value: info.length },
     { field: 'pin', value: pinVal },
@@ -580,7 +581,7 @@ describe('ChatService', () => {
       await service.submitWork(input, c, output);
 
       const saveCalls = saveInfoSpy.mock.calls;
-      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_creator_role === 'REQUEST');
+      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
       expect(userSaveCall).toBeDefined();
       expect(userSaveCall[0].parent_info_ids).toEqual(['info-1', 'info-2']);
       saveInfoSpy.mockRestore();
@@ -753,7 +754,7 @@ describe('ChatService', () => {
       expect(output.interact_id).toEqual(expect.any(String));
 
       const saveCalls = saveInfoSpy.mock.calls;
-      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_creator_role === 'REQUEST');
+      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
       expect(userSaveCall).toBeDefined();
       expect(userSaveCall[0].parent_info_ids).toEqual(['non-existent-id-1', 'non-existent-id-2']);
       saveInfoSpy.mockRestore();
@@ -1043,14 +1044,14 @@ describe('ChatService', () => {
     it('TC-CHAT-090: Returns messages with citing_count from lastNInfo', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'hello',
       });
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
         info_creator_id: 'agent-1',
-        info_creator_role: 'RESPONSE',
+        info_type: 'RESPONSE',
         info: 'world',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1082,8 +1083,8 @@ describe('ChatService', () => {
     it('getChatHistory: Uses provided lastN when specified', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'test msg',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1100,8 +1101,8 @@ describe('ChatService', () => {
       for (const info of ['1', '2', '3']) {
         const saveInput = Object.assign(new SaveInfoInput(), {
           session_id: 'test',
-          info_creator_id: 'USER',
-          info_creator_role: 'REQUEST',
+          info_creator_id: '',
+          info_type: 'REQUEST',
           info,
         });
         await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1123,8 +1124,8 @@ describe('ChatService', () => {
     it('TC-CHAT-105: Returns filtered results from keywordKInfo', async () => {
       const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [
-          { info_id: 'msg-1', info_creator_role: 'REQUEST', info: 'hello world', created: 1000, session_id: 's1' },
-          { info_id: 'msg-2', info_creator_role: 'RESPONSE', info: 'hello back', created: 2000, session_id: 's1' },
+          { info_id: 'msg-1', info_type: 'REQUEST', info: 'hello world', created: 1000, session_id: 's1' },
+          { info_id: 'msg-2', info_type: 'RESPONSE', info: 'hello back', created: 2000, session_id: 's1' },
         ];
         o.total = 2;
         return true;
@@ -1141,14 +1142,14 @@ describe('ChatService', () => {
       expect(output.messages.length).toBe(2);
       expect(output.total).toBe(2);
       expect(output.messages[0].info_id).toBe('msg-1');
-      expect(output.messages[0].info_creator_role).toBe('REQUEST');
+      expect(output.messages[0].info_type).toBe('REQUEST');
     });
 
     it('searchMessage: Filters by session_id when provided', async () => {
       const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [
-          { info_id: 'msg-1', info_creator_role: 'REQUEST', info: 'hello', created: 1000, session_id: 's1' },
-          { info_id: 'msg-2', info_creator_role: 'RESPONSE', info: 'hello', created: 2000, session_id: 's2' },
+          { info_id: 'msg-1', info_type: 'REQUEST', info: 'hello', created: 1000, session_id: 's1' },
+          { info_id: 'msg-2', info_type: 'RESPONSE', info: 'hello', created: 2000, session_id: 's2' },
         ];
         o.total = 2;
         return true;
@@ -1225,8 +1226,8 @@ describe('ChatService', () => {
     it('TC-CHAT-115: Valid graph returns graph_structure with nodes and edges', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'message 1',
         parent_info_ids: [],
       });
@@ -1235,7 +1236,7 @@ describe('ChatService', () => {
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
         info_creator_id: 'agent-1',
-        info_creator_role: 'RESPONSE',
+        info_type: 'RESPONSE',
         info: 'message 2',
         parent_info_ids: [],
       });
@@ -1582,8 +1583,8 @@ describe('ChatService', () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
         work_id: 'work-1',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'w1-msg',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1601,8 +1602,8 @@ describe('ChatService', () => {
     it('getChatHistory: messages contain citing_count field', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'cited message',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1639,9 +1640,9 @@ describe('ChatService', () => {
     it('searchMessage: pagination works with keyword', async () => {
       const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [
-          { info_id: 'm1', info_creator_role: 'REQUEST', info: 'test a', created: 1, session_id: 's1' },
-          { info_id: 'm2', info_creator_role: 'REQUEST', info: 'test b', created: 2, session_id: 's1' },
-          { info_id: 'm3', info_creator_role: 'RESPONSE', info: 'test c', created: 3, session_id: 's1' },
+          { info_id: 'm1', info_type: 'REQUEST', info: 'test a', created: 1, session_id: 's1' },
+          { info_id: 'm2', info_type: 'REQUEST', info: 'test b', created: 2, session_id: 's1' },
+          { info_id: 'm3', info_type: 'RESPONSE', info: 'test c', created: 3, session_id: 's1' },
         ];
         o.total = 3;
         return true;
@@ -1662,11 +1663,11 @@ describe('ChatService', () => {
     it('TC-CHAT-107: searchMessage pagination returns correct page with offset', async () => {
       const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [
-          { info_id: 'p1', info_creator_role: 'REQUEST', info: 'a', created: 1, session_id: 's1' },
-          { info_id: 'p2', info_creator_role: 'RESPONSE', info: 'b', created: 2, session_id: 's1' },
-          { info_id: 'p3', info_creator_role: 'REQUEST', info: 'c', created: 3, session_id: 's1' },
-          { info_id: 'p4', info_creator_role: 'RESPONSE', info: 'd', created: 4, session_id: 's1' },
-          { info_id: 'p5', info_creator_role: 'REQUEST', info: 'e', created: 5, session_id: 's1' },
+          { info_id: 'p1', info_type: 'REQUEST', info: 'a', created: 1, session_id: 's1' },
+          { info_id: 'p2', info_type: 'RESPONSE', info: 'b', created: 2, session_id: 's1' },
+          { info_id: 'p3', info_type: 'REQUEST', info: 'c', created: 3, session_id: 's1' },
+          { info_id: 'p4', info_type: 'RESPONSE', info: 'd', created: 4, session_id: 's1' },
+          { info_id: 'p5', info_type: 'REQUEST', info: 'e', created: 5, session_id: 's1' },
         ];
         o.total = 5;
         return true;
@@ -1700,8 +1701,8 @@ describe('ChatService', () => {
     it('TC-CHAT-119: node properties include info_id, info_creator_role, created, pin', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'graph-props',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'node message',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1719,8 +1720,8 @@ describe('ChatService', () => {
     it('TC-CHAT-120: edge properties include citing_info_id and cited_info_id', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'edge-props',
-        info_creator_id: 'USER',
-        info_creator_role: 'REQUEST',
+        info_creator_id: '',
+        info_type: 'REQUEST',
         info: 'edge source',
       });
       await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1728,7 +1729,7 @@ describe('ChatService', () => {
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'edge-props',
         info_creator_id: 'agent-1',
-        info_creator_role: 'RESPONSE',
+        info_type: 'RESPONSE',
         info: 'edge target',
       });
       await ctx.infoCore.saveInfo(saveInput2, new InfoCoreContext(), new SaveInfoOutput());

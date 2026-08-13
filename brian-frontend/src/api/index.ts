@@ -4,6 +4,7 @@ import type {
   ModelProvider, ModelInfo, LearningStats, LearningProgress,
   SystemHealth, UserProfile, LibraryPath,
   ConfigTreeLayer,
+  UserProfileData, ProfileVersionData, ProfileHistoryItem,
 } from './types'
 
 const API_BASE = '/api'
@@ -234,6 +235,20 @@ export const profileApi = {
     request<void>(`/profile/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify(data) }),
 }
 
+export const userProfileApi = {
+  get: (sessionId?: string) =>
+    request<UserProfileData>(`/profile${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+  generate: (sessionId?: string, directions?: string[]) =>
+    request<ProfileVersionData>('/profile/generate', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, directions }),
+    }),
+  history: (sessionId?: string, limit?: number) =>
+    request<{ history: ProfileHistoryItem[] }>(`/profile/history${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}${limit ? `&limit=${limit}` : ''}`).then(r => r.history),
+  version: (version: number, sessionId?: string) =>
+    request<ProfileVersionData>(`/profile/version/${version}${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+}
+
 export interface VectorSearchResult { id: string; content: string; score: number; user_id: string | null; metadata: Record<string, unknown> | null }
 
 export const vectorDbApi = {
@@ -292,6 +307,7 @@ export const cdtApi = {
     fetch(`${API_BASE}/cdt/insert-text`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }),
   spoofEnv: (env: Record<string, unknown>) =>
     fetch(`${API_BASE}/cdt/spoof-env`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(env) }),
+  cookies: () => request<{ cookiesJson: string }>('/cdt/cookies'),
 }
 
 export interface BookmarkFolder { id: string; name: string; parent_id: string; sort_order: number; children: BookmarkFolder[]; items: BookmarkItem[] }

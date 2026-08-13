@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Clock, Brain, Database, Network, GitBranch,
   Search, Trash2, Plus, ChevronRight, ArrowLeft,
   Folder, X, CheckSquare, Square, FileText,
+  UserRound, History, RefreshCw, Sparkles, Loader2,
 } from '@lucide/vue'
-import { chatApi, memoryApi, libraryApi } from '@/api'
-import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath } from '@/api/types'
+import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
+import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
@@ -15,13 +16,14 @@ import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 const router = useRouter()
 
 // Tabs
-const activeTab = ref<'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph'>('history')
+const activeTab = ref<'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile'>('history')
 const tabs = [
   { key: 'history' as const, label: '历史', icon: Clock },
   { key: 'memory' as const, label: '记忆', icon: Brain },
   { key: 'library' as const, label: '资料库', icon: Database },
   { key: 'tagGraph' as const, label: 'Tag图', icon: Network },
   { key: 'keywordGraph' as const, label: '关键词图', icon: GitBranch },
+  { key: 'profile' as const, label: '画像', icon: UserRound },
 ]
 
 // History tab
@@ -170,6 +172,73 @@ async function handleDeleteLibrary(id: string) {
   libraries.value = libraries.value.filter(l => l.id !== id)
 }
 
+// Profile tab
+const profile = ref<UserProfileData | null>(null)
+const profileHistory = ref<ProfileHistoryItem[]>([])
+const loadingProfile = ref(false)
+const generatingProfile = ref(false)
+const selectedVersion = ref<ProfileVersionData | null>(null)
+const loadingVersion = ref(false)
+
+async function loadProfile() {
+  loadingProfile.value = true
+  try {
+    profile.value = await userProfileApi.get()
+    profileHistory.value = await userProfileApi.history()
+  } catch { /* ignore */ }
+  finally { loadingProfile.value = false }
+}
+
+async function handleGenerateProfile() {
+  generatingProfile.value = true
+  try {
+    await userProfileApi.generate()
+    await loadProfile()
+  } catch { /* ignore */ }
+  finally { generatingProfile.value = false }
+}
+
+async function openVersion(version: number) {
+  loadingVersion.value = true
+  selectedVersion.value = null
+  try {
+    selectedVersion.value = await userProfileApi.version(version)
+  } catch { /* ignore */ }
+  finally { loadingVersion.value = false }
+}
+
+function dimensionDisplayValue(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'string') return v
+  if (Array.isArray(v)) return v.join('、')
+  if (typeof v === 'object') {
+    return Object.entries(v as Record<string, unknown>)
+      .map(([k, val]) => `${k}: ${typeof val === 'object' ? JSON.stringify(val) : val}`)
+      .join(' · ')
+  }
+  return String(v)
+}
+
+function stabilityLabel(s?: string): string {
+  if (s === 'stable') return '稳定'
+  if (s === 'drifting') return '漂移中'
+  if (s === 'emerging') return '新兴'
+  return ''
+}
+
+function stabilityClass(s?: string): string {
+  if (s === 'stable') return 'bg-success-green/10 text-success-green'
+  if (s === 'drifting') return 'bg-warning-orange/10 text-warning-orange'
+  if (s === 'emerging') return 'bg-brian-blue/10 text-brian-blue'
+  return ''
+}
+
+function formatProfileTime(ts: number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 // Tag graph tab
 interface LayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
 interface LayoutEdge { source: string; target: string; weight: number; x1: number; y1: number; x2: number; y2: number; strokeWidth: number; highlighted?: boolean }
@@ -289,6 +358,10 @@ onMounted(() => {
   loadMemory()
   loadLibraries()
   loadTagGraph()
+})
+
+watch(activeTab, (val) => {
+  if (val === 'profile') loadProfile()
 })
 </script>
 
@@ -571,6 +644,121 @@ onMounted(() => {
               <div v-for="mem in selectedKeywordMemories" :key="mem.id" class="p-3 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50 border border-apple-gray-100 dark:border-apple-gray-700">
                 <p class="text-xs line-clamp-3">{{ mem.content }}</p>
                 <span class="text-xs text-apple-gray-400 mt-1 block">{{ new Date(mem.createdAt).toLocaleString('zh-CN') }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile tab -->
+      <div v-if="activeTab === 'profile'" class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-semibold flex items-center gap-2">
+            <UserRound :size="20" class="text-brian-blue" /> 用户画像
+          </h3>
+          <button
+            class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
+            :disabled="generatingProfile"
+            @click="handleGenerateProfile"
+          >
+            <RefreshCw :size="13" :class="generatingProfile ? 'animate-spin' : ''" />
+            {{ generatingProfile ? '生成中...' : '生成画像' }}
+          </button>
+        </div>
+
+        <div v-if="loadingProfile" class="text-center py-16 text-apple-gray-400">
+          <Loader2 :size="24" class="animate-spin mx-auto mb-2" />
+          <p class="text-sm">加载画像...</p>
+        </div>
+        <div v-else-if="!profile || profile.profile_version === 0" class="text-center py-16">
+          <Sparkles :size="32" class="text-apple-gray-300 mx-auto mb-3" />
+          <p class="text-sm text-apple-gray-500">暂无画像数据</p>
+          <p class="text-xs text-apple-gray-400 mt-1">点击右上角「生成画像」基于用户对话生成第一版画像</p>
+        </div>
+        <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- 画像总结 + 维度 -->
+          <div class="lg:col-span-2 space-y-4">
+            <!-- 画像总结 -->
+            <div class="block-card rounded-xl p-5">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-semibold flex items-center gap-1.5">
+                  <Sparkles :size="15" class="text-brian-blue" /> 画像总结
+                </h4>
+                <span class="text-xs text-apple-gray-400">版本 v{{ profile.profile_version }}</span>
+              </div>
+              <p class="text-sm leading-relaxed text-apple-gray-700 dark:text-apple-gray-300">{{ profile.profile_summary || '暂无总结' }}</p>
+              <p class="text-xs text-apple-gray-400 mt-3">生成时间: {{ formatProfileTime(profile.generated_at) }}</p>
+            </div>
+
+            <!-- 维度列表 -->
+            <div class="block-card rounded-xl p-5">
+              <h4 class="text-sm font-semibold mb-3 flex items-center gap-1.5">
+                <Brain :size="15" class="text-brian-blue" /> 画像维度
+              </h4>
+              <div v-if="Object.keys(profile.dimensions).length === 0" class="text-center py-8 text-apple-gray-400 text-sm">
+                暂无维度数据
+              </div>
+              <div v-else class="space-y-3">
+                <div v-for="(dim, key) in profile.dimensions" :key="key" class="p-4 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50 border border-apple-gray-100 dark:border-apple-gray-700">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium">{{ key }}</span>
+                    <div class="flex items-center gap-2">
+                      <span v-if="dim.stability" :class="['px-2 py-0.5 rounded text-xs font-medium', stabilityClass(dim.stability)]">{{ stabilityLabel(dim.stability) }}</span>
+                      <span class="text-xs text-apple-gray-400">置信度: {{ Math.round((dim.confidence || 0) * 100) }}%</span>
+                    </div>
+                  </div>
+                  <p class="text-sm text-apple-gray-700 dark:text-apple-gray-300">{{ dimensionDisplayValue(dim.value) }}</p>
+                  <div v-if="dim.evidence && dim.evidence.length" class="mt-2 space-y-1">
+                    <p v-for="(ev, i) in dim.evidence" :key="i" class="text-xs text-apple-gray-400">
+                      · {{ ev.source || '证据' }}<template v-if="ev.detail">: {{ ev.detail }}</template>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 历史版本 -->
+          <div class="space-y-4">
+            <div class="block-card rounded-xl p-5">
+              <h4 class="text-sm font-semibold mb-3 flex items-center gap-1.5">
+                <History :size="15" class="text-brian-blue" /> 历史版本
+              </h4>
+              <div v-if="profileHistory.length === 0" class="text-center py-8 text-apple-gray-400 text-sm">
+                暂无历史版本
+              </div>
+              <div v-else class="space-y-2 max-h-[480px] overflow-y-auto">
+                <button
+                  v-for="item in profileHistory"
+                  :key="item.id"
+                  class="w-full text-left p-3 rounded-lg border border-transparent hover:border-brian-blue/30 hover:bg-brian-blue/5 transition-colors"
+                  @click="openVersion(item.version)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">v{{ item.version }}</span>
+                    <span class="text-xs text-apple-gray-400">{{ formatProfileTime(item.generated_at) }}</span>
+                  </div>
+                  <p class="text-xs text-apple-gray-400 mt-1 line-clamp-2">{{ item.change_summary || item.profile_summary || '—' }}</p>
+                </button>
+              </div>
+            </div>
+
+            <!-- 版本详情 -->
+            <div v-if="selectedVersion || loadingVersion" class="block-card rounded-xl p-5">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-semibold">版本详情</h4>
+                <button class="p-1 text-apple-gray-400 hover:text-apple-gray-600" @click="selectedVersion = null"><X :size="14" /></button>
+              </div>
+              <div v-if="loadingVersion" class="text-center py-6 text-apple-gray-400 text-sm">加载中...</div>
+              <div v-else-if="selectedVersion" class="space-y-3">
+                <p class="text-xs text-apple-gray-400">版本 v{{ selectedVersion.version }} · {{ formatProfileTime(selectedVersion.generated_at) }}</p>
+                <p class="text-sm">{{ selectedVersion.profile_summary || '暂无总结' }}</p>
+                <div v-if="Object.keys(selectedVersion.dimensions).length" class="space-y-2">
+                  <div v-for="(dim, key) in selectedVersion.dimensions" :key="key" class="p-2.5 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50">
+                    <span class="text-xs font-medium block">{{ key }}</span>
+                    <span class="text-xs text-apple-gray-500 block mt-0.5">{{ dimensionDisplayValue(dim.value) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

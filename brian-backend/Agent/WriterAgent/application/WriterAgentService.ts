@@ -1,4 +1,4 @@
-import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
+﻿import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
@@ -166,7 +166,7 @@ export class WriterAgentService {
         new LLMContext(),
         llmOut,
       );
-      tokens = Number((llmOut.usage as Record<string, unknown> | undefined)?.total_tokens ?? 0);
+      tokens = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
       const blocks = this.parseBlocks(llmOut.result);
       response = blocks.map(b => b.content).join('\n\n');
       output.blocks = blocks;
@@ -197,8 +197,9 @@ export class WriterAgentService {
             session_id: ctx.session_id,
             work_id: input.work_id || ctx.work_id || '',
             interact_id: input.interact_id || ctx.interact_id || '',
+            info_type: 'RESPONSE',
+            info_creator_role: 'AGENT',
             info_creator_id: buildOut.agent_id,
-            info_creator_role: 'RESPONSE',
             info: response,
           }),
           new InfoCoreContext(),
