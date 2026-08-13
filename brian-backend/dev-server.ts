@@ -63,6 +63,16 @@ import {
   GetProfileDirectionInput, GetProfileDirectionOutput,
 } from './Application/UserProfile/domain/types';
 import { VisualizationAccess } from './Application/Visualization/access/VisualizationAccess';
+import {
+  VisualizationContext,
+  GetVisualizedMessagesInput, GetVisualizedMessagesOutput,
+  GetVisualizedMessageGraphInput, GetVisualizedMessageGraphOutput,
+  GetVisualizedAgentDAGInput, GetVisualizedAgentDAGOutput,
+  GetVisualizedWorkFlowInput, GetVisualizedWorkFlowOutput,
+  GetAgentTraceInput, GetAgentTraceOutput,
+  GetVisualizedMessageDAGInput, GetVisualizedMessageDAGOutput,
+  GetResourceInput, GetResourceOutput,
+} from './Application/Visualization/domain/types';
 
 // Config types
 import {
@@ -248,7 +258,8 @@ async function buildContext() {
   const selfLearningAccess = new SelfLearningAccess(relationDb, graphDBAccess, mqAccess, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, logger);
   const userProfileAccess = new UserProfileAccess(relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess, logger);
   await userProfileAccess.initialize();
-  const visualizationAccess = new VisualizationAccess(relationDb, llmAccess, soulAccess, skillAccess, graphDBAccess, infoCore, agentLibrary, agentBuilder, agentExecution, orchestrationExecution, orchestrationVisualization, jsonNode, logger);
+  const visualizationAccess = new VisualizationAccess(relationDb, orchestrationVisualization, agentExecution, agentLibrary, agentContext, evolutorAgent, plannerAgent, infoCore, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess, graphDBAccess, logger);
+  await visualizationAccess.initialize();
 
   // Config
   const configAccess = new ConfigAccess(
@@ -327,6 +338,7 @@ function sendJson(res: http.ServerResponse, status: number, data: any) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
+    'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(data));
 }
@@ -1206,7 +1218,52 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { session_id: output.session_id, session_title: output.session_title, created: output.created });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/dag')) {
-        sendJson(res, 200, { nodes: [], edges: [] });
+        const sessionId = params.get('sessionId') || params.get('session_id') || '';
+        if (!sessionId) { sendJson(res, 200, { nodes: [], edges: [] }); return; }
+        const workRows = ctx.relationDb.queryRaw<{ work_id: string }>(
+          'SELECT "work_id" FROM "orchestration_work" WHERE "session_id" = ? ORDER BY "created" DESC LIMIT 1',
+          [sessionId],
+        );
+        if (workRows.length === 0) { sendJson(res, 200, { nodes: [], edges: [] }); return; }
+        const workId = workRows[0].work_id;
+        const dagOut = Object.assign({}, { agent_dag_structure: {} as Record<string, unknown> });
+        await ctx.orchestrationVisualization.visualizeAgentDAG(
+          Object.assign({}, { work_id: workId }),
+          Object.assign({}, {}),
+          dagOut,
+        );
+        const graph = (dagOut.agent_dag_structure?.graph ?? {}) as Record<string, unknown>;
+        const dagNodes = (graph.nodes ?? []) as Array<Record<string, unknown>>;
+        const dagEdges = (graph.edges ?? []) as Array<Record<string, unknown>>;
+        const levelGroups = new Map<number, Array<Record<string, unknown>>>();
+        for (const n of dagNodes) {
+          const lvl = Number(n.dependency_level ?? 0);
+          if (!levelGroups.has(lvl)) levelGroups.set(lvl, []);
+          levelGroups.get(lvl)!.push(n);
+        }
+        const nodes: Array<Record<string, unknown>> = [];
+        const levelKeys = [...levelGroups.keys()].sort((a, b) => a - b);
+        for (const lvl of levelKeys) {
+          const group = levelGroups.get(lvl)!;
+          group.forEach((n, idx) => {
+            const agentId = String(n.agent_id ?? n.id ?? '');
+            const status = String(n.status ?? 'UNKNOWN').toLowerCase();
+            const statusMapped = status.includes('complet') ? 'done' : status.includes('fail') || status.includes('error') ? 'error' : status.includes('running') || status.includes('process') ? 'running' : 'pending';
+            nodes.push({
+              id: agentId,
+              agent_id: agentId,
+              label: agentId.slice(0, 8),
+              x: lvl * 220 + 80,
+              y: (idx - (group.length - 1) / 2) * 140 + 300,
+              status: statusMapped,
+            });
+          });
+        }
+        const edges = dagEdges.map((e) => ({
+          source: String(e.from_agent_id ?? ''),
+          target: String(e.to_agent_id ?? ''),
+        })).filter((e) => e.source && e.target);
+        sendJson(res, 200, { work_id: workId, nodes, edges });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/agent-chain/')) {
         sendJson(res, 200, { nodes: [] });
@@ -1704,6 +1761,79 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const o = new CDTCoreGetCookiesOutput();
         await ctx.cdtCore.getCookies(new CDTCoreGetCookiesInput(), new CDTCoreContext(), o);
         sendJson(res, 200, o);
+
+      // ---- Visualization Routes ----
+      } else if (method === 'GET' && pathname === '/api/visualization/messages') {
+        const i = Object.assign(new GetVisualizedMessagesInput(), {
+          session_id: params.get('session_id') || undefined,
+          work_id: params.get('work_id') || undefined,
+          interact_id: params.get('interact_id') || undefined,
+          lastN: params.get('lastN') ? parseInt(params.get('lastN')!, 10) : undefined,
+          include_citing_info: params.get('include_citing_info') !== 'false',
+          include_context_source: params.get('include_context_source') === 'true',
+          page_current: params.get('page_current') ? parseInt(params.get('page_current')!, 10) : undefined,
+          page_size: params.get('page_size') ? parseInt(params.get('page_size')!, 10) : undefined,
+        });
+        const o = new GetVisualizedMessagesOutput();
+        await ctx.visualizationAccess.getVisualizedMessages(i, new VisualizationContext(), o);
+        sendJson(res, 200, { messages: o.messages, total: o.total });
+
+      } else if (method === 'GET' && pathname === '/api/visualization/message-graph') {
+        const i = Object.assign(new GetVisualizedMessageGraphInput(), {
+          session_id: params.get('session_id') || '',
+          max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
+        });
+        const o = new GetVisualizedMessageGraphOutput();
+        await ctx.visualizationAccess.getVisualizedMessageGraph(i, new VisualizationContext(), o);
+        sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
+
+      } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/dag')) {
+        const workId = pathname.split('/')[4] || '';
+        const i = Object.assign(new GetVisualizedAgentDAGInput(), {
+          work_id: workId,
+          resolve_content: params.get('resolve_content') !== 'false',
+        });
+        const o = new GetVisualizedAgentDAGOutput();
+        await ctx.visualizationAccess.getVisualizedAgentDAG(i, new VisualizationContext(), o);
+        sendJson(res, 200, o.dag);
+
+      } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/timeline')) {
+        const workId = pathname.split('/')[4] || '';
+        const i = Object.assign(new GetVisualizedWorkFlowInput(), { work_id: workId });
+        const o = new GetVisualizedWorkFlowOutput();
+        await ctx.visualizationAccess.getVisualizedWorkFlow(i, new VisualizationContext(), o);
+        sendJson(res, 200, o.timeline);
+
+      } else if (method === 'GET' && pathname.startsWith('/api/visualization/agent/') && pathname.endsWith('/trace')) {
+        const agentId = pathname.split('/')[4] || '';
+        const i = Object.assign(new GetAgentTraceInput(), {
+          agent_id: agentId,
+          trace_id: params.get('trace_id') || undefined,
+        });
+        const o = new GetAgentTraceOutput();
+        await ctx.visualizationAccess.getAgentTrace(i, new VisualizationContext(), o);
+        sendJson(res, 200, o.trace);
+
+      } else if (method === 'GET' && pathname === '/api/visualization/message-dag') {
+        const i = Object.assign(new GetVisualizedMessageDAGInput(), {
+          session_id: params.get('session_id') || '',
+          work_id: params.get('work_id') || undefined,
+          include_question_answer_edges: params.get('include_question_answer_edges') !== 'false',
+          include_citation_edges: params.get('include_citation_edges') !== 'false',
+          max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
+        });
+        const o = new GetVisualizedMessageDAGOutput();
+        await ctx.visualizationAccess.getVisualizedMessageDAG(i, new VisualizationContext(), o);
+        sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
+
+      } else if (method === 'GET' && pathname.startsWith('/api/visualization/resource/')) {
+        const parts = pathname.split('/').filter(Boolean);
+        const resourceType = parts[3] || '';
+        const resourceId = parts[4] || '';
+        const i = Object.assign(new GetResourceInput(), { resource_type: resourceType, resource_id: resourceId });
+        const o = new GetResourceOutput();
+        await ctx.visualizationAccess.getResource(i, new VisualizationContext(), o);
+        sendJson(res, 200, o.resource);
 
       // ---- VectorDB Search Routes ----
       } else if (method === 'POST' && pathname === '/api/vectordb/search') {

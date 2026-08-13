@@ -914,39 +914,26 @@ export class VisualizationService {
   }
 
   private async enrichAgentDAG(dag: Record<string, unknown>, config: VisualizationConfigRow): Promise<void> {
-    const nodes = (dag.nodes ?? dag.agents ?? []) as Array<Record<string, unknown>>;
+    const graph = (dag.graph ?? {}) as Record<string, unknown>;
+    const nodes = (graph.nodes ?? dag.nodes ?? dag.agents ?? []) as Array<Record<string, unknown>>;
     if (!Array.isArray(nodes)) return;
 
     for (const node of nodes) {
       await this.enrichAgentDAGNode(node, config);
     }
-
-    const componentRefs = (dag.component_refs ?? {}) as Record<string, unknown>;
-    if (componentRefs && typeof componentRefs === 'object') {
-      dag.component_refs = await this.enrichComponentRefs(componentRefs);
-    }
   }
 
   private async enrichAgentDAGNode(node: Record<string, unknown>, _config: VisualizationConfigRow): Promise<void> {
+    const componentRefs = (node.component_refs ?? {}) as Record<string, unknown>;
+    const resultRefs = (node.result_refs ?? {}) as Record<string, unknown>;
     const agentId = String(node.agent_id ?? '');
 
     if (agentId) {
-      try {
-        const out = new GetAgentOutput();
-        await this.agentLibrary.getAgent(
-          Object.assign(new GetAgentInput(), { agent_id: agentId }),
-          new AgentLibraryContext(),
-          out,
-        );
-        if (out.agents.length > 0) {
-          node.agent_name = out.agents[0].agent_name ?? '';
-          node.agent_type = out.agents[0].agent_type ?? '';
-        }
-      } catch {
-      }
+      if (!node.agent_name) node.agent_name = String(componentRefs.agent_name ?? '');
+      if (!node.agent_type) node.agent_type = String(componentRefs.agent_type ?? '');
     }
 
-    const llmId = String(node.llm_id ?? '');
+    const llmId = String(componentRefs.llm_id ?? '');
     if (llmId) {
       try {
         const out = new GetLLMOutput();
@@ -962,7 +949,7 @@ export class VisualizationService {
       }
     }
 
-    const soulId = String(node.soul_id ?? '');
+    const soulId = String(componentRefs.soul_id ?? '');
     if (soulId) {
       try {
         const out = new GetSoulOutput();
@@ -978,11 +965,34 @@ export class VisualizationService {
       }
     }
 
-    await this.enrichIdArrayField(node, 'skill_ids', (id) => this.resolveSkill(id));
-    await this.enrichIdArrayField(node, 'mcp_ids', (id) => this.resolveMcp(id));
-    await this.enrichIdArrayField(node, 'prompt_template_ids', (id) => this.resolvePrompt(id));
+    const skillIds = (componentRefs.skill_ids ?? []) as string[];
+    if (skillIds.length > 0) {
+      node.skill_details = [];
+      for (const id of skillIds) {
+        try { (node.skill_details as Record<string, unknown>[]).push(await this.resolveSkill(id)); } catch { /* ignore */ }
+      }
+    }
 
-    const evalId = String(node.eval_id ?? '');
+    const mcpIds = (componentRefs.mcp_ids ?? []) as string[];
+    if (mcpIds.length > 0) {
+      node.mcp_details = [];
+      for (const id of mcpIds) {
+        try { (node.mcp_details as Record<string, unknown>[]).push(await this.resolveMcp(id)); } catch { /* ignore */ }
+      }
+    }
+
+    const promptTemplateIds = (componentRefs.prompt_template_ids ?? {}) as Record<string, unknown>;
+    if (promptTemplateIds && typeof promptTemplateIds === 'object') {
+      const promptDetails: Record<string, unknown> = {};
+      for (const [k, id] of Object.entries(promptTemplateIds)) {
+        if (typeof id === 'string' && id) {
+          try { promptDetails[k] = await this.resolvePrompt(id); } catch { promptDetails[k] = { id }; }
+        }
+      }
+      if (Object.keys(promptDetails).length > 0) node.prompt_details = promptDetails;
+    }
+
+    const evalId = String(resultRefs.eval_id ?? '');
     if (evalId) {
       try {
         const out = new GetEvaluationOutput();

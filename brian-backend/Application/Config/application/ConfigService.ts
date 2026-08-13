@@ -279,6 +279,22 @@ export class ConfigService {
       ], [
         { field: 'config_key', operator: Operator.EQ, value: 'user_profile.auto_generate_interval_ms' },
       ]);
+      const visRenames: Array<{ key: string; name: string; desc: string }> = [
+        { key: 'orchestration.visualization.max_nodes_in_graph', name: 'Agent DAG 图最大节点数', desc: 'Agent 执行 DAG 图中最多展示的 Agent 节点数，超过则截断（防止 DAG 过大）' },
+        { key: 'visualization.max_nodes_per_graph', name: '消息图最大节点数', desc: '消息引用关系图中最多展示的消息节点数，超过则截断' },
+        { key: 'visualization.default_message_summary_length', name: '消息摘要显示长度', desc: '消息图中节点显示的消息摘要截取长度（字符数）' },
+        { key: 'visualization.resolve_content_by_default', name: '默认展开 Agent 组件详情', desc: '查看 Agent DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容' },
+        { key: 'visualization.max_context_samples_per_source', name: 'Agent 上下文来源采样数', desc: 'Agent 依赖上下文中每个来源（钉住/时间线/标签等）最多展示的样本数' },
+      ];
+      for (const r of visRenames) {
+        await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
+          { field: 'updated', value: Date.now() },
+          { field: 'config_name', value: r.name },
+          { field: 'config_description', value: r.desc },
+        ], [
+          { field: 'config_key', operator: Operator.EQ, value: r.key },
+        ]);
+      }
       return existing;
     }
     const input = new RegisterConfigInput();

@@ -7,8 +7,8 @@ import {
   Folder, X, CheckSquare, Square, FileText,
   UserRound, History, RefreshCw, Sparkles, Loader2,
 } from '@lucide/vue'
-import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
-import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
+import { chatApi, memoryApi, libraryApi, userProfileApi, visualizationApi } from '@/api'
+import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, UserProfileData, ProfileHistoryItem, ProfileVersionData, MessageGraphNode, MessageGraphEdge } from '@/api/types'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
@@ -16,7 +16,7 @@ import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 const router = useRouter()
 
 // Tabs
-const activeTab = ref<'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile'>('history')
+const activeTab = ref<'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile' | 'messageGraph'>('history')
 const tabs = [
   { key: 'history' as const, label: '历史', icon: Clock },
   { key: 'memory' as const, label: '记忆', icon: Brain },
@@ -24,6 +24,7 @@ const tabs = [
   { key: 'tagGraph' as const, label: 'Tag图', icon: Network },
   { key: 'keywordGraph' as const, label: '关键词图', icon: GitBranch },
   { key: 'profile' as const, label: '画像', icon: UserRound },
+  { key: 'messageGraph' as const, label: '消息图', icon: GitBranch },
 ]
 
 // History tab
@@ -239,6 +240,44 @@ function formatProfileTime(ts: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// Message graph tab
+const messageGraphSessionId = ref('')
+const messageGraphNodes = ref<MessageGraphNode[]>([])
+const messageGraphEdges = ref<MessageGraphEdge[]>([])
+const loadingMessageGraph = ref(false)
+const selectedMsgNodeId = ref<string | null>(null)
+
+async function loadMessageGraph() {
+  if (!messageGraphSessionId.value) { messageGraphNodes.value = []; messageGraphEdges.value = []; return }
+  loadingMessageGraph.value = true
+  try {
+    const data = await visualizationApi.messageGraph(messageGraphSessionId.value)
+    messageGraphNodes.value = data.graph?.nodes || []
+    messageGraphEdges.value = data.graph?.edges || []
+  } catch { messageGraphNodes.value = []; messageGraphEdges.value = [] }
+  finally { loadingMessageGraph.value = false }
+}
+
+const messageGraphLayout = computed(() => {
+  const n = messageGraphNodes.value.length
+  if (n === 0) return { nodes: [] as Array<MessageGraphNode & { x: number; y: number }>, edges: [] as Array<MessageGraphEdge & { x1: number; y1: number; x2: number; y2: number }> }
+  const cx = 250, cy = 250, radius = 180
+  const nodeMap = new Map(messageGraphNodes.value.map((nd) => [nd.id, nd]))
+  const nodes = messageGraphNodes.value.map((node, i) => {
+    const angle = (i / n) * Math.PI * 2 - Math.PI / 2
+    return { ...node, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
+  })
+  const edges = messageGraphEdges.value.map(e => {
+    const src = nodeMap.get(e.from) || messageGraphNodes.value.find(nd => nd.info_id === e.citing_info_id)
+    const tgt = nodeMap.get(e.to) || messageGraphNodes.value.find(nd => nd.info_id === e.cited_info_id)
+    if (!src || !tgt) return null
+    const s = nodes.find(nd => nd.id === src.id)!
+    const t = nodes.find(nd => nd.id === tgt.id)!
+    return { ...e, x1: s.x, y1: s.y, x2: t.x, y2: t.y }
+  }).filter(Boolean) as Array<MessageGraphEdge & { x1: number; y1: number; x2: number; y2: number }>
+  return { nodes, edges }
+})
+
 // Tag graph tab
 interface LayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
 interface LayoutEdge { source: string; target: string; weight: number; x1: number; y1: number; x2: number; y2: number; strokeWidth: number; highlighted?: boolean }
@@ -362,6 +401,7 @@ onMounted(() => {
 
 watch(activeTab, (val) => {
   if (val === 'profile') loadProfile()
+  if (val === 'messageGraph' && messageGraphSessionId.value) loadMessageGraph()
 })
 </script>
 
@@ -761,6 +801,49 @@ watch(activeTab, (val) => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message graph tab -->
+      <div v-if="activeTab === 'messageGraph'" class="space-y-4">
+        <div class="flex items-center gap-3">
+          <h3 class="text-lg font-semibold">消息引用关系图</h3>
+          <select
+            v-model="messageGraphSessionId"
+            class="px-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue"
+            @change="loadMessageGraph"
+          >
+            <option value="">选择会话...</option>
+            <option v-for="s in chatList" :key="s.sessionId" :value="s.sessionId">{{ s.lastMessage || s.sessionId }}</option>
+          </select>
+          <span v-if="messageGraphNodes.length" class="text-xs text-apple-gray-400">{{ messageGraphNodes.length }} 节点 · {{ messageGraphEdges.length }} 边</span>
+        </div>
+
+        <div v-if="loadingMessageGraph" class="text-center py-16 text-apple-gray-400">加载中...</div>
+        <div v-else-if="!messageGraphSessionId" class="text-center py-16 text-apple-gray-400 text-sm">请选择会话查看消息引用关系</div>
+        <div v-else-if="messageGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm">该会话暂无消息引用关系</div>
+        <div v-else class="block-card rounded-xl p-4">
+          <svg viewBox="0 0 500 500" class="w-full" style="aspect-ratio: 1; max-height: 600px;">
+            <line
+              v-for="(edge, i) in messageGraphLayout.edges" :key="'mg-e-' + i"
+              :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
+              :stroke="edge.edge_type === 'REPLY' ? '#0071e3' : '#d1d1d6'"
+              :stroke-width="1.5"
+              :stroke-dasharray="edge.edge_type === 'CITATION' ? '4,3' : ''"
+              opacity="0.6"
+            />
+            <g v-for="node in messageGraphLayout.nodes" :key="'mg-n-' + node.id" class="cursor-pointer" @click="selectedMsgNodeId = selectedMsgNodeId === node.id ? null : node.id">
+              <circle :cx="node.x" :cy="node.y" :r="16" :fill="node.info_type === 'REQUEST' ? '#0071e3' : '#8e8e93'" :opacity="selectedMsgNodeId && selectedMsgNodeId !== node.id ? 0.3 : 0.9" />
+              <text :x="node.x" :y="node.y + 4" text-anchor="middle" class="text-xs font-medium pointer-events-none" fill="white">{{ node.info_id.slice(0, 6) }}</text>
+              <text v-if="selectedMsgNodeId === node.id" :x="node.x" :y="node.y - 24" text-anchor="middle" class="text-[10px] pointer-events-none" fill="#0071e3">{{ node.info_summary || node.info_id }}</text>
+            </g>
+          </svg>
+          <div class="flex items-center gap-4 mt-2 text-xs text-apple-gray-400">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-brian-blue inline-block" /> 用户消息</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-apple-gray-400 inline-block" /> 回复</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-4 border-t border-brian-blue" /> 问答边</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-4 border-t border-dashed border-apple-gray-400" /> 引用边</span>
           </div>
         </div>
       </div>

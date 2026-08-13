@@ -146,6 +146,7 @@ export interface DagNode {
   x: number
   y: number
   status: string
+  agent_id?: string
 }
 
 export interface DagEdge {
@@ -354,4 +355,83 @@ export interface ProfileVersionData {
   session_id: string
   dimensions: Record<string, ProfileDimension>
   profile_summary: string
+}
+
+// ============================================================
+// 可视化 types
+// ============================================================
+
+export interface VisualizedMessage {
+  info_id: string
+  info_type: string
+  info_creator_role: string
+  info: string
+  info_length: number
+  created: number
+  pin: boolean
+  citing_count: number
+  citing_info_ids: string[]
+  cited_info_ids: string[]
+  context_source: string | null
+  parent_info_ids: string[]
+}
+
+export interface MessageGraphNode {
+  id: string
+  label: string
+  info_id: string
+  info_type?: string
+  info_creator_role?: string
+  info_summary: string
+  citing_count: number
+  cited_count: number
+}
+
+export interface MessageGraphEdge {
+  id: string
+  from: string
+  to: string
+  citing_info_id: string
+  cited_info_id: string
+  edge_type: string
+}
+
+export interface AgentDAGNode {
+  agent_id: string
+  agent_name?: string
+  agent_type?: string
+  status?: string
+  [key: string]: unknown
+}
+
+export interface AgentDAG {
+  graph?: { nodes?: AgentDAGNode[]; edges?: Array<Record<string, unknown>> }
+  nodes?: AgentDAGNode[]
+  component_refs?: Record<string, unknown>
+  context_source_refs?: Record<string, unknown>
+  result_refs?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface AgentTraceStep {
+  step: number
+  phase: string
+  content: string
+  token_usage: number
+  elapsed_ms: number
+  timestamp: string
+  tool_calls?: Array<Record<string, unknown>>
+}
+
+export interface AgentTrace {
+  trace_id: string
+  agent_id: string
+  agent_name: string
+  agent_type: string
+  status: string
+  total_elapsed_ms: number
+  total_token_usage: number
+  iterations: number
+  steps: AgentTraceStep[]
+  final_answer?: Record<string, unknown>
 }

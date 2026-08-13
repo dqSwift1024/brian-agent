@@ -5,6 +5,7 @@ import type {
   SystemHealth, UserProfile, LibraryPath,
   ConfigTreeLayer,
   UserProfileData, ProfileVersionData, ProfileHistoryItem,
+  VisualizedMessage, MessageGraphNode, MessageGraphEdge, AgentDAG, AgentTrace,
 } from './types'
 
 const API_BASE = '/api'
@@ -28,7 +29,7 @@ export const chatApi = {
   exchanges: (sessionId: string, userId: string) =>
     request<{ exchanges: unknown[] }>(`/chat/exchanges/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.exchanges),
   dag: (sessionId: string, userId: string) =>
-    request<{ nodes: DagNode[]; edges: DagEdge[] }>(`/chat/dag?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}`),
+    request<{ work_id: string; nodes: DagNode[]; edges: DagEdge[] }>(`/chat/dag?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}`),
   sendMessage: (sessionId: string, content: string, citingIds?: string[]) =>
     request<{ msgId: string; workId: string }>('/chat/send', {
       method: 'POST',
@@ -247,6 +248,31 @@ export const userProfileApi = {
     request<{ history: ProfileHistoryItem[] }>(`/profile/history${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}${limit ? `&limit=${limit}` : ''}`).then(r => r.history),
   version: (version: number, sessionId?: string) =>
     request<ProfileVersionData>(`/profile/version/${version}${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+}
+
+export const visualizationApi = {
+  messages: (query: { session_id?: string; work_id?: string; interact_id?: string; lastN?: number; include_citing_info?: boolean; include_context_source?: boolean; page_current?: number; page_size?: number }) =>
+    request<{ messages: VisualizedMessage[]; total: number }>(`/visualization/messages?${new URLSearchParams(
+      Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
+    ).toString()}`),
+  messageGraph: (sessionId: string, maxNodes?: number) =>
+    request<{ session_id: string; graph: { nodes: MessageGraphNode[]; edges: MessageGraphEdge[] }; metadata: Record<string, unknown> }>(
+      `/visualization/message-graph?session_id=${encodeURIComponent(sessionId)}${maxNodes ? `&max_nodes=${maxNodes}` : ''}`
+    ),
+  agentDAG: (workId: string, resolveContent = true) =>
+    request<AgentDAG>(`/visualization/work/${encodeURIComponent(workId)}/dag?resolve_content=${resolveContent}`),
+  workFlow: (workId: string) =>
+    request<Record<string, unknown>>(`/visualization/work/${encodeURIComponent(workId)}/timeline`),
+  agentTrace: (agentId: string, traceId?: string) =>
+    request<AgentTrace>(`/visualization/agent/${encodeURIComponent(agentId)}/trace${traceId ? `?trace_id=${encodeURIComponent(traceId)}` : ''}`),
+  messageDAG: (query: { session_id: string; work_id?: string; include_question_answer_edges?: boolean; include_citation_edges?: boolean; max_nodes?: number }) =>
+    request<{ session_id: string; graph: { nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }; metadata: Record<string, unknown> }>(
+      `/visualization/message-dag?${new URLSearchParams(
+        Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
+      ).toString()}`
+    ),
+  resource: (resourceType: string, resourceId: string) =>
+    request<Record<string, unknown>>(`/visualization/resource/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`),
 }
 
 export interface VectorSearchResult { id: string; content: string; score: number; user_id: string | null; metadata: Record<string, unknown> | null }

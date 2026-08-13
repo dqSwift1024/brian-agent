@@ -10,6 +10,7 @@ export const useSessionStore = defineStore('session', () => {
   const chatList = ref<ChatSession[]>([])
   const dagNodes = ref<DagNode[]>([])
   const dagEdges = ref<DagEdge[]>([])
+  const dagWorkId = ref('')
   const agentChain = ref<AgentChainNode[]>([])
   const splitRatio = ref(parseFloat(localStorage.getItem('chat-split-ratio') || '0.65'))
   const isStreaming = ref(false)
@@ -43,6 +44,7 @@ export const useSessionStore = defineStore('session', () => {
       const result = await chatApi.dag(sessionId, userId)
       dagNodes.value = result.nodes || []
       dagEdges.value = result.edges || []
+      dagWorkId.value = result.work_id || ''
     } catch { /* ignore */ }
   }
 
@@ -63,6 +65,7 @@ export const useSessionStore = defineStore('session', () => {
     blocks.value = []
     dagNodes.value = []
     dagEdges.value = []
+    dagWorkId.value = ''
     agentChain.value = []
     currentSessionId.value = ''
     localStorage.removeItem('chat-current-session-id')
@@ -134,7 +137,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    currentSessionId, messages, blocks, chatList, dagNodes, dagEdges,
+    currentSessionId, messages, blocks, chatList, dagNodes, dagEdges, dagWorkId,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     setSplitRatio, loadChatList, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
