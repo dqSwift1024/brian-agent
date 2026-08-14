@@ -163,8 +163,9 @@
 支持配置LLM和PromptTemplate和是否开启
 **入参**：
 - input：UpdateInfoTagConfigInput（继承 Input），包含以下字段：
-  - llm_id：LLM ID（可选）
+  - llm_id：LLM ID（可选，须为 text 类型模型）
   - prompt_template_id：Prompt模板ID（可选）
+  - tag_top_k：标签 Top-K 数量（可选，须为 >= 1 的整数）
   - enable：是否启用（可选）
 - context：UpdateInfoTagConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：UpdateInfoTagConfigOutput（继承 Output），承载返回内容
@@ -173,12 +174,13 @@
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_tag_config` 表，获取当前配置记录；
 2. 若 `enable` 非空，更新 enable 字段；
 3. 若 `llm_id` 非空：
-   a. 校验 LLMProvider.soLLM 中是否存在该 llm_id（确保 LLM 已注册且可用）；
-   b. 若存在，更新 llm_id 字段；否则返回 false 并记录错误日志；
+   a. 校验 LLMProvider.soLLM 中是否存在该 llm_id（确保 LLM 已注册且可用），且其 `llm_type` 必须为 `text`（标签生成是文本生成任务）；
+   b. 若存在且类型正确，更新 llm_id 字段；否则返回 false 并记录错误日志；
 4. 若 `prompt_template_id` 非空：
    a. 校验 PromptsProvider.soPrompt 中是否存在该 prompt_template_id；
    b. 若存在，更新 prompt_template_id 字段；否则返回 false 并记录错误日志；
-5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_tag_config` 表；
+5. 若 `tag_top_k` 非空：校验为正整数且 >= 1，否则返回 false 并记录错误日志，通过则更新 tag_top_k 字段；
+6. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_tag_config` 表；
 
 **返回**：Boolean，表示更新是否完成
 
@@ -203,7 +205,7 @@
 支持配置LLM和PromptTemplate和是否开启
 **入参**：
 - input：UpdateInfoSummaryConfigInput（继承 Input），包含以下字段：
-  - llm_id：LLM ID（可选）
+  - llm_id：LLM ID（可选，须为 text 类型模型）
   - prompt_template_id：Prompt模板ID（可选）
   - enable：是否启用（可选）
 - context：UpdateInfoSummaryConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
@@ -212,7 +214,7 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_summary_config` 表，获取当前配置记录；
 2. 若 `enable` 非空，更新 enable 字段；
-3. 若 `llm_id` 非空：校验 LLMProvider.soLLM 中是否存在该 llm_id，存在则更新，否则返回 false 并记录错误日志；
+3. 若 `llm_id` 非空：校验 LLMProvider.soLLM 中是否存在该 llm_id，且其 `llm_type` 必须为 `text`（摘要生成是文本生成任务），存在且类型正确则更新，否则返回 false 并记录错误日志；
 4. 若 `prompt_template_id` 非空：校验 PromptsProvider.soPrompt 中是否存在该 prompt_template_id，存在则更新，否则返回 false 并记录错误日志；
 5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_summary_config` 表；
 
@@ -274,7 +276,7 @@
 注意：dimension只允许在没有计算过向量数据的情况下修改
 **入参**：
 - input：UpdateInfoVectorConfigInput（继承 Input），包含以下字段：
-  - llm_id：LLM ID（可选）
+  - llm_id：LLM ID（可选，须为 embedding 类型模型）
   - enable：是否启用（可选）
   - dimension：向量维度（可选）
 - context：UpdateInfoVectorConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
@@ -283,12 +285,49 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_vector_config` 表，获取当前配置记录；
 2. 若 `enable` 非空，更新 enable 字段；
-3. 若 `llm_id` 非空：校验 LLMProvider.soLLM 中是否存在该 llm_id，存在则更新，否则返回 false 并记录错误日志；
+3. 若 `llm_id` 非空：校验 LLMProvider.soLLM 中是否存在该 llm_id，且其 `llm_type` 必须为 `embedding`（向量化是嵌入任务），存在且类型正确则更新，否则返回 false 并记录错误日志；
 4. 若 `dimension` 非空：
    a. 调用 RelationDBProvider.selectOneDB 检查 `info_vector` 表是否已有向量数据（count > 0）；
    b. 若已有向量数据，dimension 不允许修改（维度不匹配会导致已有向量失效），返回 false 并记录错误日志："dimension 只允许在没有计算过向量数据的情况下修改"；
    c. 若无向量数据，校验 dimension 为正整数且与模型输出维度一致（如 1024、1536、768），更新 dimension 字段；
 5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_vector_config` 表；
+
+**返回**：Boolean，表示更新是否完成
+
+#### 2.4.9. 上下文构建配置查看（getInfoContextConfig）
+
+**功能**：调用RelationDBProvider获取info_context_config表中配置
+**入参**：
+- input：GetInfoContextConfigInput（继承 Input）
+- context：GetInfoContextConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：GetInfoContextConfigOutput（继承 Output），承载返回内容：
+  - config：上下文构建配置（base_timeline_count, base_tag_relative_count, base_similarity_count, base_keyword_count, base_random_count, total）
+**处理流程**：
+
+1. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表，获取唯一配置记录；
+2. 将查询到的配置写入 output 返回；
+3. 若配置表为空（首次使用），返回默认值：base_timeline_count=500、base_tag_relative_count=200、base_similarity_count=150、base_keyword_count=100、base_random_count=50、total=1000；
+
+**返回**：Boolean，表示查询是否完成
+
+#### 2.4.10. 修改上下文构建配置（updateInfoContextConfig）
+
+**功能**：配置上下文构建时的各来源信息加载数量
+**入参**：
+- input：UpdateInfoContextConfigInput（继承 Input），包含以下字段：
+  - base_timeline_count：时间线基础数量（可选，须为 >= 0 的整数）
+  - base_tag_relative_count：标签关联基础数量（可选，须为 >= 0 的整数）
+  - base_similarity_count：相似度基础数量（可选，须为 >= 0 的整数）
+  - base_keyword_count：关键词基础数量（可选，须为 >= 0 的整数）
+  - base_random_count：随机基础数量（可选，须为 >= 0 的整数）
+  - total：上下文总数限制（可选，须为 >= 1 的整数）
+- context：UpdateInfoContextConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：UpdateInfoContextConfigOutput（继承 Output），承载返回内容
+**处理流程**：
+
+1. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表，获取当前配置记录；
+2. 校验各入参：5 个数量类字段（base_timeline_count / base_tag_relative_count / base_similarity_count / base_keyword_count / base_random_count）必须为 >= 0 的整数，total 必须为 >= 1 的整数，非法值抛出 ValidationError；
+3. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_context_config` 表；
 
 **返回**：Boolean，表示更新是否完成
 
