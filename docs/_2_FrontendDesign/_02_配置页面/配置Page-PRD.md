@@ -225,7 +225,7 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 | 默认输出语言 | STRING | zh-CN | 结果输出默认语言 |
 | 默认写作风格 | ENUM | clear | 结果输出默认风格（clear / concise / detailed / creative），前端渲染为下拉菜单并映射为中文（清晰 / 简洁 / 详细 / 创意） |
 | 默认内容深度 | ENUM | medium | 结果输出默认详细程度（shallow / medium / deep），前端渲染为下拉菜单并映射为中文（浅显 / 中等 / 深入） |
-| 默认输出格式 | STRING | MARKDOWN | 结果输出默认格式 |
+| 默认输出格式 | ENUM | MARKDOWN | 结果输出默认格式（TEXT / MARKDOWN / JSON），前端渲染为下拉菜单并映射为中文（纯文本 / Markdown / JSON） |
 
 #### Evolutor Agent（进化）
 

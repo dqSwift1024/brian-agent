@@ -896,6 +896,11 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     medium: '中等',
     deep: '深入',
   },
+  'writer_agent.default_format': {
+    TEXT: '纯文本',
+    MARKDOWN: 'Markdown',
+    JSON: 'JSON',
+  },
 }
 
 function enumLabel(configKey: string, value: string): string {
