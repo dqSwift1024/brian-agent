@@ -755,6 +755,20 @@ describe('InfoCoreProvider', () => {
       expect(output.config!.total).toBe(500);
       expect(output.config!.base_timeline_count).toBe(200);
     });
+
+    it('should reject invalid counts (negative or non-integer)', async () => {
+      const setInput = new UpdateInfoContextConfigInput();
+      setInput.base_timeline_count = -1;
+      await expect(infoCore.updateInfoContextConfig(setInput, new InfoCoreContext(), new UpdateInfoContextConfigOutput()))
+        .rejects.toThrow(ValidationError);
+    });
+
+    it('should reject invalid total (<=0 or non-integer)', async () => {
+      const setInput = new UpdateInfoContextConfigInput();
+      setInput.total = 0;
+      await expect(infoCore.updateInfoContextConfig(setInput, new InfoCoreContext(), new UpdateInfoContextConfigOutput()))
+        .rejects.toThrow(ValidationError);
+    });
   });
 
   // =========================================================================

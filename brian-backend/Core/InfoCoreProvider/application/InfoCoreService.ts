@@ -1322,6 +1322,19 @@ export class InfoCoreService {
     _context: InfoCoreContext,
     output: UpdateInfoContextConfigOutput,
   ): Promise<boolean> {
+    const assertNonNegativeInt = (val: number | undefined, label: string) => {
+      if (val !== undefined && (!Number.isInteger(val) || val < 0)) {
+        throw new ValidationError(`${label} 必须为 >= 0 的整数`);
+      }
+    };
+    assertNonNegativeInt(input.base_timeline_count, 'base_timeline_count');
+    assertNonNegativeInt(input.base_tag_relative_count, 'base_tag_relative_count');
+    assertNonNegativeInt(input.base_similarity_count, 'base_similarity_count');
+    assertNonNegativeInt(input.base_keyword_count, 'base_keyword_count');
+    assertNonNegativeInt(input.base_random_count, 'base_random_count');
+    if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 1)) {
+      throw new ValidationError('total 必须为 >= 1 的整数');
+    }
     await this.upsertConfigRow(INFO_CONTEXT_CONFIG_TABLE, input, {
       defaultRecord: {
         base_timeline_count: 500,
