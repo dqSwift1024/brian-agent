@@ -9,7 +9,9 @@ import { createTestDb, makeAccess, setupAgentTestMocks,
   GetEvaluationInput, GetEvaluationOutput, GetEvolutionReportInput, GetEvolutionReportOutput,
   ConfigEvolutorAgentInput, ConfigEvolutorAgentOutput,
 } from '../EvolutorAgent/domain/types';
-import { AgentLibraryContext, AddAgentInput, AddAgentOutput } from '../AgentLibrary/domain/types';
+import { AgentLibraryContext, AddAgentInput, AddAgentOutput,
+  UpdateAgentInput, UpdateAgentOutput, RecordAgentUsageInput, RecordAgentUsageOutput,
+  GetAgentInput, GetAgentOutput } from '../AgentLibrary/domain/types';
 import { createTestDb, makeAccess, setupAgentTestMocks,
   NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS, NOOP_MQ_ACCESS,
   NOOP_INFO_CORE, NOOP_MQ_CORE,
@@ -69,6 +71,26 @@ describe('EvolutorAgent', () => {
       }), new EvolutorAgentContext(), out);
       expect(out.need_optimize).toBe(false);
     });
+
+    it('TC-EA-003: usage_count 加权平均更新 eval_score', async () => {
+      const agentId = aid();
+      await addTestAgent(agentId);
+      await libSvc.updateAgent(Object.assign(new UpdateAgentInput(), { agent_id: agentId, eval_score: 70 }),
+        new AgentLibraryContext(), new UpdateAgentOutput());
+      for (let i = 0; i < 5; i++) {
+        await libSvc.recordAgentUsage(Object.assign(new RecordAgentUsageInput(), {
+          agent_id: agentId, work_id: `w-${i}`, interact_id: 'i', usage_context: '{}',
+        }), new AgentLibraryContext(), new RecordAgentUsageOutput());
+      }
+      await evolutor.evalWorkAgent(Object.assign(new EvalWorkAgentInput(), {
+        agent_id: agentId, work_id: 'w-x', interact_id: 'i', task_content: 't', agent_output: 'o', trace_id: 'tr',
+      }), new EvolutorAgentContext(), new EvalWorkAgentOutput());
+      // (70*5 + 50) / 6 = 400/6 = 66.67 → 67
+      const getOut = new GetAgentOutput();
+      await libSvc.getAgent(Object.assign(new GetAgentInput(), { agent_id: agentId }),
+        new AgentLibraryContext(), getOut);
+      expect(getOut.agents[0].eval_score).toBe(67);
+    });
   });
 
   describe('getEvaluation', () => {
@@ -104,6 +126,15 @@ describe('EvolutorAgent', () => {
 
     it('TC-EA-031: optimize_threshold 范围校验', async () => {
       await expect(evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { optimize_threshold: 150 }),
+        new EvolutorAgentContext(), new ConfigEvolutorAgentOutput())).rejects.toThrow(ValidationError);
+    });
+
+    it('TC-EA-032: eval_frequency_threshold 非正整数抛异常', async () => {
+      await expect(evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { eval_frequency_threshold: 0 }),
+        new EvolutorAgentContext(), new ConfigEvolutorAgentOutput())).rejects.toThrow(ValidationError);
+      await expect(evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { eval_frequency_threshold: -1 }),
+        new EvolutorAgentContext(), new ConfigEvolutorAgentOutput())).rejects.toThrow(ValidationError);
+      await expect(evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { eval_frequency_threshold: 2.5 }),
         new EvolutorAgentContext(), new ConfigEvolutorAgentOutput())).rejects.toThrow(ValidationError);
     });
   });

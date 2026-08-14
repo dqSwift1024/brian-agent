@@ -330,6 +330,15 @@
 | **预期结果** | 两个字段同时更新 |
 | **覆盖场景** | 多字段配置 |
 
+### TC-EA-034: eval_frequency_threshold 非正整数抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 配置已初始化 |
+| **测试步骤** | 调用 configEvolutorAgent（eval_frequency_threshold=0 / -1 / 2.5） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 eval_frequency_threshold 必须为正整数 |
+| **覆盖场景** | 评估频率阈值校验 |
+
 ---
 
 ## 附录：评估维度参考

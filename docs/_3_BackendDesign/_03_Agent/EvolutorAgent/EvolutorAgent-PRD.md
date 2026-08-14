@@ -56,7 +56,7 @@
 5. **保存评估结果**
    a. 生成 `eval_id`（UUID）；
    b. 调用 RelationDBProvider.insertDB 将评估结果写入 `agent_evaluation` 表；
-   c. 调用 AgentLibrary.updateAgent 将 overall 分数更新到 `agent` 表的 `eval_score` 字段；
+   c. 调用 `refreshEvalScore`：以 usage_count 加权平均刷新 `agent` 表的 `eval_score` —— `new = (旧 eval_score × usage_count + 本次 overall) / (usage_count + 1)`，评分随使用次数增长逐步平滑收敛，避免单次评估导致剧烈抖动；
 
 6. **判断是否需要优化**
    a. 调用 RelationDBProvider.selectOneDB 查询 `evolutor_agent_config` 表获取 `optimize_threshold`（默认 60）；
@@ -113,9 +113,9 @@
 
 1. 调用 MQCore.startWorker 在 `agent.eval_schedule` 队列上启动一个后台评估 Worker；
 2. Worker 的轮询逻辑：
-   a. 调用 RelationDBProvider.selectDB 查询 `agent_usage` 表，获取最近的尚未评估的 Agent 使用记录（通过 LEFT JOIN `agent_evaluation` 表，evaluation 表无对应记录的视为未评估）；
-   b. 对每条未评估记录，调用 evalWorkAgent 进行评估；
-   c. 若某 Agent 的 `agent_usage` 表中有新的使用记录 且 累计未评估次数超过 `eval_frequency_threshold`（默认 5 次），将 Agent 的 eval_score 取多次评估的加权平均更新到 `agent` 表；
+   a. 查询 `agent_usage` 表，获取最近的尚未评估的 Agent 使用记录（LEFT JOIN `agent_evaluation` 表，evaluation 表无对应记录的视为未评估）；
+   b. 按 Agent 统计累计未评估次数，仅对达到 `eval_frequency_threshold` 的 Agent，对其未评估记录触发 evalWorkAgent 评估（避免对零星使用的 Agent 频繁评估）；
+   c. evalWorkAgent 评估完成后，以 usage_count 加权平均刷新 `eval_score`（见 2.1 步骤 5c）；
 3. 返回 worker_id 写入 output；
 
 ### 2.4. 停止定时评估（stopEvalSchedule）
@@ -250,3 +250,5 @@
 2. **startEvalSchedule**：通过 MQCore.startWorker 启动 `agent.optimize`、`agent.eval`、`agent.eval_schedule` 三类 worker；optimize worker 内调用 AgentBuilder.optimizeAgent。
 3. **LLM**：使用 Evolutor 系统 Agent 自身绑定的 llm_id（Core.matchLLM），禁止 llm_model 自选。
 4. **stopEvalSchedule**：调用 MQCore.stopWorker(identifier)。
+5. **评分刷新**：`eval_score` 不再被单次评估直接覆盖，evalWorkAgent 评估后由 `refreshEvalScore` 以 usage_count 加权平均刷新（`new = (old × usage_count + overall) / (usage_count + 1)`）。
+6. **评估频率阈值**：`eval_frequency_threshold` 作为定时调度 Worker 触发批量评估的「累计未评估次数」阈值（需为正整数）；仅当某 Agent 近期未评估 usage 数达到该阈值时才触发评估。

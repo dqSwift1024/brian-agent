@@ -33,7 +33,7 @@ import {
 import {
   GetAgentInput, GetAgentOutput, UpdateAgentInput, UpdateAgentOutput,
   AgeAgentInput, AgeAgentOutput, AgentLibraryContext,
-  AGENT_USAGE_TABLE,
+  AGENT_USAGE_TABLE, AGENT_TABLE,
 } from '../../AgentLibrary/domain/types';
 import {
   GetTraceInput, GetTraceOutput, AgentExecutionContext,
@@ -190,14 +190,8 @@ export class EvolutorAgentService {
       { field: 'need_optimize', value: needOptimize ? 1 : 0 },
     ]);
 
-    await this.agentLibrary.updateAgent(
-      Object.assign(new UpdateAgentInput(), {
-        agent_id: input.agent_id,
-        eval_score: scores.overall,
-      }),
-      libCtx,
-      new UpdateAgentOutput(),
-    );
+    // 不直接覆盖 eval_score，改用 usage_count 加权平均（旧评分权重=使用次数，新评估权重=1）
+    await this.refreshEvalScore(input.agent_id, scores.overall);
 
     if (needOptimize) {
       await this.mqAccess.sendMQ(
@@ -403,37 +397,59 @@ export class EvolutorAgentService {
           // 1. 扫描近期 usage，从 usage_context 还原 eval 输入（trace_id / task_content / agent_output）
           //    该 JSON 由 AgentExecution 在 recordAgentUsage 时写入，使评估闭环自描述。
           const cutoff = IdGenerator.now() - 7 * 24 * 60 * 60 * 1000;
+          const threshold = config?.eval_frequency_threshold ?? 5;
+          const batchSize = input.eval_batch_size ?? config?.eval_batch_size ?? 20;
           try {
-            const usages = await this.relationDb.select(AGENT_USAGE_TABLE, {
-              conditions: [{ field: 'created', operator: Operator.GE, value: cutoff }],
-              page: { current: 1, size: input.eval_batch_size ?? config?.eval_batch_size ?? 20 },
-            });
-            for (const u of usages) {
-              const ctxRaw = typeof u.usage_context === 'string' ? u.usage_context : '';
-              const ctx = ctxRaw ? parseJsonObject(ctxRaw) : null;
-              const traceId = ctx ? String(ctx.trace_id ?? '') : '';
-              const taskContent = ctx ? String(ctx.task_content ?? '') : '';
-              const agentOutput = ctx ? String(ctx.agent_output ?? '') : '';
-              // 旧记录（无 usage_context 或缺少关键字段）跳过，避免发出空评估消息
-              if (!traceId && !taskContent && !agentOutput) continue;
-              await this.mqAccess.sendMQ(
-                Object.assign(new SendMQInput(), {
-                  data: {
-                    queue: EVAL_QUEUE,
-                    payload: {
-                      type: 'eval_work_agent',
-                      agent_id: u.agent_id,
-                      work_id: u.work_id,
-                      interact_id: u.interact_id,
-                      task_content: taskContent,
-                      agent_output: agentOutput,
-                      trace_id: traceId,
-                    },
-                  },
-                }),
-                new MQContext(),
-                new SendMQOutput(),
+            // 统计各 Agent 近期「未评估」的 usage 数（LEFT JOIN agent_evaluation，无对应评估记录的视为未评估）
+            const agg = this.relationDb.queryRaw<{ agent_id: string; cnt: number }>(
+              `SELECT u.agent_id AS agent_id, COUNT(*) AS cnt
+               FROM ${AGENT_USAGE_TABLE} u
+               LEFT JOIN ${AGENT_EVALUATION_TABLE} e
+                 ON e.agent_id = u.agent_id AND e.work_id = u.work_id
+               WHERE u.created >= ? AND e.id IS NULL
+               GROUP BY u.agent_id`,
+              [cutoff],
+            );
+
+            // 2. 仅对累计未评估次数达到 eval_frequency_threshold 的 Agent 触发评估
+            for (const a of agg ?? []) {
+              if (Number(a.cnt) < threshold) continue;
+              const usages = this.relationDb.queryRaw<{ agent_id: string; work_id: string; interact_id: string; usage_context: string }>(
+                `SELECT u.agent_id, u.work_id, u.interact_id, u.usage_context
+                 FROM ${AGENT_USAGE_TABLE} u
+                 LEFT JOIN ${AGENT_EVALUATION_TABLE} e
+                   ON e.agent_id = u.agent_id AND e.work_id = u.work_id
+                 WHERE u.agent_id = ? AND u.created >= ? AND e.id IS NULL
+                 ORDER BY u.created ASC LIMIT ?`,
+                [a.agent_id, cutoff, batchSize],
               );
+              for (const u of usages ?? []) {
+                const ctxRaw = typeof u.usage_context === 'string' ? u.usage_context : '';
+                const ctx = ctxRaw ? parseJsonObject(ctxRaw) : null;
+                const traceId = ctx ? String(ctx.trace_id ?? '') : '';
+                const taskContent = ctx ? String(ctx.task_content ?? '') : '';
+                const agentOutput = ctx ? String(ctx.agent_output ?? '') : '';
+                // 旧记录（无 usage_context 或缺少关键字段）跳过，避免发出空评估消息
+                if (!traceId && !taskContent && !agentOutput) continue;
+                await this.mqAccess.sendMQ(
+                  Object.assign(new SendMQInput(), {
+                    data: {
+                      queue: EVAL_QUEUE,
+                      payload: {
+                        type: 'eval_work_agent',
+                        agent_id: u.agent_id,
+                        work_id: u.work_id,
+                        interact_id: u.interact_id,
+                        task_content: taskContent,
+                        agent_output: agentOutput,
+                        trace_id: traceId,
+                      },
+                    },
+                  }),
+                  new MQContext(),
+                  new SendMQOutput(),
+                );
+              }
             }
           } catch { /* best-effort */ }
 
@@ -611,6 +627,9 @@ export class EvolutorAgentService {
       data.push({ field: 'optimize_threshold', value: input.optimize_threshold });
     }
     if (input.eval_frequency_threshold !== undefined) {
+      if (input.eval_frequency_threshold <= 0 || !Number.isInteger(input.eval_frequency_threshold)) {
+        throw new ValidationError('eval_frequency_threshold 必须为正整数');
+      }
       data.push({ field: 'eval_frequency_threshold', value: input.eval_frequency_threshold });
     }
     if (input.eval_schedule_interval_ms !== undefined) {
@@ -647,5 +666,26 @@ export class EvolutorAgentService {
       eval_schedule_interval_ms: Number(row.eval_schedule_interval_ms ?? 3600000),
       eval_batch_size: Number(row.eval_batch_size ?? 20),
     };
+  }
+
+  /**
+   * 以 usage_count 加权平均刷新 eval_score：
+   *   new = (old_eval_score * usage_count + overall) / (usage_count + 1)
+   * 旧评分权重随使用次数增长，评分随历史逐步平滑收敛（对应 TC-EA-006）。
+   */
+  private async refreshEvalScore(agentId: string, overall: number): Promise<void> {
+    const row = await this.relationDb.selectOne(AGENT_TABLE, [
+      { field: 'agent_id', operator: Operator.EQ, value: agentId },
+    ]);
+    if (!row) return;
+    const oldScore = Number(row.eval_score ?? 50);
+    const usageCount = Number(row.usage_count ?? 0);
+    const weightedScore = Math.round((oldScore * usageCount + overall) / (usageCount + 1));
+
+    await this.agentLibrary.updateAgent(
+      Object.assign(new UpdateAgentInput(), { agent_id: agentId, eval_score: weightedScore }),
+      new AgentLibraryContext(),
+      new UpdateAgentOutput(),
+    );
   }
 }
