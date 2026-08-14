@@ -105,6 +105,8 @@ const navSections: NavSection[] = [
     key: 'orchestration', label: '编排配置', icon: Workflow,
     desc: '任务编排的策略、执行与可视化',
     subsections: [
+      { key: 'orch-entry', label: '入口参数', icon: Settings, type: 'params', configModule: 'entry', configCategories: ['basic'] },
+      { key: 'orch-strategy-params', label: '策略参数', icon: GitBranch, type: 'params', configModule: 'strategy', configCategories: ['basic'] },
       { key: 'orch-strategy', label: '策略管理', icon: GitBranch, type: 'entity', entityType: 'orch-strategy' },
       { key: 'orch-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'execution', configCategories: ['basic'] },
       { key: 'orch-visual', label: '可视化', icon: Monitor, type: 'params', configModule: 'visualization', configCategories: ['basic'] },
@@ -866,8 +868,16 @@ function getConfigDisplayValue(item: ParamItem): string {
   if (item.config_key.endsWith('prompt_template_id')) {
     return val ? getPromptTitle(String(val)) : 'prompt选择'
   }
+  if (item.config_key.endsWith('strategy_id')) {
+    return val ? getOrchStrategyLabel(String(val)) : '选择策略'
+  }
   if (val !== undefined && val !== null) return String(val)
   return '—'
+}
+
+function getOrchStrategyLabel(strategyId: string): string {
+  const s = orchStrategies.value.find(o => o.strategyId === strategyId || o.id === strategyId)
+  return s ? s.label : (strategyId || '—')
 }
 
 function startEditParam(item: ParamItem) {
@@ -2958,6 +2968,9 @@ watch(activeSubSection, async (val) => {
       await loadMqQueues()
       await loadMqStats()
     }
+    if (sub.configModule === 'strategy' && orchStrategies.value.length === 0) {
+      await loadOrchStrategies()
+    }
   }
 }, { immediate: true })
 </script>
@@ -3512,6 +3525,12 @@ watch(activeSubSection, async (val) => {
                           <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
                             <option value="">prompt选择</option>
                             <option v-for="p in prompts" :key="p.id" :value="p.id">{{ p.title }}</option>
+                          </select>
+                        </template>
+                        <template v-else-if="item.config_key.endsWith('strategy_id')">
+                          <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
+                            <option value="">选择策略</option>
+                            <option v-for="s in orchStrategies" :key="s.id" :value="s.strategyId">{{ s.label }}</option>
                           </select>
                         </template>
                         <template v-else>

@@ -215,7 +215,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- OrchestrationEntry ---
   orch('entry', 'basic', 'complexity_decompose_threshold', '复杂度分解阈值', 'INT', 50, '超过此值触发任务分解'),
   orch('entry', 'basic', 'strategy_prompt_template_id', '策略选择 Prompt 模板 ID', 'STRING', ''),
-  orch('entry', 'basic', 'default_strategy', '默认编排策略', 'ENUM', 'SIMPLE', '', ['SIMPLE', 'COMPLEX', 'DAG']),
+  orch('entry', 'basic', 'default_strategy', '默认编排策略', 'ENUM', 'SIMPLE', '策略选择失败时的兜底策略', ['SIMPLE', 'PLANNING']),
   orch('entry', 'basic', 'max_recent_works', '最大最近工作数', 'INT', 5),
   orch('entry', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
 
