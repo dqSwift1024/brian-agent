@@ -8,8 +8,6 @@ export class OrchestrationExecutionContext extends Context {
 
 export class OrchestrationExecutionConfig {
   max_concurrent = 1;
-  default_max_iterations = 10;
-  async_worker_interval = 1000;
   dag_timeout_ms = 300000;
 }
 
@@ -206,8 +204,6 @@ export class GetOrchestrationExecQueueStatusOutput extends Output {
 
 export class ConfigOrchestrationExecutionInput extends Input {
   max_concurrent?: number;
-  default_max_iterations?: number;
-  async_worker_interval?: number;
   dag_timeout_ms?: number;
 }
 

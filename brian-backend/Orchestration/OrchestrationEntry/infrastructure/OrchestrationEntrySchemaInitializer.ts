@@ -76,7 +76,6 @@ export class OrchestrationEntrySchemaInitializer {
         max_plan_retries INTEGER NOT NULL DEFAULT 2,
         plan_prompt_template_id TEXT NOT NULL DEFAULT '',
         max_concurrent INTEGER NOT NULL DEFAULT 1,
-        default_max_iterations INTEGER NOT NULL DEFAULT 10,
         dag_timeout_ms INTEGER NOT NULL DEFAULT 300000,
         max_execution_depth INTEGER NOT NULL DEFAULT 50,
         node_timeout_ms INTEGER NOT NULL DEFAULT 300000,
@@ -123,14 +122,14 @@ export class OrchestrationEntrySchemaInitializer {
       INSERT OR IGNORE INTO orchestration_config
         (id, created, updated, complexity_decompose_threshold, strategy_prompt_template_id,
          default_strategy, max_recent_works, async_worker_interval, default_strategy_id,
-         max_plan_retries, plan_prompt_template_id, max_concurrent, default_max_iterations,
+         max_plan_retries, plan_prompt_template_id, max_concurrent,
          dag_timeout_ms, max_execution_depth, node_timeout_ms, trace_enabled,
          max_nodes_in_graph)
       VALUES
         ('orchestration_config_default', ${now}, ${now}, 50,
          '${STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID}',
          'SIMPLE', 5, 1000, NULL,
-         2, '', 1, 10, 300000, 50, 300000, 1, 50)
+         2, '', 1, 300000, 50, 300000, 1, 50)
     `);
 
     this.relationDb.executeRaw(`

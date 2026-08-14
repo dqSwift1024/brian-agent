@@ -1003,12 +1003,6 @@ export class OrchestrationExecutionService {
     if (input.max_concurrent !== undefined && input.max_concurrent <= 0) {
       throw new ValidationError('max_concurrent must be positive');
     }
-    if (input.default_max_iterations !== undefined && input.default_max_iterations <= 0) {
-      throw new ValidationError('default_max_iterations must be positive');
-    }
-    if (input.async_worker_interval !== undefined && input.async_worker_interval <= 0) {
-      throw new ValidationError('async_worker_interval must be positive');
-    }
     if (input.dag_timeout_ms !== undefined && input.dag_timeout_ms <= 0) {
       throw new ValidationError('dag_timeout_ms must be positive');
     }
@@ -1022,8 +1016,6 @@ export class OrchestrationExecutionService {
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
 
     this.config.max_concurrent = (current.max_concurrent as number) ?? this.config.max_concurrent;
-    this.config.default_max_iterations = (current.default_max_iterations as number) ?? this.config.default_max_iterations;
-    this.config.async_worker_interval = (current.async_worker_interval as number) ?? this.config.async_worker_interval;
     this.config.dag_timeout_ms = (current.dag_timeout_ms as number) ?? this.config.dag_timeout_ms;
 
     const data: DataObject[] = [];
@@ -1031,14 +1023,6 @@ export class OrchestrationExecutionService {
     if (input.max_concurrent !== undefined) {
       this.config.max_concurrent = input.max_concurrent;
       data.push({ field: 'max_concurrent', value: input.max_concurrent });
-    }
-    if (input.default_max_iterations !== undefined) {
-      this.config.default_max_iterations = input.default_max_iterations;
-      data.push({ field: 'default_max_iterations', value: input.default_max_iterations });
-    }
-    if (input.async_worker_interval !== undefined) {
-      this.config.async_worker_interval = input.async_worker_interval;
-      data.push({ field: 'async_worker_interval', value: input.async_worker_interval });
     }
     if (input.dag_timeout_ms !== undefined) {
       this.config.dag_timeout_ms = input.dag_timeout_ms;

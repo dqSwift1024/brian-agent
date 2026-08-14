@@ -45,7 +45,6 @@ export interface OrchestrationConfigRecord {
   max_plan_retries: number;
   plan_prompt_template_id: string;
   max_concurrent: number;
-  default_max_iterations: number;
   dag_timeout_ms: number;
   max_execution_depth: number;
   node_timeout_ms: number;

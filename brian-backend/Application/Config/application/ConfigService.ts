@@ -1082,7 +1082,8 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('agent_context.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('agent_context.enable_snapshot_persistence')) input.enable_snapshot_persistence = value as boolean;
       const output: any = {};
       await this.agentContext.configAgentContext(input, {} as any, output);
       return;

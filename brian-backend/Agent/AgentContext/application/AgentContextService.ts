@@ -9,7 +9,6 @@ import {
   AGENT_CONTEXT_TABLE,
   AGENT_CONTEXT_ITEM_TABLE,
   AGENT_CONTEXT_CONFIG_TABLE,
-  DEFAULT_MAX_CONTEXT_ITEMS,
   DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE,
   BuildAgentContextInput,
   BuildAgentContextOutput,
@@ -206,7 +205,6 @@ export class AgentContextService {
         { field: 'id', value: IdGenerator.generate() },
         { field: 'created', value: now },
         { field: 'updated', value: now },
-        { field: 'max_context_items', value: DEFAULT_MAX_CONTEXT_ITEMS },
         { field: 'enable_snapshot_persistence', value: DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE },
       ]);
       config = await this.getConfigInternal();
@@ -214,12 +212,6 @@ export class AgentContextService {
     if (!config) throw new ValidationError('config init failed');
 
     const data: Array<{ field: string; value: unknown }> = [];
-    if (input.max_context_items !== undefined) {
-      if (!Number.isInteger(input.max_context_items) || input.max_context_items < 1) {
-        throw new ValidationError('max_context_items 必须为正整数');
-      }
-      data.push({ field: 'max_context_items', value: input.max_context_items });
-    }
     if (input.enable_snapshot_persistence !== undefined) {
       data.push({
         field: 'enable_snapshot_persistence',
@@ -236,7 +228,6 @@ export class AgentContextService {
     }
 
     const updated = await this.getConfigInternal();
-    output.max_context_items = updated?.max_context_items ?? DEFAULT_MAX_CONTEXT_ITEMS;
     output.enable_snapshot_persistence = updated
       ? updated.enable_snapshot_persistence !== 0
       : true;
@@ -265,7 +256,6 @@ export class AgentContextService {
       id: String(row.id),
       created: Number(row.created),
       updated: Number(row.updated),
-      max_context_items: Number(row.max_context_items ?? DEFAULT_MAX_CONTEXT_ITEMS),
       enable_snapshot_persistence: Number(row.enable_snapshot_persistence ?? DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE),
     };
   }

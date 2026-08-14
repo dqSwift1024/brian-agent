@@ -226,8 +226,6 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
 
   // --- OrchestrationExecution ---
   orch('execution', 'basic', 'max_concurrent', '最大并发数', 'INT', 1),
-  orch('execution', 'basic', 'default_max_iterations', '默认最大迭代次数', 'INT', 10),
-  orch('execution', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
   orch('execution', 'basic', 'dag_timeout_ms', 'DAG 超时（ms）', 'INT', 300000, '整个 DAG 执行的最大超时时间'),
 
   // --- OrchestrationVisualization ---
@@ -247,11 +245,14 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   agent('agent_builder', 'basic', 'auto_optimize', '自动优化构建', 'BOOLEAN', true, '是否在使用中自动优化 Agent 组装'),
 
   // --- AgentExecution ---
-  agent('agent_execution', 'basic', 'think_prompt_template_id', 'Think Prompt 模板 ID', 'STRING', '', 'Worker Think 阶段 Prompt 模板'),
-  agent('agent_execution', 'basic', 'reflect_prompt_template_id', 'Reflect Prompt 模板 ID', 'STRING', '', 'Worker Reflect 阶段 Prompt 模板'),
-  agent('agent_execution', 'basic', 'answer_prompt_template_id', 'Answer Prompt 模板 ID', 'STRING', '', 'Worker Answer 阶段 Prompt 模板'),
+  agent('agent_execution', 'basic', 'think_prompt_template_id', 'Think Prompt', 'STRING', '', 'Worker Think 阶段 Prompt 模板'),
+  agent('agent_execution', 'basic', 'reflect_prompt_template_id', 'Reflect Prompt', 'STRING', '', 'Worker Reflect 阶段 Prompt 模板'),
+  agent('agent_execution', 'basic', 'answer_prompt_template_id', 'Answer Prompt', 'STRING', '', 'Worker Answer 阶段 Prompt 模板'),
   agent('agent_execution', 'basic', 'default_max_iterations', '默认最大迭代次数', 'INT', 10, 'ReAct 循环最大轮数'),
   agent('agent_execution', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
+
+  // --- AgentContext ---
+  agent('agent_context', 'basic', 'enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
 
   // =========================================================================
   // APPLICATION layer
