@@ -71,16 +71,17 @@
 
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `orchestration_config` 表获取 `complexity_decompose_threshold`（默认 50）、`strategy_prompt_template_id`；
+1. 调用 RelationDBProvider.selectOneDB 查询 `orchestration_config` 表获取 `complexity_decompose_threshold`（默认 50）、`strategy_prompt_template_id`、`default_strategy`（默认 SIMPLE）；
 2. 若 `strategy_prompt_template_id` 非空且有效：
    a. 调用 PromptsProvider.execPrompt 使用 `strategy_prompt_template_id` 结合 `user_query` 和 `work_context` 构建策略选择 prompt；
    b. 调用 LLMProvider.execLLM 由模型评估任务复杂度和推荐策略（输出 JSON：`{ "complexity": 0-100, "strategy": "SIMPLE"|"PLANNING", "reason": "..." }`）；
    c. 解析 LLM 输出，获取 `complexity`、`strategy`、`reason`；
 3. 若 `strategy_prompt_template_id` 为空或无效（降级为纯规则判定）：
    a. 通过简单规则推断复杂度（如 query 长度、是否包含多个问号/分步关键词）；
-   b. 复杂度 < complexity_decompose_threshold → SIMPLE，否则 → PLANNING；
+   b. 复杂度 < complexity_decompose_threshold → default_strategy，否则 → PLANNING；
    c. reason 记录为 "rule_based"；
-4. 将 `strategy`、`complexity`、`reason` 写入 output 返回；
+4. **兜底**：无 LLM、prompt 渲染失败、LLM 调用失败等异常场景，均使用 `default_strategy`（默认 SIMPLE）作为返回策略；
+5. 将 `strategy`、`complexity`、`reason` 写入 output 返回；
 
 ### 2.3. 异步接收工作（receiveWorkAsync）
 

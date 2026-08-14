@@ -65,19 +65,9 @@ export class OrchestrationStrategyService {
   ): Promise<boolean> {
     let strategyDef: { jsonnode_definition: string } | null = null;
     try {
-      const stratSelInput = Object.assign(new SelectOneDBInput(), {
-        query_param: {
-          table: 'orchestration_strategy',
-          conditions: [
-            { field: 'strategy_label', operator: Operator.EQ, value: input.strategy },
-          ] as Condition[],
-        },
-      });
-      const stratSelOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(stratSelInput, new DBContext(), stratSelOutput);
-      const row = stratSelOutput.row as Record<string, unknown> | null;
-      if (row?.jsonnode_definition) {
-        strategyDef = { jsonnode_definition: row.jsonnode_definition as string };
+      const def = await this.resolveStrategyDef(input.strategy);
+      if (def) {
+        strategyDef = { jsonnode_definition: def };
       }
     } catch { /* fall back to direct execution */ }
 
@@ -186,17 +176,7 @@ export class OrchestrationStrategyService {
     }
     const agentId = buildAgentOutput.agent_id;
 
-    const selInput = Object.assign(new SelectOneDBInput(), {
-      query_param: {
-        table: 'orchestration_strategy',
-        conditions: [
-          { field: 'strategy_label', operator: Operator.EQ, value: 'SIMPLE' },
-        ] as Condition[],
-      },
-    });
-    const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
-    const strategyId = ((selOutput.row?.strategy_id as string) ?? '');
+    const strategyId = await this.resolveStrategyId('SIMPLE');
 
     const execData: DataObject[] = [
       { field: 'id', value: IdGenerator.generate() },
@@ -302,17 +282,7 @@ export class OrchestrationStrategyService {
     const executionId = IdGenerator.generate();
     const now = IdGenerator.now();
 
-    const selInput = Object.assign(new SelectOneDBInput(), {
-      query_param: {
-        table: 'orchestration_strategy',
-        conditions: [
-          { field: 'strategy_label', operator: Operator.EQ, value: 'PLANNING' },
-        ] as Condition[],
-      },
-    });
-    const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
-    const strategyId = ((selOutput.row?.strategy_id as string) ?? '');
+    const strategyId = await this.resolveStrategyId('PLANNING');
 
     const execData: DataObject[] = [
       { field: 'id', value: IdGenerator.generate() },
@@ -1036,6 +1006,66 @@ export class OrchestrationStrategyService {
     }
 
     return true;
+  }
+
+  private async resolveStrategyId(label: string): Promise<string> {
+    const selInput = Object.assign(new SelectOneDBInput(), {
+      query_param: {
+        table: 'orchestration_strategy',
+        conditions: [
+          { field: 'strategy_label', operator: Operator.EQ, value: label },
+        ] as Condition[],
+      },
+    });
+    const selOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    const strategyId = ((selOutput.row?.strategy_id as string) ?? '');
+    if (strategyId) return strategyId;
+
+    // 兜底：按 label 查不到时，使用 orchestration_config 的 default_strategy_id
+    const cfgInput = Object.assign(new SelectOneDBInput(), {
+      query_param: { table: 'orchestration_config' },
+    });
+    const cfgOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(cfgInput, new DBContext(), cfgOutput);
+    return (cfgOutput.row?.default_strategy_id as string) ?? '';
+  }
+
+  private async resolveStrategyDef(label: string): Promise<string | null> {
+    const selInput = Object.assign(new SelectOneDBInput(), {
+      query_param: {
+        table: 'orchestration_strategy',
+        conditions: [
+          { field: 'strategy_label', operator: Operator.EQ, value: label },
+        ] as Condition[],
+      },
+    });
+    const selOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    const row = selOutput.row as Record<string, unknown> | null;
+    if (row?.jsonnode_definition) return row.jsonnode_definition as string;
+
+    // 兜底：按 label 查不到时，使用 default_strategy_id 对应的策略定义
+    const cfgInput = Object.assign(new SelectOneDBInput(), {
+      query_param: { table: 'orchestration_config' },
+    });
+    const cfgOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(cfgInput, new DBContext(), cfgOutput);
+    const defaultId = (cfgOutput.row?.default_strategy_id as string) ?? '';
+    if (!defaultId) return null;
+
+    const byIdInput = Object.assign(new SelectOneDBInput(), {
+      query_param: {
+        table: 'orchestration_strategy',
+        conditions: [
+          { field: 'strategy_id', operator: Operator.EQ, value: defaultId },
+        ] as Condition[],
+      },
+    });
+    const byIdOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(byIdInput, new DBContext(), byIdOutput);
+    const byIdRow = byIdOutput.row as Record<string, unknown> | null;
+    return byIdRow?.jsonnode_definition ? (byIdRow.jsonnode_definition as string) : null;
   }
 
   async configOrchestrationStrategy(

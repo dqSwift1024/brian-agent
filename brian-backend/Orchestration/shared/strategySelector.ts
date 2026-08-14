@@ -23,11 +23,6 @@ export async function selectOrchestrationStrategy(
   workContext?: Record<string, unknown>,
   logger?: Logger,
 ): Promise<SelectStrategyResult> {
-  if (!llmAccess) {
-    logger?.error?.('selectOrchestrationStrategy: no LLM access, using SIMPLE', {});
-    return { strategy: 'SIMPLE', complexity: 0, reason: 'no_llm_available' };
-  }
-
   const selInput = Object.assign(new SelectOneDBInput(), {
     query_param: { table: 'orchestration_config' },
   });
@@ -36,6 +31,12 @@ export async function selectOrchestrationStrategy(
   const config = (selOutput.row ?? {}) as Record<string, unknown>;
   const threshold = (config.complexity_decompose_threshold as number) ?? DEFAULT_THRESHOLD;
   const templateId = (config.strategy_prompt_template_id as string) || DEFAULT_TEMPLATE_ID;
+  const defaultStrategy = (config.default_strategy as string) === 'PLANNING' ? 'PLANNING' : 'SIMPLE';
+
+  if (!llmAccess) {
+    logger?.error?.('selectOrchestrationStrategy: no LLM access, using default strategy', {});
+    return { strategy: defaultStrategy, complexity: 0, reason: 'no_llm_available' };
+  }
 
   const ctxStr = workContext
     ? `上下文参考:\n${JSON.stringify(workContext, null, 2)}\n`
@@ -54,7 +55,7 @@ export async function selectOrchestrationStrategy(
     logger?.error?.('selectOrchestrationStrategy: prompt render failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-    return { strategy: 'SIMPLE', complexity: 0, reason: 'prompt_render_failed' };
+    return { strategy: defaultStrategy, complexity: 0, reason: 'prompt_render_failed' };
   }
 
   try {
@@ -76,7 +77,7 @@ export async function selectOrchestrationStrategy(
     const validStrategies = ['SIMPLE', 'PLANNING'];
     const strategy = validStrategies.includes(parsed.strategy)
       ? parsed.strategy
-      : (complexity >= threshold ? 'PLANNING' : 'SIMPLE');
+      : (complexity >= threshold ? 'PLANNING' : defaultStrategy);
 
     return {
       strategy,
@@ -88,6 +89,6 @@ export async function selectOrchestrationStrategy(
     logger?.error?.('selectOrchestrationStrategy: LLM failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-    return { strategy: 'SIMPLE', complexity: 0, reason: 'llm_failed_fallback' };
+    return { strategy: defaultStrategy, complexity: 0, reason: 'llm_failed_fallback' };
   }
 }

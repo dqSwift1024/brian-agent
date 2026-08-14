@@ -249,7 +249,7 @@
 **功能**：配置策略模块的全局参数
 **入参**：
 - input：ConfigOrchestrationStrategyInput（继承 Input），包含以下字段：
-  - default_strategy_id：默认编排策略 ID（可选）
+  - default_strategy_id：默认编排策略 ID（可选，当按 strategy_label 查不到策略实例时兜底使用）
   - max_plan_retries：Planning 策略最大重试次数（可选，默认 2）
   - plan_prompt_template_id：计划生成 prompt 模板 ID（可选）
 - context：ConfigOrchestrationStrategyContext（继承 Context），会话上下文（session_id 等）
