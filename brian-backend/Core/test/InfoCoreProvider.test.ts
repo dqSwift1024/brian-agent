@@ -659,6 +659,13 @@ describe('InfoCoreProvider', () => {
       expect(output.config!.tag_top_k).toBe(10);
       expect(output.config!.enable).toBe(1);
     });
+
+    it('should reject invalid tag_top_k (<=0 or non-integer)', async () => {
+      const setInput = new UpdateInfoTagConfigInput();
+      setInput.tag_top_k = 0;
+      await expect(infoCore.updateInfoTagConfig(setInput, new InfoCoreContext(), new UpdateInfoTagConfigOutput()))
+        .rejects.toThrow(ValidationError);
+    });
   });
 
   describe('soInfoSummaryConfig / updateInfoSummaryConfig', () => {

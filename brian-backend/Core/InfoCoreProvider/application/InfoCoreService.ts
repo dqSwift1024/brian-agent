@@ -146,6 +146,8 @@ import {
   GetLLMOutput,
   GetPromptInput,
   GetPromptOutput,
+  ExecPromptInput,
+  ExecPromptOutput,
 } from '@brian-agent/base';
 
 const jieba = Jieba.withDict(dict);
@@ -1171,6 +1173,11 @@ export class InfoCoreService {
         throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
       }
     }
+    if (input.tag_top_k !== undefined) {
+      if (!Number.isInteger(input.tag_top_k) || input.tag_top_k < 1) {
+        throw new ValidationError('tag_top_k 必须为 >= 1 的整数');
+      }
+    }
     await this.upsertConfigRow(INFO_TAG_CONFIG_TABLE, input, {
       defaultRecord: {
         llm_id: '',
@@ -1577,17 +1584,26 @@ export class InfoCoreService {
     tagConfig: InfoTagConfigRecord,
   ): Promise<string[]> {
     try {
-      if (!tagConfig.llm_id) return [];
+      if (!tagConfig.llm_id || !tagConfig.prompt_template_id) return [];
 
       const topK = tagConfig.tag_top_k || 5;
-      const prompt = `Extract the top ${topK} relevant tags from the following text. Return ONLY a JSON array of strings.\n\nText:\n${text}`;
+      const promptOut = new ExecPromptOutput();
+      const ok = await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), {
+          id: tagConfig.prompt_template_id,
+          variables: { text, top_k: topK },
+        }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (!ok || !promptOut.prompt) return [];
 
       const execOutput = new ExecLLMOutput();
       await this.llmAccess.execLLM(
-        {
+        Object.assign(new ExecLLMInput(), {
           id: tagConfig.llm_id,
-          params: { prompt, temperature: 0.1, max_tokens: 256 },
-        } as ExecLLMInput,
+          params: { prompt: promptOut.prompt, temperature: 0.1, max_tokens: 256 },
+        }),
         new LLMContext(),
         execOutput,
       );
@@ -1603,16 +1619,25 @@ export class InfoCoreService {
     summaryConfig: InfoSummaryConfigRecord,
   ): Promise<string> {
     try {
-      if (!summaryConfig.llm_id) return '';
+      if (!summaryConfig.llm_id || !summaryConfig.prompt_template_id) return '';
 
-      const prompt = `Summarize the following text concisely:\n\n${text}\n\nProvide ONLY the summary, nothing else.`;
+      const promptOut = new ExecPromptOutput();
+      const ok = await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), {
+          id: summaryConfig.prompt_template_id,
+          variables: { text },
+        }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (!ok || !promptOut.prompt) return '';
 
       const execOutput = new ExecLLMOutput();
       await this.llmAccess.execLLM(
-        {
+        Object.assign(new ExecLLMInput(), {
           id: summaryConfig.llm_id,
-          params: { prompt, temperature: 0.3, max_tokens: 512 },
-        } as ExecLLMInput,
+          params: { prompt: promptOut.prompt, temperature: 0.3, max_tokens: 512 },
+        }),
         new LLMContext(),
         execOutput,
       );
