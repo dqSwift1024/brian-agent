@@ -262,8 +262,8 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- WriterAgent ---
   agent('writer_agent', 'basic', 'write_prompt_template_id', '写作 Prompt', 'STRING', '', '结果汇总所用的 Prompt 模板'),
   agent('writer_agent', 'basic', 'default_language', '默认语言', 'STRING', 'zh-CN', '结果输出默认语言'),
-  agent('writer_agent', 'basic', 'default_style', '默认风格', 'STRING', 'clear', '结果输出默认风格'),
-  agent('writer_agent', 'basic', 'default_depth', '默认深度', 'STRING', 'medium', '结果输出默认详细程度'),
+  agent('writer_agent', 'basic', 'default_style', '默认风格', 'ENUM', 'clear', '结果输出默认风格', ['clear', 'concise', 'detailed', 'creative']),
+  agent('writer_agent', 'basic', 'default_depth', '默认深度', 'ENUM', 'medium', '结果输出默认详细程度', ['shallow', 'medium', 'deep']),
   agent('writer_agent', 'basic', 'default_format', '默认格式', 'STRING', 'MARKDOWN', '结果输出默认格式'),
 
   // --- EvolutorAgent ---

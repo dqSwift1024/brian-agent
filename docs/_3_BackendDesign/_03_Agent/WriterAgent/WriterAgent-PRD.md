@@ -102,9 +102,9 @@
 - input：ConfigWriterAgentInput（继承 Input），包含以下字段：
   - write_prompt_template_id：写作 prompt 模板 ID（可选）
   - default_language：默认语言（可选）
-  - default_style：默认风格（可选）
-  - default_depth：默认深度（可选）
-  - default_format：默认格式（可选）
+  - default_style：默认风格（可选，可选值：clear / concise / detailed / creative）
+  - default_depth：默认深度（可选，可选值：shallow / medium / deep）
+  - default_format：默认格式（可选，可选值：TEXT / MARKDOWN / JSON）
 - context：ConfigWriterAgentContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ConfigWriterAgentOutput（继承 Output），承载返回内容：
   - 当前生效的全部配置

@@ -871,6 +871,9 @@ function getConfigDisplayValue(item: ParamItem): string {
   if (item.config_key.endsWith('strategy_id')) {
     return val ? getOrchStrategyLabel(String(val)) : '选择策略'
   }
+  if (item.config_type === 'ENUM' && val !== undefined && val !== null) {
+    return enumLabel(item.config_key, String(val))
+  }
   if (val !== undefined && val !== null) return String(val)
   return '—'
 }
@@ -878,6 +881,25 @@ function getConfigDisplayValue(item: ParamItem): string {
 function getOrchStrategyLabel(strategyId: string): string {
   const s = orchStrategies.value.find(o => o.strategyId === strategyId || o.id === strategyId)
   return s ? s.label : (strategyId || '—')
+}
+
+// 枚举值 → 中文显示名的映射（下拉与展示态共用）
+const ENUM_LABELS: Record<string, Record<string, string>> = {
+  'writer_agent.default_style': {
+    clear: '清晰',
+    concise: '简洁',
+    detailed: '详细',
+    creative: '创意',
+  },
+  'writer_agent.default_depth': {
+    shallow: '浅显',
+    medium: '中等',
+    deep: '深入',
+  },
+}
+
+function enumLabel(configKey: string, value: string): string {
+  return ENUM_LABELS[configKey]?.[value] ?? value
 }
 
 function startEditParam(item: ParamItem) {
@@ -3512,7 +3534,7 @@ watch(activeSubSection, async (val) => {
                         </template>
                         <template v-else-if="item.config_type === 'ENUM' && item.config_enum_values">
                           <select v-model="editingParamValue" :class="inputClass + ' !w-32 !py-1.5'">
-                            <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ v }}</option>
+                            <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ enumLabel(item.config_key, String(v)) }}</option>
                           </select>
                         </template>
                         <template v-else-if="item.config_key.endsWith('llm_id')">
