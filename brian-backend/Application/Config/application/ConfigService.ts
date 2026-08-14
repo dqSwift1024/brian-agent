@@ -52,12 +52,16 @@ import type {
 import type {
   WriterAgentAccess, EvolutorAgentAccess, AgentLibraryAccess,
   AgentBuilderAccess, AgentExecutionAccess, AgentStrategyAccess, AgentContextAccess,
+  PlannerAgentAccess,
 } from '@brian-agent/agent';
 import type {
   ConfigWriterAgentInput, ConfigWriterAgentOutput, WriterAgentContext,
 } from '@brian-agent/agent';
 import type {
   ConfigEvolutorAgentInput, ConfigEvolutorAgentOutput, EvolutorAgentContext,
+} from '@brian-agent/agent';
+import type {
+  ConfigPlannerAgentInput, ConfigPlannerAgentOutput, PlannerAgentContext,
 } from '@brian-agent/agent';
 import type {
   ConfigAgentLibraryInput, ConfigAgentLibraryOutput, AgentLibraryContext,
@@ -170,6 +174,7 @@ export class ConfigService {
   private readonly soulCore: SoulCoreAccess;
   private readonly writerAgent: WriterAgentAccess;
   private readonly evolutorAgent: EvolutorAgentAccess;
+  private readonly plannerAgent: PlannerAgentAccess;
   private readonly agentLibrary: AgentLibraryAccess;
   private readonly agentBuilder: AgentBuilderAccess;
   private readonly agentExecution: AgentExecutionAccess;
@@ -204,6 +209,7 @@ export class ConfigService {
     soulCore: SoulCoreAccess,
     writerAgent: WriterAgentAccess,
     evolutorAgent: EvolutorAgentAccess,
+    plannerAgent: PlannerAgentAccess,
     agentLibrary: AgentLibraryAccess,
     agentBuilder: AgentBuilderAccess,
     agentExecution: AgentExecutionAccess,
@@ -232,6 +238,7 @@ export class ConfigService {
     this.soulCore = soulCore;
     this.writerAgent = writerAgent;
     this.evolutorAgent = evolutorAgent;
+    this.plannerAgent = plannerAgent;
     this.agentLibrary = agentLibrary;
     this.agentBuilder = agentBuilder;
     this.agentExecution = agentExecution;
@@ -807,6 +814,12 @@ export class ConfigService {
       await this.soulCore.soSoulRule({} as SoSoulRuleInput, {} as SoulCoreContext, out);
       return (out as any).rule ?? out;
     }
+    if (configKey.startsWith('planner_agent.')) {
+      return this.getConfigFromAccess(
+        configKey, 'planner_agent',
+        (i: any, c: any, o: any) => this.plannerAgent.configPlannerAgent(i, c, o),
+      );
+    }
     if (configKey.startsWith('writer_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'writer_agent',
@@ -1069,14 +1082,34 @@ export class ConfigService {
       await this.infoCore.updateInfoConfig(input, {} as any, output);
       return;
     }
+    if (prefix.startsWith('planner_agent.')) {
+      const input: any = {};
+      if (prefix.startsWith('planner_agent.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
+      else if (prefix.startsWith('planner_agent.plan_prompt_template_id')) input.plan_prompt_template_id = value as string;
+      else if (prefix.startsWith('planner_agent.max_subtask_count')) input.max_subtask_count = value as number;
+      const output: any = {};
+      await this.plannerAgent.configPlannerAgent(input, {} as any, output);
+      return;
+    }
     if (prefix.startsWith('writer_agent.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('writer_agent.write_prompt_template_id')) input.write_prompt_template_id = value as string;
+      else if (prefix.startsWith('writer_agent.default_language')) input.default_language = value as string;
+      else if (prefix.startsWith('writer_agent.default_style')) input.default_style = value as string;
+      else if (prefix.startsWith('writer_agent.default_depth')) input.default_depth = value as string;
+      else if (prefix.startsWith('writer_agent.default_format')) input.default_format = value as string;
       const output: any = {};
       await this.writerAgent.configWriterAgent(input, {} as any, output);
       return;
     }
     if (prefix.startsWith('evolutor_agent.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('evolutor_agent.eval_work_prompt_template_id')) input.eval_work_prompt_template_id = value as string;
+      else if (prefix.startsWith('evolutor_agent.eval_write_prompt_template_id')) input.eval_write_prompt_template_id = value as string;
+      else if (prefix.startsWith('evolutor_agent.optimize_threshold')) input.optimize_threshold = value as number;
+      else if (prefix.startsWith('evolutor_agent.eval_frequency_threshold')) input.eval_frequency_threshold = value as number;
+      else if (prefix.startsWith('evolutor_agent.eval_schedule_interval_ms')) input.eval_schedule_interval_ms = value as number;
+      else if (prefix.startsWith('evolutor_agent.eval_batch_size')) input.eval_batch_size = value as number;
       const output: any = {};
       await this.evolutorAgent.configEvolutorAgent(input, {} as any, output);
       return;

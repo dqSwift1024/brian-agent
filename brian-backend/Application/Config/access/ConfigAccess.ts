@@ -16,6 +16,7 @@ import type { LLMCoreAccess, InfoCoreAccess, MCPCoreAccess, SkillCoreAccess, Sou
 import type {
   WriterAgentAccess, EvolutorAgentAccess, AgentLibraryAccess,
   AgentBuilderAccess, AgentExecutionAccess, AgentStrategyAccess, AgentContextAccess,
+  PlannerAgentAccess,
 } from '@brian-agent/agent';
 import type {
   OrchestrationEntryAccess, OrchestrationStrategyAccess,
@@ -99,6 +100,7 @@ export class ConfigAccess {
     soulCore: SoulCoreAccess,
     writerAgent: WriterAgentAccess,
     evolutorAgent: EvolutorAgentAccess,
+    plannerAgent: PlannerAgentAccess,
     agentLibrary: AgentLibraryAccess,
     agentBuilder: AgentBuilderAccess,
     agentExecution: AgentExecutionAccess,
@@ -120,7 +122,7 @@ export class ConfigAccess {
       relationDb,
       llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
-      writerAgent, evolutorAgent, agentLibrary, agentBuilder,
+      writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder,
       agentExecution, agentStrategy, agentContext,
       orchestrationEntry, orchestrationStrategy, orchestrationExecution,
       orchestrationVisualization, jsonNode,

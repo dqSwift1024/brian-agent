@@ -254,6 +254,26 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- AgentContext ---
   agent('agent_context', 'basic', 'enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
 
+  // --- PlannerAgent ---
+  agent('planner_agent', 'basic', 'complexity_decompose_threshold', '复杂度分解阈值', 'INT', 50, '任务复杂度超过此值触发拆解为子任务'),
+  agent('planner_agent', 'basic', 'plan_prompt_template_id', '计划生成 Prompt', 'STRING', '', '任务拆解所用的 Prompt 模板'),
+  agent('planner_agent', 'basic', 'max_subtask_count', '最大子任务数', 'INT', 10, '单次规划最多拆分的子任务数'),
+
+  // --- WriterAgent ---
+  agent('writer_agent', 'basic', 'write_prompt_template_id', '写作 Prompt', 'STRING', '', '结果汇总所用的 Prompt 模板'),
+  agent('writer_agent', 'basic', 'default_language', '默认语言', 'STRING', 'zh-CN', '结果输出默认语言'),
+  agent('writer_agent', 'basic', 'default_style', '默认风格', 'STRING', 'clear', '结果输出默认风格'),
+  agent('writer_agent', 'basic', 'default_depth', '默认深度', 'STRING', 'medium', '结果输出默认详细程度'),
+  agent('writer_agent', 'basic', 'default_format', '默认格式', 'STRING', 'MARKDOWN', '结果输出默认格式'),
+
+  // --- EvolutorAgent ---
+  agent('evolutor_agent', 'basic', 'eval_work_prompt_template_id', 'Work 评估 Prompt', 'STRING', '', '评估 WorkAgent 结果所用的 Prompt 模板'),
+  agent('evolutor_agent', 'basic', 'eval_write_prompt_template_id', 'Write 评估 Prompt', 'STRING', '', '评估 WriterAgent 结果所用的 Prompt 模板'),
+  agent('evolutor_agent', 'basic', 'optimize_threshold', '优化阈值', 'INT', 60, '评分低于此值触发优化'),
+  agent('evolutor_agent', 'basic', 'eval_frequency_threshold', '评估频率阈值', 'INT', 5, '使用次数达到此值触发评估'),
+  agent('evolutor_agent', 'basic', 'eval_schedule_interval_ms', '评估调度间隔（ms）', 'INT', 3600000, '定期评估的调度间隔'),
+  agent('evolutor_agent', 'basic', 'eval_batch_size', '评估批量大小', 'INT', 20, '单次评估处理的 Agent 数量'),
+
   // =========================================================================
   // APPLICATION layer
   // =========================================================================

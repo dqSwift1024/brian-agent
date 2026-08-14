@@ -59,7 +59,7 @@ const navSections: NavSection[] = [
       { key: 'agent-builder', label: '构建参数', icon: Briefcase, type: 'params', configModule: 'agent_builder', configCategories: ['basic'] },
       { key: 'agent-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'agent_execution', configCategories: ['basic'] },
       { key: 'agent-context', label: '上下文参数', icon: Brain, type: 'params', configModule: 'agent_context', configCategories: ['basic'] },
-      { key: 'agent-planner', label: 'Planner 参数', icon: ClipboardList, type: 'params', configModule: 'writer_agent', configCategories: ['basic'] },
+      { key: 'agent-planner', label: 'Planner 参数', icon: ClipboardList, type: 'params', configModule: 'planner_agent', configCategories: ['basic'] },
       { key: 'agent-writer', label: 'Writer 参数', icon: PenLine, type: 'params', configModule: 'writer_agent', configCategories: ['basic'] },
       { key: 'agent-evolutor', label: 'Evolutor 参数', icon: Sparkles, type: 'params', configModule: 'evolutor_agent', configCategories: ['basic'] },
     ],

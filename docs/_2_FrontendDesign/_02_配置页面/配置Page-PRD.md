@@ -205,7 +205,6 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| 最大上下文条目数 | INT | 200 | 注入 Agent 的上下文信息条数上限 |
 | 持久化上下文快照 | BOOLEAN | true | 是否保存上下文快照到数据库 |
 
 ### 3.6 专用 Agent 配置
@@ -223,10 +222,10 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | 写作 Prompt 模板 | Ref | — | Prompt 模板 |
-| 默认输出语言 | ENUM | zh-CN | zh-CN / en / ja 等 |
-| 默认写作风格 | ENUM | clear | clear / academic / creative / concise / professional |
-| 默认内容深度 | ENUM | medium | brief / medium / detailed |
-| 默认输出格式 | ENUM | MARKDOWN | MARKDOWN / PLAIN / HTML |
+| 默认输出语言 | STRING | zh-CN | 结果输出默认语言 |
+| 默认写作风格 | STRING | clear | 结果输出默认风格 |
+| 默认内容深度 | STRING | medium | 结果输出默认详细程度 |
+| 默认输出格式 | STRING | MARKDOWN | 结果输出默认格式 |
 
 #### Evolutor Agent（进化）
 
@@ -234,12 +233,12 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 |------|------|--------|------|
 | Work 评估 Prompt 模板 | Ref | — | 评估 Work 执行质量 |
 | 写作评估 Prompt 模板 | Ref | — | 评估写作输出质量 |
-| 触发优化阈值 | DOUBLE | 0.7 | 评估分数低于此值时触发优化 |
-| 评估频率阈值 | INT | 10 | 每 N 次 Agent 调用触发一次评估 |
+| 触发优化阈值 | INT | 60 | 评估分数低于此值时触发优化 |
+| 评估频率阈值 | INT | 5 | 使用次数达到此值触发评估 |
 | 定时评估间隔 | INT | 3600000 | 毫秒，默认 1 小时 |
-| 评估批处理大小 | INT | 5 | 每批评估多少条记录 |
+| 评估批处理大小 | INT | 20 | 每批评估多少条记录 |
 
-> **注**：Agent 层配置项当前未注册到全局 `config_registry` 表。前端实现需配合后端完成注册。
+> **注**：Agent 层配置项元数据由 `configRegistrations.ts` 静态定义，配置页直接收集展示。
 
 ---
 
