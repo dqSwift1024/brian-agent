@@ -954,7 +954,11 @@ watch(currentParams, (params) => {
   const map: Record<string, string> = {}
   for (const p of params) {
     const val = getConfigPrimitiveValue(p)
-    map[p.config_key] = val !== undefined && val !== null ? String(val) : ''
+    if (p.config_type === 'BOOLEAN') {
+      map[p.config_key] = val === true || val === 1 || val === '1' || val === 'true' ? 'true' : 'false'
+    } else {
+      map[p.config_key] = val !== undefined && val !== null ? String(val) : ''
+    }
   }
   cardValues.value = map
 })
@@ -968,7 +972,7 @@ async function saveCard(item: ParamItem) {
     const tp = item.config_type
     if (tp === 'INT') value = parseInt(raw, 10) || 0
     else if (tp === 'DOUBLE') value = parseFloat(raw) || 0
-    else if (tp === 'BOOLEAN') value = raw === 'true' || raw === true
+    else if (tp === 'BOOLEAN') value = raw === 'true'
     await configApi.configItem.update(item.config_key, value)
     showToast('配置已保存', 'success')
     await loadConfigTree()
