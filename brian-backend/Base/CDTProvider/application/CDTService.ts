@@ -127,6 +127,10 @@ export class CDTService {
 
   /** 自动检测 Chrome 可执行文件路径 */
   static detectChromePath(): string | null {
+    // 优先内置 Chromium（SEA 单文件打包时，由 bootstrap 解压并设置 BRIAN_CHROME_PATH）
+    const builtin = process.env.BRIAN_CHROME_PATH;
+    if (builtin && existsSync(builtin)) return builtin;
+
     const platform = CDTService.platform();
     const candidates = CDT_CHROME_PATHS[platform] || [];
 

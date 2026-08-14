@@ -132,3 +132,7 @@
 ### 使用手册.md
 
 系统的启动、关闭与日常管理操作方法手册；对应根目录下的 `brian` 命令行管理脚本（参考 OpenCode CLI 的启动/关闭方式设计）。内容包括环境要求、快速开始、命令参考（后台守护式 `start`/`stop` 与前台模式 `dev`/`serve`）、端口与配置、常见问题等。
+
+### 打包部署.md
+
+将整个系统打包为单文件可执行的说明文档。采用 Node 官方 SEA（Single Executable Application）+ esbuild，将后端 5 层、前端、4 个原生模块（better-sqlite3 / isolated-vm / @node-rs/jieba / @lancedb/lancedb）与内置 Chromium（Chrome for Testing）集成为一个可执行文件，支持 Windows / Linux / macOS 三平台。对应 `packaging/` 目录下的打包脚本（`build.mjs` / `entry.ts` / `setup-native.ts` / `setup-chromium.ts`）。

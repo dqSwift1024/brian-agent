@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-sea/
 build/
 *.log
 .env
@@ -10,3 +11,13 @@ build/
 *.swo
 data/
 backups/
+brian-backend/data/
+brian-backend/dist/
+brian-backend/Base/dist/
+brian-backend/Core/dist/
+brian-backend/Agent/dist/
+brian-backend/Orchestration/dist/
+brian-backend/Application/dist/
+
+# isolated-vm 运行时复制产物（由 copy-prebuilt.js 生成，平台特定）
+brian-backend/Base/SkillProvider/infrastructure/sandbox/vendor/isolated-vm/out/

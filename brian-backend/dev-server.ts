@@ -127,7 +127,8 @@ import {
 import { AopProxy } from './Base/shared/aop/AopProxy';
 
 let _seq = 0;
-const DATA_DIR = path.join(__dirname, 'data');
+// 数据目录：优先环境变量（打包模式由打包入口注入到可执行文件旁），否则退回源码目录
+const DATA_DIR = process.env.BRIAN_DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function createLogger(): any {
@@ -341,6 +342,50 @@ function sendJson(res: http.ServerResponse, status: number, data: any) {
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(data));
+}
+
+// ---------------------------------------------------------------------------
+// 前端静态文件 serve（SEA 打包模式下，前端 dist 被内联为 base64 映射）
+// ---------------------------------------------------------------------------
+const FRONTEND_MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+function getFrontendFiles(): Record<string, string> | null {
+  return ((globalThis as Record<string, unknown>).__BRIAN_FRONTEND__ as Record<string, string>) || null;
+}
+
+/** 尝试从内联的前端文件映射 serve 静态资源；返回 true 表示已处理 */
+function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
+  const files = getFrontendFiles();
+  if (!files) return false;
+
+  let rel = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
+  if (!rel || rel.endsWith('/')) rel += 'index.html';
+  let b64 = files[rel];
+  // SPA fallback：未知路径回退到 index.html
+  if (!b64) {
+    b64 = files['index.html'];
+    if (!b64) return false;
+  }
+  const ext = path.extname(rel);
+  const mime = FRONTEND_MIME_TYPES[ext] || 'application/octet-stream';
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' });
+  res.end(Buffer.from(b64, 'base64'));
+  return true;
 }
 
 function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Server {
@@ -1943,6 +1988,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'DELETE' && pathname === '/api/bookmark/item') {
         ctx.bookmarkAccess.deleteItem(body.id || '');
         sendJson(res, 200, {});
+
+      } else if (method === 'GET' && serveFrontend(res, pathname)) {
+        // 前端静态文件（SEA 打包模式）—— 已由 serveFrontend 处理
 
       } else {
         sendJson(res, 404, { error: `Route not found: ${method} ${pathname}` });

@@ -27,6 +27,12 @@ const searchPaths = [
   path.join(baseDir, 'out', fileName),
 ];
 
+// SEA 单文件打包模式：原生模块由 bootstrap 解压到 BRIAN_NATIVE_DIR，
+// 优先从该目录加载（优先级最高）。
+if (process.env.BRIAN_NATIVE_DIR) {
+  searchPaths.unshift(path.join(process.env.BRIAN_NATIVE_DIR, `${platform}-${arch}`, fileName));
+}
+
 let loadedPath = null;
 let lastError = null;
 
