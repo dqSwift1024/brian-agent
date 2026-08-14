@@ -891,9 +891,9 @@ async function saveParam() {
     else if (tp === 'DOUBLE') value = parseFloat(value as string) || 0
     else if (tp === 'BOOLEAN') value = value === 'true' || value === true
     await configApi.configItem.update(editingParam.value.config_key, value)
-    editingParam.value.config_value = value
     showToast('配置已保存', 'success')
     cancelEditParam()
+    await loadConfigTree()
   } catch (e: unknown) {
     showToast(e instanceof Error ? e.message : '保存失败')
   } finally {
@@ -3541,10 +3541,10 @@ watch(activeSubSection, async (val) => {
                           <div class="flex items-center gap-1.5">
                             <span
                               class="w-2.5 h-2.5 rounded-full"
-                              :class="item.config_value === true || item.config_value === 'true' ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
+                              :class="getConfigPrimitiveValue(item) === true ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
                             />
                             <span class="text-sm font-mono text-apple-gray-600 dark:text-apple-gray-300">
-                              {{ item.config_value === true || item.config_value === 'true' ? 'true' : 'false' }}
+                              {{ getConfigPrimitiveValue(item) === true ? 'true' : 'false' }}
                             </span>
                           </div>
                         </template>

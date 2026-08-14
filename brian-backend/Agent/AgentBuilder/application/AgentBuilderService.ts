@@ -215,7 +215,7 @@ export class AgentBuilderService {
       );
     }
 
-    // auto_optimize 仅标记配置；实际优化由 Evolutor 评估后触发
+    // 自动优化由 Evolutor 评估后经 MQ 触发 optimizeAgent，auto_optimize 开关在 optimizeAgent 入口读取
     output.agent_id = agentId;
     return true;
   }

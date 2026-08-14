@@ -238,7 +238,7 @@ effective_writable(node) = parent.effective_writable AND node.writable
    - 模块的 effective_writable = 层级 effective_writable AND 模块 writable；
    - 分类的 effective = 模块 effective AND 分类原始值；
    - 配置项的 effective = 分类 effective AND 配置项原始值（配置项 readable/writable 来自静态定义）；
-6. 对每个配置项，调用对应的下层 config*/get* 接口获取当前值（current_value）；
+6. 对每个配置项，调用对应的下层 config*/get* 接口获取当前值（current_value）；模块级 config 表（如 agent_builder_config）返回的 current_value 可能是整条记录对象，前端按 config_key 最后一段提取对应字段值；
 7. 若 readable_only=true，过滤掉 effective_readable=false 的节点（整个子树不可见时一并过滤）；
 8. 返回层级结构数据（含 effective_readable 和 effective_writable）；
 
@@ -505,7 +505,7 @@ Config Application 同时作为 Base 层资源（LLM、Soul、Skill、MCP、Prom
 | 第二层：分层区 | getConfigDetail（layer 过滤） | 按分层展示模块卡片 |
 | 第三层：模块区 | getConfigDetail（module 过滤） | 展示模块的配置分类 |
 | 第四层：配置区 | getConfigDetail（category 过滤） | 展示配置分类的具体配置项 |
-| 第五层：配置读写区 | getConfigItem / updateConfig | 查看/修改具体配置项 |
+| 第五层：配置读写区 | getConfigItem / updateConfig | 查看/修改具体配置项（修改成功后前端重新拉取配置树以反映新值） |
 | 面包屑导航 | 基于 getConfigDetail 层级数据 | 前端自行构建面包屑 |
 | 颜色状态（绿色/灰色） | getConfigDetail（返回 effective_readable/effective_writable） | 前端根据有效权限渲染颜色 |
 | 层级权限控制 | updateLayerPrivilege | 控制整层的可见性和可修改性 |

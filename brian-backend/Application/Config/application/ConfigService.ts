@@ -1096,7 +1096,6 @@ export class ConfigService {
     if (prefix.startsWith('agent_builder.')) {
       const input: any = {};
       if (prefix.startsWith('agent_builder.task_analysis_prompt_template_id')) input.task_analysis_prompt_template_id = value as string;
-      else if (prefix.startsWith('agent_builder.default_strategy_id')) input.default_strategy_id = value as string;
       else if (prefix.startsWith('agent_builder.auto_optimize')) input.auto_optimize = value as boolean;
       const output: any = {};
       await this.agentBuilder.configAgentBuilder(input, {} as any, output);
