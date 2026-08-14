@@ -134,7 +134,14 @@ Agent 实例是系统中执行任务的工作单元。每个 Agent 绑定了策�
 | 最小使用次数 | INT | 5 | 窗口内使用次数低于此值的 Agent 可能被淘汰 |
 | 最小评估分数 | DOUBLE | 0.5 | 评估分数低于此值的 Agent 可能被淘汰 |
 
-**操作**：编辑、删除、启用/禁用（卡片 toggle 开关）。
+**界面展示**：
+- Agent 以**卡片网格**（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`）展示，卡片为正方形（`aspect-square`，宽高相同）；
+- 卡片头部展示图标、名称、类型与启用状态；下方为任务描述（两行截断）；
+- 绑定的组件参数（策略 / 模型 / Soul / 评分 / 使用）**分行展示**，参数名用灰色背景框、参数值用蓝色背景框区分，长值自动截断；
+- 卡片底部为**启用/禁用 toggle 开关**与**删除**按钮；
+- **点击卡片（空白区域）打开编辑弹窗**进行参数修改，卡片上不再设「编辑」按钮。
+
+**操作**：删除、启用/禁用（卡片 toggle 开关）。
 - **删除**：调用 `DELETE /api/agent/{id}` 删除 Agent 并级联清理其使用记录与绑定关系（agent_usage / agent_llm / agent_skill / agent_soul / agent_mcp）；
 - **启用/禁用**：调用 `POST /api/agent/{id}/toggle` 翻转 enable 状态；禁用的 Agent 不会被匹配复用（matchAgent 仅匹配 enable=true），执行时也会被拒绝（execAgent 校验 enable）。
 
@@ -163,7 +170,7 @@ Agent 实例是系统中执行任务的工作单元。每个 Agent 绑定了策�
 
 **界面展示**：
 
-- 策略以**卡片网格**（`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`）展示，卡片显示策略名称、适用复杂度区间、适用领域与执行流摘要；
+- 策略以**卡片网格**（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`）展示，卡片为竖条型（`aspect-[3/2]`），显示策略名称、适用复杂度区间、适用领域，执行流摘要固定于卡片底部；
 - 卡片右上角为**启用/禁用 toggle 开关**，点击直接切换（调用 `POST /api/agent/strategy/{strategy_id}/toggle`）；
 - **点击卡片弹出详情弹窗**，展示策略的具体工作方式：
   - 基本信息（策略名、复杂度区间、适用领域、启停状态）；
@@ -636,8 +643,8 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 
 | 交互模式 | 适用场景 | 界面形态 |
 |----------|----------|----------|
-| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy | 表格列表 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作 |
-| **参数配置** | 上述各功能域的运行参数 | 分类分组 + 配置项列表，支持原地编辑（Switch/Input/Select）或 JSON 编辑器 |
+| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy | 卡片网格/列表 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作；Agent 与执行策略以卡片网格展示 |
+| **参数配置** | 上述各功能域的运行参数 | 竖条卡片网格（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`），卡片为 `aspect-[3/2]`，每张卡片直接显示控件（Switch/Select/Input）与底部「确认」按钮，点击确认保存 |
 
 ### 10.2 引用类型配置项的处理
 

@@ -334,9 +334,15 @@ const currentParamsByCat = computed(() => {
   return groups
 })
 
+const isCardView = computed(() => currentSub.value?.type === 'params')
+
 const editingParam = ref<ParamItem | null>(null)
 const editingParamValue = ref<string>('')
 const paramSaving = ref(false)
+
+// 卡片视图：每个参数卡片独立持有临时值 + 保存状态
+const cardValues = ref<Record<string, string>>({})
+const cardSaving = ref<Record<string, boolean>>({})
 
 // VectorDB 语义搜索状态
 const vectordbSearchText = ref('')
@@ -939,6 +945,37 @@ async function saveParam() {
     showToast(e instanceof Error ? e.message : '保存失败')
   } finally {
     paramSaving.value = false
+  }
+}
+
+// 进入参数卡片视图时，用当前配置值初始化各卡片的临时值
+watch(currentParams, (params) => {
+  if (!isCardView.value) return
+  const map: Record<string, string> = {}
+  for (const p of params) {
+    const val = getConfigPrimitiveValue(p)
+    map[p.config_key] = val !== undefined && val !== null ? String(val) : ''
+  }
+  cardValues.value = map
+})
+
+async function saveCard(item: ParamItem) {
+  const raw = cardValues.value[item.config_key]
+  if (raw === undefined) return
+  cardSaving.value[item.config_key] = true
+  try {
+    let value: unknown = raw
+    const tp = item.config_type
+    if (tp === 'INT') value = parseInt(raw, 10) || 0
+    else if (tp === 'DOUBLE') value = parseFloat(raw) || 0
+    else if (tp === 'BOOLEAN') value = raw === 'true' || raw === true
+    await configApi.configItem.update(item.config_key, value)
+    showToast('配置已保存', 'success')
+    await loadConfigTree()
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '保存失败')
+  } finally {
+    cardSaving.value[item.config_key] = false
   }
 }
 
@@ -3496,17 +3533,17 @@ watch(activeSubSection, async (val) => {
               </div>
             </div>
             <!-- 参数列表 -->
-            <div v-for="group in currentParamsByCat" :key="group.cat" class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800">
-              <div class="px-4 py-3 border-b border-apple-gray-200 dark:border-apple-gray-700">
+            <div v-for="group in currentParamsByCat" :key="group.cat" :class="isCardView ? '' : 'rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800'">
+              <div v-if="!isCardView" class="px-4 py-3 border-b border-apple-gray-200 dark:border-apple-gray-700">
                 <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ group.label }}</h3>
               </div>
-              <div class="divide-y divide-apple-gray-100 dark:divide-apple-gray-700">
+              <div :class="isCardView ? 'grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3' : 'divide-y divide-apple-gray-100 dark:divide-apple-gray-700'">
                 <div
                   v-for="item in group.items"
                   :key="item.config_key"
-                  class="px-4 py-3 hover:bg-apple-gray-50 dark:hover:bg-apple-gray-800/50 transition-colors"
+                  :class="isCardView ? 'rounded-lg border border-apple-gray-100 dark:border-apple-gray-700 p-4 hover:border-brian-blue/40 hover:shadow-sm transition-all bg-white dark:bg-apple-gray-800/50 aspect-[3/2]' : 'px-4 py-3 hover:bg-apple-gray-50 dark:hover:bg-apple-gray-800/50 transition-colors'"
                 >
-                  <div class="flex items-start justify-between gap-4">
+                  <div :class="isCardView ? 'flex flex-col gap-3 h-full' : 'flex items-start justify-between gap-4'">
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2">
                         <span class="text-sm font-medium text-apple-gray-900 dark:text-apple-gray-50">{{ item.config_name }}</span>
@@ -3529,8 +3566,72 @@ watch(activeSubSection, async (val) => {
                       </p>
                       <p class="text-[10px] font-mono text-apple-gray-400 dark:text-apple-gray-500 mt-0.5">{{ item.config_key }}</p>
                     </div>
-                    <div class="flex items-center gap-2 flex-shrink-0">
-                      <template v-if="editingParam?.config_key === item.config_key">
+                    <div :class="isCardView ? 'flex flex-col gap-2 mt-auto' : 'flex items-center gap-2 flex-shrink-0'">
+                      <template v-if="isCardView">
+                        <button
+                          v-if="item.config_type === 'BOOLEAN'"
+                          class="relative w-11 h-6 rounded-full transition-colors duration-200 disabled:opacity-50"
+                          :class="cardValues[item.config_key] === 'true' ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
+                          :disabled="item.writable === false"
+                          @click="cardValues[item.config_key] = cardValues[item.config_key] === 'true' ? 'false' : 'true'"
+                        >
+                          <span
+                            class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                            :class="cardValues[item.config_key] === 'true' ? 'translate-x-5' : ''"
+                          />
+                        </button>
+                        <select
+                          v-else-if="item.config_key.endsWith('prompt_template_id')"
+                          v-model="cardValues[item.config_key]"
+                          :disabled="item.writable === false"
+                          :class="inputClass + ' !w-full !py-1.5'"
+                        >
+                          <option value="">prompt选择</option>
+                          <option v-for="p in prompts" :key="p.id" :value="p.id">{{ p.title }}</option>
+                        </select>
+                        <select
+                          v-else-if="item.config_key.endsWith('llm_id')"
+                          v-model="cardValues[item.config_key]"
+                          :disabled="item.writable === false"
+                          :class="inputClass + ' !w-full !py-1.5'"
+                        >
+                          <option value="">选择模型</option>
+                          <option v-for="m in models" :key="m.id" :value="m.id">{{ m.modelName || m.id }}</option>
+                        </select>
+                        <select
+                          v-else-if="item.config_key.endsWith('strategy_id')"
+                          v-model="cardValues[item.config_key]"
+                          :disabled="item.writable === false"
+                          :class="inputClass + ' !w-full !py-1.5'"
+                        >
+                          <option value="">选择策略</option>
+                          <option v-for="s in orchStrategies" :key="s.id" :value="s.strategyId">{{ s.label }}</option>
+                        </select>
+                        <select
+                          v-else-if="item.config_type === 'ENUM' && item.config_enum_values"
+                          v-model="cardValues[item.config_key]"
+                          :disabled="item.writable === false"
+                          :class="inputClass + ' !w-full !py-1.5'"
+                        >
+                          <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ enumLabel(item.config_key, String(v)) }}</option>
+                        </select>
+                        <input
+                          v-else
+                          v-model="cardValues[item.config_key]"
+                          :disabled="item.writable === false"
+                          :type="item.config_type === 'INT' || item.config_type === 'DOUBLE' ? 'number' : 'text'"
+                          :class="inputClass + ' !w-full !py-1.5'"
+                        />
+                        <button
+                          class="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 disabled:opacity-50 transition-colors"
+                          :disabled="cardSaving[item.config_key] || item.writable === false"
+                          @click="saveCard(item)"
+                        >
+                          <Loader2 v-if="cardSaving[item.config_key]" :size="14" class="animate-spin" />
+                          <span v-else>确认</span>
+                        </button>
+                      </template>
+                      <template v-else-if="editingParam?.config_key === item.config_key">
                         <template v-if="item.config_type === 'BOOLEAN'">
                           <button
                             class="relative w-11 h-6 rounded-full transition-colors duration-200"
@@ -3542,24 +3643,24 @@ watch(activeSubSection, async (val) => {
                           </button>
                         </template>
                         <template v-else-if="item.config_type === 'ENUM' && item.config_enum_values">
-                          <select v-model="editingParamValue" :class="inputClass + ' !w-32 !py-1.5'">
+                          <select v-model="editingParamValue" :class="inputClass + (isCardView ? ' !w-full !py-1.5' : ' !w-32 !py-1.5')">
                             <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ enumLabel(item.config_key, String(v)) }}</option>
                           </select>
                         </template>
                         <template v-else-if="item.config_key.endsWith('llm_id')">
-                          <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
+                          <select v-model="editingParamValue" :class="inputClass + (isCardView ? ' !w-full !py-1.5' : ' !w-44 !py-1.5')">
                             <option value="">选择模型</option>
                             <option v-for="m in models" :key="m.id" :value="m.id">{{ m.modelName || m.id }}</option>
                           </select>
                         </template>
                         <template v-else-if="item.config_key.endsWith('prompt_template_id')">
-                          <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
+                          <select v-model="editingParamValue" :class="inputClass + (isCardView ? ' !w-full !py-1.5' : ' !w-44 !py-1.5')">
                             <option value="">prompt选择</option>
                             <option v-for="p in prompts" :key="p.id" :value="p.id">{{ p.title }}</option>
                           </select>
                         </template>
                         <template v-else-if="item.config_key.endsWith('strategy_id')">
-                          <select v-model="editingParamValue" :class="inputClass + ' !w-44 !py-1.5'">
+                          <select v-model="editingParamValue" :class="inputClass + (isCardView ? ' !w-full !py-1.5' : ' !w-44 !py-1.5')">
                             <option value="">选择策略</option>
                             <option v-for="s in orchStrategies" :key="s.id" :value="s.strategyId">{{ s.label }}</option>
                           </select>
@@ -3568,7 +3669,7 @@ watch(activeSubSection, async (val) => {
                           <input
                             v-model="editingParamValue"
                             :type="item.config_type === 'STRING' ? 'text' : 'number'"
-                            :class="inputClass + ' !w-32 !py-1.5'"
+                            :class="inputClass + (isCardView ? ' !w-full !py-1.5' : ' !w-32 !py-1.5')"
                           />
                         </template>
                         <button
@@ -4154,38 +4255,55 @@ watch(activeSubSection, async (val) => {
             <Bot :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">暂无 Agent 实例</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             <div
               v-for="a in agents" :key="a.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 aspect-square cursor-pointer"
+              @click="openAgentModal(a)"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Bot :size="18" /></div>
-                  <div class="min-w-0">
-                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ a.agent_name || a.name || a.id }}</h3>
-                    <div class="flex items-center gap-2 mt-0.5">
-                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue">{{ a.agent_type || a.type || 'WORKER' }}</span>
-                      <span class="text-[11px] text-apple-gray-400">{{ a.enable ?? a.enabled ?? true ? '启用' : '停用' }}</span>
+              <div class="flex flex-col h-full">
+                <div class="flex items-start justify-between mb-3">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Bot :size="18" /></div>
+                    <div class="min-w-0">
+                      <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ a.agent_name || a.name || a.id }}</h3>
+                      <div class="flex items-center gap-2 mt-0.5">
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue">{{ a.agent_type || a.type || 'WORKER' }}</span>
+                        <span class="text-[11px] text-apple-gray-400">{{ a.enable ?? a.enabled ?? true ? '启用' : '停用' }}</span>
+                      </div>
                     </div>
                   </div>
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="(a.enable ?? a.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
                 </div>
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="(a.enable ?? a.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
-              </div>
-              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-2 min-h-[32px] line-clamp-2">{{ a.description || a.task_signature || '暂无描述' }}</p>
-              <div class="flex items-center gap-2 text-[10px] text-apple-gray-400 mb-3">
-                <span v-if="a.strategy_id">策略: {{ getStrategyLabel(a.strategy_id) }}</span>
-                <span v-if="a.llm_id">模型: {{ getModelName(a.llm_id) }}</span>
-                <span v-if="a.soul_id">Soul: {{ getSoulName(a.soul_id) }}</span>
-                <span v-if="a.eval_score !== undefined">评分: {{ a.eval_score }}</span>
-                <span v-if="a.usage_count !== undefined">使用: {{ a.usage_count }}次</span>
-              </div>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openAgentModal(a)"><Pencil :size="11" /> 编辑</button>
-                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(a.enable ?? a.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="handleToggleAgent(a.id)">
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(a.enable ?? a.enabled ?? true) ? 'translate-x-4' : ''" />
-                </button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleDeleteAgent(a.id)"><Trash2 :size="11" /> 删除</button>
+                <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-2 min-h-[32px] line-clamp-2">{{ a.description || a.task_signature || '暂无描述' }}</p>
+                <div class="flex flex-col gap-1.5 text-[10px] mb-3">
+                  <div v-if="a.strategy_id" class="flex items-center gap-1.5 min-w-0">
+                    <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">策略</span>
+                    <span class="px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue truncate">{{ getStrategyLabel(a.strategy_id) }}</span>
+                  </div>
+                  <div v-if="a.llm_id" class="flex items-center gap-1.5 min-w-0">
+                    <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">模型</span>
+                    <span class="px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue truncate">{{ getModelName(a.llm_id) }}</span>
+                  </div>
+                  <div v-if="a.soul_id" class="flex items-center gap-1.5 min-w-0">
+                    <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">Soul</span>
+                    <span class="px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue truncate">{{ getSoulName(a.soul_id) }}</span>
+                  </div>
+                  <div v-if="a.eval_score !== undefined" class="flex items-center gap-1.5 min-w-0">
+                    <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">评分</span>
+                    <span class="px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue">{{ a.eval_score }}</span>
+                  </div>
+                  <div v-if="a.usage_count !== undefined" class="flex items-center gap-1.5 min-w-0">
+                    <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">使用</span>
+                    <span class="px-1.5 py-0.5 rounded bg-brian-blue/10 text-brian-blue">{{ a.usage_count }}次</span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(a.enable ?? a.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="handleToggleAgent(a.id)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(a.enable ?? a.enabled ?? true) ? 'translate-x-4' : ''" />
+                  </button>
+                  <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="handleDeleteAgent(a.id)"><Trash2 :size="11" /> 删除</button>
+                </div>
               </div>
             </div>
           </div>
@@ -4712,27 +4830,29 @@ watch(activeSubSection, async (val) => {
             <GitBranch :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">暂无执行策略</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             <div
               v-for="s in agentStrategies" :key="s.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 cursor-pointer"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 cursor-pointer aspect-[3/2]"
               @click="openStrategyDetail(s)"
             >
-              <div class="flex items-start justify-between mb-2">
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue">
-                    <GitBranch :size="18" />
+              <div class="flex flex-col h-full">
+                <div class="flex items-start justify-between mb-2">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue">
+                      <GitBranch :size="18" />
+                    </div>
+                    <div class="min-w-0">
+                      <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ s.strategy_label }}</h3>
+                      <p class="text-[11px] text-apple-gray-400">复杂度 {{ s.suitable_complexity_min }}-{{ s.suitable_complexity_max }} · {{ parseDomains(s.suitable_domains) }}</p>
+                    </div>
                   </div>
-                  <div class="min-w-0">
-                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ s.strategy_label }}</h3>
-                    <p class="text-[11px] text-apple-gray-400">复杂度 {{ s.suitable_complexity_min }}-{{ s.suitable_complexity_max }} · {{ parseDomains(s.suitable_domains) }}</p>
-                  </div>
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="s.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="toggleStrategy(s)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="s.enable ? 'translate-x-4' : ''" />
+                  </button>
                 </div>
-                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="s.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="toggleStrategy(s)">
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="s.enable ? 'translate-x-4' : ''" />
-                </button>
+                <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 font-mono mt-auto">{{ formatStrategyRule(s.execution_rule) }}</p>
               </div>
-              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 font-mono">{{ formatStrategyRule(s.execution_rule) }}</p>
             </div>
           </div>
         </div>
