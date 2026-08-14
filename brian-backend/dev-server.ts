@@ -20,7 +20,7 @@ import { LogAccess } from './Base/LogProvider';
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
-import { InfoCoreAccess } from './Core/InfoCoreProvider';
+import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
 import { SkillCoreAccess } from './Core/SkillCoreProvider';
@@ -299,6 +299,33 @@ async function buildContext() {
     }, msUntilMidnight);
   }
   scheduleMidnightCleanup();
+
+  // 启动时清理过期信息（InfoCore.delInfo，清空超过 alive_max_days 的 info 内容，保留记录用于摘要回退）
+  try {
+    const delOut = new DelInfoOutput();
+    await infoCore.delInfo(new DelInfoInput(), new InfoCoreContext(), delOut);
+    if (delOut.deleted_count > 0) logger.info('[startup] Info cleanup', `清理了 ${delOut.deleted_count} 条过期信息`);
+  } catch (e) {
+    logger.warn('[startup] Info cleanup failed', String(e));
+  }
+
+  // 每日午夜 0:00 清理过期信息
+  function scheduleInfoCleanup() {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    const msUntilMidnight = midnight.getTime() - now.getTime();
+    setTimeout(() => {
+      try {
+        const delOut = new DelInfoOutput();
+        infoCore.delInfo(new DelInfoInput(), new InfoCoreContext(), delOut).then(() => {
+          if (delOut.deleted_count > 0) logger.info('[cron] Info cleanup', `清理了 ${delOut.deleted_count} 条过期信息`);
+        }).catch(() => {});
+      } catch { /* ignore */ }
+      scheduleInfoCleanup(); // 调度下一天
+    }, msUntilMidnight);
+  }
+  scheduleInfoCleanup();
 
   return {
     relationDb, llmAccess, mcpAccess, soulAccess, skillAccess, promptsAccess,

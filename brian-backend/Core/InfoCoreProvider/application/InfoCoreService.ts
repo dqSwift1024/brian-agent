@@ -1238,6 +1238,11 @@ export class InfoCoreService {
     _context: InfoCoreContext,
     output: UpdateInfoConfigOutput,
   ): Promise<boolean> {
+    if (input.alive_max_days !== undefined) {
+      if (!Number.isInteger(input.alive_max_days) || input.alive_max_days < 1) {
+        throw new ValidationError('alive_max_days 必须为 >= 1 的整数');
+      }
+    }
     await this.upsertConfigRow(INFO_CONFIG_TABLE, input, {
       defaultRecord: {
         alive_max_days: 30,

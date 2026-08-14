@@ -697,6 +697,16 @@ describe('InfoCoreProvider', () => {
       await infoCore.soInfoConfig(new SoInfoConfigInput(), new InfoCoreContext(), output);
       expect(output.config!.alive_max_days).toBe(14);
     });
+
+    it('should reject invalid alive_max_days (<=0 or non-integer)', async () => {
+      const setInput = new UpdateInfoConfigInput();
+      setInput.alive_max_days = -1;
+      await expect(infoCore.updateInfoConfig(setInput, new InfoCoreContext(), new UpdateInfoConfigOutput()))
+        .rejects.toThrow(ValidationError);
+      setInput.alive_max_days = 0;
+      await expect(infoCore.updateInfoConfig(setInput, new InfoCoreContext(), new UpdateInfoConfigOutput()))
+        .rejects.toThrow(ValidationError);
+    });
   });
 
   describe('soInfoVectorConfig / updateInfoVectorConfig', () => {
