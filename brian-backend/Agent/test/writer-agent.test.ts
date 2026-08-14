@@ -36,22 +36,22 @@ describe('WriterAgent', () => {
     it('TC-WR-001: 首次保存用户配置', async () => {
       const s = sid();
       await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), {
-        session_id: s, language: 'en', style: 'concise', depth: 'shallow', format: 'TEXT',
+        session_id: s, language: 'en-US', style: 'concise', depth: 'shallow', format: 'TEXT',
       }), new WriterAgentContext(), new SaveUserProfileOutput());
       const out = new GetUserProfileOutput();
       await writer.getUserProfile(Object.assign(new GetUserProfileInput(), { session_id: s }), new WriterAgentContext(), out);
-      expect(out.user_profile.language).toBe('en');
+      expect(out.user_profile.language).toBe('en-US');
     });
 
     it('TC-WR-002: 更新已有配置', async () => {
       const s = sid();
-      await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), { session_id: s, language: 'en' }),
+      await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), { session_id: s, language: 'en-US' }),
         new WriterAgentContext(), new SaveUserProfileOutput());
-      await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), { session_id: s, language: 'ja' }),
+      await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), { session_id: s, language: 'zh-CN' }),
         new WriterAgentContext(), new SaveUserProfileOutput());
       const out = new GetUserProfileOutput();
       await writer.getUserProfile(Object.assign(new GetUserProfileInput(), { session_id: s }), new WriterAgentContext(), out);
-      expect(out.user_profile.language).toBe('ja');
+      expect(out.user_profile.language).toBe('zh-CN');
     });
 
     it('TC-WR-003: format 非法值抛异常', async () => {
@@ -64,6 +64,12 @@ describe('WriterAgent', () => {
       const out = new GetUserProfileOutput();
       await writer.getUserProfile(Object.assign(new GetUserProfileInput(), { session_id: sid() }), new WriterAgentContext(), out);
       expect(out.user_profile.language).toBe('zh-CN');
+    });
+
+    it('TC-WR-005: language 非法值抛异常', async () => {
+      await expect(writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), {
+        session_id: sid(), language: 'fr',
+      }), new WriterAgentContext(), new SaveUserProfileOutput())).rejects.toThrow(ValidationError);
     });
   });
 
@@ -86,6 +92,11 @@ describe('WriterAgent', () => {
 
     it('TC-WR-014: default_style 非法值抛异常', async () => {
       await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_style: 'fancy' }),
+        new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
+    });
+
+    it('TC-WR-015: default_language 非法值抛异常', async () => {
+      await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_language: 'fr' }),
         new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
     });
   });

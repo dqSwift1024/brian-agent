@@ -251,7 +251,7 @@ UserProfile Application 是用户画像的管理和展示层，负责：
 
 **入参（SaveUserPreferenceInput extends Input）**：
 - session_id（STRING，必选）：会话 ID
-- language（STRING，可选）：偏好语言
+- language（ENUM，可选）：偏好语言（zh-CN / en-US）
 - style（ENUM，可选）：回复风格（clear / concise / detailed / creative）
 - depth（ENUM，可选）：回复深度（shallow / medium / deep）
 - format（ENUM，可选）：回复格式（TEXT / MARKDOWN / JSON）

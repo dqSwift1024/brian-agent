@@ -730,7 +730,7 @@ describe('UserProfileService', () => {
 
       const input = new SaveUserPreferenceInput();
       input.session_id = 'pref-session-2';
-      input.language = 'fr-FR';
+      input.language = 'en-US';
 
       const output = new SaveUserPreferenceOutput();
       const result = await service.saveUserPreference(input, ctx(), output);

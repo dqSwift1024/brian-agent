@@ -891,6 +891,10 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     detailed: '详细',
     creative: '创意',
   },
+  'writer_agent.default_language': {
+    'zh-CN': '中文',
+    'en-US': '英文',
+  },
   'writer_agent.default_depth': {
     shallow: '浅显',
     medium: '中等',

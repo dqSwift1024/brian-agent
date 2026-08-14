@@ -36,6 +36,7 @@ import { parseJsonObject } from '../../shared/signature';
 const FORMAT_ENUM = ['TEXT', 'MARKDOWN', 'JSON'];
 const STYLE_ENUM = ['clear', 'concise', 'detailed', 'creative'];
 const DEPTH_ENUM = ['shallow', 'medium', 'deep'];
+const LANGUAGE_ENUM = ['zh-CN', 'en-US'];
 
 export class WriterAgentService {
   constructor(
@@ -222,6 +223,9 @@ export class WriterAgentService {
     _output: SaveUserProfileOutput,
   ): Promise<boolean> {
     if (!input.session_id) throw new ValidationError('session_id 为必填');
+    if (input.language !== undefined && !LANGUAGE_ENUM.includes(input.language)) {
+      throw new ValidationError(`language 必须是 ${LANGUAGE_ENUM.join('|')}`);
+    }
     if (input.format && !FORMAT_ENUM.includes(input.format)) {
       throw new ValidationError(`format 必须是 ${FORMAT_ENUM.join('|')}`);
     }
@@ -322,7 +326,12 @@ export class WriterAgentService {
       }
       data.push({ field: 'write_prompt_template_id', value: input.write_prompt_template_id });
     }
-    if (input.default_language !== undefined) data.push({ field: 'default_language', value: input.default_language });
+    if (input.default_language !== undefined) {
+      if (!LANGUAGE_ENUM.includes(input.default_language)) {
+        throw new ValidationError(`default_language 必须是 ${LANGUAGE_ENUM.join('|')}`);
+      }
+      data.push({ field: 'default_language', value: input.default_language });
+    }
     if (input.default_style !== undefined) {
       if (!STYLE_ENUM.includes(input.default_style)) {
         throw new ValidationError(`default_style 必须是 ${STYLE_ENUM.join('|')}`);

@@ -68,7 +68,7 @@
 **入参**：
 - input：SaveUserProfileInput（继承 Input），包含以下字段：
   - session_id：会话 ID
-  - language：偏好语言（可选，默认 zh-CN）
+  - language：偏好语言（可选，可选值：zh-CN / en-US，默认 zh-CN）
   - style：回复风格（可选，可选值：clear / concise / detailed / creative，默认 clear）
   - depth：回复深度（可选，可选值：shallow / medium / deep，默认 medium）
   - format：回复格式（可选，可选值：TEXT / MARKDOWN / JSON，默认 MARKDOWN）
@@ -78,7 +78,7 @@
 
 **处理流程**：
 
-1. 对非空入参进行枚举校验：style 必须为 clear / concise / detailed / creative；depth 必须为 shallow / medium / deep；format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
+1. 对非空入参进行枚举校验：language 必须为 zh-CN / en-US；style 必须为 clear / concise / detailed / creative；depth 必须为 shallow / medium / deep；format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
 2. 调用 RelationDBProvider 对 `writer_agent_user_profile` 表执行 upsert（按 session_id 唯一约束）；
 3. 返回 true；
 
@@ -102,7 +102,7 @@
 **入参**：
 - input：ConfigWriterAgentInput（继承 Input），包含以下字段：
   - write_prompt_template_id：写作 prompt 模板 ID（可选）
-  - default_language：默认语言（可选）
+  - default_language：默认语言（可选，可选值：zh-CN / en-US）
   - default_style：默认风格（可选，可选值：clear / concise / detailed / creative）
   - default_depth：默认深度（可选，可选值：shallow / medium / deep）
   - default_format：默认格式（可选，可选值：TEXT / MARKDOWN / JSON）
@@ -115,7 +115,7 @@
 1. 调用 RelationDBProvider.selectOneDB 查询 `writer_agent_config` 表获取当前配置；
 2. 对每个非空入参进行校验和更新：
    a. prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
-   b. 枚举字段校验：default_style 必须为 clear / concise / detailed / creative；default_depth 必须为 shallow / medium / deep；default_format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
+   b. 枚举字段校验：default_language 必须为 zh-CN / en-US；default_style 必须为 clear / concise / detailed / creative；default_depth 必须为 shallow / medium / deep；default_format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 

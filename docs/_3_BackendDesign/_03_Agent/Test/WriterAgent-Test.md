@@ -240,3 +240,21 @@
 | **测试步骤** | 调用 configWriterAgent（default_style='fancy'） |
 | **预期结果** | 抛出 `ValidationError`，消息提示 default_style 必须是 clear / concise / detailed / creative |
 | **覆盖场景** | default_style 枚举校验 |
+
+### TC-WA-025: saveUserProfile — language 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 无 |
+| **测试步骤** | 调用 saveUserProfile（language='fr'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 language 必须是 zh-CN / en-US |
+| **覆盖场景** | language 枚举校验 |
+
+### TC-WA-026: configWriterAgent — default_language 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 配置已初始化 |
+| **测试步骤** | 调用 configWriterAgent（default_language='fr'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 default_language 必须是 zh-CN / en-US |
+| **覆盖场景** | default_language 枚举校验 |

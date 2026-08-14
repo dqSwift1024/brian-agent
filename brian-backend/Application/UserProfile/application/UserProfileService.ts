@@ -346,7 +346,11 @@ export class UserProfileService {
     const VALID_STYLES = ['clear', 'concise', 'detailed', 'creative'];
     const VALID_DEPTHS = ['shallow', 'medium', 'deep'];
     const VALID_FORMATS = ['TEXT', 'MARKDOWN', 'JSON'];
+    const VALID_LANGUAGES = ['zh-CN', 'en-US'];
 
+    if (input.language && !VALID_LANGUAGES.includes(input.language)) {
+      throw new ValidationError(`Invalid language "${input.language}". Valid values: ${VALID_LANGUAGES.join(', ')}`);
+    }
     if (input.style && !VALID_STYLES.includes(input.style)) {
       throw new ValidationError(`Invalid style "${input.style}". Valid values: ${VALID_STYLES.join(', ')}`);
     }
