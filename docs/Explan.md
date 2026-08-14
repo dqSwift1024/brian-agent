@@ -126,3 +126,9 @@
 
 后端 Application 层，构建在 Base 层和 Core 层和 Agent 层和 Orchestration 层上面的分层
 目录下的子目录是Orchestration层的子模块，*-PRD.md 是子模块的PRD文件
+
+---
+
+### 使用手册.md
+
+系统的启动、关闭与日常管理操作方法手册；对应根目录下的 `brian` 命令行管理脚本（参考 OpenCode CLI 的启动/关闭方式设计）。内容包括环境要求、快速开始、命令参考（后台守护式 `start`/`stop` 与前台模式 `dev`/`serve`）、端口与配置、常见问题等。

@@ -2,22 +2,36 @@
 # ============================================================================
 # brian — Brian-Agent 系统管理命令行工具
 #
-# 用法: brian <command> [service]
+# 参考 OpenCode CLI 的启动/关闭方式设计，提供前台（dev/serve）与后台（start/stop）
+# 两种运行模式，并支持 -h/--help、-v/--version 全局参数。
+#
+# 用法: brian <command> [service] [flags]
 #
 # 命令:
-#   start   [backend|frontend|all]  启动服务（默认 all）
+#   start   [backend|frontend|all]  后台启动服务（默认 all）
 #   stop    [backend|frontend|all]  停止服务（默认 all）
 #   restart [backend|frontend|all]  重启服务
-#   status                          查看服务运行状态
-#   logs    [backend|frontend]      查看日志（默认 backend）
+#   status                          查看运行状态
+#   logs    [backend|frontend]      跟踪日志（默认 backend）
+#   serve                          前台启动后端服务（headless，Ctrl+C 停止）
+#   dev                             前台启动全栈开发模式（后端+前端，Ctrl+C 一键停止）
+#   open                            在默认浏览器打开前端页面
+#   doctor                          环境与依赖自检
+#   clean                           清理日志文件与 PID 残留
+#
+# 全局参数:
+#   -h, --help                      显示帮助
+#   -v, --version                   显示版本号
 #
 # 示例:
-#   brian start              # 启动全栈
-#   brian start backend      # 仅启动后端
-#   brian stop frontend      # 仅停止前端
-#   brian restart backend    # 重启后端
-#   brian status             # 查看状态
-#   brian logs               # 查看后端日志
+#   brian start              # 后台启动全栈
+#   brian start backend      # 后台仅启动后端
+#   brian dev                # 前台开发模式，Ctrl+C 一键关闭
+#   brian serve              # 前台启动 headless 后端
+#   brian open               # 浏览器打开前端
+#   brian doctor             # 环境自检
+#   brian stop               # 停止全栈
+#   brian logs backend       # 查看后端日志
 # ============================================================================
 
 set -e
@@ -27,12 +41,15 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_S
 ROOT="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 BACKEND_DIR="$ROOT/brian-backend"
 FRONTEND_DIR="$ROOT/brian-frontend"
-BACKEND_PORT=8000
+BACKEND_PORT="${BRIAN_PORT:-8000}"
 FRONTEND_PORT=5173
 BACKEND_LOG="/tmp/brian-backend.log"
 FRONTEND_LOG="/tmp/brian-frontend.log"
 BACKEND_PID_FILE="/tmp/brian-backend.pid"
 FRONTEND_PID_FILE="/tmp/brian-frontend.pid"
+
+# 版本号（从根 package.json 读取，失败时回退）
+VERSION="$(node -p "require('$ROOT/package.json').version" 2>/dev/null || echo "1.0.0")"
 
 # ---------------------------------------------------------------------------
 # 颜色
@@ -47,7 +64,7 @@ fail() { echo -e "       ${RED}✗${NC} $1"; }
 
 banner() {
   echo ""
-  echo -e "  ${BOLD}Brian-Agent${NC}"
+  echo -e "  ${BOLD}Brian-Agent${NC}  v$VERSION"
   echo -e "  Intelligent Personal Assistant"
   echo ""
 }
@@ -232,25 +249,163 @@ show_logs() {
 }
 
 # ---------------------------------------------------------------------------
-# 主入口
+# serve — 前台启动 headless 后端（对标 `opencode serve`）
+# ---------------------------------------------------------------------------
+serve_backend() {
+  if backend_alive; then
+    warn "后端已运行 (端口 $BACKEND_PORT)，无需重复启动"
+    return
+  fi
+  if [ ! -d "$BACKEND_DIR" ]; then
+    fail "后端目录不存在: $BACKEND_DIR"
+    exit 1
+  fi
+  banner
+  log "前台启动后端服务 (headless)，端口 $BACKEND_PORT —— 按 Ctrl+C 停止"
+  cd "$BACKEND_DIR"
+  exec npx tsx dev-server.ts
+}
+
+# ---------------------------------------------------------------------------
+# dev — 前台启动全栈开发模式（对标 `opencode` 的 TUI 前台模式）
+# ---------------------------------------------------------------------------
+dev_all() {
+  banner
+  log "前台启动全栈开发模式（后端 + 前端）—— 按 Ctrl+C 一键停止"
+  (cd "$BACKEND_DIR" && npx tsx dev-server.ts) &
+  local bpid=$!
+  (cd "$FRONTEND_DIR" && npx vite --host 0.0.0.0) &
+  local fpid=$!
+
+  trap 'echo ""; log "正在停止服务..."; kill "$bpid" "$fpid" 2>/dev/null || true; wait 2>/dev/null || true; ok "已停止"; exit 0' INT TERM
+
+  # 提示前端访问地址
+  ( sleep 3; echo ""; log "前端访问: http://127.0.0.1:$FRONTEND_PORT  ·  后端 API: http://127.0.0.1:$BACKEND_PORT" ) &
+  local hint_pid=$!
+  wait
+  kill "$hint_pid" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# open — 在默认浏览器打开前端
+# ---------------------------------------------------------------------------
+open_browser() {
+  local url="http://127.0.0.1:$FRONTEND_PORT"
+  if ! frontend_alive; then
+    warn "前端未运行，先启动前端..."
+    start_frontend
+  fi
+  log "打开浏览器: $url"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 || true
+  elif command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || true
+  elif command -v start >/dev/null 2>&1; then
+    start "$url" >/dev/null 2>&1 || true
+  else
+    warn "无法自动打开浏览器，请手动访问 $url"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# doctor — 环境与依赖自检
+# ---------------------------------------------------------------------------
+doctor() {
+  banner
+  log "环境与依赖自检"
+
+  echo ""
+  echo -e "  ${BOLD}基础环境${NC}"
+  for c in node npm npx; do
+    if command -v "$c" >/dev/null 2>&1; then
+      ok "$c: $(command -v "$c")"
+    else
+      fail "$c 未安装"
+    fi
+  done
+
+  echo ""
+  echo -e "  ${BOLD}项目目录${NC}"
+  [ -d "$BACKEND_DIR" ]   && ok "后端目录存在: $BACKEND_DIR"   || fail "后端目录缺失: $BACKEND_DIR"
+  [ -d "$FRONTEND_DIR" ]  && ok "前端目录存在: $FRONTEND_DIR"  || fail "前端目录缺失: $FRONTEND_DIR"
+  [ -d "$ROOT/node_modules" ] && ok "根 node_modules 存在"     || warn "根 node_modules 缺失，请运行 npm install"
+  [ -d "$ROOT/data" ]     && ok "数据目录存在: $ROOT/data"     || warn "数据目录缺失，首次启动会自动生成"
+
+  echo ""
+  echo -e "  ${BOLD}端口占用${NC}"
+  if backend_alive;  then ok "后端端口 $BACKEND_PORT 正在服务（已运行）";  else ok "后端端口 $BACKEND_PORT 空闲"; fi
+  if frontend_alive; then ok "前端端口 $FRONTEND_PORT 正在服务（已运行）"; else ok "前端端口 $FRONTEND_PORT 空闲"; fi
+
+  echo ""
+  echo -e "  ${BOLD}原生依赖 (prebuilt)${NC}"
+  local prebuilt_ok=0
+  for f in better-sqlite3 isolated-vm lancedb; do
+    if [ -d "$ROOT/brian-backend/prebuilt/$f" ]; then
+      ok "prebuilt/$f 存在"
+    else
+      fail "prebuilt/$f 缺失"
+      prebuilt_ok=1
+    fi
+  done
+  [ "$prebuilt_ok" -eq 0 ] && ok "原生依赖就绪" || warn "请运行 npm install 触发 postinstall 拷贝 prebuilt"
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
+# clean — 清理日志与 PID 残留
+# ---------------------------------------------------------------------------
+clean() {
+  log "清理日志文件与 PID 残留"
+  local n=0
+  for f in "$BACKEND_LOG" "$FRONTEND_LOG" "$BACKEND_PID_FILE" "$FRONTEND_PID_FILE"; do
+    if [ -f "$f" ]; then rm -f "$f"; n=$((n+1)); fi
+  done
+  ok "已清理 $n 个文件"
+}
+
+# ---------------------------------------------------------------------------
+# 帮助
 # ---------------------------------------------------------------------------
 usage() {
-  echo "用法: brian <command> [service]"
+  echo "Brian-Agent v$VERSION — 系统管理命令行工具"
+  echo ""
+  echo "用法: brian <command> [service] [flags]"
   echo ""
   echo "命令:"
-  echo "  start   [backend|frontend|all]  启动服务"
-  echo "  stop    [backend|frontend|all]  停止服务"
+  echo "  start   [backend|frontend|all]  后台启动服务（默认 all）"
+  echo "  stop    [backend|frontend|all]  停止服务（默认 all）"
   echo "  restart [backend|frontend|all]  重启服务"
-  echo "  status                          查看状态"
-  echo "  logs    [backend|frontend]      查看日志"
+  echo "  status                          查看运行状态"
+  echo "  logs    [backend|frontend]      跟踪日志（默认 backend）"
+  echo "  serve                           前台启动后端服务（headless，Ctrl+C 停止）"
+  echo "  dev                              前台启动全栈开发模式（Ctrl+C 一键停止）"
+  echo "  open                             在默认浏览器打开前端页面"
+  echo "  doctor                           环境与依赖自检"
+  echo "  clean                            清理日志文件与 PID 残留"
+  echo ""
+  echo "全局参数:"
+  echo "  -h, --help                       显示帮助"
+  echo "  -v, --version                    显示版本号"
   echo ""
   echo "示例:"
-  echo "  brian start              # 启动全栈"
-  echo "  brian start backend      # 仅启动后端"
-  echo "  brian restart backend    # 重启后端"
-  echo "  brian logs frontend      # 查看前端日志"
-  exit 1
+  echo "  brian start              # 后台启动全栈"
+  echo "  brian start backend      # 后台仅启动后端"
+  echo "  brian dev                # 前台开发模式，Ctrl+C 一键关闭"
+  echo "  brian serve              # 前台启动 headless 后端"
+  echo "  brian open               # 浏览器打开前端"
+  echo "  brian doctor             # 环境自检"
+  echo "  brian logs backend       # 查看后端日志"
+  exit 0
 }
+
+# ---------------------------------------------------------------------------
+# 主入口
+# ---------------------------------------------------------------------------
+# 解析全局 flags
+case "${1:-}" in
+  -h|--help|help)   usage ;;
+  -v|--version|version) echo "Brian-Agent v$VERSION"; exit 0 ;;
+esac
 
 CMD="${1:-status}"
 SVC="${2:-all}"
@@ -286,6 +441,21 @@ case "$CMD" in
     ;;
   logs)
     show_logs "$SVC"
+    ;;
+  serve)
+    serve_backend
+    ;;
+  dev)
+    dev_all
+    ;;
+  open)
+    open_browser
+    ;;
+  doctor)
+    doctor
+    ;;
+  clean)
+    clean
     ;;
   *)
     usage
