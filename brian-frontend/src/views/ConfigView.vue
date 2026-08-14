@@ -1253,12 +1253,16 @@ interface BackendModel {
   maxTokens?: number
   status?: string
   isDefault?: boolean
+  llm_type?: string
 }
 
 const models = ref<BackendModel[]>([])
 const modelsLoading = ref(false)
 const modelSearch = ref('')
 const modelModalVisible = ref(false)
+
+// 向量化专用：仅 embedding 类型模型
+const embeddingModels = computed(() => models.value.filter(m => m.llm_type === 'embedding'))
 
 const filteredModels = computed(() => {
   const q = modelSearch.value.toLowerCase()
@@ -3599,7 +3603,7 @@ watch(activeSubSection, async (val) => {
                           :class="inputClass + ' !w-full !py-1.5'"
                         >
                           <option value="">选择模型</option>
-                          <option v-for="m in models" :key="m.id" :value="m.id">{{ m.modelName || m.id }}</option>
+                          <option v-for="m in (item.config_key.includes('vector_config') ? embeddingModels : models)" :key="m.id" :value="m.id">{{ m.modelName || m.id }}</option>
                         </select>
                         <select
                           v-else-if="item.config_key.endsWith('strategy_id')"

@@ -1286,6 +1286,9 @@ export class InfoCoreService {
       if (!llmOutput.llm) {
         throw new ValidationError(`llm_id ${input.llm_id} 不存在`);
       }
+      if (llmOutput.llm.llm_type !== 'embedding') {
+        throw new ValidationError(`llm_id ${input.llm_id} 不是向量模型（llm_type=${llmOutput.llm.llm_type}），向量化仅支持 embedding 类型模型`);
+      }
     }
     await this.upsertConfigRow(INFO_VECTOR_CONFIG_TABLE, input, {
       defaultRecord: {
