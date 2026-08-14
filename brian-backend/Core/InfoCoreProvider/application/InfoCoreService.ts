@@ -1211,6 +1211,9 @@ export class InfoCoreService {
       if (!llmOutput.llm) {
         throw new ValidationError(`llm_id ${input.llm_id} 不存在`);
       }
+      if (llmOutput.llm.llm_type !== 'text') {
+        throw new ValidationError(`llm_id ${input.llm_id} 不是文本模型（llm_type=${llmOutput.llm.llm_type}），摘要生成仅支持 text 类型模型`);
+      }
     }
     if (input.prompt_template_id) {
       const promptOutput = new GetPromptOutput();
