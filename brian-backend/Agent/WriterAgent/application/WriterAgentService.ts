@@ -34,6 +34,8 @@ import {
 import { parseJsonObject } from '../../shared/signature';
 
 const FORMAT_ENUM = ['TEXT', 'MARKDOWN', 'JSON'];
+const STYLE_ENUM = ['clear', 'concise', 'detailed', 'creative'];
+const DEPTH_ENUM = ['shallow', 'medium', 'deep'];
 
 export class WriterAgentService {
   constructor(
@@ -223,6 +225,12 @@ export class WriterAgentService {
     if (input.format && !FORMAT_ENUM.includes(input.format)) {
       throw new ValidationError(`format 必须是 ${FORMAT_ENUM.join('|')}`);
     }
+    if (input.style !== undefined && !STYLE_ENUM.includes(input.style)) {
+      throw new ValidationError(`style 必须是 ${STYLE_ENUM.join('|')}`);
+    }
+    if (input.depth !== undefined && !DEPTH_ENUM.includes(input.depth)) {
+      throw new ValidationError(`depth 必须是 ${DEPTH_ENUM.join('|')}`);
+    }
     const existing = await this.relationDb.selectOne(WRITER_AGENT_USER_PROFILE_TABLE, [
       { field: 'session_id', operator: Operator.EQ, value: input.session_id },
     ]);
@@ -315,8 +323,18 @@ export class WriterAgentService {
       data.push({ field: 'write_prompt_template_id', value: input.write_prompt_template_id });
     }
     if (input.default_language !== undefined) data.push({ field: 'default_language', value: input.default_language });
-    if (input.default_style !== undefined) data.push({ field: 'default_style', value: input.default_style });
-    if (input.default_depth !== undefined) data.push({ field: 'default_depth', value: input.default_depth });
+    if (input.default_style !== undefined) {
+      if (!STYLE_ENUM.includes(input.default_style)) {
+        throw new ValidationError(`default_style 必须是 ${STYLE_ENUM.join('|')}`);
+      }
+      data.push({ field: 'default_style', value: input.default_style });
+    }
+    if (input.default_depth !== undefined) {
+      if (!DEPTH_ENUM.includes(input.default_depth)) {
+        throw new ValidationError(`default_depth 必须是 ${DEPTH_ENUM.join('|')}`);
+      }
+      data.push({ field: 'default_depth', value: input.default_depth });
+    }
     if (input.default_format !== undefined) {
       if (!FORMAT_ENUM.includes(input.default_format)) {
         throw new ValidationError(`default_format 必须是 ${FORMAT_ENUM.join('|')}`);

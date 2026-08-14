@@ -36,7 +36,7 @@ describe('WriterAgent', () => {
     it('TC-WR-001: 首次保存用户配置', async () => {
       const s = sid();
       await writer.saveUserProfile(Object.assign(new SaveUserProfileInput(), {
-        session_id: s, language: 'en', style: 'concise', depth: 'short', format: 'TEXT',
+        session_id: s, language: 'en', style: 'concise', depth: 'shallow', format: 'TEXT',
       }), new WriterAgentContext(), new SaveUserProfileOutput());
       const out = new GetUserProfileOutput();
       await writer.getUserProfile(Object.assign(new GetUserProfileInput(), { session_id: s }), new WriterAgentContext(), out);
@@ -76,6 +76,16 @@ describe('WriterAgent', () => {
 
     it('TC-WR-012: default_format 非法值抛异常', async () => {
       await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_format: 'PDF' }),
+        new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
+    });
+
+    it('TC-WR-013: default_depth 非法值抛异常', async () => {
+      await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_depth: 'ultra' }),
+        new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
+    });
+
+    it('TC-WR-014: default_style 非法值抛异常', async () => {
+      await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_style: 'fancy' }),
         new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
     });
   });
