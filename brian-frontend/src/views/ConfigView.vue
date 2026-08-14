@@ -1277,7 +1277,6 @@ async function loadModels() {
     const raw = await configApi.model.list()
     const list = (Array.isArray(raw) ? raw : []) as BackendModel[]
     for (const m of list) {
-      m.id = m.modelName || m.id
       const p = providers.value.find(pr => pr.id === m.providerId)
       if (p) m.providerName = p._displayName || p.llm_provider_title || m.providerId
     }
