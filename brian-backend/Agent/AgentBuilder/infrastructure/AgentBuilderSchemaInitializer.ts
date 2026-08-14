@@ -10,7 +10,6 @@ export class AgentBuilderSchemaInitializer {
       `CREATE TABLE IF NOT EXISTS ${AGENT_BUILDER_CONFIG_TABLE} (
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,
         task_analysis_prompt_template_id TEXT NOT NULL,
-        default_strategy_id TEXT NOT NULL,
         auto_optimize INTEGER NOT NULL DEFAULT 1
       )`,
     );
@@ -28,7 +27,6 @@ export class AgentBuilderSchemaInitializer {
       { field: 'created', value: now },
       { field: 'updated', value: now },
       { field: 'task_analysis_prompt_template_id', value: '' },
-      { field: 'default_strategy_id', value: '' },
       { field: 'auto_optimize', value: 1 },
     ]);
   }

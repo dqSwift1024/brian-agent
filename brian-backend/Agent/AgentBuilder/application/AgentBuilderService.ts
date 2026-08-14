@@ -229,6 +229,12 @@ export class AgentBuilderService {
     ctx: AgentBuilderContext,
     output: OptimizeAgentOutput,
   ): Promise<boolean> {
+    const config = await this.getConfig();
+    if (!config?.auto_optimize) {
+      output.optimized = false;
+      return true;
+    }
+
     const libCtx = this.toLibCtx(ctx, input.interact_id);
     const getOut = new GetAgentOutput();
     await this.agentLibrary.getAgent(
@@ -458,7 +464,6 @@ export class AgentBuilderService {
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'task_analysis_prompt_template_id', value: '' },
-        { field: 'default_strategy_id', value: '' },
         { field: 'auto_optimize', value: 1 },
       ]);
       config = await this.getConfig();
@@ -471,24 +476,6 @@ export class AgentBuilderService {
         await this.assertPrompt(input.task_analysis_prompt_template_id);
       }
       data.push({ field: 'task_analysis_prompt_template_id', value: input.task_analysis_prompt_template_id });
-    }
-    if (input.default_strategy_id !== undefined) {
-      if (input.default_strategy_id) {
-        const so = new SoStrategyOutput();
-        await this.agentStrategy.soStrategy(
-          Object.assign(new SoStrategyInput(), {
-            conditions: [
-              { field: 'strategy_id', operator: Operator.EQ, value: input.default_strategy_id },
-            ],
-          }),
-          new AgentStrategyContext(),
-          so,
-        );
-        if (!so.strategies?.length) {
-          throw new ValidationError(`default_strategy_id 不存在: ${input.default_strategy_id}`);
-        }
-      }
-      data.push({ field: 'default_strategy_id', value: input.default_strategy_id });
     }
     if (input.auto_optimize !== undefined) {
       data.push({ field: 'auto_optimize', value: input.auto_optimize ? 1 : 0 });
@@ -603,7 +590,6 @@ export class AgentBuilderService {
       created: Number(row.created),
       updated: Number(row.updated),
       task_analysis_prompt_template_id: String(row.task_analysis_prompt_template_id ?? ''),
-      default_strategy_id: String(row.default_strategy_id ?? ''),
       auto_optimize: row.auto_optimize === true || row.auto_optimize === 1 || row.auto_optimize === '1',
     };
   }

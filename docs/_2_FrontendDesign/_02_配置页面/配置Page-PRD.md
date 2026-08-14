@@ -185,8 +185,7 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | 任务分析 Prompt 模板 | Ref | — | 分析任务特征所用的 Prompt 模板 |
-| 新建 Agent 默认策略 | Ref | — | 自动构建时赋予 Agent 的默认策略 |
-| 自动优化构建 | BOOLEAN | false | 是否在使用中自动优化 Agent 组装 |
+| 自动优化构建 | BOOLEAN | true | 是否在使用中自动优化 Agent 组装（实际优化由 EvolutorAgent 评估后触发） |
 
 ### 3.4 Agent 执行
 

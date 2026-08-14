@@ -67,12 +67,13 @@
 
 **处理流程**：
 
-1. 调用 AgentLibrary.getAgent(agent_id) 获取当前 Agent 的完整配置；
-2. 初始化变更详情列表 `changes` 为空数组；
-3. 调用 AgentStrategy.matchStrategy 重新匹配最优策略；若与当前 strategy_id 不同，调用 AgentLibrary.updateAgent 更新策略绑定，追加 change 记录；
-4. LLM、Skill、MCP、Soul 的优化绑定由 Core 层对应模块（LLMCore、SkillCore、MCPCore、SoulCore）负责；AgentBuilder 将优化事件通过 EvolutorAgent 触发 Core 层优化流程；
-5. 若 `changes` 非空：返回 `optimized=true` 和变更列表；
-6. 若 `changes` 为空：返回 `optimized=false`，表示当前绑定已是最优；
+1. 查询 `agent_builder_config` 表读取 `auto_optimize` 开关；若为 false，直接返回 `optimized=false`（跳过优化）；
+2. 调用 AgentLibrary.getAgent(agent_id) 获取当前 Agent 的完整配置；
+3. 初始化变更详情列表 `changes` 为空数组；
+4. 调用 AgentStrategy.matchStrategy 重新匹配最优策略；若与当前 strategy_id 不同，调用 AgentLibrary.updateAgent 更新策略绑定，追加 change 记录；
+5. LLM、Skill、MCP、Soul 的优化绑定由 Core 层对应模块（LLMCore、SkillCore、MCPCore、SoulCore）负责；AgentBuilder 将优化事件通过 EvolutorAgent 触发 Core 层优化流程；
+6. 若 `changes` 非空：返回 `optimized=true` 和变更列表；
+7. 若 `changes` 为空：返回 `optimized=false`，表示当前绑定已是最优；
 
 ### 2.3. 构建 PlannerAgent（buildPlannerAgent）
 
@@ -129,22 +130,21 @@
 **入参**：
 - input：ConfigAgentBuilderInput（继承 Input），包含以下字段：
   - task_analysis_prompt_template_id：任务分析 prompt 模板 ID（可选）
-  - default_strategy_id：默认策略 ID（可选）
   - auto_optimize：是否自动优化（可选，默认 true）
 - context：ConfigAgentBuilderContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ConfigAgentBuilderOutput（继承 Output），承载返回内容：
   - task_analysis_prompt_template_id：当前生效的模板 prompt ID
-  - default_strategy_id：当前生效的默认策略 ID
   - auto_optimize：当前生效的自动优化开关
 
 **处理流程**：
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `agent_builder_config` 表获取当前配置；
 2. 若 `task_analysis_prompt_template_id` 非空：校验 PromptsProvider.soPrompt 中存在则更新；
-3. 若 `default_strategy_id` 非空：校验 Strategy 模块中存在则更新；
-4. 若 `auto_optimize` 非空：更新；
-5. 调用 RelationDBProvider.updateDB 写入配置；
-6. 返回更新后的配置写入 output；
+3. 若 `auto_optimize` 非空：更新；
+4. 调用 RelationDBProvider.updateDB 写入配置；
+5. 返回更新后的配置写入 output；
+
+> 默认策略由 AgentStrategy 模块的 `agent_strategy_config.default_strategy_id` 配置，AgentBuilder 不再维护独立的 default_strategy_id 字段。
 
 ## 重要内容
 
@@ -163,7 +163,6 @@
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | task_analysis_prompt_template_id | 任务分析 prompt 模板 ID | UUID | N | | |
-| default_strategy_id | 默认策略 ID | UUID | N | | |
 | auto_optimize | 是否自动优化 | BOOL | N | | 默认 true |
 
 ## 实现约定（与代码同步，2026-07-28）

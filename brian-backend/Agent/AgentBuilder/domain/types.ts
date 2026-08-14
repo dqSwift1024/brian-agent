@@ -11,7 +11,6 @@ export interface AgentBuilderConfigRecord {
   created: number;
   updated: number;
   task_analysis_prompt_template_id: string;
-  default_strategy_id: string;
   auto_optimize: boolean;
 }
 
@@ -65,7 +64,6 @@ export class BuildSystemAgentOutput extends Output {
 
 export class ConfigAgentBuilderInput extends Input {
   task_analysis_prompt_template_id?: string;
-  default_strategy_id?: string;
   auto_optimize?: boolean;
 }
 

@@ -243,8 +243,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // =========================================================================
 
   // --- AgentBuilder ---
-  agent('agent_builder', 'basic', 'task_analysis_prompt_template_id', '任务分析 Prompt 模板 ID', 'STRING', '', '分析任务特征所用的 Prompt 模板'),
-  agent('agent_builder', 'basic', 'default_strategy_id', '新建 Agent 默认策略 ID', 'STRING', '', '自动构建时赋予 Agent 的默认策略'),
+  agent('agent_builder', 'basic', 'task_analysis_prompt_template_id', '任务分析 Prompt', 'STRING', '', '分析任务特征所用的 Prompt 模板'),
   agent('agent_builder', 'basic', 'auto_optimize', '自动优化构建', 'BOOLEAN', true, '是否在使用中自动优化 Agent 组装'),
 
   // --- AgentExecution ---
