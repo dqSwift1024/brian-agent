@@ -200,3 +200,43 @@
 | **测试步骤** | 调用 configWriterAgent（write_prompt_template_id='wp-1'、default_language='en'、default_style='creative'、default_depth='deep'、default_format='JSON'） |
 | **预期结果** | 所有字段正确更新 |
 | **覆盖场景** | 全量配置更新 |
+
+---
+
+## 5. 枚举校验（补充）
+
+### TC-WA-021: saveUserProfile — style 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 无 |
+| **测试步骤** | 调用 saveUserProfile（style='fancy'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 style 必须是 clear / concise / detailed / creative |
+| **覆盖场景** | style 枚举校验 |
+
+### TC-WA-022: saveUserProfile — depth 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 无 |
+| **测试步骤** | 调用 saveUserProfile（depth='short'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 depth 必须是 shallow / medium / deep |
+| **覆盖场景** | depth 枚举校验 |
+
+### TC-WA-023: configWriterAgent — default_depth 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 配置已初始化 |
+| **测试步骤** | 调用 configWriterAgent（default_depth='ultra'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 default_depth 必须是 shallow / medium / deep |
+| **覆盖场景** | default_depth 枚举校验 |
+
+### TC-WA-024: configWriterAgent — default_style 非法值抛异常
+
+| 项 | 内容 |
+|---|------|
+| **前置条件** | 配置已初始化 |
+| **测试步骤** | 调用 configWriterAgent（default_style='fancy'） |
+| **预期结果** | 抛出 `ValidationError`，消息提示 default_style 必须是 clear / concise / detailed / creative |
+| **覆盖场景** | default_style 枚举校验 |

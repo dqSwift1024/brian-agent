@@ -78,8 +78,9 @@
 
 **处理流程**：
 
-1. 调用 RelationDBProvider 对 `writer_agent_user_profile` 表执行 upsert（按 session_id 唯一约束）；
-2. 返回 true；
+1. 对非空入参进行枚举校验：style 必须为 clear / concise / detailed / creative；depth 必须为 shallow / medium / deep；format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
+2. 调用 RelationDBProvider 对 `writer_agent_user_profile` 表执行 upsert（按 session_id 唯一约束）；
+3. 返回 true；
 
 #### 2.2.2. 获取用户画像（getUserProfile）
 
@@ -114,7 +115,7 @@
 1. 调用 RelationDBProvider.selectOneDB 查询 `writer_agent_config` 表获取当前配置；
 2. 对每个非空入参进行校验和更新：
    a. prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
-   b. 其他配置字段：校验枚举值合法；
+   b. 枚举字段校验：default_style 必须为 clear / concise / detailed / creative；default_depth 必须为 shallow / medium / deep；default_format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
