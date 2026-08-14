@@ -195,7 +195,6 @@ stop_frontend() {
     kill "$pid" 2>/dev/null || true
     sleep 1
     kill -9 "$pid" 2>/dev/null || true
-    pgrep -f "esbuild.*service" | xargs kill -9 2>/dev/null || true
     rm -f "$FRONTEND_PID_FILE"
     ok "前端已停止"
   else

@@ -6,6 +6,7 @@ export {
   SoStrategyInput, SoStrategyOutput,
   AddStrategyInput, AddStrategyOutput,
   UpdateStrategyInput, UpdateStrategyOutput,
+  ToggleStrategyInput, ToggleStrategyOutput,
   ConfigAgentStrategyInput, ConfigAgentStrategyOutput,
   AGENT_STRATEGY_TABLE,
   AGENT_STRATEGY_CONFIG_TABLE,

@@ -7,6 +7,8 @@ import {
   AddAgentInput, AddAgentOutput,
   MatchAgentInput, MatchAgentOutput,
   UpdateAgentInput, UpdateAgentOutput,
+  DelAgentInput, DelAgentOutput,
+  ToggleAgentInput, ToggleAgentOutput,
   RecordAgentUsageInput, RecordAgentUsageOutput,
   GetAgentInput, GetAgentOutput,
   AgeAgentInput, AgeAgentOutput,
@@ -47,6 +49,16 @@ export class AgentLibraryAccess {
   async updateAgent(i: UpdateAgentInput, c: AgentLibraryContext, o: UpdateAgentOutput): Promise<boolean> {
     await this.initPromise;
     return this.service.updateAgent(i, c, o);
+  }
+
+  async delAgent(i: DelAgentInput, c: AgentLibraryContext, o: DelAgentOutput): Promise<boolean> {
+    await this.initPromise;
+    return this.service.delAgent(i, c, o);
+  }
+
+  async toggleAgent(i: ToggleAgentInput, c: AgentLibraryContext, o: ToggleAgentOutput): Promise<boolean> {
+    await this.initPromise;
+    return this.service.toggleAgent(i, c, o);
   }
 
   async recordAgentUsage(i: RecordAgentUsageInput, c: AgentLibraryContext, o: RecordAgentUsageOutput): Promise<boolean> {

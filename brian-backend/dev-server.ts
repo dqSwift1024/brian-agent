@@ -28,7 +28,7 @@ import { SoulCoreAccess } from './Core/SoulCoreProvider';
 import { MQCoreAccess } from './Core/MQCoreProvider';
 import { CDTCoreAccess } from './Core/CDTCoreProvider';
 import { AgentLibraryAccess } from './Agent/AgentLibrary';
-import { AgentStrategyAccess } from './Agent/AgentStrategy';
+import { AgentStrategyAccess, SoStrategyInput, SoStrategyOutput, ToggleStrategyInput, ToggleStrategyOutput, AgentStrategyContext } from './Agent/AgentStrategy';
 import { AgentBuilderAccess } from './Agent/AgentBuilder';
 import {
   AgentBuilderContext,
@@ -110,7 +110,7 @@ import {
   UninstallMcpInput, UninstallMcpOutput,
 } from './Base/MCPProvider';
 import {
-  AgentLibraryContext, GetAgentInput, GetAgentOutput,
+  AgentLibraryContext, GetAgentInput, GetAgentOutput, DelAgentInput, DelAgentOutput, ToggleAgentInput, ToggleAgentOutput,
 } from './Agent/AgentLibrary';
 
 import {
@@ -736,7 +736,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             const maxTokens = cachedRow?.max_tokens || 0;
             ctx.relationDb.executeRaw(
               'INSERT OR IGNORE INTO "llm_available" ("id", "created", "updated", "llm_provider_id", "llm_title", "llm_type", "enable", "max_tokens") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              [IdGenerator.generate(), IdGenerator.now(), IdGenerator.now(), providerId, title, 'text', 0, maxTokens],
+              [IdGenerator.generate(), IdGenerator.now(), IdGenerator.now(), providerId, title, 'text', 1, maxTokens],
             );
             if (maxTokens > 0) {
               try { ctx.relationDb.executeRaw('UPDATE "llm_available" SET "max_tokens" = ? WHERE "llm_provider_id" = ? AND "llm_title" = ?', [maxTokens, providerId, title]); } catch {}
@@ -1082,17 +1082,46 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.agentLibrary.soAgent(input, context, output);
         sendJson(res, 200, { agents: output.agents || [] });
 
+      } else if (method === 'GET' && pathname === '/api/agent/strategy') {
+        const input = Object.assign(new SoStrategyInput(), {});
+        const output = new SoStrategyOutput();
+        const context = new AgentStrategyContext();
+        await ctx.agentStrategy.soStrategy(input, context, output);
+        sendJson(res, 200, { strategies: output.strategies || [] });
+
+      } else if (method === 'POST' && /\/api\/agent\/strategy\/[^/]+\/toggle$/.test(pathname)) {
+        const strategyId = pathname.split('/api/agent/strategy/')[1].split('/toggle')[0];
+        const input = Object.assign(new ToggleStrategyInput(), { strategy_id: strategyId });
+        const output = new ToggleStrategyOutput();
+        const context = new AgentStrategyContext();
+        await ctx.agentStrategy.toggleStrategy(input, context, output);
+        sendJson(res, 200, { success: true, enable: output.enable });
+
       } else if (method === 'POST' && pathname === '/api/agent') {
         sendJson(res, 200, { id: `agent-${++_seq}`, name: body.name || 'new-agent' });
 
       } else if (method === 'POST' && /\/api\/agent\/[^/]+\/toggle$/.test(pathname)) {
-        sendJson(res, 200, { success: true });
+        const id = pathname.split('/api/agent/')[1].split('/toggle')[0];
+        const input = Object.assign(new ToggleAgentInput(), { id });
+        const output = new ToggleAgentOutput();
+        const context = new AgentLibraryContext();
+        await ctx.agentLibrary.toggleAgent(input, context, output);
+        sendJson(res, 200, { success: true, enable: output.enable });
 
       } else if (method === 'PUT' && pathname.startsWith('/api/agent/')) {
         sendJson(res, 200, { success: true });
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/agent/')) {
-        sendJson(res, 200, { success: true });
+        const id = pathname.split('/api/agent/')[1];
+        const input = Object.assign(new DelAgentInput(), { ids: [id] });
+        const output = new DelAgentOutput();
+        const context = new AgentLibraryContext();
+        await ctx.agentLibrary.delAgent(input, context, output);
+        if (output.deleted_count === 0) {
+          sendJson(res, 404, { error: `Agent 不存在或未删除: ${id}` });
+        } else {
+          sendJson(res, 200, { success: true, deleted_count: output.deleted_count });
+        }
 
       // ---- Skill Routes ----
       } else if (method === 'GET' && pathname === '/api/skill') {

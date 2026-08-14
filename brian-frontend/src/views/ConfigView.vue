@@ -2251,6 +2251,129 @@ async function loadOrchStrategies() {
 }
 
 // ============================================================
+// 执行策略数据（Agent 层）
+// ============================================================
+
+interface AgentStrategy {
+  id: string
+  strategy_id: string
+  strategy_label: string
+  suitable_complexity_min: number
+  suitable_complexity_max: number
+  suitable_domains: string
+  execution_rule: string
+  enable: boolean
+}
+
+const agentStrategies = ref<AgentStrategy[]>([])
+const agentStrategiesLoading = ref(false)
+
+function formatStrategyRule(rule: string): string {
+  try {
+    const obj = JSON.parse(rule) as Record<string, unknown>
+    const steps = (obj.steps as Array<{ step: string }> | undefined)?.map(s => s.step)
+    if (steps?.length) return steps.join(' → ')
+    const phases = (obj.phases as Array<{ phase: string }> | undefined)?.map(p => p.phase)
+    if (phases?.length) return phases.join(' → ')
+  } catch { /* ignore */ }
+  return rule
+}
+
+function parseDomains(domains: string): string {
+  try {
+    const arr = JSON.parse(domains) as string[]
+    return arr.includes('*') ? '通用' : arr.join('、')
+  } catch {
+    return domains
+  }
+}
+
+function prettyJson(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2)
+  } catch {
+    return s
+  }
+}
+
+async function loadAgentStrategies() {
+  agentStrategiesLoading.value = true
+  try {
+    const res = await fetchApi<{ strategies: AgentStrategy[] }>('/agent/strategy')
+    agentStrategies.value = res.strategies || []
+  } catch {
+    agentStrategies.value = []
+  } finally {
+    agentStrategiesLoading.value = false
+  }
+}
+
+interface StrategyStepInfo {
+  step: string
+  next?: string | null
+  on_error?: string
+  condition_field?: string
+  true_next?: string
+  false_next?: string
+}
+
+interface StrategyPhaseInfo {
+  phase: string
+  loop_over?: string
+  steps: StrategyStepInfo[]
+}
+
+interface ParsedStrategyRule {
+  version?: string
+  max_iterations?: number
+  steps?: StrategyStepInfo[]
+  phases?: StrategyPhaseInfo[]
+  raw: string
+}
+
+function parseStrategyRule(rule: string): ParsedStrategyRule {
+  try {
+    const obj = JSON.parse(rule) as Record<string, unknown>
+    return {
+      version: obj.version as string | undefined,
+      max_iterations: obj.max_iterations as number | undefined,
+      steps: obj.steps as StrategyStepInfo[] | undefined,
+      phases: obj.phases as StrategyPhaseInfo[] | undefined,
+      raw: rule,
+    }
+  } catch {
+    return { raw: rule }
+  }
+}
+
+async function toggleStrategy(s: AgentStrategy) {
+  try {
+    const res = await fetchApi<{ success: boolean; enable: boolean }>(`/agent/strategy/${encodeURIComponent(s.strategy_id)}/toggle`, { method: 'POST' })
+    s.enable = res.enable
+    showToast(res.enable ? '已启用' : '已禁用', 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '切换失败')
+  }
+}
+
+const strategyDetailVisible = ref(false)
+const selectedStrategy = ref<AgentStrategy | null>(null)
+
+const selectedStrategyRule = computed<ParsedStrategyRule>(() => {
+  return selectedStrategy.value ? parseStrategyRule(selectedStrategy.value.execution_rule) : { raw: '' }
+})
+
+function openStrategyDetail(s: AgentStrategy) {
+  selectedStrategy.value = s
+  strategyDetailVisible.value = true
+}
+
+function closeStrategyDetail() {
+  strategyDetailVisible.value = false
+  selectedStrategy.value = null
+}
+
+// ============================================================
 // Toast
 // ============================================================
 
@@ -2823,6 +2946,7 @@ watch(activeSubSection, async (val) => {
       case 'mcp-stats': await loadMcps(); break
       case 'agent': await loadAgents(); break
       case 'prompt': await loadPrompts(); break
+      case 'strategy': await loadAgentStrategies(); break
       case 'orch-strategy': await loadOrchStrategies(); break
       case 'cdt-status': await loadCDTStatus(); break
       case 'cdt-page': await loadCDTStatus(); await loadBookmarks(); setupRemotePasteListener(); break
@@ -4521,7 +4645,136 @@ watch(activeSubSection, async (val) => {
           </Teleport>
         </div>
 
-        <div v-if="isEntityView && !['provider', 'model', 'soul', 'skill', 'mcp', 'mcp-provider', 'mcp-stats', 'agent', 'prompt', 'orch-strategy', 'cdt-status', 'cdt-page', 'profile-direction'].includes(currentEntityType || '')" class="px-5 pb-6">
+        <!-- ========================== 实体管理视图 - 执行策略 ========================== -->
+        <div v-if="isEntityView && currentEntityType === 'strategy'" class="px-5 pb-6">
+          <div class="mb-5 rounded-xl border border-brian-blue/20 bg-brian-blue/[0.02] dark:bg-brian-blue/5 p-4">
+            <h4 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50 mb-2 flex items-center gap-1.5">
+              <GitBranch :size="15" class="text-brian-blue" />
+              执行策略说明
+            </h4>
+            <p class="text-xs text-apple-gray-600 dark:text-apple-gray-300 leading-relaxed">
+              执行策略定义了 Agent 的<strong>思考推理模式</strong>（CoT / ReAct / Plan-and-Solve）。系统根据任务复杂度与领域自动匹配最合适的策略，每个策略包含适用复杂度区间、适用领域与执行规则（steps / phases 执行流）。
+            </p>
+          </div>
+
+          <div v-if="agentStrategiesLoading" class="flex justify-center py-16"><Loader2 :size="24" class="animate-spin text-brian-blue" /></div>
+          <div v-else-if="agentStrategies.length === 0" class="flex flex-col items-center justify-center py-16">
+            <GitBranch :size="28" class="text-apple-gray-400 mb-3" />
+            <p class="text-sm text-apple-gray-500">暂无执行策略</p>
+          </div>
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              v-for="s in agentStrategies" :key="s.id"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 cursor-pointer"
+              @click="openStrategyDetail(s)"
+            >
+              <div class="flex items-start justify-between mb-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue">
+                    <GitBranch :size="18" />
+                  </div>
+                  <div class="min-w-0">
+                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ s.strategy_label }}</h3>
+                    <p class="text-[11px] text-apple-gray-400">复杂度 {{ s.suitable_complexity_min }}-{{ s.suitable_complexity_max }} · {{ parseDomains(s.suitable_domains) }}</p>
+                  </div>
+                </div>
+                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="s.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="toggleStrategy(s)">
+                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="s.enable ? 'translate-x-4' : ''" />
+                </button>
+              </div>
+              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 font-mono">{{ formatStrategyRule(s.execution_rule) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================== 执行策略详情弹窗 ========================== -->
+        <Teleport to="body">
+          <Transition name="modal">
+            <div v-if="strategyDetailVisible" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeStrategyDetail" />
+              <div class="relative w-full max-w-2xl bg-white dark:bg-apple-gray-800 rounded-2xl shadow-xl border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden max-h-[85vh] flex flex-col">
+                <div class="flex items-center justify-between px-5 py-4 border-b border-apple-gray-200 dark:border-apple-gray-700">
+                  <div class="flex items-center gap-2">
+                    <GitBranch :size="16" class="text-brian-blue" />
+                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">执行策略详情</h3>
+                  </div>
+                  <button class="p-1 rounded-lg hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="closeStrategyDetail"><X :size="16" class="text-apple-gray-400" /></button>
+                </div>
+
+                <div class="px-5 py-4 overflow-y-auto flex-1">
+                  <template v-if="selectedStrategy">
+                    <!-- 基本信息 -->
+                    <div class="flex items-center gap-3 mb-4">
+                      <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-brian-blue/10 text-brian-blue"><GitBranch :size="22" /></div>
+                      <div class="min-w-0">
+                        <h4 class="text-lg font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ selectedStrategy.strategy_label }}</h4>
+                        <p class="text-xs text-apple-gray-400 mt-0.5">
+                          复杂度 {{ selectedStrategy.suitable_complexity_min }}-{{ selectedStrategy.suitable_complexity_max }} · {{ parseDomains(selectedStrategy.suitable_domains) }}
+                          · <span :class="selectedStrategy.enable ? 'text-success-green' : 'text-apple-gray-400'">{{ selectedStrategy.enable ? '启用中' : '已停用' }}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- 元信息 -->
+                    <div v-if="selectedStrategyRule.version || selectedStrategyRule.max_iterations" class="flex items-center gap-2 mb-4">
+                      <span v-if="selectedStrategyRule.version" class="px-2 py-1 text-[11px] rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500">version {{ selectedStrategyRule.version }}</span>
+                      <span v-if="selectedStrategyRule.max_iterations" class="px-2 py-1 text-[11px] rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500">最大迭代 {{ selectedStrategyRule.max_iterations }}</span>
+                    </div>
+
+                    <!-- 工作方式：steps 执行流 -->
+                    <div v-if="selectedStrategyRule.steps">
+                      <p class="text-xs font-semibold text-apple-gray-500 dark:text-apple-gray-400 mb-2">执行流程（steps）</p>
+                      <div class="space-y-2">
+                        <div v-for="(st, i) in selectedStrategyRule.steps" :key="i" class="rounded-lg border border-apple-gray-200 dark:border-apple-gray-700 p-3">
+                          <div class="flex items-center justify-between">
+                            <span class="font-mono font-medium text-brian-blue">{{ st.step }}</span>
+                            <span class="text-[10px] text-apple-gray-400">第 {{ i + 1 }} 步</span>
+                          </div>
+                          <div class="text-[11px] text-apple-gray-500 dark:text-apple-gray-400 mt-1 space-y-1">
+                            <template v-if="st.condition_field">
+                              <div>判断 <code class="text-[10px] px-1 bg-apple-gray-100 dark:bg-apple-gray-700 rounded">{{ st.condition_field }}</code>：是 → <span class="font-medium">{{ st.true_next || '—' }}</span>，否 → <span class="font-medium">{{ st.false_next || '—' }}</span></div>
+                            </template>
+                            <template v-else>
+                              <div>下一步 → <span class="font-medium">{{ st.next || '结束' }}</span></div>
+                            </template>
+                            <div v-if="st.on_error" class="text-error-red">出错兜底 → {{ st.on_error }}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 工作方式：phases 执行阶段 -->
+                    <div v-if="selectedStrategyRule.phases">
+                      <p class="text-xs font-semibold text-apple-gray-500 dark:text-apple-gray-400 mb-2">执行阶段（phases）</p>
+                      <div class="space-y-3">
+                        <div v-for="(ph, i) in selectedStrategyRule.phases" :key="i" class="rounded-lg border border-apple-gray-200 dark:border-apple-gray-700 p-3">
+                          <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-apple-gray-800 dark:text-apple-gray-100">{{ ph.phase }}</span>
+                            <span v-if="ph.loop_over" class="text-[10px] text-apple-gray-400">循环 {{ ph.loop_over }}</span>
+                          </div>
+                          <div class="flex flex-wrap items-center gap-1">
+                            <template v-for="(st, j) in ph.steps" :key="j">
+                              <span class="px-2 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 font-mono text-[11px]">{{ st.step }}</span>
+                              <span v-if="j < ph.steps.length - 1" class="text-apple-gray-300 text-[11px]">→</span>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 原始 JSON -->
+                    <div class="mt-4">
+                      <p class="text-[10px] text-apple-gray-400 uppercase tracking-wider mb-1.5">原始 execution_rule</p>
+                      <pre class="text-[11px] text-apple-gray-600 dark:text-apple-gray-300 overflow-x-auto bg-apple-gray-50 dark:bg-apple-gray-900 rounded-lg p-3 border border-apple-gray-100 dark:border-apple-gray-700">{{ prettyJson(selectedStrategy.execution_rule) }}</pre>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
+
+        <div v-if="isEntityView && !['provider', 'model', 'soul', 'skill', 'mcp', 'mcp-provider', 'mcp-stats', 'agent', 'prompt', 'strategy', 'orch-strategy', 'cdt-status', 'cdt-page', 'profile-direction'].includes(currentEntityType || '')" class="px-5 pb-6">
           <div class="flex flex-col items-center justify-center py-16 text-center">
             <Settings :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">该实体类型（{{ currentEntityType }}）的管理功能正在开发中</p>

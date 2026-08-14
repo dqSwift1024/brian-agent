@@ -14,6 +14,8 @@ import {
   AddAgentInput, AddAgentOutput,
   MatchAgentInput, MatchAgentOutput,
   UpdateAgentInput, UpdateAgentOutput,
+  DelAgentInput, DelAgentOutput,
+  ToggleAgentInput, ToggleAgentOutput,
   RecordAgentUsageInput, RecordAgentUsageOutput,
   GetAgentInput, GetAgentOutput,
   AgeAgentInput, AgeAgentOutput,
@@ -168,6 +170,79 @@ export class AgentLibraryService {
       data,
       [{ field: 'agent_id', operator: Operator.EQ, value: input.agent_id }],
     );
+    return true;
+  }
+
+  async delAgent(
+    input: DelAgentInput,
+    _ctx: AgentLibraryContext,
+    output: DelAgentOutput,
+  ): Promise<boolean> {
+    if (!input.ids || input.ids.length === 0) {
+      output.deleted_count = 0;
+      return true;
+    }
+
+    let deleted = 0;
+    for (const id of input.ids) {
+      if (!id) continue;
+      const rows = await this.relationDb.select(AGENT_TABLE, {
+        conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
+      });
+      if (rows.length === 0) continue;
+      const agentId = String(rows[0].agent_id);
+
+      // 删除使用统计（agent_usage）
+      await this.relationDb.delete(AGENT_USAGE_TABLE, [
+        { field: 'agent_id', operator: Operator.EQ, value: agentId },
+      ]);
+
+      // 删除关联绑定（agent_llm / agent_skill / agent_soul / agent_mcp + mcp 使用统计）
+      for (const table of ['agent_llm', 'agent_skill', 'agent_soul']) {
+        try {
+          this.relationDb.executeRaw(`DELETE FROM "${table}" WHERE "agent_id" = ?`, [agentId]);
+        } catch { /* 表可能不存在 */ }
+      }
+      try {
+        this.relationDb.executeRaw(
+          'DELETE FROM "agent_mcp_usage" WHERE "agent_mcp_id" IN (SELECT "id" FROM "agent_mcp" WHERE "agent_id" = ?)',
+          [agentId],
+        );
+        this.relationDb.executeRaw('DELETE FROM "agent_mcp" WHERE "agent_id" = ?', [agentId]);
+      } catch { /* 表可能不存在 */ }
+
+      // 删除主记录
+      const n = await this.relationDb.delete(AGENT_TABLE, [
+        { field: 'id', operator: Operator.EQ, value: id },
+      ]);
+      deleted += n;
+    }
+    output.deleted_count = deleted;
+    return true;
+  }
+
+  async toggleAgent(
+    input: ToggleAgentInput,
+    _ctx: AgentLibraryContext,
+    output: ToggleAgentOutput,
+  ): Promise<boolean> {
+    if (!input.id) throw new ValidationError('id 为必填');
+    const rows = await this.relationDb.select(AGENT_TABLE, {
+      conditions: [{ field: 'id', operator: Operator.EQ, value: input.id }],
+    });
+    if (rows.length === 0) throw new NotFoundError('Agent', input.id);
+
+    const agent = mapAgent(rows[0]);
+    const newEnable = !agent.enable;
+    await this.relationDb.update(
+      AGENT_TABLE,
+      [
+        { field: 'enable', value: newEnable ? 1 : 0 },
+        { field: 'updated', value: IdGenerator.now() },
+      ],
+      [{ field: 'id', operator: Operator.EQ, value: input.id }],
+    );
+    output.enable = newEnable;
     return true;
   }
 

@@ -89,6 +89,22 @@ export class UpdateAgentInput extends Input {
 
 export class UpdateAgentOutput extends Output {}
 
+export class DelAgentInput extends Input {
+  ids!: string[];
+}
+
+export class DelAgentOutput extends Output {
+  deleted_count = 0;
+}
+
+export class ToggleAgentInput extends Input {
+  id!: string;
+}
+
+export class ToggleAgentOutput extends Output {
+  enable = false;
+}
+
 export class RecordAgentUsageInput extends Input {
   agent_id!: string;
   work_id!: string;

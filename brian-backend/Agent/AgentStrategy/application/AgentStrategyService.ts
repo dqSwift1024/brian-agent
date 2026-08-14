@@ -14,6 +14,7 @@ import {
   SoStrategyInput, SoStrategyOutput,
   AddStrategyInput, AddStrategyOutput,
   UpdateStrategyInput, UpdateStrategyOutput,
+  ToggleStrategyInput, ToggleStrategyOutput,
   ConfigAgentStrategyInput, ConfigAgentStrategyOutput,
 } from '../domain/types';
 import { parseJsonObject } from '../../shared/signature';
@@ -230,6 +231,31 @@ export class AgentStrategyService {
       data,
       [{ field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id }],
     );
+    return true;
+  }
+
+  async toggleStrategy(
+    input: ToggleStrategyInput,
+    _ctx: AgentStrategyContext,
+    output: ToggleStrategyOutput,
+  ): Promise<boolean> {
+    if (!input.strategy_id) throw new ValidationError('strategy_id 为必填');
+    const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
+      { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
+    ]);
+    if (!row) throw new NotFoundError('Strategy', input.strategy_id);
+
+    const current = mapStrategy(row);
+    const newEnable = !current.enable;
+    await this.relationDb.update(
+      AGENT_STRATEGY_TABLE,
+      [
+        { field: 'enable', value: newEnable ? 1 : 0 },
+        { field: 'updated', value: IdGenerator.now() },
+      ],
+      [{ field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id }],
+    );
+    output.enable = newEnable;
     return true;
   }
 

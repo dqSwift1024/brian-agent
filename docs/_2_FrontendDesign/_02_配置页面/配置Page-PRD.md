@@ -134,6 +134,10 @@ Agent 实例是系统中执行任务的工作单元。每个 Agent 绑定了策�
 | 最小使用次数 | INT | 5 | 窗口内使用次数低于此值的 Agent 可能被淘汰 |
 | 最小评估分数 | DOUBLE | 0.5 | 评估分数低于此值的 Agent 可能被淘汰 |
 
+**操作**：编辑、删除、启用/禁用（卡片 toggle 开关）。
+- **删除**：调用 `DELETE /api/agent/{id}` 删除 Agent 并级联清理其使用记录与绑定关系（agent_usage / agent_llm / agent_skill / agent_soul / agent_mcp）；
+- **启用/禁用**：调用 `POST /api/agent/{id}/toggle` 翻转 enable 状态；禁用的 Agent 不会被匹配复用（matchAgent 仅匹配 enable=true），执行时也会被拒绝（execAgent 校验 enable）。
+
 ### 3.2 执行策略
 
 策略定义了 Agent 执行任务的方式。系统内置 3 个策略：
@@ -156,6 +160,16 @@ Agent 实例是系统中执行任务的工作单元。每个 Agent 绑定了策�
 | `enable` | Boolean | 启用/停用 |
 
 **操作**：新建策略、编辑、删除（内置 3 个策略不可删除）、启停。
+
+**界面展示**：
+
+- 策略以**卡片网格**（`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`）展示，卡片显示策略名称、适用复杂度区间、适用领域与执行流摘要；
+- 卡片右上角为**启用/禁用 toggle 开关**，点击直接切换（调用 `POST /api/agent/strategy/{strategy_id}/toggle`）；
+- **点击卡片弹出详情弹窗**，展示策略的具体工作方式：
+  - 基本信息（策略名、复杂度区间、适用领域、启停状态）；
+  - 元信息（version、最大迭代次数）；
+  - 执行流程可视化——steps 结构逐步展示「下一步 / 条件分支（condition_field 的 true/false 走向）/ 出错兜底」，phases 结构分阶段展示（含循环变量）；
+  - 格式化（缩进）展示的 execution_rule JSON。
 
 **策略选择参数**：
 

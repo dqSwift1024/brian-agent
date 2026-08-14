@@ -9,6 +9,7 @@ import {
   SoStrategyInput, SoStrategyOutput,
   AddStrategyInput, AddStrategyOutput,
   UpdateStrategyInput, UpdateStrategyOutput,
+  ToggleStrategyInput, ToggleStrategyOutput,
   ConfigAgentStrategyInput, ConfigAgentStrategyOutput,
 } from '../domain/types';
 
@@ -62,6 +63,13 @@ export class AgentStrategyAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.updateStrategy(i, c, o);
+  }
+
+  async toggleStrategy(
+    i: ToggleStrategyInput, c: AgentStrategyContext, o: ToggleStrategyOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.toggleStrategy(i, c, o);
   }
 
   async configAgentStrategy(

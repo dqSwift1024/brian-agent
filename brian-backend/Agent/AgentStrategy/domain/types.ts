@@ -98,6 +98,14 @@ export class UpdateStrategyInput extends Input {
 
 export class UpdateStrategyOutput extends Output {}
 
+export class ToggleStrategyInput extends Input {
+  strategy_id!: string;
+}
+
+export class ToggleStrategyOutput extends Output {
+  enable = false;
+}
+
 // ---------------------------------------------------------------------------
 // configAgentStrategy
 // ---------------------------------------------------------------------------

@@ -110,7 +110,25 @@
 3. 调用 RelationDBProvider.updateDB 更新变更字段；
 4. 返回 true；
 
-### 2.6. 配置（configAgentStrategy）
+### 2.6. 切换启用状态（toggleStrategy）
+
+**功能**：翻转策略的 enable 状态（启用 ↔ 禁用）
+**入参**：
+- input：ToggleStrategyInput（继承 Input），包含以下字段：
+  - strategy_id：策略 ID
+- context：AgentStrategyContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：ToggleStrategyOutput（继承 Output），承载返回内容：
+  - enable：翻转后的启用状态
+
+**处理流程**：
+
+1. 校验 `strategy_id` 非空；调用 RelationDBProvider.selectOneDB 按 strategy_id 查询 `agent_strategy` 表，不存在则抛出 NotFoundError；
+2. 读取当前 enable 并取反，调用 RelationDBProvider.updateDB 将 `enable` 写回（同时更新 `updated`）；
+3. 将翻转后的 enable 写入 output。
+
+> 禁用生效：`matchStrategy` 仅加载 enable=true 的策略参与匹配，禁用后不会被选中。
+
+### 2.7. 配置（configAgentStrategy）
 
 **功能**：配置 Strategy 模块的参数
 **入参**：

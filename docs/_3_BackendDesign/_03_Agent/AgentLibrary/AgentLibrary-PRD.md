@@ -200,6 +200,44 @@
 7. 默认配置初始化：similarity_threshold=0.7、max_agent_count=100、prompt_template_id 为空；
 8. 返回更新后的配置写入 output；
 
+### 2.9. 删除 Agent（delAgent）
+
+**功能**：按主键 ID 删除 Agent，并级联清理其关联数据（使用记录与绑定关系）
+**入参**：
+- input：DelAgentInput（继承 Input），包含以下字段：
+  - ids：Agent 主键 ID 列表（`agent.id`，非 `agent_id`）
+- context：AgentLibraryContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：DelAgentOutput（继承 Output），承载返回内容：
+  - deleted_count：实际删除的 Agent 数量
+
+**处理流程**：
+
+1. 遍历 `ids`：对每个主键 ID 调用 RelationDBAccess.select 查询 `agent` 表，不存在则跳过；
+2. 命中后取出该记录的 `agent_id`，依次级联清理关联数据：
+   a. 删除 `agent_usage`（使用统计，按 agent_id）；
+   b. 删除绑定关系 `agent_llm` / `agent_skill` / `agent_soul`（按 agent_id）；
+   c. 删除 `agent_mcp_usage`（通过子查询按 agent_id 关联的 agent_mcp.id）后删除 `agent_mcp`；
+3. 删除 `agent` 表主记录（按主键 id）；
+4. 将删除数量累加写入 output.deleted_count。
+
+### 2.10. 切换启用状态（toggleAgent）
+
+**功能**：按主键 ID 翻转 Agent 的 enable 状态（启用 ↔ 禁用）
+**入参**：
+- input：ToggleAgentInput（继承 Input），包含以下字段：
+  - id：Agent 主键 ID（`agent.id`，非 `agent_id`）
+- context：AgentLibraryContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：ToggleAgentOutput（继承 Output），承载返回内容：
+  - enable：翻转后的启用状态
+
+**处理流程**：
+
+1. 校验 `id` 非空；调用 RelationDBAccess.select 按主键 id 查询 `agent` 表，不存在则抛出 NotFoundError；
+2. 读取当前 enable 并取反，调用 RelationDBAccess.update 将 `enable` 写回（同时更新 `updated`）；
+3. 将翻转后的 enable 写入 output。
+
+> 禁用生效：`matchAgent` 匹配候选仅加载 enable=true 的 Agent；`AgentExecution.execAgent` 执行前校验 Agent enable，禁用时抛 NotFoundError 拒绝执行。
+
 ## 重要内容
 
 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；

@@ -414,6 +414,7 @@
 | enable | 是否启用 | BOOLEAN | N | | 默认 true |
 | is_default | 是否为默认模型 | BOOLEAN | N | | 默认 false，系统仅一个默认模型 |
 | max_tokens | 最大 Token 数 | INT | Y | | 不超过 llm_cache.max_tokens |
+| model_usage | 模型用途 | STRING | Y | | 描述模型用途（如 text / embedding / vision），默认空字符串 |
 | UNIQUE | 唯一约束 | - | - | (llm_provider_id, llm_title) | 同一提供商下模型名唯一 |
 
 ### 4.4. llm_usage 表（调用统计）

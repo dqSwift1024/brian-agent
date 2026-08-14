@@ -145,7 +145,8 @@ export class LLMSchemaInitializer {
         "llm_type"        TEXT    NOT NULL DEFAULT 'text',
         "enable"          INTEGER NOT NULL DEFAULT 1,
         "is_default"      INTEGER NOT NULL DEFAULT 0,
-        "max_tokens"      INTEGER DEFAULT 0
+        "max_tokens"      INTEGER DEFAULT 0,
+        "model_usage"     TEXT    DEFAULT ''
       )
     `);
     this.relationDb.executeRaw(
@@ -176,6 +177,11 @@ export class LLMSchemaInitializer {
         `ALTER TABLE "${LLM_AVAILABLE_TABLE}" RENAME COLUMN "llm_usage" TO "llm_type"`,
       );
     } catch { /* already renamed */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE "${LLM_AVAILABLE_TABLE}" ADD COLUMN "model_usage" TEXT DEFAULT ''`,
+      );
+    } catch { /* column already exists */ }
 
     // llm_usage 表（按天使用次数统计）
     this.relationDb.executeRaw(`

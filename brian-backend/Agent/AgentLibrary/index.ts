@@ -4,6 +4,8 @@ export {
   AddAgentInput, AddAgentOutput,
   MatchAgentInput, MatchAgentOutput,
   UpdateAgentInput, UpdateAgentOutput,
+  DelAgentInput, DelAgentOutput,
+  ToggleAgentInput, ToggleAgentOutput,
   RecordAgentUsageInput, RecordAgentUsageOutput,
   GetAgentInput, GetAgentOutput,
   AgeAgentInput, AgeAgentOutput,
