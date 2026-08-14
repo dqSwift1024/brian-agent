@@ -136,16 +136,10 @@ import type { Input, Context, Output } from '@brian-agent/base';
 
 import {
   ConfigContext,
-  RegisterConfigInput,
-  RegisterConfigOutput,
   UpdateLayerPrivilegeInput,
   UpdateLayerPrivilegeOutput,
   UpdateModulePrivilegeInput,
   UpdateModulePrivilegeOutput,
-  UpdateConfigPrivilegeInput,
-  UpdateConfigPrivilegeOutput,
-  GetPrivilegeTreeInput,
-  GetPrivilegeTreeOutput,
   GetConfigDetailInput,
   GetConfigDetailOutput,
   GetConfigItemInput,
@@ -154,11 +148,6 @@ import {
   UpdateConfigOutput,
   ConfigConfigInput,
   ConfigConfigOutput,
-  CreateConfigItemInput,
-  CreateConfigItemOutput,
-  DeleteConfigItemInput,
-  DeleteConfigItemOutput,
-  CONFIG_REGISTRY_TABLE,
   CONFIG_LAYER_PRIVILEGE_TABLE,
   CONFIG_MODULE_PRIVILEGE_TABLE,
   CONFIG_CONFIG_TABLE,
@@ -195,6 +184,11 @@ export class ConfigService {
   private readonly selfLearningAccess: any;
   private readonly userProfileAccess: any;
   private readonly visualizationAccess: any;
+
+  /** 内存静态注册表：配置项元数据直接来自 configRegistrations 静态定义（不再写 config_registry 表） */
+  private readonly registryMap: Map<string, ConfigRegistration> = new Map(
+    ALL_CONFIG_REGISTRATIONS.map((r) => [r.config_key, r]),
+  );
 
   constructor(
     relationDb: RelationDBAccess,
@@ -252,123 +246,6 @@ export class ConfigService {
     this.selfLearningAccess = selfLearningAccess;
     this.userProfileAccess = userProfileAccess;
     this.visualizationAccess = visualizationAccess;
-  }
-
-  // =========================================================================
-  // initRegistrations - auto-register all known module configs
-  // =========================================================================
-
-  async initRegistrations(): Promise<number> {
-    const existing = await this.relationDb.count(CONFIG_REGISTRY_TABLE, []);
-    if (existing > 0) {
-      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-        { field: 'updated', value: Date.now() },
-        { field: 'readable', value: 0 },
-      ], [
-        { field: 'config_key', operator: Operator.EQ, value: 'self_learning.conversation_weight' },
-      ]);
-      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-        { field: 'updated', value: Date.now() },
-        { field: 'config_name', value: '画像分析 Prompt' },
-      ], [
-        { field: 'config_key', operator: Operator.EQ, value: 'user_profile.profile_analysis_prompt_template_id' },
-      ]);
-      await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-        { field: 'updated', value: Date.now() },
-        { field: 'config_description', value: '自动生成画像的调度间隔' },
-      ], [
-        { field: 'config_key', operator: Operator.EQ, value: 'user_profile.auto_generate_interval_ms' },
-      ]);
-      const visRenames: Array<{ key: string; name: string; desc: string }> = [
-        { key: 'orchestration.visualization.max_nodes_in_graph', name: 'Agent DAG 图最大节点数', desc: 'Agent 执行 DAG 图中最多展示的 Agent 节点数，超过则截断（防止 DAG 过大）' },
-        { key: 'visualization.max_nodes_per_graph', name: '消息图最大节点数', desc: '消息引用关系图中最多展示的消息节点数，超过则截断' },
-        { key: 'visualization.default_message_summary_length', name: '消息摘要显示长度', desc: '消息图中节点显示的消息摘要截取长度（字符数）' },
-        { key: 'visualization.resolve_content_by_default', name: '默认展开 Agent 组件详情', desc: '查看 Agent DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容' },
-        { key: 'visualization.max_context_samples_per_source', name: 'Agent 上下文来源采样数', desc: 'Agent 依赖上下文中每个来源（钉住/时间线/标签等）最多展示的样本数' },
-      ];
-      for (const r of visRenames) {
-        await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-          { field: 'updated', value: Date.now() },
-          { field: 'config_name', value: r.name },
-          { field: 'config_description', value: r.desc },
-        ], [
-          { field: 'config_key', operator: Operator.EQ, value: r.key },
-        ]);
-      }
-      return existing;
-    }
-    const input = new RegisterConfigInput();
-    input.registrations = ALL_CONFIG_REGISTRATIONS;
-    const output = new RegisterConfigOutput();
-    await this.registerConfig(input, new ConfigContext(), output);
-    return output.registered_count;
-  }
-
-  // =========================================================================
-  // registerConfig
-  // =========================================================================
-
-  async registerConfig(
-    input: RegisterConfigInput,
-    _context: ConfigContext,
-    output: RegisterConfigOutput,
-  ): Promise<boolean> {
-    if (!input.registrations || input.registrations.length === 0) {
-      throw new ValidationError('registrations 不能为空');
-    }
-
-    let count = 0;
-    for (const reg of input.registrations) {
-      if (!reg.config_key || !reg.layer || !reg.module || !reg.category || !reg.config_type) {
-        throw new ValidationError(`注册项缺少必填字段: ${JSON.stringify(reg)}`);
-      }
-
-      const existing = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-        { field: 'config_key', operator: Operator.EQ, value: reg.config_key },
-      ]);
-
-      const now = Date.now();
-      if (existing) {
-        await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-          { field: 'updated', value: now },
-          { field: 'layer', value: reg.layer },
-          { field: 'module', value: reg.module },
-          { field: 'category', value: reg.category },
-          { field: 'config_name', value: reg.config_name },
-          { field: 'config_description', value: reg.config_description ?? null },
-          { field: 'config_type', value: reg.config_type },
-          { field: 'config_default', value: reg.config_default !== undefined ? JSON.stringify(reg.config_default) : null },
-          { field: 'config_enum_values', value: reg.config_enum_values ? JSON.stringify(reg.config_enum_values) : null },
-          { field: 'readable', value: reg.readable !== false ? 1 : 0 },
-          { field: 'writable', value: reg.writable !== false ? 1 : 0 },
-        ], [{ field: 'config_key', operator: Operator.EQ, value: reg.config_key }]);
-      } else {
-        const id = this.generateId();
-        await this.relationDb.insert(CONFIG_REGISTRY_TABLE, [
-          { field: 'id', value: id },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'config_key', value: reg.config_key },
-          { field: 'layer', value: reg.layer },
-          { field: 'module', value: reg.module },
-          { field: 'category', value: reg.category },
-          { field: 'config_name', value: reg.config_name },
-          { field: 'config_description', value: reg.config_description ?? null },
-          { field: 'config_type', value: reg.config_type },
-          { field: 'config_default', value: reg.config_default !== undefined ? JSON.stringify(reg.config_default) : null },
-          { field: 'config_enum_values', value: reg.config_enum_values ? JSON.stringify(reg.config_enum_values) : null },
-          { field: 'readable', value: reg.readable !== false ? 1 : 0 },
-          { field: 'writable', value: reg.writable !== false ? 1 : 0 },
-        ]);
-      }
-
-      await this.ensureLayerPrivilege(reg.layer);
-      await this.ensureModulePrivilege(reg.module, reg.layer);
-      count++;
-    }
-
-    output.registered_count = count;
-    return true;
   }
 
   // =========================================================================
@@ -487,163 +364,6 @@ export class ConfigService {
   }
 
   // =========================================================================
-  // updateConfigPrivilege
-  // =========================================================================
-
-  async updateConfigPrivilege(
-    input: UpdateConfigPrivilegeInput,
-    _context: ConfigContext,
-    output: UpdateConfigPrivilegeOutput,
-  ): Promise<boolean> {
-    if (!input.config_key) {
-      throw new ValidationError('config_key 不能为空');
-    }
-
-    const registry = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    if (!registry) {
-      throw new NotFoundError('config_key', input.config_key);
-    }
-
-    const layer = registry.layer as string;
-    const module = registry.module as string;
-
-    const layerPriv = await this.relationDb.selectOne(CONFIG_LAYER_PRIVILEGE_TABLE, [
-      { field: 'layer', operator: Operator.EQ, value: layer },
-    ]);
-    const modulePriv = await this.relationDb.selectOne(CONFIG_MODULE_PRIVILEGE_TABLE, [
-      { field: 'module', operator: Operator.EQ, value: module },
-    ]);
-
-    const now = Date.now();
-    const data: DataObject[] = [{ field: 'updated', value: now }];
-
-    if (input.readable !== undefined) {
-      if (input.readable) {
-        const layerEffective = layerPriv ? (layerPriv.readable as number) === 1 : true;
-        const moduleEffective = modulePriv ? (modulePriv.readable as number) === 1 : true;
-        if (!layerEffective || !moduleEffective) {
-          throw new ValidationError(`无法启用配置 ${input.config_key} 的可读性：父级权限不足`);
-        }
-      }
-      data.push({ field: 'readable', value: input.readable ? 1 : 0 });
-    }
-
-    if (input.writable !== undefined) {
-      if (input.writable) {
-        const layerEffective = layerPriv ? (layerPriv.writable as number) === 1 : true;
-        const moduleEffective = modulePriv ? (modulePriv.writable as number) === 1 : true;
-        if (!layerEffective || !moduleEffective) {
-          throw new ValidationError(`无法启用配置 ${input.config_key} 的可写性：父级权限不足`);
-        }
-      }
-      data.push({ field: 'writable', value: input.writable ? 1 : 0 });
-    }
-
-    await this.relationDb.update(CONFIG_REGISTRY_TABLE, data, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-
-    const updated = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    const effectiveReadable = this.computeEffectiveReadable(updated, layerPriv, modulePriv);
-    const effectiveWritable = this.computeEffectiveWritable(updated, layerPriv, modulePriv);
-    output.privilege = {
-      ...this.rowToRecord(updated || {}),
-      effective_readable: effectiveReadable,
-      effective_writable: effectiveWritable,
-    };
-    return true;
-  }
-
-  // =========================================================================
-  // getPrivilegeTree
-  // =========================================================================
-
-  async getPrivilegeTree(
-    _input: GetPrivilegeTreeInput,
-    _context: ConfigContext,
-    output: GetPrivilegeTreeOutput,
-  ): Promise<boolean> {
-    const layerRows = await this.relationDb.select(CONFIG_LAYER_PRIVILEGE_TABLE);
-    const moduleRows = await this.relationDb.select(CONFIG_MODULE_PRIVILEGE_TABLE);
-    const registryRows = await this.relationDb.select(CONFIG_REGISTRY_TABLE);
-
-    const layerMap = new Map<string, Record<string, unknown>>();
-    for (const lr of layerRows) {
-      const layerName = lr.layer as string;
-      layerMap.set(layerName, {
-        layer: layerName,
-        readable: (lr.readable as number) === 1,
-        writable: (lr.writable as number) === 1,
-        modules: [] as Array<Record<string, unknown>>,
-      });
-    }
-
-    const moduleMap = new Map<string, { module: Record<string, unknown>; layerName: string }>();
-    for (const mr of moduleRows) {
-      const moduleName = mr.module as string;
-      const layerName = mr.layer as string;
-      const layerNode = layerMap.get(layerName);
-      const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
-      const layerWritable = layerNode ? (layerNode.writable as boolean) : true;
-      const modNode = {
-        module: moduleName,
-        readable: (mr.readable as number) === 1,
-        writable: (mr.writable as number) === 1,
-        effective_readable: layerReadable && ((mr.readable as number) === 1),
-        effective_writable: layerWritable && ((mr.writable as number) === 1),
-        categories: [] as Array<Record<string, unknown>>,
-      };
-      moduleMap.set(moduleName, { module: modNode, layerName });
-      if (layerNode) {
-        (layerNode.modules as Array<Record<string, unknown>>).push(modNode);
-      }
-    }
-
-    for (const rr of registryRows) {
-      const moduleName = rr.module as string;
-      const layerName = rr.layer as string;
-      const category = rr.category as string;
-
-      const layerNode = layerMap.get(layerName);
-      const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
-      const layerWritable = layerNode ? (layerNode.writable as boolean) : true;
-
-      const modEntry = moduleMap.get(moduleName);
-      if (!modEntry) continue;
-      const modNode = modEntry.module;
-      const modReadable = modNode.readable as boolean;
-      const modWritable = modNode.writable as boolean;
-
-      const catList = modNode.categories as Array<Record<string, unknown>>;
-      let catNode = catList.find((c) => c.category === category);
-      if (!catNode) {
-        catNode = { category, items: [] as Array<Record<string, unknown>> };
-        catList.push(catNode);
-      }
-
-      const configReadable = (rr.readable as number) === 1;
-      const configWritable = (rr.writable as number) === 1;
-
-      (catNode.items as Array<Record<string, unknown>>).push({
-        config_key: rr.config_key,
-        config_name: rr.config_name,
-        config_type: rr.config_type,
-        readable: configReadable,
-        writable: configWritable,
-        effective_readable: layerReadable && modReadable && configReadable,
-        effective_writable: layerWritable && modWritable && configWritable,
-      });
-    }
-
-    output.layers = Array.from(layerMap.values());
-    return true;
-  }
-
-  // =========================================================================
   // getConfigDetail
   // =========================================================================
 
@@ -654,53 +374,66 @@ export class ConfigService {
   ): Promise<boolean> {
     const layerRows = await this.relationDb.select(CONFIG_LAYER_PRIVILEGE_TABLE);
     const moduleRows = await this.relationDb.select(CONFIG_MODULE_PRIVILEGE_TABLE);
-    const registryRows = await this.relationDb.select(CONFIG_REGISTRY_TABLE);
+
+    const layerPrivMap = new Map<string, Record<string, unknown>>(
+      layerRows.map((r) => [r.layer as string, r]),
+    );
+    const modulePrivMap = new Map<string, Record<string, unknown>>(
+      moduleRows.map((r) => [r.module as string, r]),
+    );
 
     const layerMap = new Map<string, Record<string, unknown>>();
-    for (const lr of layerRows) {
-      const layerName = lr.layer as string;
-      if (input.layer && input.layer !== layerName) continue;
-      const layerInfo = LAYER_LABELS[layerName];
-      layerMap.set(layerName, {
-        layer: layerName,
-        label: layerInfo?.label ?? layerName,
-        desc: layerInfo?.desc ?? '',
-        readable: (lr.readable as number) === 1,
-        writable: (lr.writable as number) === 1,
-        modules: [] as Array<Record<string, unknown>>,
-      });
-    }
-
     const moduleMap = new Map<string, { module: Record<string, unknown>; layerName: string }>();
-    for (const mr of moduleRows) {
-      const moduleName = mr.module as string;
-      const layerName = mr.layer as string;
+
+    // 直接遍历静态定义收集 layer / module 节点
+    for (const reg of ALL_CONFIG_REGISTRATIONS) {
+      const layerName = reg.layer;
       if (input.layer && input.layer !== layerName) continue;
+      if (!layerMap.has(layerName)) {
+        const lr = layerPrivMap.get(layerName);
+        const layerInfo = LAYER_LABELS[layerName];
+        layerMap.set(layerName, {
+          layer: layerName,
+          label: layerInfo?.label ?? layerName,
+          desc: layerInfo?.desc ?? '',
+          readable: lr ? (lr.readable as number) === 1 : true,
+          writable: lr ? (lr.writable as number) === 1 : true,
+          modules: [] as Array<Record<string, unknown>>,
+        });
+      }
+
+      const moduleName = reg.module;
       if (input.module && input.module !== moduleName) continue;
-      const layerNode = layerMap.get(layerName);
-      const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
-      const layerWritable = layerNode ? (layerNode.writable as boolean) : true;
-      const modNode = {
-        module: moduleName,
-        label: (MODULE_LABELS[moduleName]?.label) ?? moduleName,
-        desc: (MODULE_LABELS[moduleName]?.desc) ?? '',
-        readable: (mr.readable as number) === 1,
-        writable: (mr.writable as number) === 1,
-        effective_readable: layerReadable && ((mr.readable as number) === 1),
-        effective_writable: layerWritable && ((mr.writable as number) === 1),
-        entity_types: (MODULE_ENTITY_TYPES[moduleName]) ?? [],
-        categories: [] as Array<Record<string, unknown>>,
-      };
-      moduleMap.set(moduleName, { module: modNode, layerName });
-      if (layerNode) {
-        (layerNode.modules as Array<Record<string, unknown>>).push(modNode);
+      if (!moduleMap.has(moduleName)) {
+        const mr = modulePrivMap.get(moduleName);
+        const layerNode = layerMap.get(layerName);
+        const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
+        const layerWritable = layerNode ? (layerNode.writable as boolean) : true;
+        const modReadable = mr ? (mr.readable as number) === 1 : true;
+        const modWritable = mr ? (mr.writable as number) === 1 : true;
+        const modNode = {
+          module: moduleName,
+          label: (MODULE_LABELS[moduleName]?.label) ?? moduleName,
+          desc: (MODULE_LABELS[moduleName]?.desc) ?? '',
+          readable: modReadable,
+          writable: modWritable,
+          effective_readable: layerReadable && modReadable,
+          effective_writable: layerWritable && modWritable,
+          entity_types: (MODULE_ENTITY_TYPES[moduleName]) ?? [],
+          categories: [] as Array<Record<string, unknown>>,
+        };
+        moduleMap.set(moduleName, { module: modNode, layerName });
+        if (layerNode) {
+          (layerNode.modules as Array<Record<string, unknown>>).push(modNode);
+        }
       }
     }
 
-    for (const rr of registryRows) {
-      const moduleName = rr.module as string;
-      const layerName = rr.layer as string;
-      const category = rr.category as string;
+    // 直接遍历静态定义生成配置项
+    for (const reg of ALL_CONFIG_REGISTRATIONS) {
+      const moduleName = reg.module;
+      const layerName = reg.layer;
+      const category = reg.category;
       if (input.layer && input.layer !== layerName) continue;
       if (input.module && input.module !== moduleName) continue;
       if (input.category && input.category !== category) continue;
@@ -708,15 +441,14 @@ export class ConfigService {
       const modEntry = moduleMap.get(moduleName);
       if (!modEntry) continue;
       const modNode = modEntry.module;
-      const modReadable = modNode.readable as boolean;
-      const modWritable = modNode.writable as boolean;
       const layerNode = layerMap.get(layerName);
       const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
       const layerWritable = layerNode ? (layerNode.writable as boolean) : true;
+      const modReadable = modNode.readable as boolean;
+      const modWritable = modNode.writable as boolean;
 
-      const configReadable = (rr.readable as number) === 1;
-      const configWritable = (rr.writable as number) === 1;
-
+      const configReadable = reg.readable !== false;
+      const configWritable = reg.writable !== false;
       const effectiveReadable = layerReadable && modReadable && configReadable;
       const effectiveWritable = layerWritable && modWritable && configWritable;
 
@@ -737,18 +469,18 @@ export class ConfigService {
 
       let currentValue: unknown = null;
       try {
-        currentValue = await this.getCurrentValue(rr.config_key as string);
+        currentValue = await this.getCurrentValue(reg.config_key);
       } catch {
         currentValue = null;
       }
 
       (catNode.items as Array<Record<string, unknown>>).push({
-        config_key: rr.config_key,
-        config_name: rr.config_name,
-        config_description: rr.config_description,
-        config_type: rr.config_type,
-        config_default: rr.config_default ? this.tryParse(rr.config_default as string) : null,
-        config_enum_values: rr.config_enum_values ? this.tryParse(rr.config_enum_values as string) : null,
+        config_key: reg.config_key,
+        config_name: reg.config_name,
+        config_description: reg.config_description,
+        config_type: reg.config_type,
+        config_default: reg.config_default ?? null,
+        config_enum_values: reg.config_enum_values ?? null,
         readable: configReadable,
         writable: configWritable,
         effective_readable: effectiveReadable,
@@ -774,15 +506,13 @@ export class ConfigService {
       throw new ValidationError('config_key 不能为空');
     }
 
-    const registry = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    if (!registry) {
+    const reg = this.registryMap.get(input.config_key);
+    if (!reg) {
       throw new NotFoundError('config_key', input.config_key);
     }
 
-    const layer = registry.layer as string;
-    const module = registry.module as string;
+    const layer = reg.layer;
+    const module = reg.module;
 
     const layerPriv = await this.relationDb.selectOne(CONFIG_LAYER_PRIVILEGE_TABLE, [
       { field: 'layer', operator: Operator.EQ, value: layer },
@@ -791,8 +521,12 @@ export class ConfigService {
       { field: 'module', operator: Operator.EQ, value: module },
     ]);
 
-    const effectiveReadable = this.computeEffectiveReadable(registry, layerPriv, modulePriv);
-    const effectiveWritable = this.computeEffectiveWritable(registry, layerPriv, modulePriv);
+    const registryLike = {
+      readable: reg.readable !== false ? 1 : 0,
+      writable: reg.writable !== false ? 1 : 0,
+    };
+    const effectiveReadable = this.computeEffectiveReadable(registryLike, layerPriv, modulePriv);
+    const effectiveWritable = this.computeEffectiveWritable(registryLike, layerPriv, modulePriv);
 
     let currentValue: unknown = null;
     try {
@@ -802,111 +536,21 @@ export class ConfigService {
     }
 
     output.config_item = {
-      config_key: registry.config_key,
-      config_name: registry.config_name,
-      config_description: registry.config_description,
-      config_type: registry.config_type,
-      config_default: registry.config_default ? this.tryParse(registry.config_default as string) : null,
-      config_enum_values: registry.config_enum_values ? this.tryParse(registry.config_enum_values as string) : null,
+      config_key: reg.config_key,
+      config_name: reg.config_name,
+      config_description: reg.config_description,
+      config_type: reg.config_type,
+      config_default: reg.config_default ?? null,
+      config_enum_values: reg.config_enum_values ?? null,
       layer,
       module,
-      category: registry.category,
-      readable: (registry.readable as number) === 1,
-      writable: (registry.writable as number) === 1,
+      category: reg.category,
+      readable: reg.readable !== false,
+      writable: reg.writable !== false,
       effective_readable: effectiveReadable,
       effective_writable: effectiveWritable,
       current_value: currentValue,
     };
-    return true;
-  }
-
-  // =========================================================================
-  // createConfigItem
-  // =========================================================================
-
-  async createConfigItem(
-    input: CreateConfigItemInput,
-    _context: ConfigContext,
-    output: CreateConfigItemOutput,
-  ): Promise<boolean> {
-    if (!input.layer || !VALID_LAYERS.includes(input.layer as any)) {
-      throw new ValidationError(`layer 必须是 ${VALID_LAYERS.join('/')} 之一`);
-    }
-    if (!input.module || !input.category || !input.config_key || !input.config_type) {
-      throw new ValidationError('module/category/config_key/config_type 不能为空');
-    }
-
-    const existing = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    if (existing) {
-      throw new ValidationError(`config_key '${input.config_key}' 已存在`);
-    }
-
-    const now = Date.now();
-    const id = this.generateId();
-    await this.relationDb.insert(CONFIG_REGISTRY_TABLE, [
-      { field: 'id', value: id },
-      { field: 'created', value: now },
-      { field: 'updated', value: now },
-      { field: 'config_key', value: input.config_key },
-      { field: 'layer', value: input.layer },
-      { field: 'module', value: input.module },
-      { field: 'category', value: input.category },
-      { field: 'config_name', value: input.config_name },
-      { field: 'config_description', value: input.config_description ?? null },
-      { field: 'config_type', value: input.config_type },
-      { field: 'config_default', value: input.config_default !== undefined ? JSON.stringify(input.config_default) : null },
-      { field: 'config_enum_values', value: input.config_enum_values ? JSON.stringify(input.config_enum_values) : null },
-      { field: 'readable', value: 1 },
-      { field: 'writable', value: 1 },
-    ]);
-
-    await this.ensureLayerPrivilege(input.layer);
-    await this.ensureModulePrivilege(input.module, input.layer);
-
-    output.config_item = {
-      config_key: input.config_key,
-      config_name: input.config_name,
-      config_description: input.config_description,
-      config_type: input.config_type,
-      config_default: input.config_default,
-      config_enum_values: input.config_enum_values ?? null,
-      layer: input.layer,
-      module: input.module,
-      category: input.category,
-      readable: true,
-      writable: true,
-      effective_readable: true,
-      effective_writable: true,
-      current_value: null,
-    };
-    return true;
-  }
-
-  // =========================================================================
-  // deleteConfigItem
-  // =========================================================================
-
-  async deleteConfigItem(
-    input: DeleteConfigItemInput,
-    _context: ConfigContext,
-    output: DeleteConfigItemOutput,
-  ): Promise<boolean> {
-    if (!input.config_key) {
-      throw new ValidationError('config_key 不能为空');
-    }
-
-    const existing = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    if (!existing) {
-      throw new NotFoundError('config_key', input.config_key);
-    }
-
-    await this.relationDb.delete(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
     return true;
   }
 
@@ -926,15 +570,13 @@ export class ConfigService {
       throw new ValidationError('value 不能为空');
     }
 
-    const registry = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: input.config_key },
-    ]);
-    if (!registry) {
+    const reg = this.registryMap.get(input.config_key);
+    if (!reg) {
       throw new NotFoundError('config_key', input.config_key);
     }
 
-    const layer = registry.layer as string;
-    const module = registry.module as string;
+    const layer = reg.layer;
+    const module = reg.module;
 
     const layerPriv = await this.relationDb.selectOne(CONFIG_LAYER_PRIVILEGE_TABLE, [
       { field: 'layer', operator: Operator.EQ, value: layer },
@@ -943,13 +585,16 @@ export class ConfigService {
       { field: 'module', operator: Operator.EQ, value: module },
     ]);
 
-    const effectiveWritable = this.computeEffectiveWritable(registry, layerPriv, modulePriv);
+    const registryLike = {
+      readable: reg.readable !== false ? 1 : 0,
+      writable: reg.writable !== false ? 1 : 0,
+    };
+    const effectiveWritable = this.computeEffectiveWritable(registryLike, layerPriv, modulePriv);
     if (!effectiveWritable) {
       throw new ValidationError(`配置项 ${input.config_key} 不可写`);
     }
 
-    const configType = registry.config_type as string;
-    this.validateValueType(input.value, configType);
+    this.validateValueType(input.value, reg.config_type);
 
     await this.routeUpdateConfig(input.config_key, input.value);
 
@@ -1017,15 +662,6 @@ export class ConfigService {
     return result;
   }
 
-  private tryParse(val: string | null | undefined): unknown {
-    if (!val) return null;
-    try {
-      return JSON.parse(val);
-    } catch {
-      return val;
-    }
-  }
-
   private computeEffectiveReadable(
     registry: Record<string, unknown> | null,
     layerPriv: Record<string, unknown> | null,
@@ -1061,23 +697,6 @@ export class ConfigService {
       effective_readable: layerReadable && modReadable,
       effective_writable: layerWritable && modWritable,
     };
-  }
-
-  private async ensureLayerPrivilege(layer: string): Promise<void> {
-    const existing = await this.relationDb.selectOne(CONFIG_LAYER_PRIVILEGE_TABLE, [
-      { field: 'layer', operator: Operator.EQ, value: layer },
-    ]);
-    if (!existing) {
-      const now = Date.now();
-      await this.relationDb.insert(CONFIG_LAYER_PRIVILEGE_TABLE, [
-        { field: 'id', value: this.generateId() },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'layer', value: layer },
-        { field: 'readable', value: 1 },
-        { field: 'writable', value: 1 },
-      ]);
-    }
   }
 
   private async ensureModulePrivilege(module: string, layer: string): Promise<void> {
@@ -1285,11 +904,9 @@ export class ConfigService {
       );
     }
 
-    const row = await this.relationDb.selectOne(CONFIG_REGISTRY_TABLE, [
-      { field: 'config_key', operator: Operator.EQ, value: configKey },
-    ]);
-    if (row && row.config_value) {
-      return this.tryParse(row.config_value as string);
+    const reg = this.registryMap.get(configKey);
+    if (reg && reg.config_default !== undefined) {
+      return reg.config_default;
     }
 
     return null;
@@ -1477,7 +1094,10 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('agent_builder.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('agent_builder.task_analysis_prompt_template_id')) input.task_analysis_prompt_template_id = value as string;
+      else if (prefix.startsWith('agent_builder.default_strategy_id')) input.default_strategy_id = value as string;
+      else if (prefix.startsWith('agent_builder.auto_optimize')) input.auto_optimize = value as boolean;
       const output: any = {};
       await this.agentBuilder.configAgentBuilder(input, {} as any, output);
       return;
@@ -1583,12 +1203,8 @@ export class ConfigService {
       return;
     }
 
-    const now = Date.now();
-    const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
-    await this.relationDb.update(CONFIG_REGISTRY_TABLE, [
-      { field: 'updated', value: now },
-      { field: 'config_value', value: valueStr },
-    ], [{ field: 'config_key', operator: Operator.EQ, value: configKey }]);
+    // 未匹配到具体模块路由：静态定义中的配置项应全部有对应修改路由
+    throw new ValidationError(`配置项 ${configKey} 未实现修改路由`);
   }
 
   // =========================================================================

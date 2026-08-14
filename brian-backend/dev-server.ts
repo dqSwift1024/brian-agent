@@ -80,8 +80,6 @@ import {
   GetConfigDetailInput, GetConfigDetailOutput,
   GetConfigItemInput, GetConfigItemOutput,
   UpdateConfigInput, UpdateConfigOutput,
-  CreateConfigItemInput, CreateConfigItemOutput,
-  DeleteConfigItemInput, DeleteConfigItemOutput,
 } from './Application/Config/domain/types';
 
 // Provider value types (need runtime instantiation)
@@ -275,16 +273,7 @@ async function buildContext() {
     logger,
   );
 
-  // Upsert all static registrations
-  try {
-    const { ALL_CONFIG_REGISTRATIONS } = await import('./Application/Config/domain/configRegistrations');
-    const { RegisterConfigInput, RegisterConfigOutput, ConfigContext } = await import('./Application/Config/domain/types');
-    const regInput = new RegisterConfigInput();
-    regInput.registrations = ALL_CONFIG_REGISTRATIONS;
-    await configAccess.registerConfig(regInput, new ConfigContext(), new RegisterConfigOutput());
-  } catch (e) {
-    logger.warn('[startup] Failed to sync config registrations', String(e));
-  }
+  // 配置项元数据已改为内存静态定义（configRegistrations），无需再注册到数据库
 
   // 启动时清理过期 MQ 消息
   try {
@@ -432,21 +421,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.configAccess.getConfigItem(input, context, output);
         sendJson(res, 200, { config_item: output.config_item });
 
-      } else if (method === 'POST' && pathname === '/api/config/item') {
-        const input = Object.assign(new CreateConfigItemInput(), body);
-        const output = new CreateConfigItemOutput();
-        const context = new ConfigContext();
-        await ctx.configAccess.createConfigItem(input, context, output);
-        sendJson(res, 201, { config_item: output.config_item });
-
-      } else if (method === 'DELETE' && pathname.startsWith('/api/config/item/')) {
-        const configKey = pathname.split('/api/config/item/')[1];
-        const input = Object.assign(new DeleteConfigItemInput(), { config_key: configKey });
-        const output = new DeleteConfigItemOutput();
-        const context = new ConfigContext();
-        await ctx.configAccess.deleteConfigItem(input, context, output);
-        sendJson(res, 200, { success: true });
-
       // ---- Config Save Defaults ----
       } else if (method === 'POST' && pathname === '/api/config/save-defaults') {
         const configTables = ctx.relationDb.queryRaw<{ name: string }>(
@@ -491,12 +465,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         for (const row of configTables || []) {
           try { ctx.relationDb.executeRaw(`DELETE FROM "${row.name}"`, []); } catch { /* ok */ }
         }
-        // 3. 重新注册所有配置项
-        const { ALL_CONFIG_REGISTRATIONS } = await import('./Application/Config/domain/configRegistrations');
-        const { RegisterConfigInput, RegisterConfigOutput, ConfigContext } = await import('./Application/Config/domain/types');
-        const regInput = new RegisterConfigInput();
-        regInput.registrations = ALL_CONFIG_REGISTRATIONS;
-        await ctx.configAccess.registerConfig(regInput, new ConfigContext(), new RegisterConfigOutput());
+        // 3. 配置项元数据为内存静态定义，无需重新注册
         // 4. 从默认配置文件恢复配置值
         const defaultsPath = path.join(dataDir, 'config-defaults.json');
         let restored = 0;

@@ -68,16 +68,10 @@ import { ConfigSchemaInitializer } from '../infrastructure/ConfigSchemaInitializ
 import { ConfigService } from '../application/ConfigService';
 import {
   ConfigContext,
-  RegisterConfigInput,
-  RegisterConfigOutput,
   UpdateLayerPrivilegeInput,
   UpdateLayerPrivilegeOutput,
   UpdateModulePrivilegeInput,
   UpdateModulePrivilegeOutput,
-  UpdateConfigPrivilegeInput,
-  UpdateConfigPrivilegeOutput,
-  GetPrivilegeTreeInput,
-  GetPrivilegeTreeOutput,
   GetConfigDetailInput,
   GetConfigDetailOutput,
   GetConfigItemInput,
@@ -86,10 +80,6 @@ import {
   UpdateConfigOutput,
   ConfigConfigInput,
   ConfigConfigOutput,
-  CreateConfigItemInput,
-  CreateConfigItemOutput,
-  DeleteConfigItemInput,
-  DeleteConfigItemOutput,
 } from '../domain/types';
 
 export class ConfigAccess {
@@ -137,20 +127,11 @@ export class ConfigAccess {
       chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess,
     );
     this.service = AopProxy.wrap(rawService, { logger });
-    rawService.initRegistrations().catch(() => {});
   }
 
   // -------------------------------------------------------------------------
   // Config management
   // -------------------------------------------------------------------------
-
-  async registerConfig(
-    input: RegisterConfigInput,
-    context: ConfigContext,
-    output: RegisterConfigOutput,
-  ): Promise<boolean> {
-    return this.service.registerConfig(input, context, output);
-  }
 
   async updateLayerPrivilege(
     input: UpdateLayerPrivilegeInput,
@@ -166,22 +147,6 @@ export class ConfigAccess {
     output: UpdateModulePrivilegeOutput,
   ): Promise<boolean> {
     return this.service.updateModulePrivilege(input, context, output);
-  }
-
-  async updateConfigPrivilege(
-    input: UpdateConfigPrivilegeInput,
-    context: ConfigContext,
-    output: UpdateConfigPrivilegeOutput,
-  ): Promise<boolean> {
-    return this.service.updateConfigPrivilege(input, context, output);
-  }
-
-  async getPrivilegeTree(
-    input: GetPrivilegeTreeInput,
-    context: ConfigContext,
-    output: GetPrivilegeTreeOutput,
-  ): Promise<boolean> {
-    return this.service.getPrivilegeTree(input, context, output);
   }
 
   async getConfigDetail(
@@ -214,22 +179,6 @@ export class ConfigAccess {
     output: ConfigConfigOutput,
   ): Promise<boolean> {
     return this.service.configConfig(input, context, output);
-  }
-
-  async createConfigItem(
-    input: CreateConfigItemInput,
-    context: ConfigContext,
-    output: CreateConfigItemOutput,
-  ): Promise<boolean> {
-    return this.service.createConfigItem(input, context, output);
-  }
-
-  async deleteConfigItem(
-    input: DeleteConfigItemInput,
-    context: ConfigContext,
-    output: DeleteConfigItemOutput,
-  ): Promise<boolean> {
-    return this.service.deleteConfigItem(input, context, output);
   }
 
   // -------------------------------------------------------------------------

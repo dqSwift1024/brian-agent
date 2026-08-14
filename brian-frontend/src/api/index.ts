@@ -91,10 +91,6 @@ export const configApi = {
       request<{ config_item: Record<string, unknown> }>(`/config/item/${encodeURIComponent(configKey)}`),
     update: (configKey: string, value: unknown) =>
       request<void>('/config', { method: 'PUT', body: JSON.stringify({ config_key: configKey, value }) }),
-    create: (data: { layer: string; module: string; category: string; config_key: string; config_name: string; config_description?: string; config_type: string; config_default: unknown; config_enum_values?: unknown[] }) =>
-      request<{ config_item: Record<string, unknown> }>('/config/item', { method: 'POST', body: JSON.stringify(data) }),
-    delete: (configKey: string) =>
-      request<void>(`/config/item/${encodeURIComponent(configKey)}`, { method: 'DELETE' }),
   },
   model: {
     list: () => request<ModelInfo[]>('/config/model'),
