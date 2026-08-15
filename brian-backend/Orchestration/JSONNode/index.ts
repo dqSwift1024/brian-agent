@@ -7,7 +7,7 @@ export {
   ValidateJSONNodeInput, ValidateJSONNodeOutput,
   ConfigJSONNodeInput, ConfigJSONNodeOutput,
   JSONNodeDefinition, JSONNodeItem,
-  NodeExecutionTrace, NodeHandler,
+  NodeExecutionTrace, NodeHandler, NodeId,
   JSONNodeConfig,
   BUILTIN_NODE_TYPES,
 } from './domain/types';

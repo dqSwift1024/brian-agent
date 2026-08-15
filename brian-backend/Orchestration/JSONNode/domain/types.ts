@@ -14,22 +14,25 @@ export class JSONNodeConfig {
 
 export type NodeHandler = (sharedData: Record<string, unknown>, params: Record<string, unknown>, context: JSONNodeContext) => Promise<void>;
 
+/** 节点 ID（UUID 格式，由 Base 层 ToolProvider 的 IdGenerator 生成） */
+export type NodeId = string;
+
 export interface JSONNodeDefinition {
   version: string;
   orchestration_id: string;
-  start_node: string;
+  start_node: NodeId;
   nodes: JSONNodeItem[];
 }
 
 export interface JSONNodeItem {
-  /** 节点唯一标识（必须为 UUID 格式） */
-  node_id: string;
+  /** 节点唯一标识（UUID 格式） */
+  node_id: NodeId;
   node_type: string;
   params: Record<string, unknown>;
-  next: string | null;
-  on_error?: string;
-  true_next?: string;
-  false_next?: string;
+  next: NodeId | null;
+  on_error?: NodeId;
+  true_next?: NodeId;
+  false_next?: NodeId;
 }
 
 export interface NodeExecutionTrace {

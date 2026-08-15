@@ -680,7 +680,7 @@ export class JSONNodeService {
   ): Promise<void> {
     const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     const dagKey = (params.agent_dag_key as string) ?? 'agent_dag';
-    const maxConcurrent = (params.max_concurrent as number) ?? 1;
+    const maxConcurrent = params.max_concurrent !== undefined ? (params.max_concurrent as number) : undefined;
     const saveResultsKey = (params.save_results_key as string) ?? 'agent_results';
     const agentDag = sharedData[dagKey] as AgentDAG;
     if (!agentDag) {

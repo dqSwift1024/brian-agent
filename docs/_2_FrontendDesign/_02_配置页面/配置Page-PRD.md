@@ -526,10 +526,11 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | 启用日志 | BOOLEAN | true | 日志组件总开关 |
-| 默认日志级别 | ENUM | INFO | DEBUG / INFO / WARN / ERROR |
+| 默认日志级别 | ENUM | INFO | DEBUG / INFO / WARN / ERROR，日志未指定级别时使用 |
 | 日志文件路径 | STRING | ./data/logs | 存储路径 |
 | 单文件最大大小 | INT | 209715200 | 字节，默认 200MB |
 | 日志保留天数 | INT | 14 | 超期自动清理 |
+| 写入模式 | ENUM | BOTH | FILE（仅文件）/ SQLITE（仅数据库）/ BOTH（双写） |
 
 ### 8.2 消息队列
 
@@ -632,7 +633,6 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 | 每图最大节点数 | INT | 200 | 控制可视化图复杂度 |
 | 默认消息摘要长度 | INT | 50 | 字符数 |
 | 默认展开节点内容 | BOOLEAN | true | 是否默认展开 |
-| 每源最大上下文采样数 | INT | 3 | 每个信息源采样几条 |
 
 ---
 
@@ -710,6 +710,8 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
     ├── 自学习
     ├── 用户画像
     └── 可视化
+└── 维护
+    └── 重置与快照       ← 保存当前配置为默认 / 重置 / 快照管理
 ```
 
 ### 11.2 全局功能
@@ -735,6 +737,11 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 | `/api/config/privilege/layer` | PUT | 设置层级读写权限 |
 | `/api/config/privilege/module` | PUT | 设置模块读写权限 |
 | `/api/config/privilege/config` | PUT | 设置配置项读写权限 |
+| `/api/config/save-defaults` | POST | 保存当前配置为「默认快照」 |
+| `/api/config/reset` | POST | 清空配置并从「默认快照」恢复 |
+| `/api/config/snapshot` | GET/POST | 列出 / 创建配置快照 |
+| `/api/config/snapshot/:id` | DELETE | 删除配置快照 |
+| `/api/config/snapshot/:id/restore` | POST | 恢复到指定快照 |
 
 ### 12.2 实体管理
 

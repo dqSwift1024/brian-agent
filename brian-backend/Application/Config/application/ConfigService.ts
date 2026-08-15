@@ -100,7 +100,10 @@ import type {
 } from '@brian-agent/orchestration';
 
 import type {
-  LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess,
+  LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
+} from '@brian-agent/base';
+import type {
+  ConfigLogInput, ConfigLogOutput, LogContext,
 } from '@brian-agent/base';
 import type {
   AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput,
@@ -167,6 +170,7 @@ export class ConfigService {
   private readonly skillAccess: SkillAccess;
   private readonly mcpAccess: MCPAccess;
   private readonly promptsAccess: PromptsAccess;
+  private readonly logAccess: LogAccess;
   private readonly llmCore: LLMCoreAccess;
   private readonly infoCore: InfoCoreAccess;
   private readonly mcpCore: MCPCoreAccess;
@@ -202,6 +206,7 @@ export class ConfigService {
     skillAccess: SkillAccess,
     mcpAccess: MCPAccess,
     promptsAccess: PromptsAccess,
+    logAccess: LogAccess,
     llmCore: LLMCoreAccess,
     infoCore: InfoCoreAccess,
     mcpCore: MCPCoreAccess,
@@ -231,6 +236,7 @@ export class ConfigService {
     this.skillAccess = skillAccess;
     this.mcpAccess = mcpAccess;
     this.promptsAccess = promptsAccess;
+    this.logAccess = logAccess;
     this.llmCore = llmCore;
     this.infoCore = infoCore;
     this.mcpCore = mcpCore;
@@ -759,6 +765,13 @@ export class ConfigService {
   // =========================================================================
 
   private async getCurrentValue(configKey: string): Promise<unknown> {
+    if (configKey.startsWith('log_provider.')) {
+      const out: any = {};
+      await this.logAccess.configLog({} as ConfigLogInput, {} as LogContext, out);
+      const cfg = (out.config ?? {}) as Record<string, unknown>;
+      const field = configKey.split('.').pop() ?? '';
+      return field ? (cfg[field] ?? null) : null;
+    }
     if (configKey.startsWith('info_core.tag_config.')) {
       const out = new SoInfoTagConfigOutput();
       await this.infoCore.soInfoTagConfig({} as SoInfoTagConfigInput, {} as InfoCoreContext, out);
@@ -873,35 +886,22 @@ export class ConfigService {
         (i: any, c: any, o: any) => this.agentStrategy.configAgentStrategy(i, c, o),
       );
     }
-    if (configKey.startsWith('orchestration.visualization')) {
-      return this.getConfigFromAccess(
-        configKey, 'orchestration_visualization',
-        (i: any, c: any, o: any) => this.orchestrationVisualization.configOrchestrationVisualization(i, c, o),
-      );
-    }
-    if (configKey.startsWith('orchestration.execution')) {
-      return this.getConfigFromAccess(
-        configKey, 'orchestration_execution',
-        (i: any, c: any, o: any) => this.orchestrationExecution.configOrchestrationExecution(i, c, o),
-      );
-    }
-    if (configKey.startsWith('orchestration.strategy')) {
-      return this.getConfigFromAccess(
-        configKey, 'orchestration_strategy',
-        (i: any, c: any, o: any) => this.orchestrationStrategy.configOrchestrationStrategy(i, c, o),
-      );
-    }
-    if (configKey.startsWith('orchestration.entry')) {
-      return this.getConfigFromAccess(
-        configKey, 'orchestration_entry',
-        (i: any, c: any, o: any) => this.orchestrationEntry.configOrchestrationEntry(i, c, o),
-      );
-    }
-    if (configKey.startsWith('orchestration.jsonnode')) {
-      return this.getConfigFromAccess(
-        configKey, 'orchestration_jsonnode',
-        (i: any, c: any, o: any) => this.jsonNode.configJSONNode(i, c, o),
-      );
+    if (configKey.startsWith('orchestration.')) {
+      const out: any = {};
+      if (configKey.startsWith('orchestration.visualization')) {
+        await this.orchestrationVisualization.configOrchestrationVisualization({}, {} as any, out);
+      } else if (configKey.startsWith('orchestration.execution')) {
+        await this.orchestrationExecution.configOrchestrationExecution({}, {} as any, out);
+      } else if (configKey.startsWith('orchestration.strategy')) {
+        await this.orchestrationStrategy.configOrchestrationStrategy({}, {} as any, out);
+      } else if (configKey.startsWith('orchestration.entry')) {
+        await this.orchestrationEntry.configOrchestrationEntry({}, {} as any, out);
+      } else if (configKey.startsWith('orchestration.jsonnode')) {
+        await this.jsonNode.configJSONNode({}, {} as any, out);
+      }
+      const cfg = (out.config ?? {}) as Record<string, unknown>;
+      const field = configKey.split('.').pop() ?? '';
+      return field ? (cfg[field] ?? null) : null;
     }
     if (configKey.startsWith('chat.')) {
       return this.getConfigFromAccess(
@@ -922,10 +922,13 @@ export class ConfigService {
       );
     }
     if (configKey.startsWith('visualization.')) {
-      return this.getConfigFromAccess(
-        configKey, 'visualization',
-        (i: any, c: any, o: any) => this.visualizationAccess.configVisualization(i, c, o),
-      );
+      const out: any = {};
+      await this.visualizationAccess.configVisualization({}, {} as any, out);
+      const cfg = (out.config ?? {}) as Record<string, unknown>;
+      if (configKey.startsWith('visualization.max_nodes_per_graph')) return cfg.max_nodes_per_graph ?? null;
+      if (configKey.startsWith('visualization.default_message_summary_length')) return cfg.default_message_summary_length ?? null;
+      if (configKey.startsWith('visualization.resolve_content_by_default')) return cfg.resolve_content_by_default === 1;
+      return null;
     }
 
     const reg = this.registryMap.get(configKey);
@@ -961,6 +964,19 @@ export class ConfigService {
 
   private async routeUpdateConfig(configKey: string, value: unknown): Promise<void> {
     const prefix = configKey;
+
+    if (prefix.startsWith('log_provider.')) {
+      const input: any = {};
+      if (prefix.startsWith('log_provider.enabled')) input.enabled = value as boolean;
+      else if (prefix.startsWith('log_provider.default_level')) input.default_level = value as string;
+      else if (prefix.startsWith('log_provider.file_path')) input.file_path = value as string;
+      else if (prefix.startsWith('log_provider.max_file_size')) input.max_file_size = value as number;
+      else if (prefix.startsWith('log_provider.retention_days')) input.retention_days = value as number;
+      else if (prefix.startsWith('log_provider.write_mode')) input.write_mode = value as string;
+      const output: any = {};
+      await this.logAccess.configLog(input as ConfigLogInput, {} as LogContext, output);
+      return;
+    }
 
     if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.prompt_template_id')) {
       const input: any = {};
@@ -1238,7 +1254,10 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('visualization.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('visualization.max_nodes_per_graph')) input.max_nodes_per_graph = value as number;
+      else if (prefix.startsWith('visualization.default_message_summary_length')) input.default_message_summary_length = value as number;
+      else if (prefix.startsWith('visualization.resolve_content_by_default')) input.resolve_content_by_default = value as boolean;
       const output: any = {};
       await this.visualizationAccess.configVisualization(input, {} as any, output);
       return;

@@ -85,7 +85,6 @@ import {
   DEFAULT_MAX_NODES_PER_GRAPH,
   DEFAULT_MESSAGE_SUMMARY_LENGTH,
   DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-  DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE,
 } from '../domain/types';
 
 interface VisualizationConfigRow {
@@ -93,7 +92,6 @@ interface VisualizationConfigRow {
   max_nodes_per_graph: number;
   default_message_summary_length: number;
   resolve_content_by_default: number;
-  max_context_samples_per_source: number;
 }
 
 interface CitationData {
@@ -766,7 +764,6 @@ export class VisualizationService {
         { field: 'max_nodes_per_graph', value: DEFAULT_MAX_NODES_PER_GRAPH },
         { field: 'default_message_summary_length', value: DEFAULT_MESSAGE_SUMMARY_LENGTH },
         { field: 'resolve_content_by_default', value: DEFAULT_RESOLVE_CONTENT_BY_DEFAULT },
-        { field: 'max_context_samples_per_source', value: DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE },
       ]);
       config = await this.getConfigFull();
     }
@@ -786,9 +783,6 @@ export class VisualizationService {
     if (input.resolve_content_by_default !== undefined) {
       data.push({ field: 'resolve_content_by_default', value: input.resolve_content_by_default ? 1 : 0 });
     }
-    if (input.max_context_samples_per_source !== undefined) {
-      data.push({ field: 'max_context_samples_per_source', value: input.max_context_samples_per_source });
-    }
 
     if (data.length > 0) {
       data.push({ field: 'updated', value: IdGenerator.now() });
@@ -802,7 +796,6 @@ export class VisualizationService {
       max_nodes_per_graph: latest?.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH,
       default_message_summary_length: latest?.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH,
       resolve_content_by_default: latest?.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-      max_context_samples_per_source: latest?.max_context_samples_per_source ?? DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE,
     };
     return true;
   }
@@ -814,7 +807,6 @@ export class VisualizationService {
       max_nodes_per_graph: full?.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH,
       default_message_summary_length: full?.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH,
       resolve_content_by_default: full?.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-      max_context_samples_per_source: full?.max_context_samples_per_source ?? DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE,
     };
   }
 
@@ -827,7 +819,6 @@ export class VisualizationService {
       max_nodes_per_graph: Number(row.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH),
       default_message_summary_length: Number(row.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH),
       resolve_content_by_default: Number(row.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT),
-      max_context_samples_per_source: Number(row.max_context_samples_per_source ?? DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE),
     };
   }
 

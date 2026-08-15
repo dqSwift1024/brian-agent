@@ -92,9 +92,23 @@ export class OrchestrationVisualizationService {
       }
     }
 
-    const { agentLevels, agentUpstream, agentDownstream } = this.computeDependencyLevels(edges);
+    // 读取 max_nodes_in_graph 配置，截断节点防止 DAG 过大
+    const cfgSelInput = Object.assign(new SelectOneDBInput(), {
+      query_param: { table: 'orchestration_config' },
+    });
+    const cfgSelOutput = Object.assign(new SelectOneDBOutput(), {});
+    await this.relationDb.selectOneDB(cfgSelInput, new DBContext(), cfgSelOutput);
+    const maxNodesInGraph = (cfgSelOutput.row?.max_nodes_in_graph as number) ?? 50;
 
-    for (const agentId of agentIds) {
+    const visibleAgentIds = new Set(agentIds.slice(0, maxNodesInGraph));
+    const visibleEdges = edges.filter(
+      (e) => visibleAgentIds.has(e.from_agent_id as string) && visibleAgentIds.has(e.to_agent_id as string),
+    );
+    const truncated = agentIds.length > maxNodesInGraph;
+
+    const { agentLevels, agentUpstream, agentDownstream } = this.computeDependencyLevels(visibleEdges);
+
+    for (const agentId of [...visibleAgentIds]) {
       const node: Record<string, unknown> = {
         agent_id: agentId,
         agent_type: '',
@@ -171,12 +185,14 @@ export class OrchestrationVisualizationService {
       total_elapsed_ms: (work.elapsed_ms as number) ?? 0,
       graph: {
         nodes,
-        edges,
+        edges: visibleEdges,
         metadata: {
           total_nodes: nodes.length,
-          total_edges: edges.length,
+          total_edges: visibleEdges.length,
           max_dependency_depth: maxDepth,
           parallel_branches: parallelBranches,
+          truncated,
+          total_agent_count: agentIds.length,
         },
       },
     };

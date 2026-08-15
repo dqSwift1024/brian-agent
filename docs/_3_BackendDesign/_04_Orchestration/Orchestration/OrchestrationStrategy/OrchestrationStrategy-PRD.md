@@ -302,7 +302,7 @@
 
 ## 实现约定（与代码同步）
 
-1. **Simple 和 Planning 内置策略**：以 strategy_label 为 "SIMPLE" 和 "PLANNING" 的 JSONNode 定义方式存在，系统初始化时写入 `orchestration_strategy` 表，enable 默认为 true。
+1. **Simple 和 Planning 内置策略**：以 strategy_label 为 "SIMPLE" 和 "PLANNING" 的 JSONNode 定义方式存在，系统初始化时写入 `orchestration_strategy` 表，enable 默认为 true。内置策略的 jsonnode_definition 默认数据在 SchemaInitializer 的 SQL INSERT 语句中制定（node_id 为固定 UUID），并在每次初始化时按 strategy_label UPDATE 修复历史旧数据。
 2. **后处理链不可跳过**：任何编排策略完成后必须经过 WriterAgent.write 和 EvolutorAgent 评估（eval 异步执行）。
 3. **Planning 重试**：DAG 执行失败时尝试 replan 重新规划；超过 max_plan_retries 则直接标记 FAILED。
 4. **策略扩展**：通过 addStrategy 注册新策略，策略定义基于 JSONNode 框架，新策略的 node_type 需在 JSONNode 模块中注册。

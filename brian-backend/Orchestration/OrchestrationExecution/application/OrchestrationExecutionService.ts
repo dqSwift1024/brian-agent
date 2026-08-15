@@ -1003,8 +1003,8 @@ export class OrchestrationExecutionService {
     if (input.max_concurrent !== undefined && input.max_concurrent <= 0) {
       throw new ValidationError('max_concurrent must be positive');
     }
-    if (input.dag_timeout_ms !== undefined && input.dag_timeout_ms <= 0) {
-      throw new ValidationError('dag_timeout_ms must be positive');
+    if (input.dag_timeout_ms !== undefined && input.dag_timeout_ms < 0) {
+      throw new ValidationError('dag_timeout_ms must be non-negative');
     }
 
     const selInput = Object.assign(new SelectOneDBInput(), {

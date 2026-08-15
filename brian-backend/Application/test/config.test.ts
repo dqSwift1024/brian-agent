@@ -10,7 +10,7 @@ import { setupRealTestEnvironment, cleanupTempDirs, type RealTestContext } from 
 
 describe('ConfigService', () => {
   let db: RelationDBAccess;
-  let llmAccess: any, soulAccess: any, skillAccess: any, mcpAccess: any, promptsAccess: any;
+  let llmAccess: any, soulAccess: any, skillAccess: any, mcpAccess: any, promptsAccess: any, logAccess: any;
   let llmCore: any, infoCore: any, mcpCore: any, skillCore: any, soulCore: any;
   let writerAgent: any, evolutorAgent: any, plannerAgent: any, agentLibrary: any, agentBuilder: any, agentExecution: any, agentStrategy: any, agentContext: any;
   let orchestrationEntry: any, orchestrationStrategy: any, orchestrationExecution: any, orchestrationVisualization: any, jsonNode: any;
@@ -29,6 +29,7 @@ describe('ConfigService', () => {
     skillAccess = realCtx.skillAccess;
     mcpAccess = realCtx.mcpAccess;
     promptsAccess = realCtx.promptsAccess;
+    logAccess = realCtx.logAccess;
     llmCore = realCtx.llmCore;
     infoCore = realCtx.infoCore;
     mcpCore = realCtx.mcpCore;
@@ -74,6 +75,7 @@ describe('ConfigService', () => {
     } as any;
     new ConfigSchemaInitializer(db).init();
     service = new ConfigService(db, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
+      logAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
       writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
       orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
@@ -415,10 +417,11 @@ describe('ConfigService', () => {
       await freshDb.initialize();
       new ConfigSchemaInitializer(freshDb).init();
       const freshService = new ConfigService(freshDb, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
+        logAccess,
         llmCore, infoCore, mcpCore, skillCore, soulCore,
-        writerAgent, evolutorAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
+        writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
         orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
-        chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess, logger);
+        chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess);
 
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();

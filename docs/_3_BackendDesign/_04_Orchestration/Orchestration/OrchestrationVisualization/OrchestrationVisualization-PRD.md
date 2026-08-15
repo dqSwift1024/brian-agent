@@ -88,7 +88,9 @@
       "total_nodes": 3,
       "total_edges": 2,
       "max_dependency_depth": 1,
-      "parallel_branches": 2
+      "parallel_branches": 2,
+      "truncated": false,
+      "total_agent_count": 3
     }
   }
 }
@@ -154,7 +156,12 @@
    b. 下游节点的 dependency_level = max(上游 dependency_level) + 1；
    c. 填充 upstream_agent_ids 和 downstream_agent_ids；
 
-8. 将 agent_dag_structure 写入 output 返回；
+8. **节点截断（max_nodes_in_graph）**
+   a. 从 `orchestration_config` 表读取 `max_nodes_in_graph`（默认 50）；
+   b. 若节点数超过该值，截断 nodes（保留前 N 个）与 edges（仅保留两端均在保留节点内的边）；
+   c. `metadata.truncated` 标记是否截断，`metadata.total_agent_count` 记录截断前的原始节点数；
+
+9. 将 agent_dag_structure 写入 output 返回；
 
 ### 2.2. 获取 Work 流程时间线（visualizeWorkFlow）
 

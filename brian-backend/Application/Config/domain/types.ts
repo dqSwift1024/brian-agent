@@ -146,6 +146,7 @@ export const CONFIG_REGISTRY_TABLE = 'config_registry';
 export const CONFIG_LAYER_PRIVILEGE_TABLE = 'config_layer_privilege';
 export const CONFIG_MODULE_PRIVILEGE_TABLE = 'config_module_privilege';
 export const CONFIG_CONFIG_TABLE = 'config_config';
+export const CONFIG_SNAPSHOT_TABLE = 'config_snapshot';
 
 export const VALID_LAYERS = ['BASE', 'CORE', 'AGENT', 'ORCHESTRATION', 'APPLICATION'] as const;
 

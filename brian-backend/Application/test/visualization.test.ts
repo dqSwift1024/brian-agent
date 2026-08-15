@@ -1460,7 +1460,6 @@ describe('VisualizationService', () => {
       expect(c.max_nodes_per_graph).toBe(200);
       expect(c.default_message_summary_length).toBe(50);
       expect(c.resolve_content_by_default).toBe(1);
-      expect(c.max_context_samples_per_source).toBe(3);
     });
 
     it('should update max_nodes_per_graph', async () => {
@@ -1487,27 +1486,17 @@ describe('VisualizationService', () => {
       expect((out.config as any).resolve_content_by_default).toBe(0);
     });
 
-    it('should update max_context_samples_per_source', async () => {
-      const input = new ConfigVisualizationInput();
-      input.max_context_samples_per_source = 10;
-      const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
-      expect((out.config as any).max_context_samples_per_source).toBe(10);
-    });
-
     it('should handle multiple config updates', async () => {
       const input = new ConfigVisualizationInput();
       input.max_nodes_per_graph = 300;
       input.default_message_summary_length = 80;
       input.resolve_content_by_default = false;
-      input.max_context_samples_per_source = 5;
       const out = new ConfigVisualizationOutput();
       await svc.configVisualization(input, ctx(), out);
       const c = out.config as any;
       expect(c.max_nodes_per_graph).toBe(300);
       expect(c.default_message_summary_length).toBe(80);
       expect(c.resolve_content_by_default).toBe(0);
-      expect(c.max_context_samples_per_source).toBe(5);
     });
 
     it('should persist config across calls', async () => {

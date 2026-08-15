@@ -24,7 +24,7 @@ import type {
 } from '@brian-agent/orchestration';
 
 import type {
-  LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess,
+  LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
 } from '@brian-agent/base';
 import type {
   AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput,
@@ -93,6 +93,7 @@ export class ConfigAccess {
     skillAccess: SkillAccess,
     mcpAccess: MCPAccess,
     promptsAccess: PromptsAccess,
+    logAccess: LogAccess,
     llmCore: LLMCoreAccess,
     infoCore: InfoCoreAccess,
     mcpCore: MCPCoreAccess,
@@ -121,6 +122,7 @@ export class ConfigAccess {
     const rawService = new ConfigService(
       relationDb,
       llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
+      logAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
       writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder,
       agentExecution, agentStrategy, agentContext,

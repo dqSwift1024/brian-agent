@@ -85,7 +85,6 @@ export class ConfigVisualizationInput extends Input {
   max_nodes_per_graph?: number;
   default_message_summary_length?: number;
   resolve_content_by_default?: boolean;
-  max_context_samples_per_source?: number;
 }
 
 export class ConfigVisualizationOutput extends Output {
@@ -99,4 +98,3 @@ export const INFO_GRAPH_TABLE = 'info_graph';
 export const DEFAULT_MAX_NODES_PER_GRAPH = 200;
 export const DEFAULT_MESSAGE_SUMMARY_LENGTH = 50;
 export const DEFAULT_RESOLVE_CONTENT_BY_DEFAULT = 1;
-export const DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE = 3;

@@ -12,6 +12,7 @@ import {
   CONFIG_LAYER_PRIVILEGE_TABLE,
   CONFIG_MODULE_PRIVILEGE_TABLE,
   CONFIG_CONFIG_TABLE,
+  CONFIG_SNAPSHOT_TABLE,
   VALID_LAYERS,
 } from '../domain/types';
 
@@ -71,6 +72,16 @@ export class ConfigSchemaInitializer {
         "updated"           INTEGER NOT NULL,
         "default_readable"  INTEGER DEFAULT 1,
         "default_writable"  INTEGER DEFAULT 1
+      )
+    `);
+
+    this.relationDb.executeRaw(`
+      CREATE TABLE IF NOT EXISTS "${CONFIG_SNAPSHOT_TABLE}" (
+        "id"            TEXT    NOT NULL PRIMARY KEY,
+        "created"       INTEGER NOT NULL,
+        "updated"       INTEGER NOT NULL,
+        "name"          TEXT    NOT NULL,
+        "snapshot_data" TEXT    NOT NULL
       )
     `);
 

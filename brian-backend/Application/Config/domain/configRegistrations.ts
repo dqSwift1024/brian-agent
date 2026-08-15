@@ -124,10 +124,11 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
 
   // --- LogProvider ---
   base('log_provider', 'basic', 'enabled', '日志组件启用', 'BOOLEAN', true, '日志组件是否启用'),
-  base('log_provider', 'basic', 'default_level', '默认日志级别', 'ENUM', 'INFO', '默认日志级别', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
+  base('log_provider', 'basic', 'default_level', '默认日志级别', 'ENUM', 'INFO', '日志未指定级别时使用的默认级别', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
   base('log_provider', 'basic', 'file_path', '日志文件根目录', 'STRING', './data/logs', '日志文件存储路径'),
-  base('log_provider', 'basic', 'max_file_size', '单文件最大大小（字节）', 'INT', 209715200, '200MB'),
+  base('log_provider', 'basic', 'max_file_size', '单文件最大大小（字节）', 'INT', 209715200, '200MB，超过自动滚动'),
   base('log_provider', 'basic', 'retention_days', '日志保留天数', 'INT', 14, '超过自动清理'),
+  base('log_provider', 'basic', 'write_mode', '写入模式', 'ENUM', 'BOTH', 'FILE（仅文件）/ SQLITE（仅数据库）/ BOTH（双写）', ['FILE', 'SQLITE', 'BOTH']),
 
   // --- MQProvider ---
   base('mq_provider', 'basic', 'enabled', 'MQ 组件启用', 'BOOLEAN', true, 'MQ 组件是否启用'),
@@ -306,7 +307,6 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   app('visualization', 'basic', 'max_nodes_per_graph', '消息图最大节点数', 'INT', 200, '消息引用关系图中最多展示的消息节点数，超过则截断'),
   app('visualization', 'basic', 'default_message_summary_length', '消息摘要显示长度', 'INT', 50, '消息图中节点显示的消息摘要截取长度（字符数）'),
   app('visualization', 'basic', 'resolve_content_by_default', '默认展开 Agent 组件详情', 'BOOLEAN', true, '查看 Agent DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容'),
-  app('visualization', 'basic', 'max_context_samples_per_source', 'Agent 上下文来源采样数', 'INT', 3, 'Agent 依赖上下文中每个来源（钉住/时间线/标签等）最多展示的样本数'),
 
   // --- Config (self) ---
   app('config', 'basic', 'default_readable', '默认可读', 'BOOLEAN', true, '新注册配置项的默认可读性'),

@@ -5,7 +5,6 @@ import {
   DEFAULT_MAX_NODES_PER_GRAPH,
   DEFAULT_MESSAGE_SUMMARY_LENGTH,
   DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-  DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE,
 } from '../domain/types';
 
 export class VisualizationSchemaInitializer {
@@ -19,8 +18,7 @@ export class VisualizationSchemaInitializer {
         updated INTEGER NOT NULL,
         max_nodes_per_graph INTEGER DEFAULT ${DEFAULT_MAX_NODES_PER_GRAPH},
         default_message_summary_length INTEGER DEFAULT ${DEFAULT_MESSAGE_SUMMARY_LENGTH},
-        resolve_content_by_default INTEGER DEFAULT ${DEFAULT_RESOLVE_CONTENT_BY_DEFAULT},
-        max_context_samples_per_source INTEGER DEFAULT ${DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE}
+        resolve_content_by_default INTEGER DEFAULT ${DEFAULT_RESOLVE_CONTENT_BY_DEFAULT}
       )`,
     );
 
@@ -38,7 +36,6 @@ export class VisualizationSchemaInitializer {
       { field: 'max_nodes_per_graph', value: DEFAULT_MAX_NODES_PER_GRAPH },
       { field: 'default_message_summary_length', value: DEFAULT_MESSAGE_SUMMARY_LENGTH },
       { field: 'resolve_content_by_default', value: DEFAULT_RESOLVE_CONTENT_BY_DEFAULT },
-      { field: 'max_context_samples_per_source', value: DEFAULT_MAX_CONTEXT_SAMPLES_PER_SOURCE },
     ]);
   }
 }
