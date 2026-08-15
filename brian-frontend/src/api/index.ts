@@ -6,6 +6,7 @@ import type {
   ConfigTreeLayer,
   UserProfileData, ProfileVersionData, ProfileHistoryItem,
   VisualizedMessage, MessageGraphNode, MessageGraphEdge, AgentDAG, AgentTrace,
+  McpUsageRecord,
 } from './types'
 
 const API_BASE = '/api'
@@ -188,6 +189,10 @@ export const mcpApi = {
     request<void>(`/mcp/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   toggle: (id: string) =>
     request<void>(`/mcp/${encodeURIComponent(id)}/toggle`, { method: 'POST' }),
+  usage: (query?: { mcp_install_id?: string; start_date?: string; end_date?: string }) =>
+    request<{ list: McpUsageRecord[]; total: number }>(`/mcp/usage${query ? `?${new URLSearchParams(
+      Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]),
+    ).toString()}` : ''}`),
 }
 
 export const learningApi = {

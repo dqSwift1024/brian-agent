@@ -376,9 +376,17 @@
 
 **方法签名**：`Boolean getMcpUsage(GetMcpUsageInput input, McpContext context, GetMcpUsageOutput output)`
 
-**入参**：`mcp_install_id`（STRING，可选，不传返回所有）、`start_date`（STRING，可选）、`end_date`（STRING，可选）
+**入参**：`mcp_install_id`（STRING，可选，不传返回所有）、`start_date`（STRING，可选，YYYY-MM-DD）、`end_date`（STRING，可选，YYYY-MM-DD）
 
-**返回**：各 MCP 的日调用次数统计列表
+**处理流程**：
+
+1. 按 `mcp_install_id` + 日期范围（`usage_date >= start_date`、`usage_date <= end_date`）查询 `mcp_usage` 表；
+2. 关联 `mcp_install` 表获取 `mcp_title`；
+3. 按 `usage_date` 倒序返回，并汇总 `total`（总调用次数）。
+
+**返回**：`list`（各 MCP 的日调用次数记录：`mcp_install_id / mcp_title / usage_date / usage_count`）+ `total`（总调用次数）
+
+> 注：`execMcp` 仅在调用**成功**时通过 `upsertUsage` 累计调用次数（失败调用不计数）。
 
 ## 4. 表设计
 
@@ -591,3 +599,21 @@
 **可能存在的问题**：
 - `spawn` + `detached` 启动的进程为进程组 leader，靠 `process.kill(-pid)` 杀组；`npx` 内部再起的子进程在极端情况下可能残留（已加 `mcp_stop_cmd` 的 `pkill -f` 兜底）。
 - `stopAllMcp` 依赖内存 `runningMcps` Map，后端崩溃（SIGKILL）无法执行，故启动时额外重置 `running` 记录兜底。
+
+### [2026-08-15] MCP 调用统计实现 + execMcp 失败不计数
+
+**变更原因**：「调用统计」页面原先只展示安装/启用数量，缺少真实的调用次数统计；`getMcpUsage` 在 PRD 中已定义但未实现；`execMcp` 调用失败也会累计调用次数。
+
+**修改的方法**：
+- 新增 `GetMcpUsageInput/Output`、`McpUsageRecord` 类型。
+- 新增 `MCPService.getMcpUsage()`：按 `mcp_install_id` + 日期范围查询 `mcp_usage`，关联 `mcp_install` 取 `mcp_title`，返回 `list` + `total`。
+- `MCPService.execMcp()` — 原始代码：无论调用成功或失败都执行 `upsertUsage` 计数；改为：仅调用成功（`success` 标志）时计数。
+- 新增 HTTP 路由 `GET /api/mcp/usage`（支持 `mcp_install_id` / `start_date` / `end_date` 查询参数）。
+- 前端：新增 `mcpApi.usage()` 与 `McpUsageRecord` 类型；「调用统计」页新增「总调用次数」「今日调用次数」卡片与「MCP 调用统计」列表（按 MCP 聚合）。
+
+**影响的端点**：
+- `GET /api/mcp/usage` — 返回各 MCP 日调用次数 + 总量。
+- `execMcp`（调用 MCP）— 仅成功调用累计 `mcp_usage`。
+
+**可能存在的问题**：
+- 调用统计依赖 `mcp_usage` 表按天累计，历史数据需真实调用 `execMcp` 才能产生；当前无调用记录时展示为空属正常。

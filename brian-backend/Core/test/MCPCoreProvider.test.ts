@@ -9,6 +9,10 @@ import {
   PromptsAccess,
   Operator,
   IdGenerator,
+  ValidationError,
+  AddPromptInput,
+  AddPromptOutput,
+  PromptContext,
 } from '@brian-agent/base';
 import {
   MCPCoreAccess,
@@ -59,6 +63,22 @@ describe('MCPCoreProvider', () => {
       expect(output.config!.prompt_template_id).toBeDefined();
     });
 
+    it('should throw ValidationError for regen_rate out of range', async () => {
+      const input = new ConfigMcpCoreInput();
+      input.regen_rate = 150;
+      await expect(
+        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError for regen_rate below 0', async () => {
+      const input = new ConfigMcpCoreInput();
+      input.regen_rate = -5;
+      await expect(
+        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+      ).rejects.toThrow(ValidationError);
+    });
+
     it('should update regen_rate', async () => {
       const input = new ConfigMcpCoreInput();
       input.regen_rate = 50;
@@ -67,12 +87,27 @@ describe('MCPCoreProvider', () => {
       expect(output.config!.regen_rate).toBe(50);
     });
 
-    it('should update prompt_template_id', async () => {
+    it('should accept valid prompt_template_id', async () => {
+      // 通过 Base 层 PromptsProvider 新增模板，获取真实 UUID
+      const addInput = new AddPromptInput();
+      addInput.data = { prompt_template_title: 'Test MCP Prompt', prompt_template: 'test template' };
+      const addOutput = new AddPromptOutput();
+      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      const realId = addOutput.id;
+
       const input = new ConfigMcpCoreInput();
-      input.prompt_template_id = 'some-template';
+      input.prompt_template_id = realId;
       const output = new ConfigMcpCoreOutput();
       await mcpCore.configMCPCore(input, new McpCoreContext(), output);
-      expect(output.config!.prompt_template_id).toBe('some-template');
+      expect(output.config!.prompt_template_id).toBe(realId);
+    });
+
+    it('should reject non-existent prompt_template_id', async () => {
+      const input = new ConfigMcpCoreInput();
+      input.prompt_template_id = IdGenerator.generate();
+      await expect(
+        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+      ).rejects.toThrow(ValidationError);
     });
 
     it('should preserve existing values when not specified', async () => {
@@ -83,12 +118,11 @@ describe('MCPCoreProvider', () => {
       );
 
       const input = new ConfigMcpCoreInput();
-      input.prompt_template_id = 'new-template';
+      input.regen_rate = 60;
       const output = new ConfigMcpCoreOutput();
       await mcpCore.configMCPCore(input, new McpCoreContext(), output);
 
-      expect(output.config!.regen_rate).toBe(30);
-      expect(output.config!.prompt_template_id).toBe('new-template');
+      expect(output.config!.regen_rate).toBe(60);
     });
 
     it('should set elapsed_ms on output', async () => {

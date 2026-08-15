@@ -253,7 +253,7 @@ describe('LLMCoreProvider', () => {
 
     it('should reject invalid prompt_template_id', async () => {
       const input = new ConfigLLMCoreInput();
-      input.prompt_template_id = 'nonexistent-template';
+      input.prompt_template_id = IdGenerator.generate();
 
       await expect(
         llmCore.configLLMCore(input, new LLMCoreContext(), new ConfigLLMCoreOutput()),

@@ -261,6 +261,27 @@ export class EnableMCPInput extends Input {
 /** enableMCP 出参 */
 export class EnableMCPOutput extends Output {}
 
+/** getMcpUsage 入参 */
+export class GetMcpUsageInput extends Input {
+  mcp_install_id?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+/** 单条 MCP 使用统计记录 */
+export interface McpUsageRecord {
+  mcp_install_id: string;
+  mcp_title: string;
+  usage_date: string;
+  usage_count: number;
+}
+
+/** getMcpUsage 出参 */
+export class GetMcpUsageOutput extends Output {
+  list: McpUsageRecord[] = [];
+  total = 0;
+}
+
 // ---------------------------------------------------------------------------
 // 表名与默认配置
 // ---------------------------------------------------------------------------

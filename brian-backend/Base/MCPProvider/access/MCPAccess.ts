@@ -46,6 +46,8 @@ import {
   ExecMcpOutput,
   EnableMCPInput,
   EnableMCPOutput,
+  GetMcpUsageInput,
+  GetMcpUsageOutput,
 } from '../domain/types';
 import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
 
@@ -136,5 +138,8 @@ export class MCPAccess {
   // --- 可视化与运维 ---
   async enableMCP(i: EnableMCPInput, c: McpContext, o: EnableMCPOutput) {
     return this.service.enableMCP(i, c, o);
+  }
+  async getMcpUsage(i: GetMcpUsageInput, c: McpContext, o: GetMcpUsageOutput) {
+    return this.service.getMcpUsage(i, c, o);
   }
 }

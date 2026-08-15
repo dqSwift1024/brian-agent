@@ -313,6 +313,13 @@ export interface MQStats {
   total: number
 }
 
+export interface McpUsageRecord {
+  mcp_install_id: string
+  mcp_title: string
+  usage_date: string
+  usage_count: number
+}
+
 // ============================================================
 // 用户画像 types
 // ============================================================

@@ -9,6 +9,7 @@ import type {
 import {
   Operator,
   IdGenerator,
+  ValidationError,
   McpContext,
   SoMcpInput,
   SoMcpOutput,
@@ -133,9 +134,23 @@ export class MCPCoreService {
     if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
+        if (input.regen_rate < 0 || input.regen_rate > 100) {
+          throw new ValidationError('regen_rate 必须在 0-100 之间');
+        }
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
       }
       if (input.prompt_template_id !== undefined) {
+        if (input.prompt_template_id) {
+          const getPromptOutput = new GetPromptOutput();
+          await this.promptsAccess.getPrompt(
+            { id: input.prompt_template_id } as GetPromptInput,
+            new PromptContext(),
+            getPromptOutput,
+          );
+          if (!getPromptOutput.prompt) {
+            throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
+          }
+        }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || '' });
       }
       updateData.push({ field: 'updated', value: now });

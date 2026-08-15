@@ -104,3 +104,16 @@ SET 行为：接受 `regen_rate` 和 `prompt_template_id` 作为可选更新字�
 | mcp_id | 绑定的MCPId列表 | UUID | N | | |
 
 注意：agent_id 和 mcp_id构成一个联合唯一索引
+
+---
+
+## 变更记录
+
+### [2026-08-15] configMCPCore 增加参数校验
+
+**变更原因**：`configMCPCore` 原先直接写入 `regen_rate` / `prompt_template_id`，缺少 PRD 2.3 节要求的校验。
+
+**修改的方法**：
+- `regen_rate`：校验 0-100 范围，越界抛 `ValidationError('regen_rate 必须在 0-100 之间')`。
+- `prompt_template_id`：非空时通过 Base 层 `PromptsAccess.getPrompt` 校验模板存在性，不存在抛 `ValidationError('prompt_template_id xxx 不存在')`（等价于 PRD 要求的「校验 soPrompt 中是否存在」）。
+- 测试用例同步：新增 `regen_rate` 越界/低于 0 拒绝、`prompt_template_id` 不存在拒绝用例；id 不硬编码，来自 SQLite 真实数据或 `IdGenerator.generate()`。

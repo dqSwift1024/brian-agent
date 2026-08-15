@@ -17,7 +17,7 @@ import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi } from '@/api'
-import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats } from '@/api/types'
+import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
 
 // ============================================================
 // 导航定义（PRD §11）
@@ -1759,6 +1759,9 @@ const mcpsLoading = ref(false)
 const selectedMcpIds = ref<string[]>([])
 const mcpRefreshing = ref(false)
 const mcpBatchStarting = ref(false)
+const mcpUsage = ref<McpUsageRecord[]>([])
+const mcpUsageTotal = ref(0)
+const mcpUsageLoading = ref(false)
 
 async function loadMcps() {
   mcpsLoading.value = true
@@ -1771,6 +1774,36 @@ async function loadMcps() {
     mcpsLoading.value = false
   }
 }
+
+async function loadMcpUsage() {
+  mcpUsageLoading.value = true
+  try {
+    const res = await mcpApi.usage()
+    mcpUsage.value = res.list || []
+    mcpUsageTotal.value = res.total || 0
+  } catch {
+    mcpUsage.value = []
+    mcpUsageTotal.value = 0
+  } finally {
+    mcpUsageLoading.value = false
+  }
+}
+
+const mcpUsageToday = computed(() => {
+  const today = new Date().toISOString().slice(0, 10)
+  return mcpUsage.value.filter(u => u.usage_date === today).reduce((s, u) => s + (u.usage_count || 0), 0)
+})
+
+const mcpUsageByMcp = computed(() => {
+  const map = new Map<string, { title: string; count: number }>()
+  for (const u of mcpUsage.value) {
+    const key = u.mcp_install_id || u.mcp_title || 'unknown'
+    const cur = map.get(key) || { title: u.mcp_title || key, count: 0 }
+    cur.count += u.usage_count || 0
+    map.set(key, cur)
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count)
+})
 
 async function handleBatchStartMcp() {
   if (selectedMcpIds.value.length === 0 || mcpBatchStarting.value) return
@@ -3070,7 +3103,7 @@ watch(activeSubSection, async (val) => {
       case 'skill': await loadSkills(); break
       case 'mcp': await loadMcps(); break
       case 'mcp-provider': await loadMcpProviders(); break
-      case 'mcp-stats': await loadMcps(); break
+      case 'mcp-stats': await loadMcps(); await loadMcpUsage(); break
       case 'agent': await loadAgents(); break
       case 'prompt': await loadPrompts(); break
       case 'strategy': await loadAgentStrategies(); break
@@ -4281,7 +4314,7 @@ watch(activeSubSection, async (val) => {
             <p class="text-sm text-apple-gray-500">暂无已安装的 MCP，无法统计调用数据</p>
           </div>
           <div v-else>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               <div class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 p-4">
                 <p class="text-xs text-apple-gray-400 mb-1">已安装 MCP</p>
                 <p class="text-2xl font-bold text-apple-gray-900 dark:text-apple-gray-50">{{ mcps.length }}</p>
@@ -4294,28 +4327,32 @@ watch(activeSubSection, async (val) => {
                 <p class="text-xs text-apple-gray-400 mb-1">停用的 MCP</p>
                 <p class="text-2xl font-bold text-warning-orange">{{ mcps.filter(m => !(m.enabled ?? true)).length }}</p>
               </div>
+              <div class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 p-4">
+                <p class="text-xs text-apple-gray-400 mb-1">总调用次数</p>
+                <p class="text-2xl font-bold text-brian-blue">{{ mcpUsageTotal }}</p>
+              </div>
+              <div class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 p-4">
+                <p class="text-xs text-apple-gray-400 mb-1">今日调用次数</p>
+                <p class="text-2xl font-bold text-brian-blue">{{ mcpUsageToday }}</p>
+              </div>
             </div>
             <div class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800">
               <div class="px-4 py-3 border-b border-apple-gray-200 dark:border-apple-gray-700 flex items-center justify-between">
-                <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">MCP 实例概览</h3>
-                <RefreshCw :size="14" class="text-apple-gray-400 cursor-pointer hover:text-brian-blue transition-colors" @click="loadMcps" />
+                <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">MCP 调用统计</h3>
+                <RefreshCw :size="14" class="text-apple-gray-400 cursor-pointer hover:text-brian-blue transition-colors" @click="loadMcpUsage" />
               </div>
-              <div class="divide-y divide-apple-gray-100 dark:divide-apple-gray-700">
+              <div v-if="mcpUsageLoading" class="flex justify-center py-10"><Loader2 :size="20" class="animate-spin text-brian-blue" /></div>
+              <div v-else-if="mcpUsageByMcp.length === 0" class="px-4 py-10 text-center text-sm text-apple-gray-400">暂无调用记录</div>
+              <div v-else class="divide-y divide-apple-gray-100 dark:divide-apple-gray-700">
                 <div
-                  v-for="item in mcps" :key="item.id"
+                  v-for="u in mcpUsageByMcp" :key="u.title"
                   class="px-4 py-3 flex items-center justify-between"
                 >
                   <div class="flex items-center gap-3 min-w-0">
                     <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Plug :size="14" /></div>
-                    <div class="min-w-0">
-                      <p class="text-sm font-medium text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ item.displayName || item.name || item.id }}</p>
-                      <p class="text-[10px] text-apple-gray-400">{{ item.description || '' }}</p>
-                    </div>
+                    <p class="text-sm font-medium text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ u.title || 'unknown' }}</p>
                   </div>
-                  <div class="flex items-center gap-3 flex-shrink-0">
-                    <span class="text-xs text-apple-gray-500">v{{ item.version || '1.0' }}</span>
-                    <span class="w-2 h-2 rounded-full" :class="(item.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300'" />
-                  </div>
+                  <span class="text-sm font-semibold text-brian-blue flex-shrink-0">{{ u.count }} 次</span>
                 </div>
               </div>
             </div>

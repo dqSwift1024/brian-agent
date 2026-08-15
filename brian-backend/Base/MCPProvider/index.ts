@@ -41,10 +41,12 @@ export {
   ExecMcpOutput,
   EnableMCPInput,
   EnableMCPOutput,
+  GetMcpUsageInput,
+  GetMcpUsageOutput,
   MCP_PROVIDER_TABLE,
   MCP_CACHE_TABLE,
   MCP_INSTALL_TABLE,
   MCP_USAGE_TABLE,
   MCP_CONFIG_TABLE,
 } from './domain/types';
-export type { McpProviderData, McpData, McpProviderRecord, McpInstallRecord } from './domain/types';
+export type { McpProviderData, McpData, McpProviderRecord, McpInstallRecord, McpUsageRecord } from './domain/types';

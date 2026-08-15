@@ -111,6 +111,7 @@ import {
   StopMcpInput, StopMcpOutput,
   StartMcpsInput, StartMcpsOutput,
   RefreshMcpStatusInput, RefreshMcpStatusOutput,
+  GetMcpUsageInput, GetMcpUsageOutput,
   UninstallMcpInput, UninstallMcpOutput,
   UpgradeMcpInput, UpgradeMcpOutput,
 } from './Base/MCPProvider';
@@ -1242,6 +1243,16 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new RefreshMcpStatusOutput();
         await ctx.mcpAccess.refreshMcpStatus(input, new McpContext(), output);
         sendJson(res, 200, { success: true, removed: output.removed, running: output.running, stopped: output.stopped, total: output.total });
+
+      } else if (method === 'GET' && pathname === '/api/mcp/usage') {
+        const input = Object.assign(new GetMcpUsageInput(), {
+          mcp_install_id: params.get('mcp_install_id') || undefined,
+          start_date: params.get('start_date') || undefined,
+          end_date: params.get('end_date') || undefined,
+        });
+        const output = new GetMcpUsageOutput();
+        await ctx.mcpAccess.getMcpUsage(input, new McpContext(), output);
+        sendJson(res, 200, { list: output.list, total: output.total });
 
       } else if (method === 'GET' && pathname === '/api/mcp/market') {
         const provOut = new SoMcpProviderOutput();

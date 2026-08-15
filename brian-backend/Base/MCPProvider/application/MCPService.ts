@@ -54,6 +54,8 @@ import {
   ExecMcpOutput,
   EnableMCPInput,
   EnableMCPOutput,
+  GetMcpUsageInput,
+  GetMcpUsageOutput,
   MCP_PROVIDER_TABLE,
   MCP_CACHE_TABLE,
   MCP_INSTALL_TABLE,
@@ -837,6 +839,7 @@ export class MCPService {
     // 调用 MCP：通过启动命令执行并传入参数
     // 实际场景中 MCP 可能为 stdio 协议或 HTTP 协议
     // 此处以命令行调用 + JSON 参数方式实现
+    let success = false;
     try {
       const paramsJson = JSON.stringify(input.params);
       const result = execSync(`${String(mcp.mcp_start_cmd)} '${paramsJson}'`, {
@@ -845,12 +848,15 @@ export class MCPService {
         encoding: 'utf-8',
       });
       output.result = result;
+      success = true;
     } catch (err) {
       output.result = { error: err instanceof Error ? err.message : String(err) };
     }
 
-    // 调用成功后更新 mcp_usage
-    await this.upsertUsage(input.id);
+    // 仅调用成功时更新 mcp_usage
+    if (success) {
+      await this.upsertUsage(input.id);
+    }
     return true;
   }
 
@@ -871,6 +877,51 @@ export class MCPService {
       'BOOLEAN',
       'MCP 组件是否启用（enableMCP 读写）',
     );
+    return true;
+  }
+
+  /** 获取 MCP 调用统计（PRD 3.4.2） */
+  async getMcpUsage(
+    input: GetMcpUsageInput,
+    _context: McpContext,
+    output: GetMcpUsageOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    const conditions: Condition[] = [];
+    if (input.mcp_install_id) {
+      conditions.push({ field: 'mcp_install_id', operator: Operator.EQ, value: input.mcp_install_id });
+    }
+    if (input.start_date) {
+      conditions.push({ field: 'usage_date', operator: Operator.GE, value: input.start_date });
+    }
+    if (input.end_date) {
+      conditions.push({ field: 'usage_date', operator: Operator.LE, value: input.end_date });
+    }
+
+    const rows = await this.relationDb.select(MCP_USAGE_TABLE, {
+      conditions: conditions.length > 0 ? conditions : undefined,
+      order_by: [{ field: 'usage_date', direction: 'DESC' }],
+    });
+
+    // 关联 mcp_install 表获取 mcp_title
+    const installs = await this.relationDb.select(MCP_INSTALL_TABLE, {});
+    const titleMap = new Map<string, string>();
+    for (const r of installs) {
+      titleMap.set(String(r.id), String(r.mcp_title ?? ''));
+    }
+
+    let total = 0;
+    output.list = rows.map((r) => {
+      const count = Number(r.usage_count ?? 0);
+      total += count;
+      return {
+        mcp_install_id: String(r.mcp_install_id ?? ''),
+        mcp_title: titleMap.get(String(r.mcp_install_id ?? '')) ?? '',
+        usage_date: String(r.usage_date ?? ''),
+        usage_count: count,
+      };
+    });
+    output.total = total;
     return true;
   }
 }
