@@ -290,15 +290,23 @@ describe('LogProvider', () => {
       expect(lines[1]).toContain('second');
     });
 
-    it('应拒绝 level 为空的日志', async () => {
+    it('level 为空时使用默认级别 INFO', async () => {
       const output = new AddLogOutput();
-      await expect(
-        logAccess.addLog(
-          { data: makeLogData({ level: '' }) } as AddLogInput,
-          new LogContext(),
-          output,
-        ),
-      ).rejects.toThrow(ValidationError);
+      const result = await logAccess.addLog(
+        { data: makeLogData({ level: '', source: 'DefaultLevelTest' }) } as AddLogInput,
+        new LogContext(),
+        output,
+      );
+      expect(result).toBe(true);
+
+      const soOutput = new SoLogOutput();
+      await logAccess.soLog(
+        { source: 'DefaultLevelTest' } as SoLogInput,
+        new LogContext(),
+        soOutput,
+      );
+      expect(soOutput.list.length).toBeGreaterThan(0);
+      expect(soOutput.list[0].level).toBe(LogLevel.INFO);
     });
 
     it('应拒绝 source 为空的日志', async () => {
@@ -591,6 +599,68 @@ describe('LogProvider', () => {
       await expect(
         logAccess.soLog(new SoLogInput(), new LogContext(), output),
       ).rejects.toThrow(ComponentDisabledError);
+    });
+  });
+
+  // ==========================================================================
+  // 写入模式（write_mode）- 数据库 / 文件 / 双写
+  // ==========================================================================
+
+  describe('写入模式 write_mode', () => {
+    async function setWriteMode(mode: string) {
+      await logAccess.configLog(
+        { write_mode: mode } as any,
+        new LogContext(),
+        {} as any,
+      );
+    }
+
+    it('FILE 模式：仅写文件，soLog 可查，queryLogs 无数据', async () => {
+      await setWriteMode('FILE');
+      await logAccess.addLog(
+        { data: makeLogData({ source: 'FileMode', message: 'file only' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const soOutput = new SoLogOutput();
+      await logAccess.soLog({ source: 'FileMode' } as SoLogInput, new LogContext(), soOutput);
+      expect(soOutput.list.length).toBeGreaterThan(0);
+
+      const ql = await logAccess.queryLogs({ source: 'FileMode' });
+      expect(ql.logs.length).toBe(0);
+    });
+
+    it('SQLITE 模式：仅写数据库，queryLogs 可查，soLog 无数据', async () => {
+      await setWriteMode('SQLITE');
+      await logAccess.addLog(
+        { data: makeLogData({ source: 'SqliteMode', message: 'sqlite only' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const soOutput = new SoLogOutput();
+      await logAccess.soLog({ source: 'SqliteMode' } as SoLogInput, new LogContext(), soOutput);
+      expect(soOutput.list.length).toBe(0);
+
+      const ql = await logAccess.queryLogs({ source: 'SqliteMode' });
+      expect(ql.logs.length).toBeGreaterThan(0);
+    });
+
+    it('BOTH 模式：双写，soLog 与 queryLogs 均可查', async () => {
+      await setWriteMode('BOTH');
+      await logAccess.addLog(
+        { data: makeLogData({ source: 'BothMode', message: 'both write' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const soOutput = new SoLogOutput();
+      await logAccess.soLog({ source: 'BothMode' } as SoLogInput, new LogContext(), soOutput);
+      expect(soOutput.list.length).toBeGreaterThan(0);
+
+      const ql = await logAccess.queryLogs({ source: 'BothMode' });
+      expect(ql.logs.length).toBeGreaterThan(0);
     });
   });
 
