@@ -43,7 +43,6 @@ export interface OrchestrationConfigRecord {
   async_worker_interval: number;
   default_strategy_id: string;
   max_plan_retries: number;
-  plan_prompt_template_id: string;
   max_concurrent: number;
   dag_timeout_ms: number;
   max_execution_depth: number;

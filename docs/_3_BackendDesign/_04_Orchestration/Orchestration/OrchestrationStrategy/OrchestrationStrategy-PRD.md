@@ -27,16 +27,12 @@
 
 **处理流程**：
 
-1. **策略分发**
-   a. 若 `strategy` 为 "SIMPLE"，调用 `executeSimpleStrategy`（详见 2.2）；
-   b. 若 `strategy` 为 "PLANNING"，调用 `executePlanningStrategy`（详见 2.3）；
-   c. 策略内部负责完成 Agent 构建、执行、结果汇总和后处理的全流程；
-
-2. **后处理链**（两种策略共享）
-   a. 将 Agent 执行结果（所有 WorkAgent 的输出聚合）传入 `executePostProcessing`（详见 2.4）；
-   b. executePostProcessing 依次调用 WriterAgent.write 生成最终回复，再异步触发 EvolutorAgent 评估；
-
-3. 将 `final_response` 写入 output 返回；
+1. 调用 `resolveStrategyDef` 按 `strategy`（SIMPLE / PLANNING）解析策略定义：
+   a. 优先按 `strategy_label` 查询 `orchestration_strategy` 表获取 `jsonnode_definition`；
+   b. 查不到时使用 `orchestration_config.default_strategy_id` 兜底查询；
+   c. 仍查不到则抛出 NotFoundError；
+2. 解析 `jsonnode_definition`（JSONNode 编排定义），调用 `jsonNode.execJSONNode` 按编排数据完整执行编排流程（节点 DAG 顺序执行，含 next / on_error / 条件分支流转）；
+3. 从 `execJSONNode` 返回的 shared_data 中读取 `final_response` 写入 output 返回；
 
 ### 2.2. Simple 策略执行（executeSimpleStrategy）
 
@@ -251,7 +247,6 @@
 - input：ConfigOrchestrationStrategyInput（继承 Input），包含以下字段：
   - default_strategy_id：默认编排策略 ID（可选，当按 strategy_label 查不到策略实例时兜底使用）
   - max_plan_retries：Planning 策略最大重试次数（可选，默认 2）
-  - plan_prompt_template_id：计划生成 prompt 模板 ID（可选）
 - context：ConfigOrchestrationStrategyContext（继承 Context），会话上下文（session_id 等）
 - output：ConfigOrchestrationStrategyOutput（继承 Output），承载返回内容：
   - 当前生效的全部配置
@@ -262,7 +257,6 @@
 2. 校验并更新非空字段：
    a. default_strategy_id：校验 `orchestration_strategy` 表中存在且 enable=true；
    b. max_plan_retries：校验为非负整数（0 表示不重试）；
-   c. plan_prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 

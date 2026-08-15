@@ -270,11 +270,16 @@ export class JSONNodeService {
     }
 
     const nodeIds = new Set<string>();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     for (const node of def.nodes) {
       if (nodeIds.has(node.node_id)) {
         errors.push(`Duplicate node_id: ${node.node_id}`);
       }
       nodeIds.add(node.node_id);
+
+      if (!uuidRegex.test(node.node_id)) {
+        errors.push(`node_id must be UUID format: ${node.node_id}`);
+      }
 
       if (!this.nodeTypeRegistry.has(node.node_type)) {
         errors.push(`Unknown node_type: ${node.node_type}`);

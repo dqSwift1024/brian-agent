@@ -208,8 +208,6 @@
 | 编号 | 测试场景 | 前置条件 | 输入 | 预期输出 |
 |------|---------|---------|------|---------|
 | TC-COE-001 | 更新 max_concurrent | `orchestration_config` 表存在 | `max_concurrent=3` | 配置更新成功，返回当前全部配置，返回 true |
-| TC-COE-002 | 更新 default_max_iterations | 配置表存在 | `default_max_iterations=20` | 配置更新成功，返回 true |
-| TC-COE-003 | 更新 async_worker_interval | 配置表存在 | `async_worker_interval=2000` | 配置更新成功，返回 true |
 | TC-COE-004 | 更新 dag_timeout_ms | 配置表存在 | `dag_timeout_ms=600000` | 配置更新成功，返回 true |
 | TC-COE-005 | dag_timeout_ms=0（不限制） | 配置表存在 | `dag_timeout_ms=0` | 配置更新成功，返回 true |
 | TC-COE-006 | 不传参数查询当前配置 | 配置表存在 | 所有字段不传 | 返回当前配置，不修改任何值，返回 true |
@@ -219,8 +217,6 @@
 | 编号 | 测试场景 | 前置条件 | 输入 | 预期输出 |
 |------|---------|---------|------|---------|
 | TC-COE-007 | max_concurrent 为负数 | 配置表存在 | `max_concurrent=-1` | 返回 false，校验失败 |
-| TC-COE-008 | default_max_iterations 为负数 | 配置表存在 | `default_max_iterations=-5` | 返回 false，校验失败 |
-| TC-COE-009 | async_worker_interval 为负数 | 配置表存在 | `async_worker_interval=-100` | 返回 false，校验失败 |
 | TC-COE-010 | dag_timeout_ms 为负数 | 配置表存在 | `dag_timeout_ms=-1` | 返回 false，校验失败 |
 
 ---

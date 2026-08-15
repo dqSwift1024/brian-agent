@@ -60,86 +60,30 @@ export class OrchestrationStrategyService {
 
   async startOrchestration(
     input: StartOrchestrationInput,
-    context: OrchestrationStrategyContext,
+    _context: OrchestrationStrategyContext,
     output: StartOrchestrationOutput,
   ): Promise<boolean> {
-    let strategyDef: { jsonnode_definition: string } | null = null;
-    try {
-      const def = await this.resolveStrategyDef(input.strategy);
-      if (def) {
-        strategyDef = { jsonnode_definition: def };
-      }
-    } catch { /* fall back to direct execution */ }
-
-    if (strategyDef) {
-      try {
-        const parsedDef = JSON.parse(strategyDef.jsonnode_definition);
-        const execInput = Object.assign(new ExecJSONNodeInput(), {
-          orchestration_id: input.work_id,
-          jsonnode_definition: parsedDef,
-          initial_data: {
-            session_id: input.session_id,
-            work_id: input.work_id,
-            interact_id: input.interact_id,
-            user_query: input.user_query,
-            work_context: input.work_context ?? {},
-          },
-        });
-        const execOutput = new ExecJSONNodeOutput();
-        await this.jsonNode.execJSONNode(execInput, new JSONNodeContext(), execOutput);
-
-        const finalResponse = (execOutput.shared_data.final_response as string) ?? '';
-        output.final_response = finalResponse;
-        if (finalResponse) {
-          return true;
-        }
-        // fallback to direct execution if JSONNode produced empty final_response
-      } catch (err: unknown) {
-        this.logger?.error?.('startOrchestration: JSONNode execution failed, falling back', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+    const def = await this.resolveStrategyDef(input.strategy);
+    if (!def) {
+      throw new NotFoundError('OrchestrationStrategy', input.strategy);
     }
 
-    let agentResults: Array<{ agent_id: string; task_content: string; result: string; trace_id: string }> = [];
-
-    if (input.strategy === 'SIMPLE') {
-      const simpleInput = Object.assign(new ExecuteSimpleStrategyInput(), {
+    const parsedDef = JSON.parse(def);
+    const execInput = Object.assign(new ExecJSONNodeInput(), {
+      orchestration_id: input.work_id,
+      jsonnode_definition: parsedDef,
+      initial_data: {
+        session_id: input.session_id,
         work_id: input.work_id,
         interact_id: input.interact_id,
-        session_id: input.session_id,
         user_query: input.user_query,
-        work_context: input.work_context,
-      });
-      const simpleOutput = new ExecuteSimpleStrategyOutput();
-      await this.executeSimpleStrategy(simpleInput, context, simpleOutput);
-      agentResults = simpleOutput.agent_results;
-    } else if (input.strategy === 'PLANNING') {
-      const planInput = Object.assign(new ExecutePlanningStrategyInput(), {
-        work_id: input.work_id,
-        interact_id: input.interact_id,
-        session_id: input.session_id,
-        user_query: input.user_query,
-        work_context: input.work_context,
-      });
-      const planOutput = new ExecutePlanningStrategyOutput();
-      await this.executePlanningStrategy(planInput, context, planOutput);
-      agentResults = planOutput.agent_results;
-    } else {
-      return false;
-    }
-
-    const postInput = Object.assign(new ExecutePostProcessingInput(), {
-      work_id: input.work_id,
-      interact_id: input.interact_id,
-      session_id: input.session_id,
-      user_query: input.user_query,
-      agent_results: agentResults,
+        work_context: input.work_context ?? {},
+      },
     });
-    const postOutput = new ExecutePostProcessingOutput();
-    await this.executePostProcessing(postInput, context, postOutput);
+    const execOutput = new ExecJSONNodeOutput();
+    await this.jsonNode.execJSONNode(execInput, new JSONNodeContext(), execOutput);
 
-    output.final_response = postOutput.final_response;
+    output.final_response = (execOutput.shared_data.final_response as string) ?? '';
     return true;
   }
 
@@ -1103,9 +1047,6 @@ export class OrchestrationStrategyService {
         throw new ValidationError('max_plan_retries must be non-negative');
       }
       data.push({ field: 'max_plan_retries', value: input.max_plan_retries });
-    }
-    if (input.plan_prompt_template_id !== undefined) {
-      data.push({ field: 'plan_prompt_template_id', value: input.plan_prompt_template_id });
     }
 
     if (data.length > 2) {

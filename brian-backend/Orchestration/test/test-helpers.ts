@@ -56,7 +56,6 @@ export function initOrchestrationSchema(db: RelationDBAccess): void {
       max_recent_works INTEGER NOT NULL DEFAULT 5,
       async_worker_interval INTEGER NOT NULL DEFAULT 1000,
       default_strategy_id TEXT, max_plan_retries INTEGER NOT NULL DEFAULT 2,
-      plan_prompt_template_id TEXT NOT NULL DEFAULT '',
       max_concurrent INTEGER NOT NULL DEFAULT 1,
       default_max_iterations INTEGER NOT NULL DEFAULT 10,
       dag_timeout_ms INTEGER NOT NULL DEFAULT 300000,
@@ -203,44 +202,67 @@ export function initOrchestrationSchema(db: RelationDBAccess): void {
     INSERT OR IGNORE INTO orchestration_config
       (id, created, updated, complexity_decompose_threshold, strategy_prompt_template_id,
        default_strategy, max_recent_works, async_worker_interval, default_strategy_id,
-       max_plan_retries, plan_prompt_template_id, max_concurrent, default_max_iterations,
+       max_plan_retries, max_concurrent, default_max_iterations,
        dag_timeout_ms, max_execution_depth, node_timeout_ms, trace_enabled, max_nodes_in_graph)
     VALUES
       ('orchestration_config_default', ${now}, ${now}, 50, '', 'SIMPLE', 5, 1000, NULL,
-       2, '', 1, 10, 300000, 50, 300000, 1, 50)
+       2, 1, 10, 300000, 50, 300000, 1, 50)
   `);
 
+  const s1 = IdGenerator.generate();
+  const s2 = IdGenerator.generate();
+  const s3 = IdGenerator.generate();
+  const s4 = IdGenerator.generate();
+  const s5 = IdGenerator.generate();
+  const s6 = IdGenerator.generate();
+  const s7 = IdGenerator.generate();
+  const s8 = IdGenerator.generate();
+
   const simpleJsonNodeDef = JSON.stringify({
-    version: '1.0', orchestration_id: 'builtin_simple', start_node: 'node_1',
+    version: '1.0', orchestration_id: 'builtin_simple', start_node: s1,
     nodes: [
-      { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_8' },
-      { node_id: 'node_2', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'node_3', on_error: 'node_8' },
-      { node_id: 'node_3', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: 'node_4', on_error: 'node_8' },
-      { node_id: 'node_4', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: 'node_5', on_error: 'node_8' },
-      { node_id: 'node_5', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'node_6', on_error: 'node_8' },
-      { node_id: 'node_6', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: 'node_7', on_error: 'node_8' },
-      { node_id: 'node_7', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_8' },
-      { node_id: 'node_8', node_type: 'HANDLE_ERROR', params: { default_response: '抱歉，处理您的问题时出现了错误。', update_work_status: 'FAILED' }, next: null },
+      { node_id: s1, node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: s2, on_error: s8 },
+      { node_id: s2, node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: s3, on_error: s8 },
+      { node_id: s3, node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: s4, on_error: s8 },
+      { node_id: s4, node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: s5, on_error: s8 },
+      { node_id: s5, node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: s6, on_error: s8 },
+      { node_id: s6, node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: s7, on_error: s8 },
+      { node_id: s7, node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: s8 },
+      { node_id: s8, node_type: 'HANDLE_ERROR', params: { default_response: '抱歉，处理您的问题时出现了错误。', update_work_status: 'FAILED' }, next: null },
     ],
   }).replace(/'/g, "''");
 
+  const p1 = IdGenerator.generate();
+  const p2 = IdGenerator.generate();
+  const p3 = IdGenerator.generate();
+  const p4 = IdGenerator.generate();
+  const p5 = IdGenerator.generate();
+  const p6 = IdGenerator.generate();
+  const p7 = IdGenerator.generate();
+  const p8 = IdGenerator.generate();
+  const p9 = IdGenerator.generate();
+  const p10 = IdGenerator.generate();
+  const p11 = IdGenerator.generate();
+  const p12 = IdGenerator.generate();
+
   const planningJsonNodeDef = JSON.stringify({
-    version: '1.0', orchestration_id: 'builtin_planning', start_node: 'node_1',
+    version: '1.0', orchestration_id: 'builtin_planning', start_node: p1,
     nodes: [
-      { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_12' },
-      { node_id: 'node_2', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'node_3', on_error: 'node_12' },
-      { node_id: 'node_3', node_type: 'PLAN_WORK', params: { save_plan_key: 'plan_result' }, next: 'node_4', on_error: 'node_12' },
-      { node_id: 'node_4', node_type: 'CONDITION', params: { field: 'task_count', operator: 'EQ', value: '1', true_next: 'node_6', false_next: 'node_5' }, next: null, on_error: 'node_12' },
-      { node_id: 'node_5', node_type: 'BUILD_AGENT_DAG', params: { plan_key: 'plan_result', save_agent_dag_key: 'agent_dag' }, next: 'node_8', on_error: 'node_12' },
-      { node_id: 'node_6', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: 'node_7', on_error: 'node_12' },
-      { node_id: 'node_7', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: 'node_9', on_error: 'node_12' },
-      { node_id: 'node_8', node_type: 'EXEC_DAG', params: { agent_dag_key: 'agent_dag', max_concurrent: 1, save_results_key: 'agent_results' }, next: 'node_9', on_error: 'node_12' },
-      { node_id: 'node_9', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'node_10', on_error: 'node_12' },
-      { node_id: 'node_10', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: 'node_11', on_error: 'node_12' },
-      { node_id: 'node_11', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_12' },
-      { node_id: 'node_12', node_type: 'HANDLE_ERROR', params: { default_response: '抱歉，处理您的问题时出现了错误。', update_work_status: 'FAILED' }, next: null },
+      { node_id: p1, node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: p2, on_error: p12 },
+      { node_id: p2, node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: p3, on_error: p12 },
+      { node_id: p3, node_type: 'PLAN_WORK', params: { save_plan_key: 'plan_result' }, next: p4, on_error: p12 },
+      { node_id: p4, node_type: 'CONDITION', params: { field: 'task_count', operator: 'EQ', value: '1' }, next: null, true_next: p6, false_next: p5, on_error: p12 },
+      { node_id: p5, node_type: 'BUILD_AGENT_DAG', params: { plan_key: 'plan_result', save_agent_dag_key: 'agent_dag' }, next: p8, on_error: p12 },
+      { node_id: p6, node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: p7, on_error: p12 },
+      { node_id: p7, node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: p9, on_error: p12 },
+      { node_id: p8, node_type: 'EXEC_DAG', params: { agent_dag_key: 'agent_dag', max_concurrent: 1, save_results_key: 'agent_results' }, next: p9, on_error: p12 },
+      { node_id: p9, node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: p10, on_error: p12 },
+      { node_id: p10, node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: p11, on_error: p12 },
+      { node_id: p11, node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: p12 },
+      { node_id: p12, node_type: 'HANDLE_ERROR', params: { default_response: '抱歉，处理您的问题时出现了错误。', update_work_status: 'FAILED' }, next: null },
     ],
   }).replace(/'/g, "''");
+
 
   const simpleId = IdGenerator.generate();
   const planningId = IdGenerator.generate();

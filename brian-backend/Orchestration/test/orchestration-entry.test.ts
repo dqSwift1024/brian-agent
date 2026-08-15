@@ -190,7 +190,7 @@ describe('OrchestrationEntry', () => {
 
       await entry.receiveWork(input, ctx, output);
       const saveInfoCalls = infoCore.saveInfo.mock.calls;
-      const hasResponse = saveInfoCalls.some((call: any[]) => call[0]?.info_creator_role === 'RESPONSE');
+      const hasResponse = saveInfoCalls.some((call: any[]) => call[0]?.info_type === 'RESPONSE');
       expect(hasResponse).toBe(true);
     });
   });

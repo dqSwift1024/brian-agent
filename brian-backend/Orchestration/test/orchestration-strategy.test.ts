@@ -100,7 +100,7 @@ describe('OrchestrationStrategy', () => {
       expect(output.final_response).toBeTruthy();
     });
 
-    it('TC-SO-002: Planning 策略启动编排', async () => {
+    it('TC-SO-002: JSONNode 执行失败时异常传播', async () => {
       insertWorkRecord('w2', 's2', 'i2', '请帮我分析数据、生成报告并发送邮件');
       vi.spyOn(jsonNode, 'execJSONNode').mockRejectedValueOnce(new Error('force fallback'));
       const input = Object.assign(new StartOrchestrationInput(), {
@@ -110,9 +110,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.startOrchestration(input, ctx, output);
-      expect(result).toBe(true);
-      expect(output.final_response).toBeTruthy();
+      await expect(strategy.startOrchestration(input, ctx, output)).rejects.toThrow('force fallback');
     });
 
     it('TC-SO-003: work_context 包含完整上下文数据', async () => {
@@ -137,8 +135,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.startOrchestration(input, ctx, output);
-      expect(result).toBe(false);
+      await expect(strategy.startOrchestration(input, ctx, output)).rejects.toThrow('OrchestrationStrategy');
     });
   });
 
@@ -334,11 +331,11 @@ describe('OrchestrationStrategy', () => {
   describe('addStrategy', () => {
     it('TC-AS-001: 注册新策略', async () => {
       const jsonNodeDef = JSON.stringify({
-        version: '1.0', orchestration_id: 'custom', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'custom', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_3' },
-          { node_id: 'node_2', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_3' },
-          { node_id: 'node_3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       });
       const input = Object.assign(new AddOrchestrationStrategyInput(), {
@@ -354,11 +351,11 @@ describe('OrchestrationStrategy', () => {
 
     it('TC-AS-002: 注册策略 enable=false', async () => {
       const jsonNodeDef = JSON.stringify({
-        version: '1.0', orchestration_id: 'disabled', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'disabled', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_3' },
-          { node_id: 'node_2', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_3' },
-          { node_id: 'node_3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       });
       const input = Object.assign(new AddOrchestrationStrategyInput(), {
@@ -373,11 +370,11 @@ describe('OrchestrationStrategy', () => {
 
     it('TC-AS-004: strategy_label 重复', async () => {
       const jsonNodeDef = JSON.stringify({
-        version: '1.0', orchestration_id: 'dup', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'dup', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_3' },
-          { node_id: 'node_2', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_3' },
-          { node_id: 'node_3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'd9e244cc-b48c-422d-af5d-c940bb8deca3' },
+          { node_id: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       });
       const input = Object.assign(new AddOrchestrationStrategyInput(), {
@@ -504,28 +501,7 @@ describe('OrchestrationStrategy', () => {
   });
 
   // =========================================================================
-  // 10. 后处理链不可跳过测试
-  // =========================================================================
-  describe('post-processing chain', () => {
-    it('TC-PP-001: Simple 策略必须经过后处理', async () => {
-      insertWorkRecord('w18', 's18', 'i18', '你好');
-      vi.spyOn(jsonNode, 'execJSONNode').mockRejectedValueOnce(new Error('force fallback'));
-      const input = Object.assign(new StartOrchestrationInput(), {
-        work_id: 'w18', interact_id: 'i18', session_id: 's18',
-        user_query: '你好', strategy: 'SIMPLE',
-      });
-      const output = new StartOrchestrationOutput();
-      const ctx = new OrchestrationStrategyContext();
-
-      await strategy.startOrchestration(input, ctx, output);
-      await flushAllCallbacks();
-      expect(writerAgent.write).toHaveBeenCalled();
-      expect(evolutorAgent.evalWriterAgent).toHaveBeenCalled();
-    });
-  });
-
-  // =========================================================================
-  // 11. AOP 代理通用测试
+  // 10. AOP 代理通用测试
   // =========================================================================
   describe('AOP proxy', () => {
     it('TC-AOP-001: 方法调用后 output.elapsed_ms 存在', async () => {

@@ -22,6 +22,7 @@ export interface JSONNodeDefinition {
 }
 
 export interface JSONNodeItem {
+  /** 节点唯一标识（必须为 UUID 格式） */
   node_id: string;
   node_type: string;
   params: Record<string, unknown>;

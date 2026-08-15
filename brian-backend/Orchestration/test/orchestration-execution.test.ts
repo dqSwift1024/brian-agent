@@ -536,14 +536,6 @@ describe('OrchestrationExecution', () => {
       await expect(exec.configOrchestrationExecution(input, ctx, output)).rejects.toThrow();
     });
 
-    it('TC-COE-008: default_max_iterations 为负数', async () => {
-      const input = Object.assign(new ConfigOrchestrationExecutionInput(), { default_max_iterations: -5 });
-      const output = new ConfigOrchestrationExecutionOutput();
-      const ctx = new OrchestrationExecutionContext();
-
-      await expect(exec.configOrchestrationExecution(input, ctx, output)).rejects.toThrow();
-    });
-
     it('TC-COE-010: dag_timeout_ms 为负数', async () => {
       const input = Object.assign(new ConfigOrchestrationExecutionInput(), { dag_timeout_ms: -1 });
       const output = new ConfigOrchestrationExecutionOutput();

@@ -28,16 +28,16 @@ describe('JSONNode', () => {
   let jsonNode: JSONNodeAccess;
 
   const simpleDef: JSONNodeDefinition = {
-    version: '1.0', orchestration_id: 'test-simple', start_node: 'node_1',
+    version: '1.0', orchestration_id: 'test-simple', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
     nodes: [
-      { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_8' },
-      { node_id: 'node_2', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'node_3', on_error: 'node_8' },
-      { node_id: 'node_3', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: 'node_4', on_error: 'node_8' },
-      { node_id: 'node_4', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: 'node_5', on_error: 'node_8' },
-      { node_id: 'node_5', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'node_6', on_error: 'node_8' },
-      { node_id: 'node_6', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: 'node_7', on_error: 'node_8' },
-      { node_id: 'node_7', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_8' },
-      { node_id: 'node_8', node_type: 'HANDLE_ERROR', params: { default_response: 'Error occurred', update_work_status: 'FAILED' }, next: null },
+      { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: '9ef376a0-c465-49d1-b1ca-f89922c21246', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: '9ef376a0-c465-49d1-b1ca-f89922c21246', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: '3a6831ba-2b2d-4678-8eb5-be2336486eca', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: '3a6831ba-2b2d-4678-8eb5-be2336486eca', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'aafd4af1-9f9c-4ecb-913d-1616e99f4252', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: 'aafd4af1-9f9c-4ecb-913d-1616e99f4252', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: '771099da-b73c-493b-bf64-15dd33f4bd27', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: '771099da-b73c-493b-bf64-15dd33f4bd27', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+      { node_id: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f', node_type: 'HANDLE_ERROR', params: { default_response: 'Error occurred', update_work_status: 'FAILED' }, next: null },
     ],
   };
 
@@ -110,9 +110,9 @@ describe('JSONNode', () => {
 
       await jsonNode.execJSONNode(input, ctx, output);
       const traceIds = output.execution_trace.map(t => t.node_id);
-      expect(traceIds[0]).toBe('node_1');
-      expect(traceIds[1]).toBe('node_2');
-      expect(traceIds[traceIds.length - 1]).toBe('node_7');
+      expect(traceIds[0]).toBe('de43b808-a9b7-48c1-8744-7602a483328f');
+      expect(traceIds[1]).toBe('bea3c048-aa35-4ab3-bda7-c2de0c6b2713');
+      expect(traceIds[traceIds.length - 1]).toBe('771099da-b73c-493b-bf64-15dd33f4bd27');
     });
 
     it('TC-EJN-003: Simple 策略 shared_data 传递', async () => {
@@ -148,7 +148,7 @@ describe('JSONNode', () => {
     it('TC-EJN-009: start_node 不存在于 nodes 中', async () => {
       const invalidDef: JSONNodeDefinition = {
         version: '1.0', orchestration_id: 'test', start_node: 'nonexistent',
-        nodes: [{ node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: {}, next: null }],
+        nodes: [{ node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: {}, next: null }],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
         orchestration_id: 'orch-5',
@@ -164,8 +164,8 @@ describe('JSONNode', () => {
 
     it('TC-EJN-011: next 为 null 时流程结束', async () => {
       const singleNodeDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'single', start_node: 'node_1',
-        nodes: [{ node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: null }],
+        version: '1.0', orchestration_id: 'single', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
+        nodes: [{ node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: null }],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
         orchestration_id: 'orch-6',
@@ -212,7 +212,7 @@ describe('JSONNode', () => {
 
     it('TC-EJN-018: nodes 为空数组', async () => {
       const emptyDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'empty', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'empty', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
@@ -234,13 +234,13 @@ describe('JSONNode', () => {
   describe('CONDITION branching', () => {
     it('TC-COND-001: EQ 操作符 true', async () => {
       const condDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'cond-test', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'cond-test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: 'node_cond', on_error: 'node_err' },
-          { node_id: 'node_cond', node_type: 'CONDITION', params: { field: 'strategy', operator: 'EQ', value: 'PLANNING' }, true_next: 'node_true', false_next: 'node_false', next: null, on_error: 'node_err' },
-          { node_id: 'node_true', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_err' },
-          { node_id: 'node_false', node_type: 'HANDLE_ERROR', params: { default_response: 'Wrong branch', update_work_status: 'FAILED' }, next: null },
-          { node_id: 'node_err', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: '113393f5-6c89-4cdb-a9df-8ddb3878c118', on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '113393f5-6c89-4cdb-a9df-8ddb3878c118', node_type: 'CONDITION', params: { field: 'strategy', operator: 'EQ', value: 'PLANNING' }, true_next: '839f1f73-3902-4745-9a18-75c0b619ce61', false_next: 'df33276c-4a7c-4990-bb6c-0caf40179685', next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '839f1f73-3902-4745-9a18-75c0b619ce61', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: 'df33276c-4a7c-4990-bb6c-0caf40179685', node_type: 'HANDLE_ERROR', params: { default_response: 'Wrong branch', update_work_status: 'FAILED' }, next: null },
+          { node_id: '53fc7947-7496-42e2-bb43-95384f68c643', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
@@ -253,19 +253,19 @@ describe('JSONNode', () => {
 
       await jsonNode.execJSONNode(input, ctx, output);
       const traceIds = output.execution_trace.map(t => t.node_id);
-      expect(traceIds).toContain('node_true');
-      expect(traceIds).not.toContain('node_false');
+      expect(traceIds).toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
+      expect(traceIds).not.toContain('df33276c-4a7c-4990-bb6c-0caf40179685');
     });
 
     it('TC-COND-002: EQ 操作符 false', async () => {
       const condDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'cond-test-2', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'cond-test-2', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: 'node_cond', on_error: 'node_err' },
-          { node_id: 'node_cond', node_type: 'CONDITION', params: { field: 'strategy', operator: 'EQ', value: 'PLANNING' }, true_next: 'node_true', false_next: 'node_false', next: null, on_error: 'node_err' },
-          { node_id: 'node_true', node_type: 'HANDLE_ERROR', params: { default_response: 'Wrong branch', update_work_status: 'FAILED' }, next: null },
-          { node_id: 'node_false', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_err' },
-          { node_id: 'node_err', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: '113393f5-6c89-4cdb-a9df-8ddb3878c118', on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '113393f5-6c89-4cdb-a9df-8ddb3878c118', node_type: 'CONDITION', params: { field: 'strategy', operator: 'EQ', value: 'PLANNING' }, true_next: '839f1f73-3902-4745-9a18-75c0b619ce61', false_next: 'df33276c-4a7c-4990-bb6c-0caf40179685', next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '839f1f73-3902-4745-9a18-75c0b619ce61', node_type: 'HANDLE_ERROR', params: { default_response: 'Wrong branch', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'df33276c-4a7c-4990-bb6c-0caf40179685', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '53fc7947-7496-42e2-bb43-95384f68c643', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
@@ -278,19 +278,19 @@ describe('JSONNode', () => {
 
       await jsonNode.execJSONNode(input, ctx, output);
       const traceIds = output.execution_trace.map(t => t.node_id);
-      expect(traceIds).toContain('node_false');
-      expect(traceIds).not.toContain('node_true');
+      expect(traceIds).toContain('df33276c-4a7c-4990-bb6c-0caf40179685');
+      expect(traceIds).not.toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
     });
 
     it('TC-COND-004: GT 操作符', async () => {
       const condDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'cond-gt', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'cond-gt', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: 'node_cond', on_error: 'node_err' },
-          { node_id: 'node_cond', node_type: 'CONDITION', params: { field: 'complexity', operator: 'GT', value: '50' }, true_next: 'node_true', false_next: 'node_false', next: null, on_error: 'node_err' },
-          { node_id: 'node_true', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_err' },
-          { node_id: 'node_false', node_type: 'HANDLE_ERROR', params: { default_response: 'Not GT', update_work_status: 'FAILED' }, next: null },
-          { node_id: 'node_err', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'CREATED' }, next: '113393f5-6c89-4cdb-a9df-8ddb3878c118', on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '113393f5-6c89-4cdb-a9df-8ddb3878c118', node_type: 'CONDITION', params: { field: 'complexity', operator: 'GT', value: '50' }, true_next: '839f1f73-3902-4745-9a18-75c0b619ce61', false_next: 'df33276c-4a7c-4990-bb6c-0caf40179685', next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: '839f1f73-3902-4745-9a18-75c0b619ce61', node_type: 'SAVE_RESPONSE', params: { response_key: 'result', update_work_status: 'COMPLETED' }, next: null, on_error: '53fc7947-7496-42e2-bb43-95384f68c643' },
+          { node_id: 'df33276c-4a7c-4990-bb6c-0caf40179685', node_type: 'HANDLE_ERROR', params: { default_response: 'Not GT', update_work_status: 'FAILED' }, next: null },
+          { node_id: '53fc7947-7496-42e2-bb43-95384f68c643', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       };
       const input = Object.assign(new ExecJSONNodeInput(), {
@@ -302,7 +302,7 @@ describe('JSONNode', () => {
       const ctx = new JSONNodeContext();
 
       await jsonNode.execJSONNode(input, ctx, output);
-      expect(output.execution_trace.map(t => t.node_id)).toContain('node_true');
+      expect(output.execution_trace.map(t => t.node_id)).toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
     });
   });
 
@@ -322,7 +322,7 @@ describe('JSONNode', () => {
     });
 
     it('TC-VAL-003: version 缺失', () => {
-      const invalidDef = { orchestration_id: 'test', start_node: 'node_1', nodes: [] } as JSONNodeDefinition;
+      const invalidDef = { orchestration_id: 'test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f', nodes: [] } as JSONNodeDefinition;
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
@@ -334,7 +334,7 @@ describe('JSONNode', () => {
     });
 
     it('TC-VAL-004: version 不为 "1.0"', () => {
-      const invalidDef: JSONNodeDefinition = { version: '2.0', orchestration_id: 'test', start_node: 'node_1', nodes: [] };
+      const invalidDef: JSONNodeDefinition = { version: '2.0', orchestration_id: 'test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f', nodes: [] };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
@@ -359,7 +359,7 @@ describe('JSONNode', () => {
     it('TC-VAL-006: start_node 不在 nodes 中', () => {
       const invalidDef: JSONNodeDefinition = {
         version: '1.0', orchestration_id: 'test', start_node: 'nonexistent',
-        nodes: [{ node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: {}, next: null }],
+        nodes: [{ node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: {}, next: null }],
       };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
       const output = new ValidateJSONNodeOutput();
@@ -372,10 +372,10 @@ describe('JSONNode', () => {
 
     it('TC-VAL-007: node_id 不唯一', () => {
       const invalidDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'test', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: {}, next: null },
-          { node_id: 'node_1', node_type: 'HANDLE_ERROR', params: {}, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: {}, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'HANDLE_ERROR', params: {}, next: null },
         ],
       };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
@@ -390,8 +390,8 @@ describe('JSONNode', () => {
 
     it('TC-VAL-008: node_type 未注册', () => {
       const invalidDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'test', start_node: 'node_1',
-        nodes: [{ node_id: 'node_1', node_type: 'UNKNOWN_TYPE', params: {}, next: null }],
+        version: '1.0', orchestration_id: 'test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
+        nodes: [{ node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'UNKNOWN_TYPE', params: {}, next: null }],
       };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
       const output = new ValidateJSONNodeOutput();
@@ -404,8 +404,8 @@ describe('JSONNode', () => {
 
     it('TC-VAL-009: next 引用不存在的节点', () => {
       const invalidDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'test', start_node: 'node_1',
-        nodes: [{ node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: {}, next: 'nonexistent' }],
+        version: '1.0', orchestration_id: 'test', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
+        nodes: [{ node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: {}, next: 'nonexistent' }],
       };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: invalidDef });
       const output = new ValidateJSONNodeOutput();
@@ -418,10 +418,10 @@ describe('JSONNode', () => {
 
     it('TC-VAL-013: DAG 有环', () => {
       const cyclicDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'cyclic', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'cyclic', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: {}, next: 'node_2' },
-          { node_id: 'node_2', node_type: 'BUILD_WORK_CONTEXT', params: {}, next: 'node_1' },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: {}, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713' },
+          { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'BUILD_WORK_CONTEXT', params: {}, next: 'de43b808-a9b7-48c1-8744-7602a483328f' },
         ],
       };
       const input = Object.assign(new ValidateJSONNodeInput(), { jsonnode_definition: cyclicDef });

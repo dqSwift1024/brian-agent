@@ -18,35 +18,35 @@
 {
   "version": "1.0",
   "orchestration_id": "策略或work的唯一标识",
-  "start_node": "entry_1",
+  "start_node": "4a957b1e-8ca8-4d32-b8af-82eb4a7d3103",
   "nodes": [
     {
-      "node_id": "entry_1",
+      "node_id": "4a957b1e-8ca8-4d32-b8af-82eb4a7d3103",
       "node_type": "SAVE_USER_INPUT",
       "params": { "...特定节点参数..." },
-      "next": "entry_2",
-      "on_error": "error_handler"
+      "next": "322db028-9f2e-42d2-9a14-922f0368e436",
+      "on_error": "5b615f53-ca92-4976-86d2-b1f647d5a2f8"
     },
     {
-      "node_id": "entry_2",
+      "node_id": "322db028-9f2e-42d2-9a14-922f0368e436",
       "node_type": "SELECT_STRATEGY",
       "params": { "...特定节点参数..." },
-      "next": "condition_check",
-      "on_error": "error_handler"
+      "next": "8afe8b3e-f4b2-4e76-9c0d-caeb066b1375",
+      "on_error": "5b615f53-ca92-4976-86d2-b1f647d5a2f8"
     },
     {
-      "node_id": "condition_check",
+      "node_id": "8afe8b3e-f4b2-4e76-9c0d-caeb066b1375",
       "node_type": "CONDITION",
       "params": {
         "field": "strategy",
         "operator": "EQ",
-        "value": "PLANNING",
-        "true_next": "plan_work",
-        "false_next": "build_work_agent"
-      }
+        "value": "PLANNING"
+      },
+      "true_next": "056add5b-1b0d-46f8-aa99-d0f916221ace",
+      "false_next": "6a11d0ac-7a6d-458a-9ef0-b4f2502deb92"
     },
     {
-      "node_id": "error_handler",
+      "node_id": "5b615f53-ca92-4976-86d2-b1f647d5a2f8",
       "node_type": "HANDLE_ERROR",
       "params": { "default_response": "抱歉，处理您的问题时出现了错误，请稍后重试。" },
       "next": null
@@ -59,7 +59,7 @@
 
 | 属性 | 含义 | 是否必填 | 说明 |
 |------|------|---------|------|
-| node_id | 节点唯一标识 | Y | 在整个编排定义中唯一 |
+| node_id | 节点唯一标识 | Y | 在整个编排定义中唯一，必须为 UUID 格式（如 `550e8400-e29b-41d4-a716-446655440000`） |
 | node_type | 节点类型 | Y | 枚举值，定义该节点执行的原子操作 |
 | params | 节点参数 | Y | 不同类型的节点有各自的参数结构 |
 | next | 下一节点 ID | Y | 执行成功后的下一个节点；null 表示流程结束 |
@@ -125,16 +125,18 @@
 
 **语义**：根据 shared_data 中的某个字段值决定下一跳转节点。
 
-**参数**：
+**参数**（params）：
 ```json
 {
   "field": "strategy",
   "operator": "EQ",
-  "value": "PLANNING",
-  "true_next": "plan_work",
-  "false_next": "build_work_agent"
+  "value": "PLANNING"
 }
 ```
+
+**节点属性**（CONDITION 额外属性，非 params）：
+- `true_next`：条件 True 时跳转的节点 ID
+- `false_next`：条件 False 时跳转的节点 ID
 
 **处理逻辑**：
 1. 从 shared_data 读取 field 对应的值；
@@ -325,59 +327,59 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 {
   "version": "1.0",
   "orchestration_id": "builtin_simple",
-  "start_node": "node_1",
+  "start_node": "de43b808-a9b7-48c1-8744-7602a483328f",
   "nodes": [
     {
-      "node_id": "node_1",
+      "node_id": "de43b808-a9b7-48c1-8744-7602a483328f",
       "node_type": "SAVE_USER_INPUT",
       "params": { "info_type": "REQUEST", "update_work_status": "PROCESSING" },
-      "next": "node_2",
-      "on_error": "node_8"
+      "next": "bea3c048-aa35-4ab3-bda7-c2de0c6b2713",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_2",
+      "node_id": "bea3c048-aa35-4ab3-bda7-c2de0c6b2713",
       "node_type": "BUILD_WORK_CONTEXT",
       "params": { "max_recent_works": 5, "include_user_profile": true },
-      "next": "node_3",
-      "on_error": "node_8"
+      "next": "d9e244cc-b48c-422d-af5d-c940bb8deca3",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_3",
+      "node_id": "d9e244cc-b48c-422d-af5d-c940bb8deca3",
       "node_type": "BUILD_WORK_AGENT",
       "params": { "force_new": false },
-      "next": "node_4",
-      "on_error": "node_8"
+      "next": "9ef376a0-c465-49d1-b1ca-f89922c21246",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_4",
+      "node_id": "9ef376a0-c465-49d1-b1ca-f89922c21246",
       "node_type": "EXEC_AGENT",
       "params": { "agent_id_key": "current_agent_id", "save_result_key": "agent_answer" },
-      "next": "node_5",
-      "on_error": "node_8"
+      "next": "3a6831ba-2b2d-4678-8eb5-be2336486eca",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_5",
+      "node_id": "3a6831ba-2b2d-4678-8eb5-be2336486eca",
       "node_type": "WRITE_RESULT",
       "params": { "agent_results_key": "agent_results", "save_response_key": "final_response" },
-      "next": "node_6",
-      "on_error": "node_8"
+      "next": "aafd4af1-9f9c-4ecb-913d-1616e99f4252",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_6",
+      "node_id": "aafd4af1-9f9c-4ecb-913d-1616e99f4252",
       "node_type": "EVAL_RESULT",
       "params": { "agent_results_key": "agent_results", "final_response_key": "final_response", "async": true },
-      "next": "node_7",
-      "on_error": "node_8"
+      "next": "771099da-b73c-493b-bf64-15dd33f4bd27",
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_7",
+      "node_id": "771099da-b73c-493b-bf64-15dd33f4bd27",
       "node_type": "SAVE_RESPONSE",
       "params": { "response_key": "final_response", "update_work_status": "COMPLETED" },
       "next": null,
-      "on_error": "node_8"
+      "on_error": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f"
     },
     {
-      "node_id": "node_8",
+      "node_id": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f",
       "node_type": "HANDLE_ERROR",
       "params": { "default_response": "抱歉，处理您的问题时出现了错误。", "update_work_status": "FAILED" },
       "next": null
@@ -392,79 +394,79 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 {
   "version": "1.0",
   "orchestration_id": "builtin_planning",
-  "start_node": "node_1",
+  "start_node": "de43b808-a9b7-48c1-8744-7602a483328f",
   "nodes": [
     {
-      "node_id": "node_1",
+      "node_id": "de43b808-a9b7-48c1-8744-7602a483328f",
       "node_type": "SAVE_USER_INPUT",
       "params": { "info_type": "REQUEST", "update_work_status": "PROCESSING" },
-      "next": "node_2",
-      "on_error": "node_10"
+      "next": "bea3c048-aa35-4ab3-bda7-c2de0c6b2713",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_2",
+      "node_id": "bea3c048-aa35-4ab3-bda7-c2de0c6b2713",
       "node_type": "BUILD_WORK_CONTEXT",
       "params": { "max_recent_works": 5, "include_user_profile": true },
-      "next": "node_3",
-      "on_error": "node_10"
+      "next": "d9e244cc-b48c-422d-af5d-c940bb8deca3",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_3",
+      "node_id": "d9e244cc-b48c-422d-af5d-c940bb8deca3",
       "node_type": "PLAN_WORK",
       "params": { "save_plan_key": "plan_result" },
-      "next": "node_4",
-      "on_error": "node_10"
+      "next": "9ef376a0-c465-49d1-b1ca-f89922c21246",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_4",
+      "node_id": "9ef376a0-c465-49d1-b1ca-f89922c21246",
       "node_type": "CONDITION",
       "params": {
         "field": "task_count",
         "operator": "EQ",
         "value": "1",
-        "true_next": "node_6",
-        "false_next": "node_5"
+        "true_next": "aafd4af1-9f9c-4ecb-913d-1616e99f4252",
+        "false_next": "3a6831ba-2b2d-4678-8eb5-be2336486eca"
       },
       "next": null,
-      "on_error": "node_10"
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_5",
+      "node_id": "3a6831ba-2b2d-4678-8eb5-be2336486eca",
       "node_type": "BUILD_AGENT_DAG",
       "params": { "plan_key": "plan_result", "save_agent_dag_key": "agent_dag" },
-      "next": "node_7",
-      "on_error": "node_10"
+      "next": "771099da-b73c-493b-bf64-15dd33f4bd27",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_6",
+      "node_id": "aafd4af1-9f9c-4ecb-913d-1616e99f4252",
       "node_type": "BUILD_WORK_AGENT",
       "params": { "force_new": false },
-      "next": "node_8",
-      "on_error": "node_10"
+      "next": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_7",
+      "node_id": "771099da-b73c-493b-bf64-15dd33f4bd27",
       "node_type": "EXEC_DAG",
       "params": { "agent_dag_key": "agent_dag", "max_concurrent": 1, "save_results_key": "agent_results" },
-      "next": "node_8",
-      "on_error": "node_10"
+      "next": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_8",
+      "node_id": "e3c444de-c3f9-4c87-83fc-eb112a36ce4f",
       "node_type": "WRITE_RESULT",
       "params": { "agent_results_key": "agent_results", "save_response_key": "final_response" },
-      "next": "node_9",
-      "on_error": "node_10"
+      "next": "1c9f36dc-6141-49f0-a5e1-6fad87b1303a",
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_9",
+      "node_id": "1c9f36dc-6141-49f0-a5e1-6fad87b1303a",
       "node_type": "SAVE_RESPONSE",
       "params": { "response_key": "final_response", "update_work_status": "COMPLETED" },
       "next": null,
-      "on_error": "node_10"
+      "on_error": "9731377d-9b9e-414a-a554-4746db749fb0"
     },
     {
-      "node_id": "node_10",
+      "node_id": "9731377d-9b9e-414a-a554-4746db749fb0",
       "node_type": "HANDLE_ERROR",
       "params": { "default_response": "抱歉，处理您的问题时出现了错误。", "update_work_status": "FAILED" },
       "next": null

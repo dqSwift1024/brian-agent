@@ -205,7 +205,6 @@
 |------|---------|---------|------|---------|
 | TC-COS-001 | 更新 default_strategy_id | `orchestration_strategy` 表中存在且 enable=true | `default_strategy_id="s1"` | 配置更新成功，返回当前全部配置，返回 true |
 | TC-COS-002 | 更新 max_plan_retries | 配置表存在 | `max_plan_retries=3` | 配置更新成功，返回 true |
-| TC-COS-003 | 更新 plan_prompt_template_id | `PromptsProvider.soPrompt` 中存在 | `plan_prompt_template_id="valid_id"` | 配置更新成功，返回 true |
 | TC-COS-004 | 不传参数查询当前配置 | 配置表存在 | 所有字段不传 | 返回当前配置，不修改任何值，返回 true |
 
 ### 9.2 边界与异常
@@ -216,7 +215,6 @@
 | TC-COS-006 | default_strategy_id 对应的策略 enable=false | 表中存在但 enable=false | `default_strategy_id="disabled_id"` | 返回 false，校验失败 |
 | TC-COS-007 | max_plan_retries 为负数 | 配置表存在 | `max_plan_retries=-1` | 返回 false，校验失败 |
 | TC-COS-008 | max_plan_retries 为 0 | 配置表存在 | `max_plan_retries=0` | 配置更新成功（0 表示不重试），返回 true |
-| TC-COS-009 | plan_prompt_template_id 不存在 | `PromptsProvider.soPrompt` 中不存在 | `plan_prompt_template_id="invalid"` | 返回 false，校验失败 |
 
 ---
 

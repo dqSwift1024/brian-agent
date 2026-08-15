@@ -171,8 +171,8 @@ describe('Orchestration Integration', () => {
 
       await entry.receiveWork(input, ctx, output);
       const saveCalls = infoCore.saveInfo.mock.calls;
-      const hasRequest = saveCalls.some((c: any[]) => c[0]?.info_creator_role === 'REQUEST');
-      const hasResponse = saveCalls.some((c: any[]) => c[0]?.info_creator_role === 'RESPONSE');
+      const hasRequest = saveCalls.some((c: any[]) => c[0]?.info_type === 'REQUEST');
+      const hasResponse = saveCalls.some((c: any[]) => c[0]?.info_type === 'RESPONSE');
       expect(hasRequest).toBe(true);
       expect(hasResponse).toBe(true);
     });
@@ -331,16 +331,16 @@ describe('Orchestration Integration', () => {
       `);
 
       const simpleDef: JSONNodeDefinition = {
-        version: '1.0', orchestration_id: 'int-json', start_node: 'node_1',
+        version: '1.0', orchestration_id: 'int-json', start_node: 'de43b808-a9b7-48c1-8744-7602a483328f',
         nodes: [
-          { node_id: 'node_1', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'node_2', on_error: 'node_8' },
-          { node_id: 'node_2', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'node_3', on_error: 'node_8' },
-          { node_id: 'node_3', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: 'node_4', on_error: 'node_8' },
-          { node_id: 'node_4', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: 'node_5', on_error: 'node_8' },
-          { node_id: 'node_5', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'node_6', on_error: 'node_8' },
-          { node_id: 'node_6', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: 'node_7', on_error: 'node_8' },
-          { node_id: 'node_7', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'node_8' },
-          { node_id: 'node_8', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
+          { node_id: 'de43b808-a9b7-48c1-8744-7602a483328f', node_type: 'SAVE_USER_INPUT', params: { info_creator_role: 'REQUEST', update_work_status: 'PROCESSING' }, next: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: 'bea3c048-aa35-4ab3-bda7-c2de0c6b2713', node_type: 'BUILD_WORK_CONTEXT', params: { max_recent_works: 5, include_user_profile: true }, next: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: 'd9e244cc-b48c-422d-af5d-c940bb8deca3', node_type: 'BUILD_WORK_AGENT', params: { force_new: false }, next: '9ef376a0-c465-49d1-b1ca-f89922c21246', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: '9ef376a0-c465-49d1-b1ca-f89922c21246', node_type: 'EXEC_AGENT', params: { agent_id_key: 'current_agent_id', save_result_key: 'agent_answer' }, next: '3a6831ba-2b2d-4678-8eb5-be2336486eca', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: '3a6831ba-2b2d-4678-8eb5-be2336486eca', node_type: 'WRITE_RESULT', params: { agent_results_key: 'agent_results', save_response_key: 'final_response' }, next: 'aafd4af1-9f9c-4ecb-913d-1616e99f4252', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: 'aafd4af1-9f9c-4ecb-913d-1616e99f4252', node_type: 'EVAL_RESULT', params: { agent_results_key: 'agent_results', final_response_key: 'final_response', async: true }, next: '771099da-b73c-493b-bf64-15dd33f4bd27', on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: '771099da-b73c-493b-bf64-15dd33f4bd27', node_type: 'SAVE_RESPONSE', params: { response_key: 'final_response', update_work_status: 'COMPLETED' }, next: null, on_error: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f' },
+          { node_id: 'e3c444de-c3f9-4c87-83fc-eb112a36ce4f', node_type: 'HANDLE_ERROR', params: { default_response: 'Error', update_work_status: 'FAILED' }, next: null },
         ],
       };
 

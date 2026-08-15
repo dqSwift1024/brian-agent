@@ -109,7 +109,6 @@ export class UpdateOrchestrationStrategyOutput extends Output {}
 export class ConfigOrchestrationStrategyInput extends Input {
   default_strategy_id?: string;
   max_plan_retries?: number;
-  plan_prompt_template_id?: string;
 }
 
 export class ConfigOrchestrationStrategyOutput extends Output {

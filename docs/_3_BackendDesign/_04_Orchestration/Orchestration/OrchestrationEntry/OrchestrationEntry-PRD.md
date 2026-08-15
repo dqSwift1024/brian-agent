@@ -206,7 +206,7 @@
 **入参**：
 - input：ConfigOrchestrationEntryInput（继承 Input），包含以下字段：
   - complexity_decompose_threshold：任务拆解复杂度阈值（可选，默认 50，0-100）
-  - strategy_prompt_template_id：编排策略选择 prompt 模板 ID（可选）
+  - strategy_prompt_template_id：策略选择 Prompt（可选）
   - default_strategy：默认编排策略（可选，"SIMPLE" 或 "PLANNING"）
   - max_recent_works：构建上下文时收集的最近工作数量（可选，默认 5）
   - async_worker_interval：异步工作 Worker 轮询间隔（可选，默认 1000ms）
@@ -267,13 +267,12 @@
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | complexity_decompose_threshold | 任务拆解复杂度阈值 | INT | N | | 0-100，默认 50 |
-| strategy_prompt_template_id | 策略选择 prompt 模板 ID | UUID | N | | |
+| strategy_prompt_template_id | 策略选择 Prompt | UUID | N | | |
 | default_strategy | 默认编排策略 | VARCHAR | N | | SIMPLE / PLANNING |
 | max_recent_works | 上下文构建最近工作数 | INT | N | | 默认 5 |
 | async_worker_interval | 异步工作轮询间隔（ms） | INT | N | | 默认 1000 |
 | default_strategy_id | 默认编排策略 ID | UUID | Y | | 关联 orchestration_strategy.strategy_id |
 | max_plan_retries | Planning 策略最大重试次数 | INT | N | | 默认 2 |
-| plan_prompt_template_id | 计划生成 prompt 模板 ID | UUID | N | | |
 | max_concurrent | 默认最大并发执行数 | INT | N | | 默认 1 |
 | default_max_iterations | 单 Agent 默认最大迭代次数 | INT | N | | 默认 10 |
 | dag_timeout_ms | DAG 执行总超时时间（ms） | INT | N | | 默认 300000，0 表示不限制 |
