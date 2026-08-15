@@ -21,7 +21,7 @@ import {
   NotFoundError,
   DatabaseError,
 } from '../../shared/errors';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic, Direction } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
 import {

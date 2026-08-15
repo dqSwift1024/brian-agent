@@ -16,7 +16,7 @@ import {
   ValidationError,
   NotFoundError,
 } from '../../shared/errors';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
 import {

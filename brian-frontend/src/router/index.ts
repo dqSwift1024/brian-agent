@@ -7,6 +7,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/learning', name: 'learning', component: () => import('@/views/LearningView.vue'), meta: { title: '学习' } },
   { path: '/monitor', name: 'monitor', component: () => import('@/views/MonitorView.vue'), meta: { title: '监控' } },
   { path: '/config', name: 'config', component: () => import('@/views/ConfigView.vue'), meta: { title: '配置' } },
+  { path: '/tool', name: 'tool', component: () => import('@/views/ToolView.vue'), meta: { title: '工具' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

@@ -1,5 +1,5 @@
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import { BOOKMARK_FOLDER_TABLE, BOOKMARK_ITEM_TABLE } from '../domain/types';
 import type { BookmarkFolderRecord, BookmarkFolderNode, BookmarkItemRecord } from '../domain/types';

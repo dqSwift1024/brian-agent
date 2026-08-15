@@ -23,7 +23,7 @@ import {
   ValidationError,
   DatabaseError,
 } from '../../shared/errors';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import {
   VECTORDB_CONFIG_TABLE,

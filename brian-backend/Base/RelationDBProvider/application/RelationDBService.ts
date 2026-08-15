@@ -39,7 +39,7 @@ import {
 import { ComponentDisabledError, DatabaseError } from '../../shared/errors';
 import { Operator } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 
 /**
  * RelationDBProvider 应用服务。

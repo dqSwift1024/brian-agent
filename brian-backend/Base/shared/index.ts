@@ -6,9 +6,11 @@
  * - query：Condition / OrderBy / Page / DataObject / QueryParam / Operation 公共查询对象
  * - errors：统一错误类型
  * - aop：代理模式切面注入（日志记录、耗时统计）
- * - id：UUID 生成器与时间工具
  * - config：配置服务（基于关系数据库配置表的键值对读写）
  * - native：跨平台原生模块加载器（自动检测 OS/架构/ABI）
+ *
+ * 说明：ID 生成器（IdGenerator）与 JSON / XML 解析工具（JsonParser / XmlParser）
+ * 已迁移至 ToolProvider 模块，经 `@brian-agent/base` 统一导出。
  */
 
 // 基类
@@ -46,9 +48,6 @@ export {
 export { AopProxy, ConsoleLogger } from './aop/AopProxy';
 export type { Logger, AopProxyOptions } from './aop/AopProxy';
 export type { Interceptor, InterceptContext } from './aop/Interceptor';
-
-// ID 生成器
-export { IdGenerator } from './id/IdGenerator';
 
 // 配置服务
 export { ConfigService, ValueType } from './config/ConfigService';

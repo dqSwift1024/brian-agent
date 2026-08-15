@@ -22,7 +22,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { IdGenerator } from '../shared/id/IdGenerator';
+import { IdGenerator } from '../ToolProvider/IdGenerator';
 
 import { RelationDBAccess } from '../RelationDBProvider/access/RelationDBAccess';
 import {

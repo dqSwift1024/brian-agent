@@ -9,6 +9,7 @@ const i18nMap: Record<string, Record<Locale, string>> = {
   'nav.learning': { 'zh-CN': '学习', 'en-US': 'Learning' },
   'nav.monitor': { 'zh-CN': '监控', 'en-US': 'Monitor' },
   'nav.config': { 'zh-CN': '配置', 'en-US': 'Config' },
+  'nav.tool': { 'zh-CN': '工具', 'en-US': 'Tools' },
   'nav.profile': { 'zh-CN': '用户画像', 'en-US': 'Profile' },
   'chat.input.placeholder': { 'zh-CN': '输入消息...', 'en-US': 'Type a message...' },
   'chat.send': { 'zh-CN': '发送', 'en-US': 'Send' },

@@ -366,4 +366,30 @@ export const bookmarkApi = {
     request<void>('/bookmark/item', { method: 'DELETE', body: JSON.stringify({ id }) }),
 }
 
+export interface ToolCheckResult { valid: boolean; error: string }
+export interface ToolTransformResult { valid: boolean; error: string; result: string }
+export interface ToolRegexResult {
+  valid: boolean; error: string; matched: boolean; matches: string[];
+  count: number; groups?: Array<Record<string, string>>;
+}
+
+export const toolApi = {
+  generateId: (count = 1) =>
+    request<{ ids: string[] }>('/tool/id', { method: 'POST', body: JSON.stringify({ count }) }),
+  jsonCheck: (text: string) =>
+    request<ToolCheckResult>('/tool/json/check', { method: 'POST', body: JSON.stringify({ text }) }),
+  jsonFormat: (text: string, indent = 2) =>
+    request<ToolTransformResult>('/tool/json/format', { method: 'POST', body: JSON.stringify({ text, indent }) }),
+  jsonMinify: (text: string) =>
+    request<ToolTransformResult>('/tool/json/minify', { method: 'POST', body: JSON.stringify({ text }) }),
+  xmlCheck: (text: string) =>
+    request<ToolCheckResult>('/tool/xml/check', { method: 'POST', body: JSON.stringify({ text }) }),
+  xmlFormat: (text: string, indent = 2) =>
+    request<ToolTransformResult>('/tool/xml/format', { method: 'POST', body: JSON.stringify({ text, indent }) }),
+  xmlMinify: (text: string) =>
+    request<ToolTransformResult>('/tool/xml/minify', { method: 'POST', body: JSON.stringify({ text }) }),
+  regex: (pattern: string, text: string, flags = '') =>
+    request<ToolRegexResult>('/tool/regex', { method: 'POST', body: JSON.stringify({ pattern, text, flags }) }),
+}
+
 export { request as fetchApi }

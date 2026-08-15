@@ -15,6 +15,7 @@
  * - SoulProvider：Soul 数据管理
  * - LogProvider：日志管理（解耦日志和系统，提供 AOP 日志切面）
  * - CDTProvider：Chrome DevTools 协议管理（Chrome 启动/停止、CDP 通信）
+ * - ToolProvider：无状态工具模块（ID 生成、JSON/XML 解析检查格式化压缩、正则匹配）
  *
  * 使用方式：
  * ```typescript
@@ -30,6 +31,9 @@
 
 // 共享内核
 export * from './shared';
+
+// ToolProvider（无状态工具模块：ID 生成、JSON/XML 解析与格式化、正则匹配）
+export * from './ToolProvider';
 
 // RelationDBProvider（基础模块，其余 Provider 依赖它）
 export * from './RelationDBProvider';

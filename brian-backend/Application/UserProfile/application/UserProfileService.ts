@@ -3,7 +3,7 @@ import {
   IdGenerator, Operator, Direction, ValidationError, DataObject as DataObjectType,
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
-  NotFoundError,
+  NotFoundError, JsonParser,
   type DataObject,
 } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -952,17 +952,14 @@ Return ONLY valid JSON, no other text.`;
   }
 
   private parseLLMAnalysis(response: string): { value: unknown; confidence: number; evidence: unknown[] } {
-    try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          value: parsed.value ?? null,
-          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.3,
-          evidence: Array.isArray(parsed.evidence) ? parsed.evidence : [],
-        };
-      }
-    } catch { /* fall through */ }
+    const parsed = JsonParser.parseObject(response);
+    if (parsed) {
+      return {
+        value: parsed.value ?? null,
+        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.3,
+        evidence: Array.isArray(parsed.evidence) ? parsed.evidence : [],
+      };
+    }
 
     return { value: response.slice(0, 200), confidence: 0.2, evidence: [] };
   }

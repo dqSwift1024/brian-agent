@@ -9,6 +9,7 @@ import type {
 import {
   Operator,
   IdGenerator,
+  JsonParser,
   ValidationError,
   McpContext,
   SoMcpInput,
@@ -263,18 +264,12 @@ export class MCPCoreService {
     result: string,
     mcps: McpInstallRecord[],
   ): string[] {
-    try {
-      const trimmed = result.trim();
-      const jsonMatch = trimmed.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as unknown[];
-        const rankedIds = parsed
-          .filter((v): v is string => typeof v === 'string')
-          .filter((id) => mcps.some((m) => m.id === id));
-        return rankedIds;
-      }
-    } catch {
-      // If parsing fails, return all MCP IDs
+    const parsed = JsonParser.parseArray(result);
+    if (parsed) {
+      const rankedIds = parsed
+        .filter((v): v is string => typeof v === 'string')
+        .filter((id) => mcps.some((m) => m.id === id));
+      return rankedIds;
     }
     return mcps.map((m) => m.id);
   }

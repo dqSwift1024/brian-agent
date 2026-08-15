@@ -2,6 +2,7 @@ import {
   RelationDBAccess, SelectOneDBInput, SelectOneDBOutput, DBContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   ExecLLMInput, ExecLLMOutput, LLMContext,
+  JsonParser,
   type PromptsAccess, type LLMAccess, type Logger,
 } from '@brian-agent/base';
 
@@ -67,23 +68,23 @@ export async function selectOrchestrationStrategy(
     await llmAccess.execLLM(llmInput, new LLMContext(), llmOutput);
 
     const rawText = llmOutput.result;
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const parsed = JsonParser.parseObject(rawText);
+    if (!parsed) {
       throw new Error('no json in response');
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
     const complexity = Math.min(Math.max(Number(parsed.complexity ?? 0), 0), 100);
     const validStrategies = ['SIMPLE', 'PLANNING'];
-    const strategy = validStrategies.includes(parsed.strategy)
-      ? parsed.strategy
+    const strategy = validStrategies.includes(parsed.strategy as string)
+      ? (parsed.strategy as string)
       : (complexity >= threshold ? 'PLANNING' : defaultStrategy);
 
     return {
       strategy,
       complexity,
-      reason: parsed.reason ?? 'llm_analyzed',
-      plan: parsed.plan ?? parsed.steps ?? parsed.subtasks,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : 'llm_analyzed',
+      plan: (parsed.plan ?? parsed.steps ?? parsed.subtasks) as
+        Array<{ step: number; description: string }> | undefined,
     };
   } catch (err: unknown) {
     logger?.error?.('selectOrchestrationStrategy: LLM failed', {

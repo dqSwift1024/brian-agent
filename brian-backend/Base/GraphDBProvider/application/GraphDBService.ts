@@ -29,7 +29,7 @@ import {
   NotFoundError,
   DatabaseError,
 } from '../../shared/errors';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, OrderBy, Page } from '../../shared/query';
 import {

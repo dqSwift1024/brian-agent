@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator } from './Base/shared/id/IdGenerator';
+import { IdGenerator, ToolAccess } from './Base/ToolProvider';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -205,6 +205,7 @@ async function buildContext() {
 
   // Bookmark
   const bookmarkAccess = new BookmarkAccess(relationDb, logger);
+  const toolAccess = new ToolAccess();
 
   // ---- Core Providers ----
   const infoCore = new InfoCoreAccess(relationDb, llmAccess, promptsAccess, vectorDBAccess, graphDBAccess, logger);
@@ -381,6 +382,7 @@ async function buildContext() {
     relationDb, llmAccess, mcpAccess, soulAccess, skillAccess, promptsAccess,
     graphDBAccess, mqAccess, logAccess, vectorDBAccess,
     cdtAccess, bookmarkAccess,
+    toolAccess,
     infoCore, llmCore, mcpCore, skillCore, soulCore, mqCore,
     cdtCore,
     agentLibrary, agentStrategy, agentContext, agentBuilder,
@@ -2127,6 +2129,31 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'DELETE' && pathname === '/api/bookmark/item') {
         ctx.bookmarkAccess.deleteItem(body.id || '');
         sendJson(res, 200, {});
+
+      } else if (method === 'POST' && pathname === '/api/tool/id') {
+        const count = Math.max(1, Math.min(Number(body.count ?? 1) || 1, 1000));
+        sendJson(res, 200, { ids: ctx.toolAccess.generateIds(count) });
+
+      } else if (method === 'POST' && pathname === '/api/tool/json/check') {
+        sendJson(res, 200, ctx.toolAccess.jsonCheck(body.text ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/json/format') {
+        sendJson(res, 200, ctx.toolAccess.jsonFormat(body.text ?? '', Number(body.indent ?? 2)));
+
+      } else if (method === 'POST' && pathname === '/api/tool/json/minify') {
+        sendJson(res, 200, ctx.toolAccess.jsonMinify(body.text ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/xml/check') {
+        sendJson(res, 200, ctx.toolAccess.xmlCheck(body.text ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/xml/format') {
+        sendJson(res, 200, ctx.toolAccess.xmlFormat(body.text ?? '', Number(body.indent ?? 2)));
+
+      } else if (method === 'POST' && pathname === '/api/tool/xml/minify') {
+        sendJson(res, 200, ctx.toolAccess.xmlMinify(body.text ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/regex') {
+        sendJson(res, 200, ctx.toolAccess.regexMatch(body.pattern ?? '', body.text ?? '', body.flags ?? ''));
 
       } else if (method === 'GET' && serveFrontend(res, pathname)) {
         // 前端静态文件（SEA 打包模式）—— 已由 serveFrontend 处理

@@ -16,7 +16,7 @@ import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { IdGenerator } from '../../../shared/id/IdGenerator';
+import { IdGenerator } from '../../../ToolProvider/IdGenerator';
 
 export interface LocalSandboxResult {
   stdout: string;

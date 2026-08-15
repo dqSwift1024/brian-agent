@@ -9,10 +9,10 @@
 ## 2. 模块位置
 
 ```
-brian-backend/Base/shared/id/IdGenerator.ts
+brian-backend/Base/ToolProvider/IdGenerator.ts
 ```
 
-通过 `@brian-agent/base` 导出：
+通过 `@brian-agent/base` 导出（经 ToolProvider 模块）：
 
 ```typescript
 import { IdGenerator } from '@brian-agent/base';

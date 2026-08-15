@@ -28,6 +28,7 @@ import {
   Operator,
   OperationType,
   IdGenerator,
+  JsonParser,
   ValidationError,
   NotFoundError,
 } from '@brian-agent/base';
@@ -498,17 +499,8 @@ export class SkillCoreService {
     llmResult: string,
     availableSkills: Array<{ id: string; skill_brief: string }>,
   ): MatchedSkillEntry[] {
-    let parsed: Array<{ skill_brief?: string; relevance?: number }>;
-    try {
-      const trimmed = llmResult.trim();
-      const jsonStr = trimmed.startsWith('```')
-        ? trimmed.replace(/```(?:json)?\n?/g, '').trim()
-        : trimmed;
-      parsed = JSON.parse(jsonStr);
-      if (!Array.isArray(parsed)) {
-        throw new Error('expected array');
-      }
-    } catch {
+    const parsed = JsonParser.parseArray(llmResult);
+    if (!parsed) {
       throw new ProcessingError('LLM 返回格式无效，期望 JSON 数组');
     }
 
@@ -517,18 +509,20 @@ export class SkillCoreService {
     );
 
     const result: MatchedSkillEntry[] = [];
-    for (const item of parsed) {
-      if (!item.skill_brief) {
+    for (const raw of parsed) {
+      const item = (raw ?? {}) as { skill_brief?: unknown; relevance?: unknown };
+      const brief = typeof item.skill_brief === 'string' ? item.skill_brief : '';
+      if (!brief) {
         continue;
       }
-      const skill = skillByBrief.get(item.skill_brief);
+      const skill = skillByBrief.get(brief);
       if (skill) {
         result.push({
           skill_id: skill.id,
           skill_brief: skill.skill_brief,
           relevance: typeof item.relevance === 'number' ? item.relevance : 0,
         });
-        skillByBrief.delete(item.skill_brief);
+        skillByBrief.delete(brief);
       }
     }
 

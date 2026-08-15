@@ -12,7 +12,7 @@ import { join } from 'path';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError } from '../../shared/errors';
-import { IdGenerator } from '../../shared/id/IdGenerator';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
 import {
