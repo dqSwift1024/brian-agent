@@ -27,6 +27,8 @@ import {
   VisualizedLogOutput,
   EnableLogInput,
   EnableLogOutput,
+  ConfigLogInput,
+  ConfigLogOutput,
 } from '../domain/types';
 import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
 
@@ -76,6 +78,9 @@ export class LogAccess {
   }
   async enableLog(i: EnableLogInput, c: LogContext, o: EnableLogOutput) {
     return this.service.enableLog(i, c, o);
+  }
+  async configLog(i: ConfigLogInput, c: LogContext, o: ConfigLogOutput) {
+    return this.service.configLog(i, c, o);
   }
   async queryLogs(options: {
     level?: string; source?: string; keyword?: string;

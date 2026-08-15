@@ -35,6 +35,8 @@ import {
   VisualizedLogOutput,
   EnableLogInput,
   EnableLogOutput,
+  ConfigLogInput,
+  ConfigLogOutput,
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
   LOG_RECORD_TABLE,
@@ -62,6 +64,8 @@ export class LogService {
   private retentionDays = 14;
   /** 日志写入模式 */
   private writeMode: WriteMode = 'BOTH';
+  /** 默认日志级别（addLog 未指定 level 时使用，从配置读取，缓存） */
+  private defaultLevel = 'INFO';
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, LOG_CONFIG_TABLE);
@@ -69,10 +73,21 @@ export class LogService {
 
   /** 初始化：写入默认配置、恢复 enabled 状态、加载日志规则、读取文件路径配置 */
   async initialize(): Promise<void> {
+    // 写入默认配置项（仅在配置项不存在时写入，不覆盖已有值）
+    await this.config.initDefaults([
+      { config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN', description: 'LogProvider 是否启用' },
+      { config_key: 'default_level', config_value: 'INFO', value_type: 'STRING', description: '默认日志级别' },
+      { config_key: 'file_path', config_value: './data/logs', value_type: 'STRING', description: '日志文件根目录' },
+      { config_key: 'max_file_size', config_value: String(DEFAULT_MAX_FILE_SIZE), value_type: 'INT', description: '单文件最大大小（字节）' },
+      { config_key: 'retention_days', config_value: '14', value_type: 'INT', description: '日志保留天数' },
+      { config_key: 'write_mode', config_value: 'BOTH', value_type: 'STRING', description: '写入模式' },
+    ]);
+
     this.enabled = await this.config.getBoolean('enabled', true);
     this.logDir = await this.config.getString('file_path', './data/logs') ?? './data/logs';
     this.maxFileSize = await this.config.getInt('max_file_size', DEFAULT_MAX_FILE_SIZE);
     this.retentionDays = await this.config.getInt('retention_days', 14);
+    this.defaultLevel = await this.config.getString('default_level', 'INFO') ?? 'INFO';
     const modeStr = await this.config.getString('write_mode', 'BOTH') ?? 'BOTH';
     this.writeMode = (modeStr === 'BOTH' || modeStr === 'SQLITE' || modeStr === 'FILE') ? modeStr : 'BOTH';
     await this.loadRules();
@@ -271,7 +286,7 @@ export class LogService {
     this.ensureEnabled();
     const data = input.data;
     if (!data.level) {
-      throw new ValidationError('level 不能为空');
+      data.level = this.defaultLevel;
     }
     if (!data.source) {
       throw new ValidationError('source 不能为空');
@@ -647,6 +662,56 @@ export class LogService {
       }
     }
     await this.loadRules();
+    return true;
+  }
+
+  /** 配置日志组件（configLog） */
+  async configLog(
+    input: ConfigLogInput,
+    _context: LogContext,
+    output: ConfigLogOutput,
+  ): Promise<boolean> {
+    if (input.enabled !== undefined) {
+      this.enabled = input.enabled;
+      await this.config.set('enabled', input.enabled, 'BOOLEAN', 'LogProvider 是否启用');
+    }
+    if (input.default_level !== undefined) {
+      if (!['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(input.default_level)) {
+        throw new ValidationError('default_level must be DEBUG/INFO/WARN/ERROR');
+      }
+      this.defaultLevel = input.default_level;
+      await this.config.set('default_level', input.default_level, 'STRING', '默认日志级别');
+    }
+    if (input.file_path !== undefined) {
+      this.logDir = input.file_path;
+      await this.config.set('file_path', input.file_path, 'STRING', '日志文件根目录');
+    }
+    if (input.max_file_size !== undefined) {
+      if (input.max_file_size <= 0) throw new ValidationError('max_file_size must be positive');
+      this.maxFileSize = input.max_file_size;
+      await this.config.set('max_file_size', input.max_file_size, 'INT', '单文件最大大小（字节）');
+    }
+    if (input.retention_days !== undefined) {
+      if (input.retention_days < 0) throw new ValidationError('retention_days must be non-negative');
+      this.retentionDays = input.retention_days;
+      await this.config.set('retention_days', input.retention_days, 'INT', '日志保留天数');
+    }
+    if (input.write_mode !== undefined) {
+      if (!['FILE', 'SQLITE', 'BOTH'].includes(input.write_mode)) {
+        throw new ValidationError('write_mode must be FILE/SQLITE/BOTH');
+      }
+      this.writeMode = input.write_mode as WriteMode;
+      await this.config.set('write_mode', input.write_mode, 'STRING', '写入模式');
+    }
+
+    output.config = {
+      enabled: this.enabled,
+      default_level: this.defaultLevel,
+      file_path: this.logDir,
+      max_file_size: this.maxFileSize,
+      retention_days: this.retentionDays,
+      write_mode: this.writeMode,
+    };
     return true;
   }
 

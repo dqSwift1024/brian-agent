@@ -154,6 +154,37 @@ await logAccess.enableLog(
 );
 ```
 
+#### 3.3.2 configLog
+
+配置日志组件的运行时参数（启用状态、默认级别、文件路径、大小限制、保留天数、写入模式）。
+
+**方法签名**
+
+`Boolean configLog(ConfigLogInput input, LogContext context, ConfigLogOutput output)`
+
+**入参（ConfigLogInput）**
+
+| 字段 | 类型 | 必填 | 说明 |
+| ------ | ---- | ---- | ---- |
+| enabled | BOOLEAN | 否 | 日志组件是否启用 |
+| default_level | STRING | 否 | 默认日志级别（DEBUG / INFO / WARN / ERROR），`addLog` 未指定 level 时使用 |
+| file_path | STRING | 否 | 日志文件根目录 |
+| max_file_size | INT | 否 | 单文件最大大小（字节） |
+| retention_days | INT | 否 | 日志保留天数 |
+| write_mode | STRING | 否 | 写入模式：FILE / SQLITE / BOTH |
+
+**出参（ConfigLogOutput）**
+
+| 字段 | 类型 | 说明 |
+| ------ | ---- | ---- |
+| config | Object | 当前生效的全部配置 |
+
+**处理逻辑**：
+
+1. 仅更新入参中非 `undefined` 的字段（部分更新）；
+2. 更新 `log_config` 表（upsert），并实时刷新运行时缓存；
+3. `default_level` 校验为 DEBUG / INFO / WARN / ERROR；`write_mode` 校验为 FILE / SQLITE / BOTH；`max_file_size` 为正数；`retention_days` 为非负数。
+
 ### 3.7 查询日志（queryLogs）
 
 **功能**：从 SQLite log_record 表查询日志记录，支持多维过滤和分页。

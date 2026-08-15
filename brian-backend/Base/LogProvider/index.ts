@@ -27,8 +27,10 @@ export {
   VisualizedLogOutput,
   EnableLogInput,
   EnableLogOutput,
+  ConfigLogInput,
+  ConfigLogOutput,
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
 } from './domain/types';
 
-export type { LogData, LogRecord, LogRule } from './domain/types';
+export type { LogData, LogRecord, LogRule, WriteMode } from './domain/types';

@@ -172,6 +172,29 @@ export class EnableLogInput extends Input {
 export class EnableLogOutput extends Output {}
 
 // ---------------------------------------------------------------------------
+// configLog - 配置日志组件
+// ---------------------------------------------------------------------------
+
+export class ConfigLogInput extends Input {
+  /** 日志组件是否启用 */
+  enabled?: boolean;
+  /** 默认日志级别（addLog 未指定 level 时使用） */
+  default_level?: string;
+  /** 日志文件根目录 */
+  file_path?: string;
+  /** 单文件最大大小（字节） */
+  max_file_size?: number;
+  /** 日志保留天数 */
+  retention_days?: number;
+  /** 写入模式：FILE / SQLITE / BOTH */
+  write_mode?: string;
+}
+
+export class ConfigLogOutput extends Output {
+  config: Record<string, unknown> = {};
+}
+
+// ---------------------------------------------------------------------------
 // 表名与默认配置
 // ---------------------------------------------------------------------------
 
