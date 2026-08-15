@@ -46,7 +46,7 @@
 
 1. 解耦 MCP 和系统，通过 Repository 设计模式为上层提供统一的 MCP 操作接口；
 2. 所有对 MCP 的操作都不能直接进行，都必须要通过 MCPProvider；
-3. 管理四个内置 MCP 市场（阿里云百炼、ModelScope、Smithery、GitHub），市场不可新增/删除，仅可启用/禁用；
+3. 管理四个内置 MCP 市场（阿里云百炼、ModelScope、Smithery、GitHub），市场数据存于 SQLite，通过接口 CRUD，支持启用/禁用；
 4. 从各市场搜索和刷新可用的 MCP 工具列表，缓存到本地数据库；
 5. 管理 MCP 工具的安装/启动/停止/卸载/查询；
 6. 通过统一的 MCP Client 调用已安装的工具，接管 MCP 调用请求；
@@ -109,9 +109,19 @@
 
 ## 3. 功能设计
 
-### 3.1. MCP 市场管理（内置，不可新增/删除）
+### 3.1. MCP 市场管理（内置市场，存于 SQLite，支持接口 CRUD）
 
-四个内置市场在系统初始化时自动创建，仅支持查询、启用/禁用、测试连接。
+四个内置市场（阿里云百炼、ModelScope、Smithery、GitHub）数据保存在 SQLite `mcp_provider` 表中。系统不再在启动时通过硬编码种子常量自动写入市场数据，市场数据通过接口进行增删改查：
+
+- `addMcpProvider`（新增市场，`id` 为 UUID，`provider_code` 为语义编码）
+- `updateMcpProvider`（更新市场，如修改 url/title/brief/enable）
+- `delMcpProvider`（删除市场，级联清理 `mcp_cache` / `mcp_install`）
+- `soMcpProvider`（查询市场）
+- `testMcpProvider`（测试连通性）
+
+对应 HTTP 路由：`POST /api/config/mcp/provider`、`PUT /api/config/mcp/provider/:id`、`DELETE /api/config/mcp/provider/:id`、`GET /api/config/mcp/market`（前端一次拉取全部市场）。
+
+> 注：原 PRD 中「四个市场不可新增/删除」已调整为「支持接口 CRUD」；市场数据由 SQLite 作为唯一数据源。
 
 #### 3.1.1. 搜索 MCP 市场（soMcpMarket）
 
@@ -326,14 +336,16 @@
 | auth_config | 认证配置 | JSON | Y | | 如 `{"api_key_field":"DASHSCOPE_API_KEY","env_var":"DASHSCOPE_API_KEY"}` |
 | enable | 是否启用 | BOOLEAN | N | | 默认 true |
 
-**默认数据（init 时自动创建）**：
+**内置市场数据（存于 SQLite，不再由代码硬编码种子写入）**：
 
-| market_key | market_name | market_url | auth_type | auth_config |
-|-----------|------------|-----------|-----------|-------------|
-| `aliyun_bailian` | 阿里云百炼 | https://dashscope.aliyuncs.com | api_key | `{"api_key_field":"DASHSCOPE_API_KEY"}` |
-| `modelscope` | ModelScope | https://modelscope.cn | api_key | `{"api_key_field":"MODELSCOPE_API_KEY"}` |
-| `smithery` | Smithery | https://smithery.ai/api | api_key | `{"api_key_field":"SMITHERY_API_KEY"}` |
-| `github` | GitHub | https://registry.npmjs.org | env_var | `{"env_vars":["GITHUB_TOKEN"]}` |
+> 内置 MCP 市场数据直接保存在 SQLite 表 `mcp_provider` 中，通过接口进行增删改（不再在启动时由代码硬编码的种子常量 `MCP_DEFAULT_PROVIDERS` 自动写入）。每个市场的 `id` 为 UUID，`provider_code` 为语义编码（aliyun_bailian / modelscope / smithery / github）。
+
+| provider_code | mcp_provider_title | mcp_provider_url | 说明 |
+|-----------|------------|-----------|-------------|
+| `aliyun_bailian` | 阿里云百炼 | https://bailian.aliyun.com | 阿里云百炼官网 |
+| `modelscope` | ModelScope | https://modelscope.cn | 魔搭社区 |
+| `smithery` | Smithery | https://smithery.ai | Smithery 官网 |
+| `github` | GitHub | https://registry.npmjs.org | npm registry |
 
 ### 4.2. MCP 工具缓存表（SQLite）
 
@@ -413,6 +425,8 @@
 
 默认配置项：
 
+> 注：配置默认值不再由代码硬编码常量（`MCP_DEFAULT_CONFIGS`）+ `initDefaults` 启动时自动写入，改由 SQLite 直接保存、运行时按需读取（读取时带默认回退值）。
+
 | config_key | config_value | value_type | description |
 | ------ | ----- | ----- | ----- |
 | enabled | true | BOOLEAN | MCP 组件是否启用 |
@@ -426,7 +440,7 @@
 ## 5. 重要内容
 
 1. MCPProvider 是 MCP 的唯一操作入口，上层不可直接调用 MCP；
-2. 四个 MCP 市场为系统内置，初始化时自动创建，不可新增/删除，仅可启用/禁用；
+2. 四个 MCP 市场数据存于 SQLite，通过接口 CRUD，支持启用/禁用；不再由代码硬编码种子自动写入；
 3. 从市场刷新工具列表时使用各市场对应的 API 搜索，结果缓存到 `mcp_tool` 表；
 4. 安装 MCP 时根据 `install_type` 使用不同策略：npm 通过 `npm install` + stdio transport，http 通过 REST 连接；
 5. 调用 MCP 时根据 `transport_type` 使用 MCP SDK 或直接 HTTP 调用，调用前校验参数与 tool_schema；
@@ -435,3 +449,29 @@
 8. 所有配置项统一存储于 `mcp_config` 表，运行时按需读取；
 9. 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
 10. 市场 API Key 从 mcp_config 表读取，由用户在运行时配置；
+
+## 6. 变更记录
+
+### [2026-08-15] MCP 市场数据由硬编码种子改为 SQLite + 接口 CRUD
+
+**变更原因**：内置 MCP 市场数据原先硬编码于代码（`MCP_DEFAULT_PROVIDERS`），每次启动时由 `seedDefaultProviders()` 写入 SQLite，修改数据需改代码并重启；且前端存在硬编码兜底数据，数据源不唯一。
+
+**修改的方法**：
+- `MCPService.seedDefaultProviders()` — 原始代码：启动时按 `MCP_DEFAULT_PROVIDERS` 清理 + upsert 写入内置市场；改为：删除该方法，市场数据不再由代码写入。
+- `MCPAccess.initialize()` — 原始代码：调用 `seedDefaultProviders()`；改为：删除该方法。
+- `addMcpProvider` / `updateMcpProvider` / `delMcpProvider` — 已在 Service 层存在，本次新增对应 HTTP 路由 `POST/PUT/DELETE /api/config/mcp/provider[/:id]`，使数据可通过接口修改。
+- `mcp_provider` 表新增 `provider_code` 字段（语义编码：github / smithery / aliyun_bailian / modelscope），`id` 为 UUID；`/api/config/mcp/market` 返回 `provider_code`。
+- 移除配置默认值常量 `MCP_DEFAULT_CONFIGS` 及 `MCP_DEFAULT_PROVIDERS`。
+
+**影响的端点**：
+- `GET /api/config/mcp/market` — 从 SQLite 读取，返回 `id`（UUID）+ `provider_code` + 标题/URL/描述/enable。
+- `POST /api/config/mcp/provider` — 新增市场。
+- `PUT /api/config/mcp/provider/:id` — 更新市场（url/title/brief/enable）。
+- `DELETE /api/config/mcp/provider/:id` — 删除市场（级联清理 cache/install）。
+- 前端 `/api/config/mcp/market` 一次拉取全部市场，不再有硬编码兜底数据。
+
+**市场 URL 修正**：`aliyun_bailian` → `https://bailian.aliyun.com`，`smithery` → `https://smithery.ai`（原 `dashscope.aliyuncs.com`、`api.smithery.ai` 为 API 网关，根路径 404，改为可正常访问的官网）。
+
+**可能存在的问题**：
+- 全新安装（空库）不再自动生成内置市场数据，需通过接口手动创建或由部署流程预置数据。
+- 原 PRD 中 `mcp_market` 表设计（market_key/market_name/auth_type 等）与实现中的 `mcp_provider` 表（provider_code/mcp_provider_title 等）存在差异，本 PRD 仅同步了本次变更，未整体重写表结构定义。

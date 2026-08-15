@@ -41,7 +41,6 @@ import {
   SKILL_TABLE,
   SKILL_USAGE_TABLE,
   SKILL_CONFIG_TABLE,
-  SKILL_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 const JS_SANDBOX_TIMEOUT_MS = 5000;
@@ -61,7 +60,6 @@ export class SkillService {
   }
 
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...SKILL_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

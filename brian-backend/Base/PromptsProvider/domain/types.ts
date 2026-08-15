@@ -203,17 +203,3 @@ export const PROMPT_TEMPLATE_USAGE_TABLE = 'prompt_template_usage';
 
 /** prompts_config 配置表名 */
 export const PROMPTS_CONFIG_TABLE = 'prompts_config';
-
-/**
- * PromptsProvider 配置表默认配置项。
- *
- * PRD 4.3 节。
- */
-export const PROMPTS_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: 'Prompts 组件是否启用（enablePrompts 读写）',
-  },
-] as const;

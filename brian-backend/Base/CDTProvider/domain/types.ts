@@ -44,52 +44,6 @@ export const CDT_CHROME_PATHS: Record<string, string[]> = {
   ],
 };
 
-/** 用于 listCDT 的默认配置记录 */
-export const CDT_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'boolean',
-    description: '是否启用 CDT（Chrome DevTools）',
-  },
-  {
-    config_key: 'port',
-    config_value: String(CDT_DEFAULT_PORT),
-    value_type: 'integer',
-    description: 'CDT 远程调试端口',
-  },
-  {
-    config_key: 'chrome_path',
-    config_value: '',
-    value_type: 'string',
-    description: 'Chrome 可执行文件路径（留空则自动检测）',
-  },
-  {
-    config_key: 'headless',
-    config_value: 'false',
-    value_type: 'boolean',
-    description: '是否以无头模式运行 Chrome',
-  },
-  {
-    config_key: 'profile_dir',
-    config_value: CDT_DEFAULT_PROFILE_DIR,
-    value_type: 'string',
-    description: 'Chrome 用户数据目录（相对于 data 目录）',
-  },
-  {
-    config_key: 'window_width',
-    config_value: '1920',
-    value_type: 'integer',
-    description: '浏览器窗口宽度',
-  },
-  {
-    config_key: 'window_height',
-    config_value: '1080',
-    value_type: 'integer',
-    description: '浏览器窗口高度',
-  },
-];
-
 // ============================================================
 // CDT 配置表记录
 // ============================================================

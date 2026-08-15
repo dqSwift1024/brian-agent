@@ -211,21 +211,3 @@ export const LLM_PROVIDER_QUOTA_TABLE = 'llm_provider_quota';
  * 而本表面向按提供商维度的配额用量记录（含 timestamp、tokens_used、call_count）。
  */
 export const LLM_CORE_USAGE_TABLE = 'llm_core_usage';
-
-/**
- * LLMCoreProvider 配置表默认配置项。
- */
-export const LLM_CORE_DEFAULT_CONFIGS = [
-  {
-    config_key: 'regen_rate',
-    config_value: '75',
-    value_type: 'INT',
-    description: 'LLM 重新匹配概率（0-100），值越大越倾向于重新评估',
-  },
-  {
-    config_key: 'prompt_template_id',
-    config_value: '',
-    value_type: 'STRING',
-    description: '用于 LLM 匹配排名的 Prompt 模板 ID',
-  },
-] as const;

@@ -150,6 +150,8 @@
 
 ## 3. 内置策略定义
 
+> 注：内置策略（CoT / ReAct / Plan-and-Solve）数据保存于 SQLite `agent_strategy` 表中，不再由代码硬编码常量（`DEFAULT_STRATEGIES`）+ `insertDefaultStrategies()` 在启动时自动写入。以下策略定义仅作为策略执行规则的说明参考。
+
 ### 3.1. 策略执行规则格式
 
 每个策略的 `execution_rule` 是一个 JSON 对象，定义原子操作的执行顺序和条件控制：

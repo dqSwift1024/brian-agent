@@ -130,6 +130,12 @@ export const configApi = {
   mcp: {
     list: () => request<unknown[]>('/config/mcp'),
     market: () => request<unknown[]>('/config/mcp/market'),
+    createProvider: (data: Record<string, unknown>) =>
+      request<{ id: string }>('/config/mcp/provider', { method: 'POST', body: JSON.stringify(data) }),
+    updateProvider: (id: string, data: Record<string, unknown>) =>
+      request<void>(`/config/mcp/provider/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteProvider: (id: string) =>
+      request<void>(`/config/mcp/provider/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     update: (id: string, data: Record<string, unknown>) =>
       request<void>(`/config/mcp/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) =>

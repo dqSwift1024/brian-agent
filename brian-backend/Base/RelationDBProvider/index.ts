@@ -34,7 +34,6 @@ export {
   CloseDBInput,
   CloseDBOutput,
   RELATIONDB_CONFIG_TABLE,
-  RELATIONDB_DEFAULT_CONFIGS,
 } from './domain/types';
 
 // infrastructure 层（供高级用法）

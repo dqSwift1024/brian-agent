@@ -42,7 +42,6 @@ import {
   PROMPT_TEMPLATE_TABLE,
   PROMPT_TEMPLATE_USAGE_TABLE,
   PROMPTS_CONFIG_TABLE,
-  PROMPTS_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 /**
@@ -70,7 +69,6 @@ export class PromptsService {
    * 初始化：写入默认配置并恢复 enabled 状态。
    */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...PROMPTS_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

@@ -62,7 +62,6 @@ import {
   LLM_AVAILABLE_TABLE,
   LLM_USAGE_TABLE,
   LLM_CONFIG_TABLE,
-  LLM_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 /** testLLMProvider 默认连接超时时间（毫秒） */
@@ -115,7 +114,6 @@ export class LLMService {
    * PRD 3.4.2 注：组件初始化时从 llm_config 读取 enabled 状态以恢复上次的可用状态。
    */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...LLM_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

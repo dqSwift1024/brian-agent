@@ -38,7 +38,6 @@ import {
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
   LOG_RECORD_TABLE,
-  LOG_DEFAULT_CONFIGS,
   type WriteMode,
 } from '../domain/types';
 
@@ -70,7 +69,6 @@ export class LogService {
 
   /** 初始化：写入默认配置、恢复 enabled 状态、加载日志规则、读取文件路径配置 */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...LOG_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
     this.logDir = await this.config.getString('file_path', './data/logs') ?? './data/logs';
     this.maxFileSize = await this.config.getInt('max_file_size', DEFAULT_MAX_FILE_SIZE);

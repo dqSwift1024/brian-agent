@@ -102,6 +102,9 @@ import {
 import {
   McpContext, ListMcpInput, ListMcpOutput,
   SoMcpProviderInput, SoMcpProviderOutput,
+  AddMcpProviderInput, AddMcpProviderOutput,
+  UpdateMcpProviderInput, UpdateMcpProviderOutput,
+  DelMcpProviderInput, DelMcpProviderOutput,
   InstallMcpInput, InstallMcpOutput,
   StartMcpInput, StartMcpOutput,
   StopMcpInput, StopMcpOutput,
@@ -898,17 +901,39 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ---- MCP Market: list from database ----
       } else if (method === 'GET' && pathname === '/api/config/mcp/market') {
-        const rows = ctx.relationDb.queryRaw<{ id: string; mcp_provider_title: string; mcp_provider_url: string; mcp_provider_brief: string | null; enable: number }>(
-          'SELECT "id", "mcp_provider_title", "mcp_provider_url", "mcp_provider_brief", "enable" FROM "mcp_provider" ORDER BY "mcp_provider_title" ASC',
+        const rows = ctx.relationDb.queryRaw<{ id: string; provider_code: string | null; mcp_provider_title: string; mcp_provider_url: string; mcp_provider_brief: string | null; enable: number }>(
+          'SELECT "id", "provider_code", "mcp_provider_title", "mcp_provider_url", "mcp_provider_brief", "enable" FROM "mcp_provider" ORDER BY "mcp_provider_title" ASC',
           [],
         );
         sendJson(res, 200, (rows || []).map(r => ({
           id: r.id,
+          provider_code: r.provider_code || '',
           mcp_provider_title: r.mcp_provider_title,
           mcp_provider_url: r.mcp_provider_url,
           mcp_provider_brief: r.mcp_provider_brief || '',
           enable: !!r.enable,
         })));
+
+      // ---- MCP Provider CRUD ----
+      } else if (method === 'POST' && pathname === '/api/config/mcp/provider') {
+        const input = Object.assign(new AddMcpProviderInput(), { data: body });
+        const output = new AddMcpProviderOutput();
+        await ctx.configAccess.addMcpProvider(input, new McpContext(), output);
+        sendJson(res, 201, { id: output.id });
+
+      } else if (method === 'PUT' && /^\/api\/config\/mcp\/provider\/[^/]+$/.test(pathname)) {
+        const id = pathname.split('/api/config/mcp/provider/')[1];
+        const input = Object.assign(new UpdateMcpProviderInput(), { id, data: body.data || body });
+        const output = new UpdateMcpProviderOutput();
+        await ctx.configAccess.updateMcpProvider(input, new McpContext(), output);
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'DELETE' && /^\/api\/config\/mcp\/provider\/[^/]+$/.test(pathname)) {
+        const id = pathname.split('/api/config/mcp/provider/')[1];
+        const input = Object.assign(new DelMcpProviderInput(), { ids: [id] });
+        const output = new DelMcpProviderOutput();
+        await ctx.configAccess.delMcpProvider(input, new McpContext(), output);
+        sendJson(res, 200, { success: true, affected_rows: output.affected_rows });
 
       // ---- MCP Market: test connectivity ----
       } else if (method === 'POST' && /\/api\/config\/mcp\/provider\/[^/]+\/test$/.test(pathname)) {

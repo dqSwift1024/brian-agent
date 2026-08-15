@@ -261,35 +261,3 @@ export const VECTOR_RECORD_TABLE = 'vector_record';
 
 /** VectorDBProvider 配置表名（存储于关系数据库） */
 export const VECTORDB_CONFIG_TABLE = 'vectordb_config';
-
-/**
- * VectorDBProvider 配置表默认配置项。
- *
- * PRD 4.2 节。
- */
-export const VECTORDB_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: '向量数据库是否启用（enableVectorDB 读写）',
-  },
-  {
-    config_key: 'default_top_k',
-    config_value: '10',
-    value_type: 'INT',
-    description: '默认返回结果数量（soVector 读取）',
-  },
-  {
-    config_key: 'default_similarity_threshold',
-    config_value: '0',
-    value_type: 'DOUBLE',
-    description: '归一化相似度阈值 (0-100)，低于此值不返回；0 返回全部结果',
-  },
-  {
-    config_key: 'default_distance_metric',
-    config_value: 'COSINE',
-    value_type: 'STRING',
-    description: '默认距离度量方式（COSINE / L2 / IP）',
-  },
-] as const;

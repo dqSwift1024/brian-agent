@@ -1,5 +1,4 @@
 import type { RelationDBAccess } from '@brian-agent/base';
-import { IdGenerator } from '@brian-agent/base';
 import {
   MCP_CORE_CONFIG_TABLE,
   AGENT_MCP_TABLE,
@@ -48,23 +47,5 @@ export class MCPCoreSchemaInitializer {
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${AGENT_MCP_USAGE_TABLE}_agent_mcp_id" ON "${AGENT_MCP_USAGE_TABLE}" ("agent_mcp_id")`,
     );
-
-    this.seedDefaultConfig();
-  }
-
-  private seedDefaultConfig(): void {
-    const existing = this.relationDb.queryRaw<{ count: number }>(
-      `SELECT COUNT(*) as count FROM "${MCP_CORE_CONFIG_TABLE}"`,
-    );
-    if (existing[0]?.count === 0) {
-      const now = IdGenerator.now();
-      this.relationDb.insert(MCP_CORE_CONFIG_TABLE, [
-        { field: 'id', value: IdGenerator.generate() },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'regen_rate', value: DEFAULT_REGENERATE_RATE },
-        { field: 'prompt_template_id', value: null },
-      ]);
-    }
   }
 }

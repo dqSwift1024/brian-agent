@@ -186,17 +186,3 @@ export const SOUL_USAGE_TABLE = 'soul_usage';
 
 /** soul_config 配置表名 */
 export const SOUL_CONFIG_TABLE = 'soul_config';
-
-/**
- * SoulProvider 配置表默认配置项。
- *
- * PRD 4.3 节。
- */
-export const SOUL_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: 'Soul 组件是否启用（enableSoul 读写）',
-  },
-] as const;

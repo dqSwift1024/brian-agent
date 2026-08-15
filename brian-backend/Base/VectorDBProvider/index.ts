@@ -37,7 +37,6 @@ export {
   CloseVectorDBOutput,
   VECTOR_RECORD_TABLE,
   VECTORDB_CONFIG_TABLE,
-  VECTORDB_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type {

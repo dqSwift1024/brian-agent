@@ -40,7 +40,6 @@ import {
   CloseMQOutput,
   QUEUE_MESSAGE_TABLE,
   MQ_CONFIG_TABLE,
-  MQ_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 /**
@@ -72,7 +71,6 @@ export class MQService {
    * PRD 5.5 条：组件初始化时从 mq_config 读取 enabled 状态以恢复上次的可用状态。
    */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...MQ_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

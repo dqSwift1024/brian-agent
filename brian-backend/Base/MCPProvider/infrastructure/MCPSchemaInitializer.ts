@@ -27,12 +27,16 @@ export class MCPSchemaInitializer {
         "id"                   TEXT    NOT NULL PRIMARY KEY,
         "created"              INTEGER NOT NULL,
         "updated"              INTEGER NOT NULL,
+        "provider_code"        TEXT,
         "mcp_provider_url"     TEXT    NOT NULL,
         "mcp_provider_title"   TEXT    NOT NULL,
         "mcp_provider_brief"   TEXT,
         "enable"               INTEGER NOT NULL DEFAULT 1
       )
     `);
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${MCP_PROVIDER_TABLE}" ADD COLUMN "provider_code" TEXT`);
+    } catch { /* 已存在 provider_code 列时忽略 */ }
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${MCP_PROVIDER_TABLE}_created" ON "${MCP_PROVIDER_TABLE}" ("created")`,
     );

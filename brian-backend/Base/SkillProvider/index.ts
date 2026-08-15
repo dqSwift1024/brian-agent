@@ -25,7 +25,6 @@ export {
   SKILL_TABLE,
   SKILL_USAGE_TABLE,
   SKILL_CONFIG_TABLE,
-  SKILL_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type { SkillData, SkillRecord } from './domain/types';

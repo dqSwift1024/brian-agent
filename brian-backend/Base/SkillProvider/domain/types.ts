@@ -219,17 +219,3 @@ export const SKILL_USAGE_TABLE = 'skill_usage';
 
 /** skill_config 配置表名 */
 export const SKILL_CONFIG_TABLE = 'skill_config';
-
-/**
- * SkillProvider 配置表默认配置项。
- *
- * PRD 4.3 节。
- */
-export const SKILL_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: 'Skill 组件是否启用（enableSkill 读写）',
-  },
-] as const;

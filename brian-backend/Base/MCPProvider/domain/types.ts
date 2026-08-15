@@ -19,6 +19,8 @@ export class McpContext extends Context {}
  * 用于新增 MCP 提供商；更新时使用 Partial。
  */
 export interface McpProviderData {
+  /** MCP 提供商语义编码（如 github / smithery / aliyun_bailian / modelscope），用于市场路由匹配 */
+  provider_code?: string;
   /** MCP 提供商地址 */
   mcp_provider_url: string;
   /** MCP 提供商名称 */
@@ -234,52 +236,3 @@ export const MCP_CACHE_TABLE = 'mcp_cache';
 export const MCP_INSTALL_TABLE = 'mcp_install';
 export const MCP_USAGE_TABLE = 'mcp_usage';
 export const MCP_CONFIG_TABLE = 'mcp_config';
-
-/** MCPProvider 默认配置项（PRD 4.5） */
-export const MCP_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: 'MCP 组件是否启用（enableMCP 读写）',
-  },
-  {
-    config_key: 'cache_ttl',
-    config_value: '86400',
-    value_type: 'INT',
-    description: 'MCP 列表缓存有效期（秒，默认 1 天）',
-  },
-] as const;
-
-/** 默认 MCP 市场提供商列表 */
-export const MCP_DEFAULT_PROVIDERS: Array<{
-  mcp_provider_url: string;
-  mcp_provider_title: string;
-  mcp_provider_brief: string;
-  enable: boolean;
-}> = [
-  {
-    mcp_provider_url: 'https://dashscope.aliyuncs.com',
-    mcp_provider_title: '阿里云百炼',
-    mcp_provider_brief: '阿里云 AI 平台的 MCP 服务市场',
-    enable: true,
-  },
-  {
-    mcp_provider_url: 'https://modelscope.cn',
-    mcp_provider_title: 'ModelScope',
-    mcp_provider_brief: '魔搭社区 MCP 广场，社区贡献的优质 MCP 服务器',
-    enable: true,
-  },
-  {
-    mcp_provider_url: 'https://api.smithery.ai',
-    mcp_provider_title: 'Smithery',
-    mcp_provider_brief: '全球 MCP 注册中心，自动 OAuth，支持 HTTP/SSE 连接',
-    enable: true,
-  },
-  {
-    mcp_provider_url: 'https://registry.npmjs.org',
-    mcp_provider_title: 'GitHub',
-    mcp_provider_brief: 'npm 生态的 MCP 服务器，通过 npx/uvx stdio 运行',
-    enable: true,
-  },
-];

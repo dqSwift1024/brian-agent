@@ -29,7 +29,6 @@ import {
   IsCDTRunningInput,
   IsCDTRunningOutput,
   CDT_CONFIG_TABLE,
-  CDT_DEFAULT_CONFIGS,
   CDT_CHROME_PATHS,
   CDT_DEFAULT_PORT,
   CDT_DEFAULT_PROFILE_DIR,
@@ -109,7 +108,6 @@ export class CDTService {
   }
 
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...CDT_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

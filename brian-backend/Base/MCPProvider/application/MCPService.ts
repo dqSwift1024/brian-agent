@@ -146,6 +146,7 @@ export class MCPService {
       { field: 'id', value: id },
       { field: 'created', value: now },
       { field: 'updated', value: now },
+      { field: 'provider_code', value: d.provider_code ?? null },
       { field: 'mcp_provider_url', value: d.mcp_provider_url },
       { field: 'mcp_provider_title', value: d.mcp_provider_title },
       { field: 'mcp_provider_brief', value: d.mcp_provider_brief ?? null },

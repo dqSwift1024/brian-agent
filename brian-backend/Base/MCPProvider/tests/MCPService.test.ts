@@ -47,8 +47,6 @@ import {
   MCP_INSTALL_TABLE,
   MCP_USAGE_TABLE,
   MCP_CONFIG_TABLE,
-  MCP_DEFAULT_CONFIGS,
-  MCP_DEFAULT_PROVIDERS,
 } from '../domain/types';
 import { Operator, Direction } from '../../shared/query';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
@@ -66,7 +64,6 @@ describe('MCPProvider MCPService', () => {
     dbAccess = new RelationDBAccess({ dbPath: path.join(tmpDir, 'test.db') });
     await dbAccess.initialize();
     mcpAccess = new MCPAccess(dbAccess);
-    await mcpAccess.initialize();
   });
 
   afterAll(async () => {
@@ -1009,19 +1006,6 @@ describe('MCPProvider MCPService', () => {
   // Additional edge cases & integration tests
   // ===========================================================================
 
-  describe('config defaults (PRD 4.5)', () => {
-    it('should have enabled and cache_ttl default configs', async () => {
-      for (const cfg of MCP_DEFAULT_CONFIGS) {
-        const row = await dbAccess.selectOne(MCP_CONFIG_TABLE, [
-          { field: 'config_key', operator: Operator.EQ, value: cfg.config_key },
-        ]);
-        expect(row).toBeTruthy();
-        expect(String(row!.config_value)).toBe(cfg.config_value);
-        expect(String(row!.value_type)).toBe(cfg.value_type);
-      }
-    });
-  });
-
   describe('table schema (PRD 4)', () => {
     it('should have mcp_provider table with all required columns', async () => {
       const data = dbAccess.queryRaw<{ name: string }>('PRAGMA table_info(\'mcp_provider\')');
@@ -1094,19 +1078,6 @@ describe('MCPProvider MCPService', () => {
       expect(output.elapsed_ms).toBeDefined();
       expect(typeof output.elapsed_ms).toBe('number');
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
-    });
-  });
-
-  describe('default MCP market providers', () => {
-    it('should seed all default MCP market providers', async () => {
-      for (const p of MCP_DEFAULT_PROVIDERS) {
-        const row = await dbAccess.selectOne(MCP_PROVIDER_TABLE, [
-          { field: 'mcp_provider_url', operator: Operator.EQ, value: p.mcp_provider_url },
-        ]);
-        expect(row).toBeTruthy();
-        expect(row!.mcp_provider_title).toBe(p.mcp_provider_title);
-        expect(row!.enable).toBe(1);
-      }
     });
   });
 });

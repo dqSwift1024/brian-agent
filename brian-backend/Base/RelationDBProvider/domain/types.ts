@@ -221,20 +221,6 @@ export class CloseDBInput extends Input {}
 export class CloseDBOutput extends Output {}
 
 /**
- * RelationDBProvider 配置表默认配置项。
- *
- * 遵循 PRD 4.1 节：relationdb_config 表默认配置。
- */
-export const RELATIONDB_DEFAULT_CONFIGS = [
-  {
-    config_key: 'enabled',
-    config_value: 'true',
-    value_type: 'BOOLEAN',
-    description: '关系数据库是否启用（enableDB 读写）',
-  },
-] as const;
-
-/**
  * RelationDBProvider 配置表名。
  */
 export const RELATIONDB_CONFIG_TABLE = 'relationdb_config';

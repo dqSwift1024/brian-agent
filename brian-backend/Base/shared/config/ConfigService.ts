@@ -127,7 +127,7 @@ export interface IConfigStorage {
  * 用法示例：
  * ```typescript
  * const config = new ConfigService(configStorage, 'graphdb_config');
- * await config.initDefaults(GRAPHDB_DEFAULT_CONFIGS);
+ * await config.initDefaults([{ config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN' }]);
  * const enabled = await config.getBoolean('enabled', true);
  * ```
  */

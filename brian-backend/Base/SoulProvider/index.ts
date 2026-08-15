@@ -27,7 +27,6 @@ export {
   SOUL_TABLE,
   SOUL_USAGE_TABLE,
   SOUL_CONFIG_TABLE,
-  SOUL_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type { SoulData, SoulRecord } from './domain/types';

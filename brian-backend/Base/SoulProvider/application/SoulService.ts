@@ -40,7 +40,6 @@ import {
   SOUL_TABLE,
   SOUL_USAGE_TABLE,
   SOUL_CONFIG_TABLE,
-  SOUL_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 /**
@@ -65,10 +64,9 @@ export class SoulService {
   }
 
   /**
-   * 初始化：写入默认配置并恢复 enabled 状态。
+   * 初始化：恢复 enabled 状态。
    */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...SOUL_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

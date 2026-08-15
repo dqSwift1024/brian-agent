@@ -28,7 +28,6 @@ export {
   MESSAGE_STATUS_FAILED,
   QUEUE_MESSAGE_TABLE,
   MQ_CONFIG_TABLE,
-  MQ_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type { MessageData, MessageRecord, QueueStats } from './domain/types';

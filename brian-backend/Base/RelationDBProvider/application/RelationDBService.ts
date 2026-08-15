@@ -35,7 +35,6 @@ import {
   CloseDBInput,
   CloseDBOutput,
   RELATIONDB_CONFIG_TABLE,
-  RELATIONDB_DEFAULT_CONFIGS,
 } from '../domain/types';
 import { ComponentDisabledError, DatabaseError } from '../../shared/errors';
 import { Operator } from '../../shared/query';
@@ -70,23 +69,6 @@ export class RelationDBService {
    * PRD 5.7 条：组件初始化时从 relationdb_config 读取 enabled 状态以恢复上次的可用状态。
    */
   async initialize(): Promise<void> {
-    // 写入默认配置（不覆盖已有值）
-    for (const item of RELATIONDB_DEFAULT_CONFIGS) {
-      const exists = this.repository.count(RELATIONDB_CONFIG_TABLE, [
-        { field: 'config_key', operator: Operator.EQ, value: item.config_key },
-      ]);
-      if (exists === 0) {
-        const data: DataObject[] = [
-          { field: 'config_key', value: item.config_key },
-          { field: 'config_value', value: item.config_value },
-          { field: 'value_type', value: item.value_type },
-          { field: 'description', value: item.description },
-          { field: 'updated', value: IdGenerator.now() },
-        ];
-        this.repository.insert(RELATIONDB_CONFIG_TABLE, data);
-      }
-    }
-
     // 恢复 enabled 状态
     const row = this.repository.selectOne({
       table: RELATIONDB_CONFIG_TABLE,

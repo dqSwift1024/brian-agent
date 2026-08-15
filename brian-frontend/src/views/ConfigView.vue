@@ -8,7 +8,7 @@ import {
   Settings, FileText, Network, User, MessageCircle, Sparkles,
   ChevronRight, Trash2, Loader2, Check, AlertCircle,
   Star, FlaskConical, X, Save, Layers, Eraser,
-  Globe, Key, Plus, Pencil, Download,
+  Globe, Key, Plus, Pencil, Download, ExternalLink,
   Eye, EyeOff,
   Search, Monitor, Terminal, MessageSquare, Send,
   BarChart3, Zap, Plug, Radio,
@@ -1793,6 +1793,7 @@ async function handleToggleMcp(mcpId: string) {
 
 interface BackendMcpProvider {
   id: string
+  provider_code?: string
   mcp_provider_title?: string
   mcp_provider_url?: string
   mcp_provider_brief?: string
@@ -1807,13 +1808,6 @@ interface McpMarketTool {
   install_cmd?: string
   installed?: boolean
 }
-
-const BUILTIN_MCP_MARKETS: BackendMcpProvider[] = [
-  { id: 'aliyun_bailian', mcp_provider_title: '阿里云百炼', mcp_provider_url: 'https://dashscope.aliyuncs.com', mcp_provider_brief: '阿里云 AI 平台的 MCP 服务市场，需配置 DashScope API Key', enable: true, _displayName: '阿里云百炼' },
-  { id: 'modelscope', mcp_provider_title: 'ModelScope', mcp_provider_url: 'https://modelscope.cn', mcp_provider_brief: '魔搭社区 MCP 广场，社区贡献的优质 MCP 服务器', enable: true, _displayName: 'ModelScope' },
-  { id: 'smithery', mcp_provider_title: 'Smithery', mcp_provider_url: 'https://smithery.ai/api', mcp_provider_brief: '全球 MCP 注册中心，自动 OAuth，支持 HTTP/SSE 连接', enable: true, _displayName: 'Smithery' },
-  { id: 'github', mcp_provider_title: 'GitHub', mcp_provider_url: 'https://registry.npmjs.org', mcp_provider_brief: 'npm 生态的 MCP 服务器，通过 npx/uvx stdio 运行', enable: true, _displayName: 'GitHub' },
-]
 
 const MCP_TOOL_CACHE_TTL = 24 * 60 * 60 * 1000
 const mcpToolCache = new Map<string, { tools: McpMarketTool[]; timestamp: number }>()
@@ -1926,16 +1920,16 @@ async function loadMcpProviders() {
   mcpProvidersLoading.value = true
   try {
     const list = await configApi.mcp.market()
-    if (list && (list as unknown[]).length > 0) {
-      mcpProviders.value = ((list || []) as BackendMcpProvider[]).map(p => ({
+    mcpProviders.value = ((list || []) as BackendMcpProvider[]).map(p => {
+      const code = p.provider_code || p.id
+      return {
         ...p,
-        _displayName: p.mcp_provider_title || p.id,
-      }))
-    } else {
-      mcpProviders.value = BUILTIN_MCP_MARKETS
-    }
+        provider_code: code,
+        _displayName: p.mcp_provider_title || code,
+      }
+    })
   } catch {
-    mcpProviders.value = BUILTIN_MCP_MARKETS
+    mcpProviders.value = []
   } finally {
     mcpProvidersLoading.value = false
   }
@@ -2068,7 +2062,7 @@ async function handleTestMcpProvider(providerId: string) {
 }
 
 async function handleToggleMcpProvider(providerId: string) {
-  const p = mcpProviders.value.find(pr => pr.id === providerId)
+  const p = mcpProviders.value.find(pr => (pr.provider_code || pr.id) === providerId)
   if (!p) return
   const newEnabled = !p.enable
   try {
@@ -4015,7 +4009,7 @@ watch(activeSubSection, async (val) => {
                 <div class="flex items-center gap-2">
                   <Globe :size="16" class="text-brian-blue" />
                   <h2 class="text-base font-semibold text-apple-gray-900 dark:text-apple-gray-50">
-                    {{ mcpProviders.find(p => p.id === mcpMarketSelectedProvider)?._displayName || '' }}
+                    {{ mcpProviders.find(p => (p.provider_code || p.id) === mcpMarketSelectedProvider)?._displayName || '' }}
                   </h2>
                 </div>
                 <div class="flex-1" />
@@ -4095,28 +4089,35 @@ watch(activeSubSection, async (val) => {
               <Globe :size="28" class="text-apple-gray-400 mb-3" />
               <p class="text-sm text-apple-gray-500">暂无 MCP 市场数据</p>
             </div>
-            <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
               <div
                 v-for="p in mcpProviders" :key="p.id"
-                class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-all cursor-pointer p-4 group"
-                @click="toggleMcpMarket(p.id)"
+                class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-all cursor-pointer p-4 group aspect-[3/2] flex flex-col"
+                @click="toggleMcpMarket(p.provider_code || p.id)"
               >
-                <div class="flex items-start justify-between mb-3">
-                  <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <div class="mb-3">
+                  <div class="flex items-center gap-2.5 mb-2">
                     <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue group-hover:bg-brian-blue/20 transition-colors"><Globe :size="18" /></div>
-                    <div class="min-w-0">
-                      <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ p._displayName || p.id }}</h3>
-                      <p class="text-[11px] text-apple-gray-400 line-clamp-2">{{ p.mcp_provider_brief || '' }}</p>
-                    </div>
+                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate flex-1 min-w-0">{{ p._displayName || p.id }}</h3>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400 flex-shrink-0">内置</span>
                   </div>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400 flex-shrink-0 ml-2">内置</span>
+                  <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="p.mcp_provider_brief">{{ p.mcp_provider_brief || '' }}</p>
                 </div>
-                <p class="text-[11px] text-apple-gray-600 dark:text-apple-gray-300 font-mono bg-apple-gray-100 dark:bg-apple-gray-900/60 rounded px-2 py-1 truncate mb-3">
-                  {{ p.mcp_provider_url || '' }}
-                </p>
-                <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700" @click.stop>
-                  <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="handleTestMcpProvider(p.id)"><FlaskConical :size="11" /> 测试</button>
-                  <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openMcpConfigModal(p.id)"><Key :size="11" /> 配置</button>
+                <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto" @click.stop>
+                  <div class="flex items-center gap-1.5">
+                    <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="handleTestMcpProvider(p.provider_code || p.id)"><FlaskConical :size="11" /> 测试</button>
+                    <a
+                      v-if="p.mcp_provider_url"
+                      :href="p.mcp_provider_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors"
+                    >
+                      <ExternalLink :size="11" />
+                      访问官网
+                    </a>
+                  </div>
+                  <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openMcpConfigModal(p.provider_code || p.id)"><Key :size="11" /> 配置</button>
                 </div>
               </div>
             </div>
@@ -4127,7 +4128,7 @@ watch(activeSubSection, async (val) => {
                 <div v-if="mcpConfigModalVisible" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="closeMcpConfigModal">
                   <div class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6">
                     <h2 class="text-lg font-semibold text-apple-gray-900 dark:text-apple-gray-50 mb-1">
-                      {{ mcpProviders.find(p => p.id === mcpConfigProviderId)?._displayName || '' }} 配置
+                      {{ mcpProviders.find(p => (p.provider_code || p.id) === mcpConfigProviderId)?._displayName || '' }} 配置
                     </h2>
                     <p class="text-xs text-apple-gray-400 mb-4">配置 API Key 以启用该市场的完整功能</p>
                     <div class="space-y-3">

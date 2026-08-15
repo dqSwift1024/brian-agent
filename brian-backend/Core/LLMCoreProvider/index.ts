@@ -25,7 +25,6 @@ export {
   AGENT_LLM_TABLE,
   LLM_PROVIDER_QUOTA_TABLE,
   LLM_CORE_USAGE_TABLE,
-  LLM_CORE_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type {

@@ -24,3 +24,6 @@
       1. 系统中调用外部资源（如 LLM、Skill、MCP、Prompts 等）必须通过对应的 Provider/Access 接入层进行调用，不允许各层绕过 Provider 直接访问底层资源；
       2. 各业务模块向内聚合至核心模块，由核心模块统一接管对外部资源的管理和调度，避免出现多个模块各自维护独立的外部资源连接；
       3. 例如：Agent 层调用 LLM 推理必须经由 `LLMAccess.execLLM` → `LLMProvider` 这一条链路，不允许 Agent 层自行建立 HTTP 连接或 SDK 调用；同理 Skill 执行必须经由 `SkillAccess.execSkill`，MCP 调用必须经由 `MCPAccess.execMcp`，Prompt 渲染必须经由 `PromptsAccess.execPrompt`；
+9. 种子数据约定（2026-08-15 起）
+      1. 系统的内置/默认数据（如内置 MCP 市场、Agent 策略等）应直接保存到 SQLite 中，通过接口进行增删改；禁止在代码中硬编码种子常量（如 `*_DEFAULT_PROVIDERS`、`*_DEFAULT_STRATEGIES`）并在启动时自动写入；
+      2. 配置默认值不应通过 `initDefaults` 从硬编码常量在启动时写入；读取配置时应使用带默认回退值的 `getString/getInt/getBoolean`（如 `config.getInt('port', 9222)`）。

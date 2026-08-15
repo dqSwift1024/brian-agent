@@ -44,7 +44,6 @@ export {
   LLM_AVAILABLE_TABLE,
   LLM_USAGE_TABLE,
   LLM_CONFIG_TABLE,
-  LLM_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type {

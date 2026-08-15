@@ -27,7 +27,6 @@ import { IdGenerator } from '../../shared/id/IdGenerator';
 import { Operator } from '../../shared/query';
 import {
   VECTORDB_CONFIG_TABLE,
-  VECTORDB_DEFAULT_CONFIGS,
 } from '../domain/types';
 import type {
   VectorContext,
@@ -91,7 +90,6 @@ export class VectorDBService {
    * 与 initialize() 分离，允许在 LanceDB 组件初始化之前完成配置初始化。
    */
   async initializeConfig(): Promise<void> {
-    await this.config.initDefaults([...VECTORDB_DEFAULT_CONFIGS]);
   }
 
   /**

@@ -75,7 +75,6 @@ import {
   GRAPH_ACTIVATION_EVENT_TABLE,
   GRAPH_EDGE_DAILY_ACTIVATION_TABLE,
   GRAPHDB_CONFIG_TABLE,
-  GRAPHDB_DEFAULT_CONFIGS,
 } from '../domain/types';
 
 /** 一天对应的毫秒数 */
@@ -118,7 +117,6 @@ export class GraphDBService {
    * PRD 3.5.2 注：组件初始化时从 graphdb_config 读取 enabled 状态以恢复上次的可用状态。
    */
   async initialize(): Promise<void> {
-    await this.config.initDefaults([...GRAPHDB_DEFAULT_CONFIGS]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

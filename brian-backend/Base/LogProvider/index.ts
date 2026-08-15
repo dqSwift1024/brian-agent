@@ -29,7 +29,6 @@ export {
   EnableLogOutput,
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
-  LOG_DEFAULT_CONFIGS,
 } from './domain/types';
 
 export type { LogData, LogRecord, LogRule } from './domain/types';
