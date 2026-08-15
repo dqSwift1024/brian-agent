@@ -60,13 +60,26 @@ export class LocalSandbox {
         ? `python3 "${scriptPath}" 2>&1`
         : `bash "${scriptPath}" 2>&1`;
 
-      const stdout = execSync(cmd, {
-        cwd: workDir,
-        timeout: this.timeoutMs,
-        encoding: 'utf-8',
-        maxBuffer: this.maxBufferBytes,
-        env: { ...process.env, ...env },
-      });
+      let stdout = '';
+      try {
+        stdout = execSync(cmd, {
+          cwd: workDir,
+          timeout: this.timeoutMs,
+          encoding: 'utf-8',
+          maxBuffer: this.maxBufferBytes,
+          env: { ...process.env, ...env },
+        });
+      } catch (e) {
+        // 脚本退出码非 0（如业务校验失败）时仍返回其 stdout，保留脚本打印的错误信息
+        stdout = (e as { stdout?: string }).stdout ?? '';
+        if (!stdout.trim()) {
+          const err = e as { code?: string | number; stderr?: string };
+          const code = String(err.code ?? '');
+          stdout = code.includes('TIMEOUT')
+            ? `执行超时（${this.timeoutMs}ms）`
+            : (err.stderr ?? String((e as Error).message ?? ''));
+        }
+      }
 
       return { stdout: stdout.trim() };
     } finally {

@@ -1739,6 +1739,50 @@ async function handleToggleSkill(skillId: string) {
   }
 }
 
+const skillTestModalVisible = ref(false)
+const skillTestTarget = ref<BackendSkill | null>(null)
+const skillTestParams = ref('{}')
+const skillTestResult = ref('')
+const skillTesting = ref(false)
+
+function openSkillTestModal(skill: BackendSkill) {
+  skillTestTarget.value = skill
+  skillTestParams.value = '{}'
+  skillTestResult.value = ''
+  skillTestModalVisible.value = true
+}
+
+function closeSkillTestModal() {
+  skillTestModalVisible.value = false
+  skillTestTarget.value = null
+  skillTestResult.value = ''
+}
+
+async function executeSkillTest() {
+  if (!skillTestTarget.value || skillTesting.value) return
+  let params: Record<string, unknown>
+  try {
+    params = JSON.parse(skillTestParams.value || '{}')
+  } catch {
+    showToast('参数必须是合法的 JSON')
+    return
+  }
+  skillTesting.value = true
+  skillTestResult.value = ''
+  try {
+    const res = await fetchApi<{ result?: unknown }>(`/skill/${encodeURIComponent(skillTestTarget.value.id)}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ params }),
+    })
+    const result = res.result
+    skillTestResult.value = typeof result === 'string' ? result : (result != null ? JSON.stringify(result, null, 2) : '')
+  } catch (e: unknown) {
+    skillTestResult.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    skillTesting.value = false
+  }
+}
+
 // ============================================================
 // MCP 数据
 // ============================================================
@@ -4046,28 +4090,34 @@ watch(activeSubSection, async (val) => {
             <Search :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">没有匹配的 Skill</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
             <div
               v-for="sk in filteredSkills" :key="sk.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openSkillModal(sk)"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Wand2 :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ sk.name || sk.id }}</h3>
                     <p class="text-[11px] text-apple-gray-400">{{ sk.enabled ?? true ? '启用' : '停用' }}</p>
                   </div>
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="(sk.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
                 </div>
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="(sk.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
+                <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="sk.skill_brief || sk.name">{{ sk.skill_brief || sk.name || '暂无描述' }}</p>
               </div>
-              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-3 min-h-[32px] line-clamp-2">{{ sk.skill_brief || sk.name || '暂无描述' }}</p>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openSkillModal(sk)"><Pencil :size="11" /> 编辑</button>
-                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(sk.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="handleToggleSkill(sk.id)">
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(sk.enabled ?? true) ? 'translate-x-4' : ''" />
+              <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-success-green/10 text-success-green hover:bg-success-green/20 transition-colors" @click.stop="openSkillTestModal(sk)">
+                  <FlaskConical :size="11" />
+                  测试
                 </button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleDeleteSkill(sk.id)"><Trash2 :size="11" /> 删除</button>
+                <div class="flex items-center gap-1">
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(sk.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="handleToggleSkill(sk.id)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(sk.enabled ?? true) ? 'translate-x-4' : ''" />
+                  </button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="handleDeleteSkill(sk.id)"><Trash2 :size="11" /> 删除</button>
+                </div>
               </div>
             </div>
           </div>
@@ -5392,6 +5442,41 @@ watch(activeSubSection, async (val) => {
               <Loader2 v-if="skillSubmitting" :size="14" class="animate-spin" />
               <Save v-else :size="14" />
               保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ═══════════════ Skill 测试模态 ═══════════════ -->
+    <Transition name="modal">
+      <div v-if="skillTestModalVisible" class="fixed inset-0 z-[95] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeSkillTestModal" />
+        <div class="relative w-full max-w-xl max-h-[85vh] flex flex-col bg-white dark:bg-apple-gray-800 rounded-2xl shadow-xl border border-apple-gray-200 dark:border-apple-gray-700">
+          <div class="flex items-start justify-between px-5 py-4 border-b border-apple-gray-200 dark:border-apple-gray-700">
+            <div>
+              <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">测试 Skill</h3>
+              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mt-0.5">{{ skillTestTarget?.name || '' }}</p>
+            </div>
+            <button class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="closeSkillTestModal"><X :size="18" /></button>
+          </div>
+          <div class="px-5 py-4 overflow-y-auto space-y-4 flex-1">
+            <div>
+              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">测试参数（JSON）</label>
+              <textarea v-model="skillTestParams" :class="[inputClass, 'font-mono text-xs resize-y']" rows="4" placeholder='{"a": 1, "b": 2}' />
+              <p class="text-[10px] text-apple-gray-400 mt-0.5">JSON 格式，如 {"a":1,"b":2}；空对象 {} 表示无参测试</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">执行结果</label>
+              <pre class="text-xs font-mono bg-apple-gray-50 dark:bg-apple-gray-900/50 border border-apple-gray-100 dark:border-apple-gray-700 rounded-lg p-3 min-h-[120px] max-h-[300px] overflow-auto whitespace-pre-wrap break-all text-apple-gray-700 dark:text-apple-gray-300">{{ skillTestResult || '（执行后显示结果）' }}</pre>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 px-5 py-4 border-t border-apple-gray-200 dark:border-apple-gray-700">
+            <button class="px-4 py-2 text-sm font-medium rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="closeSkillTestModal">关闭</button>
+            <button class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90 transition-colors disabled:opacity-60" :disabled="skillTesting" @click="executeSkillTest">
+              <Loader2 v-if="skillTesting" :size="14" class="animate-spin" />
+              <FlaskConical v-else :size="14" />
+              {{ skillTesting ? '执行中...' : '执行' }}
             </button>
           </div>
         </div>

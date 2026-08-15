@@ -331,7 +331,9 @@ id / created / updated 为系统字段，由 Provider 维护，不通过 Data �
 - 不依赖 Docker / chroot，适用于开发和轻量部署场景；
 - 工作目录：`/tmp/skill-sandbox-{uuid}/`，执行后通过 rmSync 销毁；
 - cwd 限定在工作目录内；
-- 参数通过环境变量 SKILL_PARAM_* 注入，子进程通过 process.env / os.environ 读取。
+- 参数通过环境变量 SKILL_PARAM_* 注入，子进程通过 process.env / os.environ 读取；
+- 脚本退出码非 0 时仍返回其 stdout，保留脚本打印的业务错误信息（如「缺少关键词」）；
+- 执行超时（ETIMEDOUT）或进程被杀且无输出时，返回明确的「执行超时」错误信息，不吞成空串。
 
 ## 6. 重要内容
 
@@ -345,3 +347,20 @@ id / created / updated 为系统字段，由 Provider 维护，不通过 Data �
 8. SkillProvider 用到的所有配置项统一存储于 skill_config 表中；
 9. enableSkill 的启用/禁用状态在组件初始化时恢复，避免状态丢失；
 10. 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
+
+## 7. 变更记录
+
+### [2026-08-15] LocalSandbox 错误信息保留 + 前端 Skill 测试功能
+
+**变更原因**：`execSkill` 执行 Python/Bash 脚本时，脚本退出码非 0 或超时会导致 `execSync` 抛错，脚本打印的错误信息丢失（前端只见「Command failed」或空白）；前端 Skill 卡片缺少测试入口。
+
+**修改的方法**：
+- `LocalSandbox.execute()` — 原始代码：`execSync` 抛错即向上传播，脚本 stdout 丢失；改为：捕获非 0 退出码的 stdout（保留业务错误信息），超时/无输出时返回「执行超时（15s）」明确错误。
+- 前端 Skill 卡片：卡片尺寸与 MCP 实例统一；去掉「编辑」按钮，点击卡片进入编辑弹窗；新增「测试」按钮，打开测试弹窗（输入 JSON 参数 → 执行 → 展示结果）。
+- 删除测试「初始化后应写入默认配置 enabled=true」（该行为在移除硬编码种子数据时已删除，测试未同步）。
+
+**影响的端点**：
+- `POST /api/skill/{id}/exec` — 错误信息现在能正确返回（脚本错误 / 执行超时）。
+
+**可能存在的问题**：
+- 内置「网页搜索」Skill 依赖外网访问 DuckDuckGo，无外网环境下会返回「Network is unreachable」错误（环境限制，非代码问题）。

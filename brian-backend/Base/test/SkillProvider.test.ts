@@ -124,14 +124,6 @@ describe('SkillProvider', () => {
       expect(tableNames).toContain(SKILL_CONFIG_TABLE);
     });
 
-    it('初始化后应写入默认配置 enabled=true', async () => {
-      const rows = relationDb.queryRaw<{ config_key: string; config_value: string }>(
-        `SELECT * FROM "${SKILL_CONFIG_TABLE}" WHERE config_key = 'enabled'`,
-      );
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      expect(rows[0].config_value).toBe('true');
-    });
-
     it('重复初始化应无副作用', async () => {
       await skillAccess.initialize();
 
