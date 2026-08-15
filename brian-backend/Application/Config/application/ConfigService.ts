@@ -1178,7 +1178,6 @@ export class ConfigService {
       const input: any = {};
       if (prefix.startsWith('orchestration.strategy.default_strategy_id')) input.default_strategy_id = value as string;
       else if (prefix.startsWith('orchestration.strategy.max_plan_retries')) input.max_plan_retries = value as number;
-      else if (prefix.startsWith('orchestration.strategy.plan_prompt_template_id')) input.plan_prompt_template_id = value as string;
       const output: any = {};
       await this.orchestrationStrategy.configOrchestrationStrategy(input, {} as any, output);
       return;
@@ -1186,8 +1185,6 @@ export class ConfigService {
     if (prefix.startsWith('orchestration.execution')) {
       const input: any = {};
       if (prefix.startsWith('orchestration.execution.max_concurrent')) input.max_concurrent = value as number;
-      else if (prefix.startsWith('orchestration.execution.default_max_iterations')) input.default_max_iterations = value as number;
-      else if (prefix.startsWith('orchestration.execution.async_worker_interval')) input.async_worker_interval = value as number;
       else if (prefix.startsWith('orchestration.execution.dag_timeout_ms')) input.dag_timeout_ms = value as number;
       const output: any = {};
       await this.orchestrationExecution.configOrchestrationExecution(input, {} as any, output);

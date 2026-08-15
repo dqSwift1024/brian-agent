@@ -2,36 +2,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RelationDBAccess, ValidationError, NotFoundError } from '@brian-agent/base';
 import { ConfigService } from '../Config/application/ConfigService';
 import { ConfigSchemaInitializer } from '../Config/infrastructure/ConfigSchemaInitializer';
-import { ConfigContext, RegisterConfigInput, RegisterConfigOutput, UpdateLayerPrivilegeInput, UpdateLayerPrivilegeOutput,
-  UpdateModulePrivilegeInput, UpdateModulePrivilegeOutput, UpdateConfigPrivilegeInput, UpdateConfigPrivilegeOutput,
-  GetPrivilegeTreeInput, GetPrivilegeTreeOutput, GetConfigDetailInput, GetConfigDetailOutput,
+import { ConfigContext, UpdateLayerPrivilegeInput, UpdateLayerPrivilegeOutput,
+  UpdateModulePrivilegeInput, UpdateModulePrivilegeOutput, GetConfigDetailInput, GetConfigDetailOutput,
   GetConfigItemInput, GetConfigItemOutput, UpdateConfigInput, UpdateConfigOutput,
-  ConfigConfigInput, ConfigConfigOutput, type ConfigRegistration } from '../Config/domain/types';
+  ConfigConfigInput, ConfigConfigOutput } from '../Config/domain/types';
 import { setupRealTestEnvironment, cleanupTempDirs, type RealTestContext } from './real-test-helpers';
 
 describe('ConfigService', () => {
   let db: RelationDBAccess;
   let llmAccess: any, soulAccess: any, skillAccess: any, mcpAccess: any, promptsAccess: any;
   let llmCore: any, infoCore: any, mcpCore: any, skillCore: any, soulCore: any;
-  let writerAgent: any, evolutorAgent: any, agentLibrary: any, agentBuilder: any, agentExecution: any, agentStrategy: any, agentContext: any;
+  let writerAgent: any, evolutorAgent: any, plannerAgent: any, agentLibrary: any, agentBuilder: any, agentExecution: any, agentStrategy: any, agentContext: any;
   let orchestrationEntry: any, orchestrationStrategy: any, orchestrationExecution: any, orchestrationVisualization: any, jsonNode: any;
   let chatAccess: any, selfLearningAccess: any, userProfileAccess: any, visualizationAccess: any;
   let logger: any;
   let service: ConfigService;
   let realCtx: RealTestContext;
-
-  function makeReg(overrides: Partial<ConfigRegistration> = {}): ConfigRegistration {
-    return {
-      layer: 'APPLICATION',
-      module: 'test_module',
-      category: 'test_category',
-      config_key: 'test.key',
-      config_name: 'Test Config',
-      config_type: 'STRING',
-      config_default: 'default',
-      ...overrides,
-    };
-  }
 
   function ctx(): ConfigContext { return new ConfigContext(); }
 
@@ -50,6 +36,7 @@ describe('ConfigService', () => {
     soulCore = realCtx.soulCore;
     writerAgent = realCtx.writerAgent;
     evolutorAgent = realCtx.evolutorAgent;
+    plannerAgent = realCtx.plannerAgent;
     agentLibrary = realCtx.agentLibrary;
     agentBuilder = realCtx.agentBuilder;
     agentExecution = realCtx.agentExecution;
@@ -88,180 +75,14 @@ describe('ConfigService', () => {
     new ConfigSchemaInitializer(db).init();
     service = new ConfigService(db, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
-      writerAgent, evolutorAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
+      writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
       orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
-      chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess, logger);
+      chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess);
   });
 
   afterEach(() => {
     cleanupTempDirs();
     vi.restoreAllMocks();
-  });
-
-  // =====================================================================
-  // registerConfig
-  // =====================================================================
-
-  describe('registerConfig', () => {
-    it('TC-CFG-001: Register single config item', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [makeReg({ config_key: 'register.single.001' })];
-
-      const output = new RegisterConfigOutput();
-      const result = await service.registerConfig(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.registered_count).toBe(1);
-    });
-
-    it('TC-CFG-002: Batch register 3 items', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [
-        makeReg({ config_key: 'batch.key1' }),
-        makeReg({ config_key: 'batch.key2' }),
-        makeReg({ config_key: 'batch.key3' }),
-      ];
-      const output = new RegisterConfigOutput();
-      await service.registerConfig(input, ctx(), output);
-      expect(output.registered_count).toBe(3);
-    });
-
-    it('TC-CFG-003: Upsert - same config_key twice updates', async () => {
-      const key = 'upsert.key.003';
-      const input1 = new RegisterConfigInput();
-      input1.registrations = [makeReg({ config_key: key, layer: 'BASE' })];
-      const out1 = new RegisterConfigOutput();
-      await service.registerConfig(input1, ctx(), out1);
-      expect(out1.registered_count).toBe(1);
-
-      const input2 = new RegisterConfigInput();
-      input2.registrations = [makeReg({ config_key: key, layer: 'CORE', config_name: 'Updated' })];
-      const out2 = new RegisterConfigOutput();
-      await service.registerConfig(input2, ctx(), out2);
-      expect(out2.registered_count).toBe(1);
-
-      const getOut = new GetConfigItemOutput();
-      await service.getConfigItem({ config_key: key } as any, ctx(), getOut);
-      expect(getOut.config_item.layer).toBe('CORE');
-      expect(getOut.config_item.config_name).toBe('Updated');
-    });
-
-    it('TC-CFG-004: All required fields provided', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [{
-        layer: 'APPLICATION',
-        module: 'full_module',
-        category: 'full_category',
-        config_key: 'full.test.004',
-        config_name: 'Full Test',
-        config_description: 'description here',
-        config_type: 'INT',
-        config_default: 42,
-        readable: true,
-        writable: true,
-      }];
-      const output = new RegisterConfigOutput();
-      const result = await service.registerConfig(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.registered_count).toBe(1);
-
-      const getOut = new GetConfigItemOutput();
-      await service.getConfigItem({ config_key: 'full.test.004' } as any, ctx(), getOut);
-      expect(getOut.config_item.config_key).toBe('full.test.004');
-      expect(getOut.config_item.config_name).toBe('Full Test');
-      expect(getOut.config_item.config_description).toBe('description here');
-      expect(getOut.config_item.config_type).toBe('INT');
-      expect(getOut.config_item.config_default).toBe(42);
-    });
-
-    it('TC-CFG-005: ENUM type with enum_values', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [{
-        layer: 'APPLICATION',
-        module: 'enum_module',
-        category: 'enum_category',
-        config_key: 'enum.test.005',
-        config_name: 'Enum Test',
-        config_type: 'ENUM',
-        config_default: 'A',
-        config_enum_values: ['A', 'B', 'C'],
-      }];
-      const output = new RegisterConfigOutput();
-      await service.registerConfig(input, ctx(), output);
-
-      const getOut = new GetConfigItemOutput();
-      await service.getConfigItem({ config_key: 'enum.test.005' } as any, ctx(), getOut);
-      expect(getOut.config_item.config_type).toBe('ENUM');
-      expect(getOut.config_item.config_enum_values).toEqual(['A', 'B', 'C']);
-      expect(getOut.config_item.config_default).toBe('A');
-    });
-
-    it('TC-CFG-006: Same config_key registered twice — second is upsert update', async () => {
-      const key = 'upsert.key.006';
-      const input1 = new RegisterConfigInput();
-      input1.registrations = [makeReg({ config_key: key, config_name: 'First', config_type: 'STRING', config_default: 'one' })];
-      const out1 = new RegisterConfigOutput();
-      await service.registerConfig(input1, ctx(), out1);
-
-      const input2 = new RegisterConfigInput();
-      input2.registrations = [makeReg({ config_key: key, config_name: 'Second', config_type: 'INT', config_default: 2 })];
-      const out2 = new RegisterConfigOutput();
-      await service.registerConfig(input2, ctx(), out2);
-
-      const getOut = new GetConfigItemOutput();
-      await service.getConfigItem({ config_key: key } as any, ctx(), getOut);
-      expect(getOut.config_item.config_name).toBe('Second');
-      expect(getOut.config_item.config_type).toBe('INT');
-      expect(getOut.config_item.config_default).toBe(2);
-    });
-
-    it('TC-CFG-007: Invalid layer throws ValidationError', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [makeReg({ layer: 'INVALID_LAYER', config_key: 'invalid.layer.007' })];
-      const output = new RegisterConfigOutput();
-      const result = await service.registerConfig(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.registered_count).toBe(1);
-    });
-
-    it('TC-CFG-008: Invalid config_type throws ValidationError', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [makeReg({ config_type: 'INVALID_TYPE', config_key: 'invalid.type.008' })];
-      const output = new RegisterConfigOutput();
-      const result = await service.registerConfig(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.registered_count).toBe(1);
-    });
-
-    it('TC-CFG-009: Missing required field (config_key) throws ValidationError', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [{ config_key: '' } as any];
-      const output = new RegisterConfigOutput();
-      await expect(service.registerConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
-    });
-
-    it('TC-CFG-011: Empty registrations array returns registered_count=0 (throws ValidationError)', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [];
-      const output = new RegisterConfigOutput();
-      await expect(service.registerConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
-    });
-
-    it('TC-CFG-010: ENUM type without config_enum_values throws ValidationError', async () => {
-      const input = new RegisterConfigInput();
-      input.registrations = [{
-        layer: 'APPLICATION',
-        module: 'enum_module',
-        category: 'enum_category',
-        config_key: 'enum.no.values.010',
-        config_name: 'Enum No Values',
-        config_type: 'ENUM',
-        config_default: 'A',
-      }];
-      const output = new RegisterConfigOutput();
-      const result = await service.registerConfig(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.registered_count).toBe(1);
-    });
   });
 
   // =====================================================================
@@ -435,295 +256,10 @@ describe('ConfigService', () => {
   });
 
   // =====================================================================
-  // updateConfigPrivilege
-  // =====================================================================
-
-  describe('updateConfigPrivilege', () => {
-    const regKey = 'priv.config.reg';
-
-    beforeEach(async () => {
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: regKey, layer: 'APPLICATION', module: 'priv_module' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-    });
-
-    it('TC-CFG-040: Set config unreadable', async () => {
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = regKey;
-      input.readable = false;
-      const output = new UpdateConfigPrivilegeOutput();
-      const result = await service.updateConfigPrivilege(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.privilege.readable).toBe(false);
-    });
-
-    it('TC-CFG-041: Set config unwritable', async () => {
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = regKey;
-      input.writable = false;
-      const output = new UpdateConfigPrivilegeOutput();
-      await service.updateConfigPrivilege(input, ctx(), output);
-      expect(output.privilege.writable).toBe(false);
-    });
-
-    it('TC-CFG-042: Module restricts, config readable=true rejected', async () => {
-      await service.updateModulePrivilege(
-        Object.assign(new UpdateModulePrivilegeInput(), { module: 'priv_module', readable: false }),
-        ctx(),
-        new UpdateModulePrivilegeOutput(),
-      );
-
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = regKey;
-      input.readable = true;
-      const output = new UpdateConfigPrivilegeOutput();
-      await expect(service.updateConfigPrivilege(input, ctx(), output)).rejects.toThrow(ValidationError);
-    });
-
-    it('TC-CFG-043: Module restricts, config writable=true rejected', async () => {
-      await service.updateModulePrivilege(
-        Object.assign(new UpdateModulePrivilegeInput(), { module: 'priv_module', writable: false }),
-        ctx(),
-        new UpdateModulePrivilegeOutput(),
-      );
-
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = regKey;
-      input.writable = true;
-      const output = new UpdateConfigPrivilegeOutput();
-      await expect(service.updateConfigPrivilege(input, ctx(), output)).rejects.toThrow(ValidationError);
-    });
-
-    it('TC-CFG-044: normal privilege update returns effective_readable and effective_writable', async () => {
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = regKey;
-      input.readable = true;
-      input.writable = true;
-      const output = new UpdateConfigPrivilegeOutput();
-      const result = await service.updateConfigPrivilege(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(output.privilege.effective_readable).toBe(true);
-      expect(output.privilege.effective_writable).toBe(true);
-    });
-
-    it('TC-CFG-046: partial update sets only readable, writable keeps previous value', async () => {
-      const firstInput = new UpdateConfigPrivilegeInput();
-      firstInput.config_key = regKey;
-      firstInput.writable = false;
-      const firstOut = new UpdateConfigPrivilegeOutput();
-      await service.updateConfigPrivilege(firstInput, ctx(), firstOut);
-      expect(firstOut.privilege.writable).toBe(false);
-
-      const secondInput = new UpdateConfigPrivilegeInput();
-      secondInput.config_key = regKey;
-      secondInput.readable = false;
-      const secondOut = new UpdateConfigPrivilegeOutput();
-      const result = await service.updateConfigPrivilege(secondInput, ctx(), secondOut);
-      expect(result).toBe(true);
-      expect(secondOut.privilege.readable).toBe(false);
-      expect(secondOut.privilege.writable).toBe(false);
-    });
-
-    it('TC-CFG-045: Non-existent config_key throws NotFoundError', async () => {
-      const input = new UpdateConfigPrivilegeInput();
-      input.config_key = 'non.existent.045';
-      input.readable = false;
-      const output = new UpdateConfigPrivilegeOutput();
-      await expect(service.updateConfigPrivilege(input, ctx(), output)).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  // =====================================================================
-  // getPrivilegeTree
-  // =====================================================================
-
-  describe('getPrivilegeTree', () => {
-    it('TC-CFG-050: Get privilege tree returns layers array', async () => {
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      const result = await service.getPrivilegeTree(input, ctx(), output);
-      expect(result).toBe(true);
-      expect(Array.isArray(output.layers)).toBe(true);
-      expect(output.layers.length).toBeGreaterThan(0);
-    });
-
-    it('TC-CFG-055: Empty tree returns layers with no registrations', async () => {
-      const freshDb = new RelationDBAccess({ dbPath: ':memory:', autoCreateConfigTable: true });
-      await freshDb.initialize();
-      new ConfigSchemaInitializer(freshDb).init();
-      const freshService = new ConfigService(freshDb, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
-        llmCore, infoCore, mcpCore, skillCore, soulCore,
-        writerAgent, evolutorAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
-        orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
-        chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess, logger);
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await freshService.getPrivilegeTree(input, ctx(), output);
-      expect(output.layers.length).toBeGreaterThan(0);
-      for (const layer of output.layers as any[]) {
-        expect((layer.modules as any[]).every((m: any) => (m.categories as any[]).length === 0)).toBe(true);
-      }
-    });
-
-    it('TC-CFG-051: 有效权限计算 — 层级不可见', async () => {
-      const key = 'priv.tree.layer.051';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'priv_tree_mod_051' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-      await service.updateLayerPrivilege(
-        Object.assign(new UpdateLayerPrivilegeInput(), { layer: 'APPLICATION', readable: false }),
-        ctx(),
-        new UpdateLayerPrivilegeOutput(),
-      );
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await service.getPrivilegeTree(input, ctx(), output);
-
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      expect(appLayer).toBeDefined();
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'priv_tree_mod_051');
-      expect(mod).toBeDefined();
-      expect(mod.categories.length).toBeGreaterThan(0);
-      const config = mod.categories[0].items.find((i: any) => i.config_key === key);
-      expect(config).toBeDefined();
-      expect(config.effective_readable).toBe(false);
-    });
-
-    it('TC-CFG-052: 有效权限计算 — 模块不可见', async () => {
-      const key = 'priv.tree.module.052';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'priv_tree_mod_052' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-      await service.updateModulePrivilege(
-        Object.assign(new UpdateModulePrivilegeInput(), { module: 'priv_tree_mod_052', readable: false }),
-        ctx(),
-        new UpdateModulePrivilegeOutput(),
-      );
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await service.getPrivilegeTree(input, ctx(), output);
-
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'priv_tree_mod_052');
-      expect(mod).toBeDefined();
-      const config = mod.categories[0].items.find((i: any) => i.config_key === key);
-      expect(config).toBeDefined();
-      expect(config.effective_readable).toBe(false);
-    });
-
-    it('TC-CFG-053: 有效权限计算 — 模块不可修改', async () => {
-      const key = 'priv.tree.module.wr.053';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'priv_tree_mod_053' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-      await service.updateModulePrivilege(
-        Object.assign(new UpdateModulePrivilegeInput(), { module: 'priv_tree_mod_053', writable: false }),
-        ctx(),
-        new UpdateModulePrivilegeOutput(),
-      );
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await service.getPrivilegeTree(input, ctx(), output);
-
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'priv_tree_mod_053');
-      expect(mod).toBeDefined();
-      const config = mod.categories[0].items.find((i: any) => i.config_key === key);
-      expect(config).toBeDefined();
-      expect(config.effective_writable).toBe(false);
-    });
-
-    it('TC-CFG-054: 有效权限计算 — 多层继承', async () => {
-      const key = 'priv.tree.inherit.054';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'priv_tree_mod_054', writable: true })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-      await service.updateLayerPrivilege(
-        Object.assign(new UpdateLayerPrivilegeInput(), { layer: 'APPLICATION', readable: true, writable: true }),
-        ctx(),
-        new UpdateLayerPrivilegeOutput(),
-      );
-      await service.updateModulePrivilege(
-        Object.assign(new UpdateModulePrivilegeInput(), { module: 'priv_tree_mod_054', readable: true, writable: false }),
-        ctx(),
-        new UpdateModulePrivilegeOutput(),
-      );
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await service.getPrivilegeTree(input, ctx(), output);
-
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'priv_tree_mod_054');
-      expect(mod).toBeDefined();
-      const config = mod.categories[0].items.find((i: any) => i.config_key === key);
-      expect(config).toBeDefined();
-      expect(config.readable).toBe(true);
-      expect(config.effective_readable).toBe(true);
-      expect(config.writable).toBe(true);
-      expect(config.effective_writable).toBe(false);
-    });
-
-    it('TC-CFG-056: 返回字段完整性', async () => {
-      const key = 'priv.tree.complete.056';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'priv_tree_mod_056' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
-      const input = new GetPrivilegeTreeInput();
-      const output = new GetPrivilegeTreeOutput();
-      await service.getPrivilegeTree(input, ctx(), output);
-
-      for (const layer of output.layers as any[]) {
-        expect(layer).toHaveProperty('readable');
-        expect(layer).toHaveProperty('writable');
-        for (const mod of (layer.modules as any[])) {
-          expect(mod).toHaveProperty('readable');
-          expect(mod).toHaveProperty('writable');
-          expect(mod).toHaveProperty('effective_readable');
-          expect(mod).toHaveProperty('effective_writable');
-          for (const cat of (mod.categories as any[])) {
-            for (const item of (cat.items as any[])) {
-              expect(item).toHaveProperty('readable');
-              expect(item).toHaveProperty('writable');
-              expect(item).toHaveProperty('effective_readable');
-              expect(item).toHaveProperty('effective_writable');
-            }
-          }
-        }
-      }
-    });
-  });
-
-  // =====================================================================
   // getConfigDetail
   // =====================================================================
 
   describe('getConfigDetail', () => {
-    beforeEach(async () => {
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [
-        makeReg({ config_key: 'detail.app.key1', layer: 'APPLICATION', module: 'detail_mod', category: 'cat_a', config_name: 'AppKey1' }),
-        makeReg({ config_key: 'detail.core.key1', layer: 'CORE', module: 'detail_mod_core', category: 'cat_b', config_name: 'CoreKey1' }),
-        makeReg({ config_key: 'detail.app.key2', layer: 'APPLICATION', module: 'detail_mod', category: 'cat_a', config_name: 'AppKey2' }),
-      ];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-    });
-
     it('TC-CFG-060: Get full config detail returns layers→modules→categories→configs', async () => {
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
@@ -731,111 +267,99 @@ describe('ConfigService', () => {
       expect(result).toBe(true);
       expect(Array.isArray(output.layers)).toBe(true);
 
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      expect(appLayer).toBeDefined();
-      expect(Array.isArray(appLayer!.modules)).toBe(true);
+      const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
+      expect(orchLayer).toBeDefined();
+      expect(Array.isArray(orchLayer!.modules)).toBe(true);
 
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'detail_mod');
+      const mod = (orchLayer!.modules as any[]).find((m: any) => m.module === 'entry');
       expect(mod).toBeDefined();
       expect(Array.isArray(mod.categories)).toBe(true);
 
-      const cat = (mod.categories as any[]).find((c: any) => c.category === 'cat_a');
+      const cat = (mod.categories as any[]).find((c: any) => c.category === 'basic');
       expect(cat).toBeDefined();
       expect(Array.isArray(cat.items)).toBe(true);
-      expect(cat.items.length).toBe(2);
+      expect(cat.items.length).toBe(5);
 
       const keys = cat.items.map((i: any) => i.config_key);
-      expect(keys).toContain('detail.app.key1');
-      expect(keys).toContain('detail.app.key2');
+      expect(keys).toContain('orchestration.entry.complexity_decompose_threshold');
+      expect(keys).toContain('orchestration.entry.default_strategy');
     });
 
     it('TC-CFG-061: Filter by layer', async () => {
       const input = new GetConfigDetailInput();
-      input.layer = 'CORE';
+      input.layer = 'ORCHESTRATION';
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
       expect(output.layers.length).toBe(1);
-      expect((output.layers[0] as any).layer).toBe('CORE');
+      expect((output.layers[0] as any).layer).toBe('ORCHESTRATION');
     });
 
     it('TC-CFG-062: Filter by module', async () => {
       const input = new GetConfigDetailInput();
-      input.module = 'detail_mod';
+      input.module = 'entry';
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      expect(appLayer).toBeDefined();
-      const mods = (appLayer!.modules as any[]).filter((m: any) => m.module === 'detail_mod');
+      const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
+      expect(orchLayer).toBeDefined();
+      const mods = (orchLayer!.modules as any[]).filter((m: any) => m.module === 'entry');
       expect(mods.length).toBe(1);
     });
 
     it('TC-CFG-063: Filter by category', async () => {
       const input = new GetConfigDetailInput();
-      input.category = 'cat_a';
+      input.category = 'basic';
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      expect(appLayer).toBeDefined();
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'detail_mod');
+      const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
+      expect(orchLayer).toBeDefined();
+      const mod = (orchLayer!.modules as any[]).find((m: any) => m.module === 'entry');
       expect(mod).toBeDefined();
-      const cat = (mod.categories as any[]).find((c: any) => c.category === 'cat_a');
+      const cat = (mod.categories as any[]).find((c: any) => c.category === 'basic');
       expect(cat).toBeDefined();
-      expect(cat.items.length).toBe(2);
+      expect(cat.items.length).toBe(5);
     });
 
     it('TC-CFG-064: Combined filter (layer + module)', async () => {
       const input = new GetConfigDetailInput();
-      input.layer = 'APPLICATION';
-      input.module = 'detail_mod';
+      input.layer = 'ORCHESTRATION';
+      input.module = 'entry';
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
       expect(output.layers.length).toBe(1);
       const layer = output.layers[0] as any;
-      expect(layer.layer).toBe('APPLICATION');
+      expect(layer.layer).toBe('ORCHESTRATION');
       const mods = layer.modules as any[];
-      expect(mods.every((m: any) => m.module === 'detail_mod')).toBe(true);
+      expect(mods.every((m: any) => m.module === 'entry')).toBe(true);
     });
 
-    it('TC-CFG-065: readable_only=true', async () => {
-      await service.updateConfigPrivilege(
-        Object.assign(new UpdateConfigPrivilegeInput(), { config_key: 'detail.app.key1', readable: false }),
-        ctx(),
-        new UpdateConfigPrivilegeOutput(),
-      );
-
+    it('TC-CFG-065: readable_only=true excludes unreadable config', async () => {
       const input = new GetConfigDetailInput();
       input.readable_only = true;
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
       const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'detail_mod') : null;
-      const cat = mod ? (mod.categories as any[]).find((c: any) => c.category === 'cat_a') : null;
+      const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'self_learning') : null;
+      const cat = mod ? (mod.categories as any[]).find((c: any) => c.category === 'weight') : null;
       const items = cat ? (cat.items as any[]) : [];
-      expect(items.every((i: any) => i.config_key !== 'detail.app.key1')).toBe(true);
+      expect(items.every((i: any) => i.config_key !== 'self_learning.conversation_weight')).toBe(true);
     });
 
     it('TC-CFG-066: readable_only=false returns all configs including unreadable', async () => {
-      await service.updateConfigPrivilege(
-        Object.assign(new UpdateConfigPrivilegeInput(), { config_key: 'detail.app.key1', readable: false }),
-        ctx(),
-        new UpdateConfigPrivilegeOutput(),
-      );
-
       const input = new GetConfigDetailInput();
       input.readable_only = false;
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
       const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'detail_mod') : null;
-      const cat = mod ? (mod.categories as any[]).find((c: any) => c.category === 'cat_a') : null;
+      const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'self_learning') : null;
+      const cat = mod ? (mod.categories as any[]).find((c: any) => c.category === 'weight') : null;
       const items = cat ? (cat.items as any[]) : [];
-      expect(items.some((i: any) => i.config_key === 'detail.app.key1')).toBe(true);
+      expect(items.some((i: any) => i.config_key === 'self_learning.conversation_weight')).toBe(true);
     });
 
     it('TC-CFG-067: Each config item contains current_value field', async () => {
@@ -874,30 +398,19 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-070: config_description is returned in config detail', async () => {
-      const key = 'detail.desc.070';
-      const desc = 'A test description for config detail';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, layer: 'APPLICATION', module: 'detail_mod', category: 'cat_a', config_description: desc })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
       await service.getConfigDetail(input, ctx(), output);
 
-      const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
-      expect(appLayer).toBeDefined();
-      const mod = (appLayer!.modules as any[]).find((m: any) => m.module === 'detail_mod');
-      expect(mod).toBeDefined();
-      const cat = (mod.categories as any[]).find((c: any) => c.category === 'cat_a');
-      expect(cat).toBeDefined();
-      const item = (cat.items as any[]).find((i: any) => i.config_key === key);
+      const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
+      const mod = (orchLayer!.modules as any[]).find((m: any) => m.module === 'entry');
+      const cat = (mod.categories as any[]).find((c: any) => c.category === 'basic');
+      const item = (cat.items as any[]).find((i: any) => i.config_key === 'orchestration.entry.complexity_decompose_threshold');
       expect(item).toBeDefined();
-      expect(item.config_description).toBe(desc);
+      expect(item.config_description).toBe('任务复杂度超过此阈值时触发任务分解（选择 PLANNING 策略），否则走 SIMPLE；取值 0-100');
     });
 
-    it('TC-CFG-069: Empty state returns layers with no registrations', async () => {
+    it('TC-CFG-069: Static registrations are always present', async () => {
       const freshDb = new RelationDBAccess({ dbPath: ':memory:', autoCreateConfigTable: true });
       await freshDb.initialize();
       new ConfigSchemaInitializer(freshDb).init();
@@ -911,9 +424,6 @@ describe('ConfigService', () => {
       const output = new GetConfigDetailOutput();
       await freshService.getConfigDetail(input, ctx(), output);
       expect(output.layers.length).toBeGreaterThan(0);
-      for (const layer of output.layers as any[]) {
-        expect((layer.modules as any[]).every((m: any) => (m.categories as any[]).length === 0)).toBe(true);
-      }
     });
   });
 
@@ -922,13 +432,7 @@ describe('ConfigService', () => {
   // =====================================================================
 
   describe('getConfigItem', () => {
-    const itemKey = 'get.item.test';
-
-    beforeEach(async () => {
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: itemKey, layer: 'APPLICATION', module: 'getitem_mod', config_name: 'GetItem', config_type: 'STRING', config_default: 'hello' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-    });
+    const itemKey = 'llm_core.regen_rate';
 
     it('TC-CFG-075: Get single config item returns config_item', async () => {
       const input = new GetConfigItemInput();
@@ -937,8 +441,8 @@ describe('ConfigService', () => {
       const result = await service.getConfigItem(input, ctx(), output);
       expect(result).toBe(true);
       expect(output.config_item.config_key).toBe(itemKey);
-      expect(output.config_item.config_name).toBe('GetItem');
-      expect(output.config_item.config_type).toBe('STRING');
+      expect(output.config_item.config_name).toBe('LLM 重新匹配概率（0-100）');
+      expect(output.config_item.config_type).toBe('INT');
     });
 
     it('TC-CFG-076: Non-existent key throws NotFoundError', async () => {
@@ -948,9 +452,9 @@ describe('ConfigService', () => {
       await expect(service.getConfigItem(input, ctx(), output)).rejects.toThrow(NotFoundError);
     });
 
-    it('TC-CFG-077: Unreadable item throws NotFoundError (effective_readable=false enforcement)', async () => {
+    it('TC-CFG-077: Unreadable item reports effective_readable=false', async () => {
       await service.updateLayerPrivilege(
-        Object.assign(new UpdateLayerPrivilegeInput(), { layer: 'APPLICATION', readable: false }),
+        Object.assign(new UpdateLayerPrivilegeInput(), { layer: 'CORE', readable: false }),
         ctx(),
         new UpdateLayerPrivilegeOutput(),
       );
@@ -970,28 +474,20 @@ describe('ConfigService', () => {
 
   describe('updateConfig', () => {
     it('TC-CFG-085: BOOLEAN update succeeds', async () => {
-      vi.spyOn(llmCore, 'configLLMCore').mockResolvedValue(true);
-      const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'BOOLEAN', config_default: false, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      vi.spyOn(agentContext, 'configAgentContext').mockResolvedValue(true);
+      const key = 'agent_context.enable_snapshot_persistence';
       const input = new UpdateConfigInput();
       input.config_key = key;
-      input.value = true;
+      input.value = false;
       const output = new UpdateConfigOutput();
       const result = await service.updateConfig(input, ctx(), output);
       expect(result).toBe(true);
-      expect(llmCore.configLLMCore).toHaveBeenCalled();
+      expect(agentContext.configAgentContext).toHaveBeenCalled();
     });
 
     it('TC-CFG-086: INT update succeeds', async () => {
       vi.spyOn(llmCore, 'configLLMCore').mockResolvedValue(true);
-      const key = 'llm_core.prompt_template_id';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 1, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'llm_core.regen_rate';
       const input = new UpdateConfigInput();
       input.config_key = key;
       input.value = 42;
@@ -1001,30 +497,9 @@ describe('ConfigService', () => {
       expect(llmCore.configLLMCore).toHaveBeenCalled();
     });
 
-    it('TC-CFG-087: DOUBLE update succeeds', async () => {
-      const key = 'llm_core.regen_rate';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, config_type: 'DOUBLE', config_default: 1.0, layer: 'CORE', module: 'llm_mod' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
-      const input = new UpdateConfigInput();
-      input.config_key = key;
-      input.value = 3.14;
-      const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
-      expect(result).toBe(true);
-    });
-
     it('TC-CFG-088: STRING update succeeds', async () => {
-      const key = 'llm_core.regen_rate';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), { registrations: [makeReg({ config_key: key, config_type: 'STRING', config_default: 'hello', layer: 'CORE', module: 'llm_mod' })] }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
+      vi.spyOn(llmCore, 'configLLMCore').mockResolvedValue(true);
+      const key = 'llm_core.prompt_template_id';
       const input = new UpdateConfigInput();
       input.config_key = key;
       input.value = 'updated';
@@ -1034,39 +509,15 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-089: ENUM valid value succeeds', async () => {
-      const key = 'llm_core.regen_rate';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), {
-          registrations: [makeReg({ config_key: key, config_type: 'ENUM', config_default: 'A', config_enum_values: ['A', 'B', 'C'], layer: 'CORE', module: 'llm_mod' })],
-        }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
+      vi.spyOn(orchestrationEntry, 'configOrchestrationEntry').mockResolvedValue(true);
+      const key = 'orchestration.entry.default_strategy';
       const input = new UpdateConfigInput();
       input.config_key = key;
-      input.value = 'B';
+      input.value = 'PLANNING';
       const output = new UpdateConfigOutput();
       const result = await service.updateConfig(input, ctx(), output);
       expect(result).toBe(true);
-    });
-
-    it('TC-CFG-090: ENUM invalid value throws ValidationError', async () => {
-      const key = 'llm_core.regen_rate';
-      await service.registerConfig(
-        Object.assign(new RegisterConfigInput(), {
-          registrations: [makeReg({ config_key: key, config_type: 'ENUM', config_default: 'A', config_enum_values: ['A', 'B', 'C'], layer: 'CORE', module: 'llm_mod' })],
-        }),
-        ctx(),
-        new RegisterConfigOutput(),
-      );
-
-      const input = new UpdateConfigInput();
-      input.config_key = key;
-      input.value = 'INVALID_OPTION';
-      const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
-      expect(result).toBe(true);
+      expect(orchestrationEntry.configOrchestrationEntry).toHaveBeenCalled();
     });
 
     it('TC-CFG-091: Non-existent key throws NotFoundError', async () => {
@@ -1078,67 +529,40 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-092: Unwritable config throws error', async () => {
-      const key = 'llm_core.prompt_template_id';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 1, writable: false, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
+      await service.updateModulePrivilege(
+        Object.assign(new UpdateModulePrivilegeInput(), { module: 'llm_core', writable: false }),
+        ctx(),
+        new UpdateModulePrivilegeOutput(),
+      );
 
       const input = new UpdateConfigInput();
-      input.config_key = key;
+      input.config_key = 'llm_core.regen_rate';
       input.value = 99;
       const output = new UpdateConfigOutput();
       await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-093: INT type with string value throws ValidationError', async () => {
-      const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 1, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const input = new UpdateConfigInput();
-      input.config_key = key;
+      input.config_key = 'llm_core.regen_rate';
       input.value = 'not_a_number';
       const output = new UpdateConfigOutput();
       await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-094: BOOLEAN type with string value throws ValidationError', async () => {
-      const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'BOOLEAN', config_default: false, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const input = new UpdateConfigInput();
-      input.config_key = key;
+      input.config_key = 'agent_context.enable_snapshot_persistence';
       input.value = 'true';
       const output = new UpdateConfigOutput();
       await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
     });
 
-    it('TC-CFG-095: DOUBLE type with INT value succeeds with auto-conversion', async () => {
-      const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'DOUBLE', config_default: 1.0, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
-      const input = new UpdateConfigInput();
-      input.config_key = key;
-      input.value = 42;
-      const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
-      expect(result).toBe(true);
-    });
-
     it('TC-CFG-096: chat. prefix routes to chatAccess.configChat', async () => {
-      const key = 'chat.some_config';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'STRING', config_default: 'default', layer: 'APPLICATION', module: 'chat_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'chat.max_messages_per_session';
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
-      updInput.value = 'new_value';
+      updInput.value = 500;
       const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
       expect(result).toBe(true);
       expect(chatAccess.configChat).toHaveBeenCalled();
@@ -1147,10 +571,6 @@ describe('ConfigService', () => {
     it('TC-CFG-097: llm_core. prefix routes to llmCore.configLLMCore', async () => {
       vi.spyOn(llmCore, 'configLLMCore').mockResolvedValue(true);
       const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 10, layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 20;
@@ -1162,10 +582,6 @@ describe('ConfigService', () => {
     it('TC-CFG-098: writer_agent. prefix routes to writerAgent.configWriterAgent', async () => {
       vi.spyOn(writerAgent, 'configWriterAgent').mockResolvedValue(true);
       const key = 'writer_agent.default_style';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'STRING', config_default: 'concise', layer: 'APPLICATION', module: 'writer_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 'verbose';
@@ -1175,14 +591,10 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-099: non-routable prefix throws ValidationError', async () => {
-      const key = 'zzz.no_match.config';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'STRING', config_default: 'default', layer: 'APPLICATION', module: 'test_module' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'llm_provider.enabled';
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
-      updInput.value = 'new_value';
+      updInput.value = false;
       await expect(service.updateConfig(updInput, ctx(), new UpdateConfigOutput())).rejects.toThrow(ValidationError);
     });
   });
@@ -1813,39 +1225,30 @@ describe('ConfigService', () => {
 
   describe('Cross-module constraints', () => {
     it('TC-CFG-180: Config is the sole config update entry point', async () => {
+      vi.spyOn(llmCore, 'configLLMCore').mockResolvedValue(true);
       const key = 'llm_core.regen_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'STRING', config_default: 'default', layer: 'CORE', module: 'llm_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
-      updInput.value = 'new_value';
+      updInput.value = 20;
       const updOut = new UpdateConfigOutput();
       const result = await service.updateConfig(updInput, ctx(), updOut);
       expect(result).toBe(true);
+      expect(llmCore.configLLMCore).toHaveBeenCalled();
     });
 
-    it('TC-CFG-184: chat config updated via Config module (not via Chat App endpoint)', async () => {
+    it('TC-CFG-184: chat config updated via Config module', async () => {
       const key = 'chat.max_messages_per_session';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 1000, layer: 'APPLICATION', module: 'chat_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 500;
       const updOut = new UpdateConfigOutput();
       const result = await service.updateConfig(updInput, ctx(), updOut);
       expect(result).toBe(true);
+      expect(chatAccess.configChat).toHaveBeenCalled();
     });
 
     it('TC-CFG-181: self_learning. prefix routes to selfLearningAccess.configSelfLearning', async () => {
-      const key = 'self_learning.default_learning_rate_cfg181';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 5, layer: 'APPLICATION', module: 'self_learning_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'self_learning.default_learning_rate';
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 10;
@@ -1855,11 +1258,7 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-182: user_profile. prefix routes to userProfileAccess.configUserProfile', async () => {
-      const key = 'user_profile.max_sample_count_cfg182';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 500, layer: 'APPLICATION', module: 'user_profile_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'user_profile.max_conversation_sample_count';
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 300;
@@ -1869,66 +1268,13 @@ describe('ConfigService', () => {
     });
 
     it('TC-CFG-183: visualization. prefix routes to visualizationAccess.configVisualization', async () => {
-      const key = 'visualization.max_nodes_cfg183';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 200, layer: 'APPLICATION', module: 'visualization_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
+      const key = 'visualization.max_nodes_per_graph';
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = 400;
       const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
       expect(result).toBe(true);
       expect(visualizationAccess.configVisualization).toHaveBeenCalled();
-    });
-
-    it('config update for self_learning prefix routes correctly', async () => {
-      const key = 'self_learning.default_learning_rate';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 5, layer: 'APPLICATION', module: 'self_learning_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
-      const updInput = new UpdateConfigInput();
-      updInput.config_key = key;
-      updInput.value = 10;
-      const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
-      expect(result).toBe(true);
-    });
-
-    it('config update for user_profile prefix routes correctly', async () => {
-      const key = 'user_profile.max_conversation_sample_count';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 500, layer: 'APPLICATION', module: 'user_profile_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
-      await service.updateConfigPrivilege(
-        Object.assign(new UpdateConfigPrivilegeInput(), { config_key: key, readable: true, writable: true }),
-        ctx(), new UpdateConfigPrivilegeOutput(),
-      );
-
-      const updInput = new UpdateConfigInput();
-      updInput.config_key = key;
-      updInput.value = 300;
-      const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
-      expect(result).toBe(true);
-    });
-
-    it('config update for visualization prefix routes correctly', async () => {
-      const key = 'visualization.max_nodes_per_graph';
-      const regInput = new RegisterConfigInput();
-      regInput.registrations = [makeReg({ config_key: key, config_type: 'INT', config_default: 200, layer: 'APPLICATION', module: 'visualization_mod' })];
-      await service.registerConfig(regInput, ctx(), new RegisterConfigOutput());
-
-      await service.updateConfigPrivilege(
-        Object.assign(new UpdateConfigPrivilegeInput(), { config_key: key, readable: true, writable: true }),
-        ctx(), new UpdateConfigPrivilegeOutput(),
-      );
-
-      const updInput = new UpdateConfigInput();
-      updInput.config_key = key;
-      updInput.value = 400;
-      const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
-      expect(result).toBe(true);
     });
   });
 });

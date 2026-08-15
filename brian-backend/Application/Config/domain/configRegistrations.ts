@@ -213,16 +213,15 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // =========================================================================
 
   // --- OrchestrationEntry ---
-  orch('entry', 'basic', 'complexity_decompose_threshold', '复杂度分解阈值', 'INT', 50, '超过此值触发任务分解'),
-  orch('entry', 'basic', 'strategy_prompt_template_id', '策略选择 Prompt 模板 ID', 'STRING', ''),
-  orch('entry', 'basic', 'default_strategy', '默认编排策略', 'ENUM', 'SIMPLE', '策略选择失败时的兜底策略', ['SIMPLE', 'PLANNING']),
-  orch('entry', 'basic', 'max_recent_works', '最大最近工作数', 'INT', 5),
-  orch('entry', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
+  orch('entry', 'basic', 'complexity_decompose_threshold', '复杂度分解阈值', 'INT', 50, '任务复杂度超过此阈值时触发任务分解（选择 PLANNING 策略），否则走 SIMPLE；取值 0-100'),
+  orch('entry', 'basic', 'strategy_prompt_template_id', '策略选择 Prompt', 'STRING', '', '用于 LLM 分析任务复杂度并选择编排策略的 Prompt 模板；为空时降级为纯规则判定'),
+  orch('entry', 'basic', 'default_strategy', '默认编排策略', 'ENUM', 'SIMPLE', 'LLM 分析失败或无 LLM 时的兜底编排策略', ['SIMPLE', 'PLANNING']),
+  orch('entry', 'basic', 'max_recent_works', '最大最近工作数', 'INT', 5, '构建工作上下文时收集的最近工作（work）数量'),
+  orch('entry', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000, '异步工作 Worker 的轮询间隔'),
 
   // --- OrchestrationStrategy ---
-  orch('strategy', 'basic', 'default_strategy_id', '默认策略 ID', 'STRING', '', '默认使用的策略 ID'),
+  orch('strategy', 'basic', 'default_strategy_id', '默认策略', 'STRING', '', '默认使用的策略 ID'),
   orch('strategy', 'basic', 'max_plan_retries', '最大计划重试次数', 'INT', 2),
-  orch('strategy', 'basic', 'plan_prompt_template_id', '计划生成 Prompt 模板 ID', 'STRING', ''),
 
   // --- OrchestrationExecution ---
   orch('execution', 'basic', 'max_concurrent', '最大并发数', 'INT', 1),

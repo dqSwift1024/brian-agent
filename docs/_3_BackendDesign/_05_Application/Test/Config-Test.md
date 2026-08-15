@@ -15,24 +15,6 @@
 
 ## 1. 配置元数据管理
 
-### 1.1 注册配置项 — registerConfig
-
-**端点**：`POST /api/config/register`
-
-| 编号 | 测试场景 | 前置条件 | 预期结果 |
-|------|---------|---------|---------|
-| TC-CFG-001 | 注册单个配置项 | 合法元数据 | HTTP 200，成功数=1，config_registry 表有记录 |
-| TC-CFG-002 | 批量注册多个配置项 | registrations=[{...}, {...}, {...}] | HTTP 200，成功数=3 |
-| TC-CFG-003 | Upsert 语义 — 更新已有配置项 | config_key 已存在 | 更新成功，config_description/config_default 刷新 |
-| TC-CFG-004 | 注册所有必要字段 | layer/module/category/config_key/config_name/config_type/config_default 均提供 | 成功 |
-| TC-CFG-005 | 注册 ENUM 类型配置 | config_type=ENUM, config_enum_values=["a","b"] | 成功 |
-| TC-CFG-006 | config_key 唯一性 | 同一 config_key 注册两次 | 第二次为更新（upsert） |
-| TC-CFG-007 | layer 非法值 | layer="INVALID" | HTTP 400，提示 layer 必须为 BASE/CORE/AGENT/ORCHESTRATION/APPLICATION |
-| TC-CFG-008 | config_type 非法值 | config_type="UNKNOWN" | HTTP 400 |
-| TC-CFG-009 | 缺少必填字段 | 不含 config_key | HTTP 400 |
-| TC-CFG-010 | ENUM 类型缺少 config_enum_values | config_type=ENUM 但未提供 | HTTP 400（ENUM 类型必须提供枚举值列表） |
-| TC-CFG-011 | registrations 为空数组 | registrations=[] | HTTP 400（空注册列表无效） |
-
 ### 1.2 层级与模块权限管理
 
 #### 1.2.1 设置层级权限 — updateLayerPrivilege
@@ -63,26 +45,7 @@
 | TC-CFG-035 | Upsert 语义 | 同一 module 重复调用 | 第二次成功更新 |
 | TC-CFG-036 | module 不存在 | module="NonExistentModule" | HTTP 200（模块权限记录独立于注册，允许预设置） |
 
-#### 1.2.3 设置配置项权限 — updateConfigPrivilege
-
-**端点**：`POST /api/config/privilege`
-
-| 编号 | 测试场景 | 前置条件 | 预期结果 |
-|------|---------|---------|---------|
-| TC-CFG-040 | 设置配置项不可见 | config_key 有效, readable=false | HTTP 200 |
-| TC-CFG-041 | 设置配置项不可修改 | config_key 有效, writable=false | HTTP 200 |
-| TC-CFG-042 | 模块不可见时设置配置项可见 — 应拒绝 | 所属模块 effective_readable=false | HTTP 400 |
-| TC-CFG-043 | 模块不可修改时设置配置项可修改 — 应拒绝 | 所属模块 effective_writable=false | HTTP 400 |
-| TC-CFG-044 | 正常权限修改 | 上级权限允许 | HTTP 200，返回 effective_readable/effective_writable |
-| TC-CFG-045 | config_key 不存在 | config_key="nonexistent" | HTTP 404 |
-| TC-CFG-046 | 部分更新 | 只传 readable | 仅 readable 变更 |
-
-#### 1.2.4 获取完整权限树 — getPrivilegeTree
-
-**端点**：`GET /api/config/privilege/tree`
-
-| 编号 | 测试场景 | 前置条件 | 预期结果 |
-|------|---------|---------|---------|
+------|---------|---------|---------|
 | TC-CFG-050 | 获取权限树 | 已有层级/模块/配置注册 | HTTP 200，返回 layers 数组，每层含 modules → categories → configs |
 | TC-CFG-051 | 有效权限计算 — 层级不可见 | BASE: readable=false | 该层所有子节点 effective_readable=false |
 | TC-CFG-052 | 有效权限计算 — 模块不可见 | WriterAgent: readable=false | 该模块所有配置 effective_readable=false |
@@ -258,11 +221,8 @@
 
 | 功能模块 | 子功能 | 测试用例数 |
 |---------|--------|----------|
-| 配置注册 | registerConfig | 12 |
 | 层级权限 | updateLayerPrivilege | 7 |
 | 模块权限 | updateModulePrivilege | 7 |
-| 配置项权限 | updateConfigPrivilege | 7 |
-| 权限树 | getPrivilegeTree | 7 |
 | 配置查询 | getConfigDetail + getConfigItem | 18 |
 | 配置修改 | updateConfig | 17 |
 | LLM 代理 | 13 个端点（含错误传播） | 24 |
