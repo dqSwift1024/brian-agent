@@ -2466,6 +2466,8 @@ interface OrchStrategyNode {
   params: Record<string, unknown>
   next: string | null
   onError?: string
+  trueNext?: string
+  falseNext?: string
 }
 
 interface OrchStrategy {
@@ -2481,7 +2483,26 @@ interface OrchStrategy {
 
 const orchStrategies = ref<OrchStrategy[]>([])
 const orchStrategiesLoading = ref(false)
-const expandedOrchStrategy = ref<string | null>(null)
+const orchStrategyHelpCollapsed = ref(true)
+const orchStrategyDetailVisible = ref(false)
+const selectedOrchStrategy = ref<OrchStrategy | null>(null)
+
+function openOrchStrategyDetail(s: OrchStrategy) {
+  selectedOrchStrategy.value = s
+  orchStrategyDetailVisible.value = true
+}
+
+function closeOrchStrategyDetail() {
+  orchStrategyDetailVisible.value = false
+  selectedOrchStrategy.value = null
+}
+
+function orchNodeNumber(nodeId: string | null | undefined): string {
+  if (!nodeId) return '—'
+  const nodes = selectedOrchStrategy.value?.nodes ?? []
+  const idx = nodes.findIndex(n => n.id === nodeId)
+  return idx >= 0 ? String(idx + 1) : '—'
+}
 
 function nodeColor(type: string): string {
   if (type.includes('SAVE') || type.includes('WRITE')) return 'border-brian-blue/30 bg-brian-blue/5 text-brian-blue'
@@ -4626,11 +4647,14 @@ watch(activeSubSection, async (val) => {
           </div>
 
           <div class="mb-5 rounded-xl border border-brian-blue/20 bg-brian-blue/[0.02] dark:bg-brian-blue/5 p-4">
-            <h4 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50 mb-2 flex items-center gap-1.5">
-              <Lightbulb :size="15" class="text-brian-blue" />
-              编排策略说明
-            </h4>
-            <div class="text-xs text-apple-gray-600 dark:text-apple-gray-300 space-y-2 leading-relaxed">
+            <button class="w-full flex items-center justify-between text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50 cursor-pointer" @click="orchStrategyHelpCollapsed = !orchStrategyHelpCollapsed">
+              <span class="flex items-center gap-1.5">
+                <Lightbulb :size="15" class="text-brian-blue" />
+                编排策略说明
+              </span>
+              <ChevronRight :size="16" class="text-apple-gray-400 transition-transform" :class="{ 'rotate-90': !orchStrategyHelpCollapsed }" />
+            </button>
+            <div v-show="!orchStrategyHelpCollapsed" class="text-xs text-apple-gray-600 dark:text-apple-gray-300 space-y-2 leading-relaxed mt-2">
               <p>编排策略定义了 Agent 处理用户任务的<strong>执行流程</strong>。每个策略由多个 JSONNode 节点组成，按顺序执行，节点间通过 <code class="text-[10px] px-1 bg-apple-gray-100 dark:bg-apple-gray-700 rounded">next</code> 串联，通过 <code class="text-[10px] px-1 bg-apple-gray-100 dark:bg-apple-gray-700 rounded">on_error</code> 定义错误路径。</p>
 
               <dl class="grid grid-cols-[100px_1fr] gap-x-3 gap-y-1.5 mt-2">
@@ -4662,102 +4686,102 @@ watch(activeSubSection, async (val) => {
             </div>
           </div>
           <div v-if="orchStrategiesLoading" class="flex justify-center py-16"><Loader2 :size="24" class="animate-spin text-brian-blue" /></div>
-          <div v-else class="space-y-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             <div
               v-for="s in orchStrategies" :key="s.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow overflow-hidden"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openOrchStrategyDetail(s)"
             >
-              <!-- 策略头部 -->
-              <div class="p-4 cursor-pointer" @click="expandedOrchStrategy = expandedOrchStrategy === s.id ? null : s.id">
-                <div class="flex items-start justify-between mb-2">
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" :class="s.label === 'SIMPLE' ? 'bg-success-green/10 text-success-green' : 'bg-brian-blue/10 text-brian-blue'">
-                      <component :is="s.label === 'SIMPLE' ? Zap : Network" :size="18" />
-                    </div>
-                    <div class="min-w-0">
-                      <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ s.label }}</h3>
-                      <p class="text-[11px] text-apple-gray-400">{{ s.enabled ? '启用' : '停用' }} · {{ s.nodeCount }} 个节点</p>
-                    </div>
+              <div class="flex items-start justify-between mb-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" :class="s.label === 'SIMPLE' ? 'bg-success-green/10 text-success-green' : 'bg-brian-blue/10 text-brian-blue'">
+                    <component :is="s.label === 'SIMPLE' ? Zap : Network" :size="18" />
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full" :class="s.enabled ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
-                    <ChevronRight :size="14" class="text-apple-gray-400 transition-transform" :class="expandedOrchStrategy === s.id ? 'rotate-90' : ''" />
+                  <div class="min-w-0">
+                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ s.label }}</h3>
+                    <p class="text-[11px] text-apple-gray-400">{{ s.enabled ? '启用' : '停用' }} · {{ s.nodeCount }} 个节点</p>
                   </div>
                 </div>
-                <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400">{{ s.description }}</p>
+                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="s.enabled ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
               </div>
-
-              <!-- 展开：JSONNode 内容 -->
-              <div v-if="expandedOrchStrategy === s.id" class="border-t border-apple-gray-200 dark:border-apple-gray-700 bg-apple-gray-50/50 dark:bg-apple-gray-900/30">
-
-                <!-- DAG 流程图 -->
-                <div class="px-4 py-3 border-b border-apple-gray-100 dark:border-apple-gray-800">
-                  <p class="text-[10px] text-apple-gray-400 uppercase tracking-wider mb-2">执行流 · {{ s.nodes.length }} 个节点 · 起始节点 {{ s.startNode }}</p>
-                  <div class="flex flex-wrap items-center gap-1">
-                    <template v-for="(node, ni) in s.nodes" :key="node.id">
-                      <span
-                        class="px-1.5 py-0.5 rounded text-[10px] font-mono border"
-                        :class="nodeColor(node.type)"
-                        :title="node.id + ': ' + JSON.stringify(node.params)"
-                      >{{ node.type.replace(/_/g, ' ') }}</span>
-                      <span v-if="ni < s.nodes.length - 1 && node.next" class="text-[9px] text-apple-gray-300">→</span>
-                    </template>
-                  </div>
-                </div>
-
-                <!-- 节点详情表 -->
-                <div class="px-4 py-3">
-                  <p class="text-[10px] text-apple-gray-400 uppercase tracking-wider mb-2">节点详情</p>
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-[11px]">
-                      <thead>
-                        <tr class="text-left text-apple-gray-400 border-b border-apple-gray-200 dark:border-apple-gray-700">
-                          <th class="py-1.5 pr-3 font-medium">#</th>
-                          <th class="py-1.5 pr-3 font-medium">节点 ID</th>
-                          <th class="py-1.5 pr-3 font-medium">节点类型</th>
-                          <th class="py-1.5 pr-3 font-medium">参数</th>
-                          <th class="py-1.5 pr-3 font-medium">下一节点</th>
-                          <th class="py-1.5 font-medium">错误处理</th>
-                        </tr>
-                      </thead>
-                      <tbody class="text-apple-gray-600 dark:text-apple-gray-300">
-                        <tr
-                          v-for="(node, ni) in s.nodes" :key="node.id"
-                          class="border-b border-apple-gray-100 dark:border-apple-gray-800"
-                        >
-                          <td class="py-1.5 pr-3 font-mono text-apple-gray-400">{{ ni + 1 }}</td>
-                          <td class="py-1.5 pr-3 font-mono text-apple-gray-500">{{ node.id }}</td>
-                          <td class="py-1.5 pr-3">
-                            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono border" :class="nodeColor(node.type)">
-                              {{ node.type.replace(/_/g, ' ') }}
-                            </span>
-                          </td>
-                          <td class="py-1.5 pr-3 font-mono text-[10px] max-w-[200px] truncate">
-                            <code v-if="Object.keys(node.params).length > 0" class="text-apple-gray-500">{{ JSON.stringify(node.params) }}</code>
-                            <span v-else class="text-apple-gray-300">—</span>
-                          </td>
-                          <td class="py-1.5 pr-3 font-mono text-[10px]" :class="node.next ? 'text-apple-gray-500' : 'text-apple-gray-300'">
-                            {{ node.next || '终止' }}
-                          </td>
-                          <td class="py-1.5 font-mono text-[10px]" :class="node.onError ? 'text-error-red/70' : 'text-apple-gray-300'">
-                            {{ node.onError || '—' }}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <!-- 配置提示 -->
-                <div class="px-4 py-2 border-t border-apple-gray-200 dark:border-apple-gray-700">
-                  <p class="text-[10px] text-apple-gray-400">
-                    配置: 编排配置 → <span class="text-brian-blue">编排入口</span> (complexity_decompose_threshold 控制 SIMPLE/PLANNING 选择) | 
-                    <span class="text-brian-blue">执行参数</span> (max_plan_retries, plan_prompt_template_id)
-                  </p>
-                </div>
-              </div>
+              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 line-clamp-2 mt-auto">{{ s.description }}</p>
             </div>
           </div>
+
+          <!-- 编排策略详情弹窗 -->
+          <Teleport to="body">
+            <Transition name="modal">
+              <div v-if="orchStrategyDetailVisible" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeOrchStrategyDetail" />
+                <div class="relative w-full max-w-3xl bg-white dark:bg-apple-gray-800 rounded-2xl shadow-xl border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden max-h-[85vh] flex flex-col">
+                  <div class="flex items-center justify-between px-5 py-4 border-b border-apple-gray-200 dark:border-apple-gray-700">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" :class="selectedOrchStrategy?.label === 'SIMPLE' ? 'bg-success-green/10 text-success-green' : 'bg-brian-blue/10 text-brian-blue'">
+                        <component :is="selectedOrchStrategy?.label === 'SIMPLE' ? Zap : Network" :size="18" />
+                      </div>
+                      <div class="min-w-0">
+                        <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ selectedOrchStrategy?.label }}</h3>
+                        <p class="text-[11px] text-apple-gray-400">{{ selectedOrchStrategy?.enabled ? '启用' : '停用' }} · {{ selectedOrchStrategy?.nodeCount }} 个节点</p>
+                      </div>
+                    </div>
+                    <button class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="closeOrchStrategyDetail"><X :size="18" /></button>
+                  </div>
+                  <div class="flex-1 overflow-y-auto">
+                    <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 px-5 pt-4">{{ selectedOrchStrategy?.description }}</p>
+
+                    <!-- DAG 流程图 -->
+                    <div class="px-5 py-3 border-b border-apple-gray-100 dark:border-apple-gray-800">
+                      <p class="text-[10px] text-apple-gray-400 uppercase tracking-wider mb-2">执行流 · {{ selectedOrchStrategy?.nodes.length }} 个节点 · 起始节点 {{ orchNodeNumber(selectedOrchStrategy?.startNode) }}</p>
+                      <div class="flex flex-wrap items-center gap-1">
+                        <template v-for="(node, ni) in selectedOrchStrategy?.nodes" :key="node.id">
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-mono border" :class="nodeColor(node.type)" :title="(ni + 1) + ' · ' + JSON.stringify(node.params)">{{ node.type.replace(/_/g, ' ') }}</span>
+                          <span v-if="ni < (selectedOrchStrategy?.nodes.length ?? 0) - 1 && node.next" class="text-[9px] text-apple-gray-300">→</span>
+                        </template>
+                      </div>
+                    </div>
+
+                    <!-- 节点详情表 -->
+                    <div class="px-5 py-3">
+                      <p class="text-[10px] text-apple-gray-400 uppercase tracking-wider mb-2">节点详情</p>
+                      <div class="overflow-x-auto">
+                        <table class="w-full text-[11px]">
+                          <thead>
+                            <tr class="text-left text-apple-gray-400 border-b border-apple-gray-200 dark:border-apple-gray-700">
+                              <th class="py-1.5 pr-3 font-medium">#</th>
+                              <th class="py-1.5 pr-3 font-medium">节点类型</th>
+                              <th class="py-1.5 pr-3 font-medium">下一节点</th>
+                              <th class="py-1.5 pr-3 font-medium">条件分支</th>
+                              <th class="py-1.5 font-medium">错误处理</th>
+                            </tr>
+                          </thead>
+                          <tbody class="text-apple-gray-600 dark:text-apple-gray-300">
+                            <tr v-for="(node, ni) in selectedOrchStrategy?.nodes" :key="node.id" class="border-b border-apple-gray-100 dark:border-apple-gray-800">
+                              <td class="py-1.5 pr-3 font-mono text-apple-gray-400" :title="Object.keys(node.params).length > 0 ? JSON.stringify(node.params, null, 2) : '无参数'">{{ ni + 1 }}</td>
+                              <td class="py-1.5 pr-3"><span class="px-1.5 py-0.5 rounded text-[10px] font-mono border" :class="nodeColor(node.type)">{{ node.type.replace(/_/g, ' ') }}</span></td>
+                              <td class="py-1.5 pr-3 font-mono text-[10px]" :class="node.next ? 'text-apple-gray-500' : 'text-apple-gray-300'">{{ node.next ? orchNodeNumber(node.next) : '终止' }}</td>
+                              <td class="py-1.5 pr-3 font-mono text-[10px]" :class="(node.trueNext || node.falseNext) ? 'text-brian-blue/80' : 'text-apple-gray-300'">
+                                <template v-if="node.trueNext || node.falseNext">真: {{ orchNodeNumber(node.trueNext) }} / 假: {{ orchNodeNumber(node.falseNext) }}</template>
+                                <template v-else>—</template>
+                              </td>
+                              <td class="py-1.5 font-mono text-[10px]" :class="node.onError ? 'text-error-red/70' : 'text-apple-gray-300'">{{ orchNodeNumber(node.onError) }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- 配置提示 -->
+                    <div class="px-5 py-2 border-t border-apple-gray-200 dark:border-apple-gray-700">
+                      <p class="text-[10px] text-apple-gray-400">
+                        配置: 编排配置 → <span class="text-brian-blue">编排入口</span> (complexity_decompose_threshold 控制 SIMPLE/PLANNING 选择) | 
+                        <span class="text-brian-blue">策略参数</span> (max_plan_retries 控制计划重试次数)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
         </div>
 
         <!-- ========================== 实体管理视图 - CDT 浏览器状态 ========================== -->
