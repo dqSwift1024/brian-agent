@@ -35,7 +35,7 @@ export class SkillCoreSchemaInitializer {
         "created"             INTEGER NOT NULL,
         "updated"             INTEGER NOT NULL,
         "regen_rate"          INTEGER NOT NULL DEFAULT 75,
-        "prompt_template_id"  TEXT    NOT NULL
+        "prompt_template_id"  TEXT    NOT NULL DEFAULT ''
       )
     `);
 

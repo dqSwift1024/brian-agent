@@ -10,6 +10,9 @@ import {
   Operator,
   IdGenerator,
   OperationType,
+  AddPromptInput,
+  AddPromptOutput,
+  PromptContext,
 } from '@brian-agent/base';
 import {
   SkillCoreAccess,
@@ -127,12 +130,42 @@ describe('SkillCoreProvider', () => {
       expect(output.regen_rate).toBe(30);
     });
 
-    it('should update prompt_template_id', async () => {
+    it('should throw ValidationError for regen_rate out of range', async () => {
       const input = new ConfigSkillCoreInput();
-      input.prompt_template_id = 'tpl-123';
+      input.regen_rate = 150;
+      await expect(
+        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError for regen_rate below 0', async () => {
+      const input = new ConfigSkillCoreInput();
+      input.regen_rate = -5;
+      await expect(
+        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('should accept valid prompt_template_id', async () => {
+      const addInput = new AddPromptInput();
+      addInput.data = { prompt_template_title: 'Test Skill Prompt', prompt_template: 'test template' };
+      const addOutput = new AddPromptOutput();
+      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      const realId = addOutput.id;
+
+      const input = new ConfigSkillCoreInput();
+      input.prompt_template_id = realId;
       const output = new ConfigSkillCoreOutput();
       await skillCore.configSkillCore(input, new SkillCoreContext(), output);
-      expect(output.prompt_template_id).toBe('tpl-123');
+      expect(output.prompt_template_id).toBe(realId);
+    });
+
+    it('should reject non-existent prompt_template_id', async () => {
+      const input = new ConfigSkillCoreInput();
+      input.prompt_template_id = IdGenerator.generate();
+      await expect(
+        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+      ).rejects.toThrow(ValidationError);
     });
 
     it('should persist and retrieve config across calls', async () => {

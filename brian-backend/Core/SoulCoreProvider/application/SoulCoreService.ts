@@ -391,6 +391,17 @@ export class SoulCoreService {
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
       }
       if (input.prompt_template_id !== undefined) {
+        if (input.prompt_template_id) {
+          const getPromptOutput = new GetPromptOutput();
+          await this.promptsAccess.getPrompt(
+            { id: input.prompt_template_id } as GetPromptInput,
+            new PromptContext(),
+            getPromptOutput,
+          );
+          if (!getPromptOutput.prompt) {
+            throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
+          }
+        }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
       }
       updateData.push({ field: 'updated', value: now });

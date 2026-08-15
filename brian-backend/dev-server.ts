@@ -24,8 +24,8 @@ import { BookmarkAccess } from './Base/BookmarkProvider';
 import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
-import { SkillCoreAccess } from './Core/SkillCoreProvider';
-import { SoulCoreAccess } from './Core/SoulCoreProvider';
+import { SkillCoreAccess, SkillCoreContext, AgeSkillInput, AgeSkillOutput } from './Core/SkillCoreProvider';
+import { SoulCoreAccess, SoulCoreContext, AgeSoulInput, AgeSoulOutput } from './Core/SoulCoreProvider';
 import { MQCoreAccess } from './Core/MQCoreProvider';
 import { CDTCoreAccess } from './Core/CDTCoreProvider';
 import { AgentLibraryAccess } from './Agent/AgentLibrary';
@@ -354,6 +354,28 @@ async function buildContext() {
       }).catch(() => {});
     } catch { /* ignore */ }
   }, 5 * 60 * 1000);
+
+  // 每日午夜 0:00 执行 Skill/Soul 老化（按 opt_rule 规则禁用不活跃实体）
+  function scheduleDailyAging() {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    const msUntilMidnight = midnight.getTime() - now.getTime();
+    setTimeout(() => {
+      try {
+        const skillOut = new AgeSkillOutput();
+        skillCore.ageSkill(new AgeSkillInput(), new SkillCoreContext(), skillOut).then(() => {
+          if (skillOut.aged_count > 0) logger.info('[cron] Skill aging', `老化 ${skillOut.aged_count} 个 Skill`);
+        }).catch(() => {});
+        const soulOut = new AgeSoulOutput();
+        soulCore.ageSoul(new AgeSoulInput(), new SoulCoreContext(), soulOut).then(() => {
+          if (soulOut.aged_count > 0) logger.info('[cron] Soul aging', `老化 ${soulOut.aged_count} 个 Soul`);
+        }).catch(() => {});
+      } catch { /* ignore */ }
+      scheduleDailyAging(); // 调度下一天
+    }, msUntilMidnight);
+  }
+  scheduleDailyAging();
 
   return {
     relationDb, llmAccess, mcpAccess, soulAccess, skillAccess, promptsAccess,

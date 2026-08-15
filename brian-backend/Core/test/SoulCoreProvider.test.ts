@@ -10,6 +10,9 @@ import {
   Operator,
   IdGenerator,
   OperationType,
+  AddPromptInput,
+  AddPromptOutput,
+  PromptContext,
 } from '@brian-agent/base';
 import {
   SoulCoreAccess,
@@ -95,12 +98,26 @@ describe('SoulCoreProvider', () => {
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should update prompt_template_id', async () => {
+    it('should accept valid prompt_template_id', async () => {
+      const addInput = new AddPromptInput();
+      addInput.data = { prompt_template_title: 'Test Soul Prompt', prompt_template: 'test template' };
+      const addOutput = new AddPromptOutput();
+      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      const realId = addOutput.id;
+
       const input = new ConfigSoulCoreInput();
-      input.prompt_template_id = 'soul-tpl';
+      input.prompt_template_id = realId;
       const output = new ConfigSoulCoreOutput();
       await soulCore.configSoulCore(input, new SoulCoreContext(), output);
-      expect(output.config!.prompt_template_id).toBe('soul-tpl');
+      expect(output.config!.prompt_template_id).toBe(realId);
+    });
+
+    it('should reject non-existent prompt_template_id', async () => {
+      const input = new ConfigSoulCoreInput();
+      input.prompt_template_id = IdGenerator.generate();
+      await expect(
+        soulCore.configSoulCore(input, new SoulCoreContext(), new ConfigSoulCoreOutput()),
+      ).rejects.toThrow(ValidationError);
     });
 
     it('should persist config across calls', async () => {

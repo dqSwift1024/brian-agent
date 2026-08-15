@@ -202,3 +202,27 @@
 2. skill_md 是 LLM 判断 Skill 能否完成指定工作的核心线索；
 3. 匹配结果缓存到 agent_skill 表，regen_rate 控制缓存刷新概率（默认 75%）；
 4. 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
+
+## 5. 变更记录
+
+### [2026-08-15] configSkillCore 校验补全 + opt_rule 读取修复 + 老化定时触发 + NOT NULL 约束修复
+
+**变更原因**：
+1. `configSkillCore` 原先直接写入 `regen_rate` / `prompt_template_id`，缺少 PRD 2.6 节要求的校验；
+2. `skill_core.opt_rule.*` 的配置读取返回整个 `SoSkillRuleOutput`（list/total），前端无法取到 `days`/`min_usage_count` 值；
+3. `ageSkill` 老化逻辑实现了但没有触发入口，配置了 `opt_rule` 也不会生效；
+4. `skill_core_config.prompt_template_id` 为 `NOT NULL` 且无默认值，只写 `regen_rate` 时 INSERT 缺列触发 `NOT NULL constraint failed`。
+
+**修改的方法**：
+- `configSkillCore`：`regen_rate` 校验 0-100；`prompt_template_id` 非空时经 Base 层 `PromptsAccess.getPrompt` 校验存在性；INSERT 时补写 `prompt_template_id=''`。
+- `SkillCoreSchemaInitializer`：`prompt_template_id` 改为 `TEXT NOT NULL DEFAULT ''`。
+- `ConfigService.getCurrentValue`：`skill_core.opt_rule.*` 从 `list[0]` 提取 `days`/`min_usage_count`；`skill_core.regen_rate`/`prompt_template_id` 返回具体字段值（不再返回整个 Output 对象）。
+- `dev-server`：新增每日午夜 `scheduleDailyAging()`，调用 `ageSkill` + `ageSoul` 老化不活跃实体。
+- 前端「匹配与优化」参数卡片改为单网格连续排布（不再按分类拆成多个网格）。
+
+**影响的端点**：
+- `GET/PUT /api/config`（skill_core 相关项）— 正确返回原始值并校验写入。
+- 每日定时任务 — 触发 Skill/Soul 老化。
+
+**可能存在的问题**：
+- `ageSkill` 依赖 `skill_opt_rule` 表存在规则才生效（默认无规则，需用户在配置页配置 days/min_usage_count）。

@@ -794,15 +794,23 @@ export class ConfigService {
       await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, {} as McpCoreContext, out);
       return this.extractConfigValue(out, 'mcp_core', configKey);
     }
-    if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.prompt_template_id')) {
+    if (configKey.startsWith('skill_core.regen_rate')) {
       const out = new ConfigSkillCoreOutput();
       await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
-      return this.extractConfigValue(out, 'skill_core', configKey);
+      return out.regen_rate;
+    }
+    if (configKey.startsWith('skill_core.prompt_template_id')) {
+      const out = new ConfigSkillCoreOutput();
+      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
+      return out.prompt_template_id;
     }
     if (configKey.startsWith('skill_core.opt_rule')) {
       const out = new SoSkillRuleOutput();
       await this.skillCore.soSkillRule({} as SoSkillRuleInput, {} as SkillCoreContext, out);
-      return (out as any).rule ?? out;
+      const first = (out.list ?? [])[0];
+      if (!first) return null;
+      const key = configKey.split('skill_core.opt_rule.')[1];
+      return (first as unknown as Record<string, unknown>)[key] ?? null;
     }
     if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.prompt_template_id')) {
       const out = new ConfigSoulCoreOutput();
@@ -812,7 +820,10 @@ export class ConfigService {
     if (configKey.startsWith('soul_core.opt_rule')) {
       const out = new SoSoulRuleOutput();
       await this.soulCore.soSoulRule({} as SoSoulRuleInput, {} as SoulCoreContext, out);
-      return (out as any).rule ?? out;
+      const first = (out.list ?? [])[0];
+      if (!first) return null;
+      const key = configKey.split('soul_core.opt_rule.')[1];
+      return (first as unknown as Record<string, unknown>)[key] ?? null;
     }
     if (configKey.startsWith('planner_agent.')) {
       return this.getConfigFromAccess(

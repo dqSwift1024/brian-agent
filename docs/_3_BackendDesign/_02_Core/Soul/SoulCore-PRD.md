@@ -172,3 +172,16 @@ SET 行为：接受 `regen_rate` 和 `prompt_template_id` 作为可选更新字�
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | days | 统计天数 | INTEGER | N | 普通索引 | |
 | min_usage_count | 最少使用次数 | INTEGER | N | | 低于该值则老化，默认0 |
+
+## 变更记录
+
+### [2026-08-15] configSoulCore 校验补全 + opt_rule 读取修复
+
+**变更原因**：
+1. `configSoulCore` 的 `prompt_template_id` 原先直接写入，缺少存在性校验（`regen_rate` 0-100 校验此前已有）；
+2. `soul_core.opt_rule.*` 配置读取返回整个 `SoSoulRuleOutput`，前端无法取到 `days`/`min_usage_count`。
+
+**修改的方法**：
+- `configSoulCore`：`prompt_template_id` 非空时经 Base 层 `PromptsAccess.getPrompt` 校验存在性。
+- `ConfigService.getCurrentValue`：`soul_core.opt_rule.*` 从 `list[0]` 提取 `days`/`min_usage_count`。
+- `dev-server`：每日午夜 `scheduleDailyAging()` 同步调用 `ageSoul` 老化不活跃 Soul。

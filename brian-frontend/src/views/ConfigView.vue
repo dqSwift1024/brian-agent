@@ -336,6 +336,14 @@ const currentParamsByCat = computed(() => {
 
 const isCardView = computed(() => currentSub.value?.type === 'params')
 
+// 渲染用分组：卡片视图单分组连续排布，列表视图按分类分组
+const currentParamsGroups = computed(() => {
+  if (isCardView.value) {
+    return [{ cat: 'all', label: '', items: currentParams.value }]
+  }
+  return currentParamsByCat.value
+})
+
 const editingParam = ref<ParamItem | null>(null)
 const editingParamValue = ref<string>('')
 const paramSaving = ref(false)
@@ -3659,7 +3667,7 @@ watch(activeSubSection, async (val) => {
               </div>
             </div>
             <!-- 参数列表 -->
-            <div v-for="group in currentParamsByCat" :key="group.cat" :class="isCardView ? '' : 'rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800'">
+            <div v-for="group in currentParamsGroups" :key="group.cat" :class="isCardView ? '' : 'rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800'">
               <div v-if="!isCardView" class="px-4 py-3 border-b border-apple-gray-200 dark:border-apple-gray-700">
                 <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ group.label }}</h3>
               </div>
