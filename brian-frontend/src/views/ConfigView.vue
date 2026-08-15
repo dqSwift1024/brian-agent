@@ -7,6 +7,7 @@ import {
   Lightbulb, Library, RefreshCw, ClipboardList, Briefcase, PenLine,
   Settings, FileText, Network, User, MessageCircle, Sparkles,
   ChevronRight, Trash2, Loader2, Check, AlertCircle,
+  CheckSquare, Square,
   Star, FlaskConical, X, Save, Layers, Eraser,
   Globe, Key, Plus, Pencil, Download, ExternalLink,
   Eye, EyeOff,
@@ -774,6 +775,34 @@ watch(() => activeSubSection.value, (val) => {
 })
 
 const prompts = ref<{ id: string; title: string; brief: string; enabled: boolean }[]>([])
+const promptHelpCollapsed = ref(true)
+const promptSearchQuery = ref('')
+const selectedPrompts = ref<Set<string>>(new Set())
+
+const filteredPrompts = computed(() => {
+  const q = promptSearchQuery.value.toLowerCase().trim()
+  if (!q) return prompts.value
+  return prompts.value.filter(p =>
+    (p.title || '').toLowerCase().includes(q) ||
+    (p.brief || '').toLowerCase().includes(q)
+  )
+})
+
+const allPromptsSelected = computed(() =>
+  filteredPrompts.value.length > 0 && filteredPrompts.value.every(p => selectedPrompts.value.has(p.id))
+)
+
+function togglePromptSelect(id: string) {
+  const next = new Set(selectedPrompts.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedPrompts.value = next
+}
+
+function togglePromptSelectAll() {
+  if (allPromptsSelected.value) selectedPrompts.value = new Set()
+  else selectedPrompts.value = new Set(filteredPrompts.value.map(p => p.id))
+}
 
 function getPromptTitle(id: string): string {
   const p = prompts.value.find(p => p.id === id)
@@ -859,6 +888,20 @@ async function handleDeletePrompt(id: string) {
     await loadPrompts()
   } catch (e: unknown) {
     showToast(e instanceof Error ? e.message : '删除失败')
+  }
+}
+
+async function handleBatchDeletePrompts() {
+  if (!confirm(`确定删除选中的 ${selectedPrompts.value.size} 个 Prompt 模板？`)) return
+  try {
+    for (const id of selectedPrompts.value) {
+      await configApi.prompts.delete(id)
+    }
+    selectedPrompts.value = new Set()
+    showToast('已批量删除', 'success')
+    await loadPrompts()
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '批量删除失败')
   }
 }
 
@@ -4490,11 +4533,14 @@ watch(activeSubSection, async (val) => {
         <!-- ========================== 实体管理视图 - Prompt 模板 ========================== -->
         <div v-if="isEntityView && currentEntityType === 'prompt'" class="px-5 pb-6">
           <div class="mb-5 rounded-xl border border-brian-blue/20 bg-brian-blue/[0.02] dark:bg-brian-blue/5 p-4">
-            <h4 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50 mb-2 flex items-center gap-1.5">
-              <Lightbulb :size="15" class="text-brian-blue" />
-              Prompt 模板编写说明
-            </h4>
-            <div class="text-xs text-apple-gray-600 dark:text-apple-gray-300 space-y-1.5 leading-relaxed">
+            <button class="w-full flex items-center justify-between text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50 cursor-pointer" @click="promptHelpCollapsed = !promptHelpCollapsed">
+              <span class="flex items-center gap-1.5">
+                <Lightbulb :size="15" class="text-brian-blue" />
+                Prompt 模板编写说明
+              </span>
+              <ChevronRight :size="16" class="text-apple-gray-400 transition-transform" :class="{ 'rotate-90': !promptHelpCollapsed }" />
+            </button>
+            <div v-show="!promptHelpCollapsed" class="text-xs text-apple-gray-600 dark:text-apple-gray-300 space-y-1.5 leading-relaxed mt-2">
               <p>提示词模板使用 <code v-pre class="px-1 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-brian-blue font-mono text-[11px]">{{ 变量名 }}</code> 语法嵌入动态变量。后端执行模板时将变量替换为实际值。</p>
               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mt-2">
                 <dt class="font-medium text-apple-gray-500">模板内容：</dt>
@@ -4516,34 +4562,57 @@ watch(activeSubSection, async (val) => {
             </div>
           </div>
 
-          <div class="flex justify-between items-center mb-4">
-            <span class="text-xs text-apple-gray-400">{{ prompts.length }} 个模板</span>
-            <button class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors" @click="openPromptModal()">
-              <Plus :size="13" /> 添加模板
-            </button>
+          <div class="flex items-center gap-3 mb-4">
+            <div class="relative flex-1 max-w-sm">
+              <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+              <input v-model="promptSearchQuery" type="text" :class="inputClass + ' !py-1.5 !pl-8'" placeholder="搜索 Prompt 模板..." />
+            </div>
+            <span class="text-xs text-apple-gray-400">{{ filteredPrompts.length }} / {{ prompts.length }} 个模板</span>
+            <div class="flex items-center gap-2 ml-auto">
+              <button v-if="prompts.length > 0" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-apple-gray-500 hover:text-brian-blue" @click="togglePromptSelectAll">
+                <component :is="allPromptsSelected ? CheckSquare : Square" :size="14" />
+                {{ allPromptsSelected ? '取消全选' : '全选' }}
+              </button>
+              <button v-if="selectedPrompts.size > 0" class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg" @click="handleBatchDeletePrompts">
+                <Trash2 :size="12" /> 批量删除({{ selectedPrompts.size }})
+              </button>
+            </div>
           </div>
-          <div v-if="prompts.length === 0" class="flex flex-col items-center justify-center py-16">
-            <MessageSquare :size="28" class="text-apple-gray-400 mb-3" />
-            <p class="text-sm text-apple-gray-500">暂无 Prompt 模板</p>
-          </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div
-              v-for="p in prompts" :key="p.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
+            <button
+              class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-apple-gray-300 dark:border-apple-gray-600 rounded-xl text-apple-gray-400 hover:border-brian-blue hover:text-brian-blue transition-colors aspect-[3/2]"
+              @click="openPromptModal()"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <Plus :size="24" class="mb-2" />
+              <span class="text-sm font-medium">添加模板</span>
+            </button>
+            <div
+              v-for="p in filteredPrompts" :key="p.id"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              :class="selectedPrompts.has(p.id) ? 'border-brian-blue/40 bg-brian-blue/5' : ''"
+              @click="openPromptModal(p)"
+            >
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><MessageSquare :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ p.title }}</h3>
-                    <p class="text-[11px] text-apple-gray-400">{{ p.brief || '暂无简介' }}</p>
                   </div>
+                  <button
+                    class="p-0.5 flex-shrink-0"
+                    :class="selectedPrompts.has(p.id) ? 'text-brian-blue' : 'text-apple-gray-300 hover:text-brian-blue'"
+                    @click.stop="togglePromptSelect(p.id)"
+                  >
+                    <component :is="selectedPrompts.has(p.id) ? CheckSquare : Square" :size="16" />
+                  </button>
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="p.enabled ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
                 </div>
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="p.enabled ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
+                <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="p.brief || ''">
+                  {{ p.brief || '暂无简介' }}
+                </p>
               </div>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openPromptModal(p)"><Pencil :size="11" /> 编辑</button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleDeletePrompt(p.id)"><Trash2 :size="11" /> 删除</button>
+              <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="handleDeletePrompt(p.id)"><Trash2 :size="11" /> 删除</button>
               </div>
             </div>
           </div>
