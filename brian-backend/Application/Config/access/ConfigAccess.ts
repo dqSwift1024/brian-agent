@@ -25,6 +25,7 @@ import type {
 
 import type {
   LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
+  MQAccess, GraphDBAccess, VectorDBAccess,
 } from '@brian-agent/base';
 import type {
   AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput,
@@ -94,6 +95,9 @@ export class ConfigAccess {
     mcpAccess: MCPAccess,
     promptsAccess: PromptsAccess,
     logAccess: LogAccess,
+    mqAccess: MQAccess,
+    graphDBAccess: GraphDBAccess,
+    vectorDBAccess: VectorDBAccess,
     llmCore: LLMCoreAccess,
     infoCore: InfoCoreAccess,
     mcpCore: MCPCoreAccess,
@@ -123,6 +127,7 @@ export class ConfigAccess {
       relationDb,
       llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
       logAccess,
+      mqAccess, graphDBAccess, vectorDBAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
       writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder,
       agentExecution, agentStrategy, agentContext,

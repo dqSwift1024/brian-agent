@@ -64,7 +64,8 @@
 
 1. 接收 LLM 提供商数据（URL、title、brief），通过 RelationDBProvider 写入 `llm_provider` 表；
 2. 新增时自动写入 created、updated 字段；
-3. 默认 enable = false，需手动启用后才能调用其模型；
+3. 未显式指定配额字段时，从 llm_config 读取全局默认配额（`default_quota_tokens_per_day` / `default_quota_tokens_per_week` / `default_quota_tokens_per_month` / `default_quota_calls_per_day` / `default_quota_calls_per_week` / `default_quota_calls_per_month`，默认 0 为不限制）作为新提供商的初始配额；
+4. 默认 enable = false，需手动启用后才能调用其模型；
 
 **返回**：Boolean，表示新增是否完成；LLM 提供商 ID 通过 output 参数返回
 

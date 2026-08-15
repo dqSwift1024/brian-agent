@@ -11,6 +11,7 @@ import { setupRealTestEnvironment, cleanupTempDirs, type RealTestContext } from 
 describe('ConfigService', () => {
   let db: RelationDBAccess;
   let llmAccess: any, soulAccess: any, skillAccess: any, mcpAccess: any, promptsAccess: any, logAccess: any;
+  let mqAccess: any, graphDBAccess: any, vectorDBAccess: any;
   let llmCore: any, infoCore: any, mcpCore: any, skillCore: any, soulCore: any;
   let writerAgent: any, evolutorAgent: any, plannerAgent: any, agentLibrary: any, agentBuilder: any, agentExecution: any, agentStrategy: any, agentContext: any;
   let orchestrationEntry: any, orchestrationStrategy: any, orchestrationExecution: any, orchestrationVisualization: any, jsonNode: any;
@@ -30,6 +31,9 @@ describe('ConfigService', () => {
     mcpAccess = realCtx.mcpAccess;
     promptsAccess = realCtx.promptsAccess;
     logAccess = realCtx.logAccess;
+    mqAccess = realCtx.mqAccess;
+    graphDBAccess = realCtx.graphDBAccess;
+    vectorDBAccess = realCtx.vectorDbAccess;
     llmCore = realCtx.llmCore;
     infoCore = realCtx.infoCore;
     mcpCore = realCtx.mcpCore;
@@ -76,6 +80,7 @@ describe('ConfigService', () => {
     new ConfigSchemaInitializer(db).init();
     service = new ConfigService(db, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
       logAccess,
+      mqAccess, graphDBAccess, vectorDBAccess,
       llmCore, infoCore, mcpCore, skillCore, soulCore,
       writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
       orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
@@ -418,6 +423,7 @@ describe('ConfigService', () => {
       new ConfigSchemaInitializer(freshDb).init();
       const freshService = new ConfigService(freshDb, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
         logAccess,
+        mqAccess, graphDBAccess, vectorDBAccess,
         llmCore, infoCore, mcpCore, skillCore, soulCore,
         writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder, agentExecution, agentStrategy, agentContext,
         orchestrationEntry, orchestrationStrategy, orchestrationExecution, orchestrationVisualization, jsonNode,
@@ -593,12 +599,15 @@ describe('ConfigService', () => {
       expect(writerAgent.configWriterAgent).toHaveBeenCalled();
     });
 
-    it('TC-CFG-099: non-routable prefix throws ValidationError', async () => {
+    it('TC-CFG-099: Base provider enabled routes to its enable method', async () => {
       const key = 'llm_provider.enabled';
+      vi.spyOn(llmAccess, 'enableLLM').mockResolvedValue(true);
       const updInput = new UpdateConfigInput();
       updInput.config_key = key;
       updInput.value = false;
-      await expect(service.updateConfig(updInput, ctx(), new UpdateConfigOutput())).rejects.toThrow(ValidationError);
+      const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
+      expect(result).toBe(true);
+      expect(llmAccess.enableLLM).toHaveBeenCalled();
     });
   });
 
@@ -1278,6 +1287,42 @@ describe('ConfigService', () => {
       const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
       expect(result).toBe(true);
       expect(visualizationAccess.configVisualization).toHaveBeenCalled();
+    });
+  });
+
+  // =====================================================================
+  // Base provider config routing (mq_provider 等基础设施 Provider 读写)
+  // =====================================================================
+
+  describe('Base provider config routing', () => {
+    it('writes and reads back mq_provider non-enabled param from mq_config', async () => {
+      const updInput = new UpdateConfigInput();
+      updInput.config_key = 'mq_provider.message_ttl';
+      updInput.value = 1234;
+      await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
+
+      const getInput = new GetConfigItemInput();
+      getInput.config_key = 'mq_provider.message_ttl';
+      const getOutput = new GetConfigItemOutput();
+      await service.getConfigItem(getInput, ctx(), getOutput);
+      expect(getOutput.config_item.current_value).toBe(1234);
+    });
+
+    it('writes mq_provider.enabled via enableMQ', async () => {
+      vi.spyOn(mqAccess, 'enableMQ').mockResolvedValue(true);
+      const updInput = new UpdateConfigInput();
+      updInput.config_key = 'mq_provider.enabled';
+      updInput.value = false;
+      await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
+      expect(mqAccess.enableMQ).toHaveBeenCalled();
+    });
+
+    it('reads static default when mq_config has no entry', async () => {
+      const getInput = new GetConfigItemInput();
+      getInput.config_key = 'mq_provider.default_priority';
+      const getOutput = new GetConfigItemOutput();
+      await service.getConfigItem(getInput, ctx(), getOutput);
+      expect(getOutput.config_item.current_value).toBe(5);
     });
   });
 });

@@ -752,22 +752,40 @@ function formatTime(ts: number) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-function formatDurationMs(ms: number | string): string {
-  const v = typeof ms === 'string' ? parseInt(ms, 10) : ms
-  if (!v || v <= 0 || isNaN(v)) return ''
-  if (v < 1000) return `${v}ms`
-  const s = v / 1000
-  if (s < 60) return (s % 1 === 0 ? `${s}` : `${s.toFixed(1)}`) + ' 秒'
-  const m = s / 60
-  if (m < 600) return (m % 1 === 0 ? `${m}` : `${m.toFixed(1)}`) + ' 分钟'
+function formatDurationSeconds(sec: number): string {
+  if (sec < 60) return (sec % 1 === 0 ? `${sec}` : `${sec.toFixed(1)}`) + ' 秒'
+  const m = sec / 60
+  if (m < 60) return (m % 1 === 0 ? `${m}` : `${m.toFixed(1)}`) + ' 分钟'
   const h = m / 60
-  if (h < 48) return (h % 1 === 0 ? `${h}` : `${h.toFixed(1)}`) + ' 小时'
+  if (h < 24) return (h % 1 === 0 ? `${h}` : `${h.toFixed(1)}`) + ' 小时'
   const d = h / 24
   return (d % 1 === 0 ? `${d}` : `${d.toFixed(1)}`) + ' 天'
 }
 
+function formatDurationMs(ms: number | string): string {
+  const v = typeof ms === 'string' ? parseInt(ms, 10) : ms
+  if (!v || v <= 0 || isNaN(v)) return ''
+  if (v < 1000) return `${v}ms`
+  return formatDurationSeconds(v / 1000)
+}
+
+// 秒单位的时长配置后缀（区别于毫秒单位的 _ms）
+const SECONDS_SUFFIXES = ['_ttl', '_timeout', '_delay']
+
 function isTimeConfig(key: string): boolean {
   return key.includes('timeout_ms') || key.includes('interval_ms') || key.includes('_ms')
+    || SECONDS_SUFFIXES.some((s) => key.endsWith(s))
+}
+
+function isSecondsConfig(key: string): boolean {
+  return SECONDS_SUFFIXES.some((s) => key.endsWith(s))
+}
+
+function formatConfigDuration(key: string, value: string | number): string {
+  const v = typeof value === 'string' ? parseInt(value, 10) : value
+  if (!v || v <= 0 || isNaN(v)) return ''
+  if (isSecondsConfig(key)) return formatDurationSeconds(v)
+  return formatDurationMs(v)
 }
 
 watch(() => activeSubSection.value, (val) => {
@@ -961,6 +979,10 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
     TEXT: '纯文本',
     MARKDOWN: 'Markdown',
     JSON: 'JSON',
+  },
+  'graphdb_provider.default_trigger_type': {
+    user_query: '用户交互触发',
+    tag_maintenance: '标签维护触发',
   },
 }
 
@@ -3759,7 +3781,7 @@ watch(activeSubSection, async (val) => {
                       <p v-if="item.config_description" class="text-xs text-apple-gray-400 dark:text-apple-gray-500 mt-0.5">
                         {{ item.config_description }}
                         <template v-if="isTimeConfig(item.config_key) && getConfigPrimitiveValue(item) !== undefined">
-                          · {{ formatDurationMs(getConfigPrimitiveValue(item) as string | number) }}
+                          · {{ formatConfigDuration(item.config_key, getConfigPrimitiveValue(item) as string | number) }}
                         </template>
                       </p>
                       <p class="text-[10px] font-mono text-apple-gray-400 dark:text-apple-gray-500 mt-0.5">{{ item.config_key }}</p>

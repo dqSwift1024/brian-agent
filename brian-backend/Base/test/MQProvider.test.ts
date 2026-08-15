@@ -93,6 +93,13 @@ describe('MQProvider', () => {
 
     mq = new MQAccess(relationDb);
     await mq.initialize();
+
+    // 测试环境将重试基础延迟设为 0，让 nack 后消息立即可被重新消费，
+    // 避免指数退避等待时间（测试关注状态流转而非延迟时长）
+    await relationDb.update('mq_config', [
+      { field: 'config_value', value: '0' },
+      { field: 'updated', value: Date.now() },
+    ], [{ field: 'config_key', operator: Operator.EQ, value: 'retry_base_delay' }]);
   });
 
   afterEach(async () => {

@@ -142,7 +142,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   base('graphdb_provider', 'basic', 'enabled', '图数据库启用', 'BOOLEAN', true, '图数据库是否启用'),
   base('graphdb_provider', 'aging', 'retention_days', '激活统计保留天数', 'INT', 30, '老化观察窗口'),
   base('graphdb_provider', 'aging', 'min_activation_count', '窗口内最小激活次数阈值', 'INT', 5),
-  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'ENUM', 'user_query', '边激活事件的默认触发来源', ['所有触发事件', '用户交互触发', '标签维护触发', '自定义事件触发']),
+  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'ENUM', 'user_query', '边激活事件的默认触发来源', ['user_query', 'tag_maintenance']),
   base('graphdb_provider', 'basic', 'default_weight', '默认边权重', 'DOUBLE', 1.0),
   base('graphdb_provider', 'basic', 'default_depth', '默认遍历深度', 'INT', 1),
   base('graphdb_provider', 'basic', 'default_only_active', '默认仅遍历激活边', 'BOOLEAN', true),
@@ -252,6 +252,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   agent('agent_execution', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
 
   // --- AgentContext ---
+  agent('agent_context', 'basic', 'max_context_items', '最大上下文条目数', 'INT', 200, '单次上下文构建的最大 info 条目数'),
   agent('agent_context', 'basic', 'enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
 
   // --- PlannerAgent ---

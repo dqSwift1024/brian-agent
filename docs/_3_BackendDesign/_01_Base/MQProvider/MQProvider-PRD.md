@@ -156,7 +156,7 @@
 
 **返回**：Boolean，表示操作是否完成
 
-> 注：组件初始化时从 mq_config 读取 `enabled` 状态以恢复上次的可用状态（如上次为禁用则保持禁用，避免状态丢失）；运行时内存中维护 `enabled` 状态供各操作快速校验，状态变更同步落库。
+> 注：组件初始化时先幂等写入默认配置项（`enabled` / `message_ttl` / `default_max_retries` / `default_priority` / `retry_base_delay` / `processing_timeout`，见 4.2 默认配置项，不覆盖已有值），再从 mq_config 读取 `enabled` 状态以恢复上次的可用状态（如上次为禁用则保持禁用，避免状态丢失）；运行时内存中维护 `enabled` 状态供各操作快速校验，状态变更同步落库。
 
 ## 4. 表设计
 

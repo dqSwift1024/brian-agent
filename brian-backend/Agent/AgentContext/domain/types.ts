@@ -32,6 +32,7 @@ export interface AgentContextConfigRecord {
   id: string;
   created: number;
   updated: number;
+  max_context_items: number;
   enable_snapshot_persistence: number;
 }
 
@@ -85,10 +86,12 @@ export class GetContextDetailOutput extends Output {
 }
 
 export class ConfigAgentContextInput extends Input {
+  max_context_items?: number;
   enable_snapshot_persistence?: boolean;
 }
 
 export class ConfigAgentContextOutput extends Output {
+  max_context_items = DEFAULT_MAX_CONTEXT_ITEMS;
   enable_snapshot_persistence = true;
 }
 
@@ -96,6 +99,7 @@ export const AGENT_CONTEXT_TABLE = 'agent_context';
 export const AGENT_CONTEXT_ITEM_TABLE = 'agent_context_item';
 export const AGENT_CONTEXT_CONFIG_TABLE = 'agent_context_config';
 
+export const DEFAULT_MAX_CONTEXT_ITEMS = 200;
 export const DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE = 1;
 
 export const CONTEXT_SOURCE_VALID = [

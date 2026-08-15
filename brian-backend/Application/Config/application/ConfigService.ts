@@ -11,6 +11,18 @@
 import type { RelationDBAccess, Logger, IdGenerator } from '@brian-agent/base';
 import { Operator, ValidationError, NotFoundError } from '@brian-agent/base';
 import type { DataObject, Condition } from '@brian-agent/base';
+import {
+  ConfigService as BaseConfigService,
+  LLM_CONFIG_TABLE,
+  SOUL_CONFIG_TABLE,
+  SKILL_CONFIG_TABLE,
+  MCP_CONFIG_TABLE,
+  PROMPTS_CONFIG_TABLE,
+  MQ_CONFIG_TABLE,
+  GRAPHDB_CONFIG_TABLE,
+  VECTORDB_CONFIG_TABLE,
+  RELATIONDB_CONFIG_TABLE,
+} from '@brian-agent/base';
 
 import type { LLMCoreAccess, InfoCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess } from '@brian-agent/core';
 import {
@@ -101,6 +113,7 @@ import type {
 
 import type {
   LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
+  MQAccess, GraphDBAccess, VectorDBAccess,
 } from '@brian-agent/base';
 import type {
   ConfigLogInput, ConfigLogOutput, LogContext,
@@ -171,6 +184,9 @@ export class ConfigService {
   private readonly mcpAccess: MCPAccess;
   private readonly promptsAccess: PromptsAccess;
   private readonly logAccess: LogAccess;
+  private readonly mqAccess: MQAccess;
+  private readonly graphDBAccess: GraphDBAccess;
+  private readonly vectorDBAccess: VectorDBAccess;
   private readonly llmCore: LLMCoreAccess;
   private readonly infoCore: InfoCoreAccess;
   private readonly mcpCore: MCPCoreAccess;
@@ -199,6 +215,19 @@ export class ConfigService {
     ALL_CONFIG_REGISTRATIONS.map((r) => [r.config_key, r]),
   );
 
+  /** Base 层 Provider 模块名 → 对应配置表名映射（config_key 前缀 `模块.key`） */
+  private static readonly BASE_PROVIDER_CONFIG_TABLES: Record<string, string> = {
+    llm_provider: LLM_CONFIG_TABLE,
+    soul_provider: SOUL_CONFIG_TABLE,
+    skill_provider: SKILL_CONFIG_TABLE,
+    mcp_provider: MCP_CONFIG_TABLE,
+    prompts_provider: PROMPTS_CONFIG_TABLE,
+    mq_provider: MQ_CONFIG_TABLE,
+    graphdb_provider: GRAPHDB_CONFIG_TABLE,
+    vectordb_provider: VECTORDB_CONFIG_TABLE,
+    relationdb_provider: RELATIONDB_CONFIG_TABLE,
+  };
+
   constructor(
     relationDb: RelationDBAccess,
     llmAccess: LLMAccess,
@@ -207,6 +236,9 @@ export class ConfigService {
     mcpAccess: MCPAccess,
     promptsAccess: PromptsAccess,
     logAccess: LogAccess,
+    mqAccess: MQAccess,
+    graphDBAccess: GraphDBAccess,
+    vectorDBAccess: VectorDBAccess,
     llmCore: LLMCoreAccess,
     infoCore: InfoCoreAccess,
     mcpCore: MCPCoreAccess,
@@ -237,6 +269,9 @@ export class ConfigService {
     this.mcpAccess = mcpAccess;
     this.promptsAccess = promptsAccess;
     this.logAccess = logAccess;
+    this.mqAccess = mqAccess;
+    this.graphDBAccess = graphDBAccess;
+    this.vectorDBAccess = vectorDBAccess;
     this.llmCore = llmCore;
     this.infoCore = infoCore;
     this.mcpCore = mcpCore;
@@ -764,7 +799,53 @@ export class ConfigService {
   // getCurrentValue - fetches current config value from lower layer
   // =========================================================================
 
+  /**
+   * 匹配 Base 层 Provider 模块名（config_key 前缀 `模块.key`）。
+   * 命中返回模块名，否则返回 null。
+   */
+  private matchBaseProviderModule(configKey: string): string | null {
+    const dot = configKey.indexOf('.');
+    if (dot <= 0) return null;
+    const module = configKey.slice(0, dot);
+    return module in ConfigService.BASE_PROVIDER_CONFIG_TABLES ? module : null;
+  }
+
+  /**
+   * 读取 Base 层 Provider 的配置项真实值。
+   *
+   * 直接读各 Provider 的 xxx_config 表（key 不带模块前缀），
+   * 未写入时回退到静态定义中的 config_default。
+   */
+  private async readBaseProviderConfig(configKey: string, module: string): Promise<unknown> {
+    const table = ConfigService.BASE_PROVIDER_CONFIG_TABLES[module];
+    const key = configKey.slice(module.length + 1);
+    const reg = this.registryMap.get(configKey);
+    const type = (reg?.config_type ?? 'STRING').toUpperCase();
+    const def = reg?.config_default;
+    const svc = new BaseConfigService(this.relationDb, table);
+
+    switch (type) {
+      case 'BOOLEAN':
+        return svc.getBoolean(key, def === true || def === 'true' || def === 1);
+      case 'INT':
+      case 'INTEGER':
+        return svc.getInt(key, typeof def === 'number' ? def : 0);
+      case 'DOUBLE':
+      case 'FLOAT':
+      case 'NUMBER':
+        return svc.getDouble(key, typeof def === 'number' ? def : 0);
+      default: {
+        const raw = await svc.getString(key, def !== null && def !== undefined ? String(def) : undefined);
+        return raw !== undefined ? raw : (def ?? null);
+      }
+    }
+  }
+
   private async getCurrentValue(configKey: string): Promise<unknown> {
+    const baseModule = this.matchBaseProviderModule(configKey);
+    if (baseModule) {
+      return this.readBaseProviderConfig(configKey, baseModule);
+    }
     if (configKey.startsWith('log_provider.')) {
       const out: any = {};
       await this.logAccess.configLog({} as ConfigLogInput, {} as LogContext, out);
@@ -857,10 +938,10 @@ export class ConfigService {
       );
     }
     if (configKey.startsWith('agent_context.')) {
-      return this.getConfigFromAccess(
-        configKey, 'agent_context',
-        (i: any, c: any, o: any) => this.agentContext.configAgentContext(i, c, o),
-      );
+      const out: any = {};
+      await this.agentContext.configAgentContext({} as any, {} as any, out);
+      const field = configKey.split('.').pop() ?? '';
+      return field ? (out[field] ?? null) : null;
     }
     if (configKey.startsWith('agent_library.')) {
       return this.getConfigFromAccess(
@@ -962,7 +1043,75 @@ export class ConfigService {
   // routeUpdateConfig - routes update to correct lower-layer method
   // =========================================================================
 
+  /**
+   * 写入 Base 层 Provider 的配置项。
+   *
+   * - `enabled` 走 Provider 的 enableXxx 方法，保证运行时内存状态同步；
+   * - 其余参数直接写各 Provider 的 xxx_config 表（这些参数均为运行时实时读取，写表即时生效）。
+   */
+  private async writeBaseProviderConfig(configKey: string, module: string, value: unknown): Promise<void> {
+    const key = configKey.slice(module.length + 1);
+    if (key === 'enabled') {
+      await this.setProviderEnabled(module, value as boolean);
+      return;
+    }
+
+    const table = ConfigService.BASE_PROVIDER_CONFIG_TABLES[module];
+    const reg = this.registryMap.get(configKey);
+    const type = (reg?.config_type ?? 'STRING').toUpperCase();
+    const valueType =
+      type.startsWith('BOOLEAN') ? 'BOOLEAN'
+      : type.startsWith('INT') ? 'INT'
+      : type.startsWith('DOUBLE') || type.startsWith('FLOAT') || type.startsWith('NUMBER') ? 'DOUBLE'
+      : 'STRING';
+    const svc = new BaseConfigService(this.relationDb, table);
+    await svc.set(key, value, valueType);
+  }
+
+  /**
+   * 调用对应 Provider 的 enable 方法切换组件启用状态。
+   */
+  private async setProviderEnabled(module: string, enable: boolean): Promise<void> {
+    switch (module) {
+      case 'llm_provider':
+        await this.llmAccess.enableLLM({ enable } as any, {} as any, {} as any);
+        return;
+      case 'soul_provider':
+        await this.soulAccess.enableSoul({ enable } as any, {} as any, {} as any);
+        return;
+      case 'skill_provider':
+        await this.skillAccess.enableSkill({ enable } as any, {} as any, {} as any);
+        return;
+      case 'mcp_provider':
+        await this.mcpAccess.enableMCP({ enable } as any, {} as any, {} as any);
+        return;
+      case 'prompts_provider':
+        await this.promptsAccess.enablePrompts({ enable } as any, {} as any, {} as any);
+        return;
+      case 'mq_provider':
+        await this.mqAccess.enableMQ({ enable } as any, {} as any, {} as any);
+        return;
+      case 'graphdb_provider':
+        await this.graphDBAccess.enableGraphDB({ enable } as any, {} as any, {} as any);
+        return;
+      case 'vectordb_provider':
+        await this.vectorDBAccess.enableVectorDB({ enable } as any, {} as any, {} as any);
+        return;
+      case 'relationdb_provider':
+        await this.relationDb.enableDB({ enable } as any, {} as any, {} as any);
+        return;
+      default:
+        throw new ValidationError(`未知 Base Provider 模块 ${module}`);
+    }
+  }
+
   private async routeUpdateConfig(configKey: string, value: unknown): Promise<void> {
+    const baseModule = this.matchBaseProviderModule(configKey);
+    if (baseModule) {
+      await this.writeBaseProviderConfig(configKey, baseModule, value);
+      return;
+    }
+
     const prefix = configKey;
 
     if (prefix.startsWith('log_provider.')) {
@@ -1143,7 +1292,8 @@ export class ConfigService {
     }
     if (prefix.startsWith('agent_context.')) {
       const input: any = {};
-      if (prefix.startsWith('agent_context.enable_snapshot_persistence')) input.enable_snapshot_persistence = value as boolean;
+      if (prefix.startsWith('agent_context.max_context_items')) input.max_context_items = value as number;
+      else if (prefix.startsWith('agent_context.enable_snapshot_persistence')) input.enable_snapshot_persistence = value as boolean;
       const output: any = {};
       await this.agentContext.configAgentContext(input, {} as any, output);
       return;

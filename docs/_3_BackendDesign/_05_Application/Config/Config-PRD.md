@@ -335,11 +335,27 @@ effective_writable(node) = parent.effective_writable AND node.writable
 | APPLICATION | SelfLearning | self_learning.* | configSelfLearning | 对应字段 |
 | APPLICATION | UserProfile | user_profile.* | configUserProfile | 对应字段 |
 | APPLICATION | Visualization | visualization.* | configVisualization | 对应字段 |
+| BASE | LLMProvider | llm_provider.enabled | enableLLM | enable |
+| BASE | LLMProvider | llm_provider.default_quota_* | 写 llm_config 表（addLLMProvider 时读取） | 对应限额字段 |
+| BASE | SoulProvider | soul_provider.enabled | enableSoul | enable |
+| BASE | SkillProvider | skill_provider.enabled | enableSkill | enable |
+| BASE | MCPProvider | mcp_provider.enabled | enableMCP | enable |
+| BASE | MCPProvider | mcp_provider.cache_ttl | 写 mcp_config 表 | cache_ttl |
+| BASE | PromptsProvider | prompts_provider.enabled | enablePrompts | enable |
+| BASE | MQProvider | mq_provider.enabled | enableMQ | enable |
+| BASE | MQProvider | mq_provider.message_ttl / default_max_retries / default_priority / retry_base_delay / processing_timeout | 写 mq_config 表 | 对应字段 |
+| BASE | GraphDBProvider | graphdb_provider.enabled | enableGraphDB | enable |
+| BASE | GraphDBProvider | graphdb_provider.retention_days / min_activation_count / default_trigger_type / default_weight / default_depth / default_only_active / decay_slope / total_bonus / hop_decay_factor / fan_out_threshold | 写 graphdb_config 表 | 对应字段 |
+| BASE | VectorDBProvider | vectordb_provider.enabled | enableVectorDB | enable |
+| BASE | VectorDBProvider | vectordb_provider.default_top_k / default_similarity_threshold / default_distance_metric | 写 vectordb_config 表 | 对应字段 |
+| BASE | RelationDBProvider | relationdb_provider.enabled | enableDB | enable |
 | BASE | LLMProvider | llm_provider.* | addLLMProvider / updateLLMProvider / delLLMProvider 等 | 根据操作类型 |
 | BASE | SoulProvider | soul.* | addSoul / updateSoul / delSoul 等 | 根据操作类型 |
 | BASE | SkillProvider | skill.* | addSkill / updateSkill / delSkill 等 | 根据操作类型 |
 | BASE | MCPProvider | mcp.* | installMcp / startMcp / stopMcp 等 | 根据操作类型 |
 | BASE | PromptsProvider | prompt.* | addPrompt / updatePrompt / delPrompt 等 | 根据操作类型 |
+
+> 注：Base 层 Provider 的配置项统一经 `BASE_PROVIDER_CONFIG_TABLES` 映射路由——`enabled` 走各 Provider 的 enable 方法（同步运行时内存状态），其余参数直接读写各 Provider 的 `xxx_config` 表（这些参数均为运行时实时读取，写表即时生效）。
 
 ### 3.4. Base 层资源管理代理
 

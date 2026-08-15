@@ -355,6 +355,25 @@ describe('LLMProvider', () => {
       expect(record.updated).toBeGreaterThan(0);
       expect(record.id).toBe(out.id);
     });
+
+    it('新增时未指定配额应继承 llm_config 的默认配额', async () => {
+      await relationDb.insert('llm_config', [
+        { field: 'config_key', value: 'default_quota_tokens_per_day' },
+        { field: 'config_value', value: '100' },
+        { field: 'value_type', value: 'INT' },
+        { field: 'updated', value: Date.now() },
+      ]);
+
+      const input = new AddLLMProviderInput();
+      input.data = makeProviderData();
+      const out = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+
+      const row = await relationDb.selectOne('llm_provider', [
+        { field: 'id', operator: Operator.EQ, value: out.id },
+      ]);
+      expect(Number(row?.quota_tokens_per_day)).toBe(100);
+    });
   });
 
   // =========================================================================

@@ -66,11 +66,21 @@ export class MQService {
   }
 
   /**
-   * 初始化：写入默认配置并恢复 enabled 状态。
+   * 初始化：写入默认配置（幂等，不覆盖已有值）并恢复 enabled 状态。
    *
-   * PRD 5.5 条：组件初始化时从 mq_config 读取 enabled 状态以恢复上次的可用状态。
+   * PRD 5.5 条：组件初始化时从 mq_config 读取 enabled 状态以恢复上次的可用状态；
+   * 默认配置项（message_ttl / default_max_retries / default_priority /
+   * retry_base_delay / processing_timeout）在首次初始化时写入，供运行时按需读取。
    */
   async initialize(): Promise<void> {
+    await this.config.initDefaults([
+      { config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN', description: 'MQ 组件是否启用（enableMQ 读写）' },
+      { config_key: 'message_ttl', config_value: '86400', value_type: 'INT', description: '消息默认保留时间（秒，默认1天）' },
+      { config_key: 'default_max_retries', config_value: '3', value_type: 'INT', description: '默认最大重试次数' },
+      { config_key: 'default_priority', config_value: '5', value_type: 'INT', description: '默认消息优先级（0-10）' },
+      { config_key: 'retry_base_delay', config_value: '1', value_type: 'INT', description: '重试基础延迟（秒），第 N 次重试延迟 = base × 2^(N-1)' },
+      { config_key: 'processing_timeout', config_value: '300', value_type: 'INT', description: '处理超时（秒）' },
+    ]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 

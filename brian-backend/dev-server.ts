@@ -285,6 +285,7 @@ async function buildContext() {
     relationDb,
     llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess,
     logAccess,
+    mqAccess, graphDBAccess, vectorDBAccess,
     llmCore, infoCore, mcpCore, skillCore, soulCore,
     writerAgent, evolutorAgent, plannerAgent, agentLibrary, agentBuilder,
     agentExecution, agentStrategy, agentContext,

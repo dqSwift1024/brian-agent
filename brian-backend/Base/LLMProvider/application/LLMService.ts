@@ -243,6 +243,16 @@ export class LLMService {
     const id = IdGenerator.generate();
     const now = IdGenerator.now();
 
+    // 未显式指定配额时，从 llm_config 读取全局默认配额（0 = 不限制）
+    const [dTokensDay, dTokensWeek, dTokensMonth, dCallsDay, dCallsWeek, dCallsMonth] = await Promise.all([
+      this.config.getInt('default_quota_tokens_per_day', 0),
+      this.config.getInt('default_quota_tokens_per_week', 0),
+      this.config.getInt('default_quota_tokens_per_month', 0),
+      this.config.getInt('default_quota_calls_per_day', 0),
+      this.config.getInt('default_quota_calls_per_week', 0),
+      this.config.getInt('default_quota_calls_per_month', 0),
+    ]);
+
     const dataObjects: DataObject[] = [
       { field: 'id', value: id },
       { field: 'created', value: now },
@@ -254,12 +264,12 @@ export class LLMService {
       { field: 'api_key', value: data.api_key ?? null },
       { field: 'models_path', value: data.models_path ?? null },
       { field: 'chat_path', value: data.chat_path ?? null },
-      { field: 'quota_tokens_per_day', value: data.quota_tokens_per_day ?? 0 },
-      { field: 'quota_tokens_per_week', value: data.quota_tokens_per_week ?? 0 },
-      { field: 'quota_tokens_per_month', value: data.quota_tokens_per_month ?? 0 },
-      { field: 'quota_calls_per_day', value: data.quota_calls_per_day ?? 0 },
-      { field: 'quota_calls_per_week', value: data.quota_calls_per_week ?? 0 },
-      { field: 'quota_calls_per_month', value: data.quota_calls_per_month ?? 0 },
+      { field: 'quota_tokens_per_day', value: data.quota_tokens_per_day ?? dTokensDay },
+      { field: 'quota_tokens_per_week', value: data.quota_tokens_per_week ?? dTokensWeek },
+      { field: 'quota_tokens_per_month', value: data.quota_tokens_per_month ?? dTokensMonth },
+      { field: 'quota_calls_per_day', value: data.quota_calls_per_day ?? dCallsDay },
+      { field: 'quota_calls_per_week', value: data.quota_calls_per_week ?? dCallsWeek },
+      { field: 'quota_calls_per_month', value: data.quota_calls_per_month ?? dCallsMonth },
     ];
     await this.relationDb.insert(LLM_PROVIDER_TABLE, dataObjects);
     output.id = id;

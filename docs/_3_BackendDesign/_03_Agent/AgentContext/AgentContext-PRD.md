@@ -148,17 +148,20 @@
 
 **入参**：
 - input：ConfigAgentContextInput（继承 Input），包含以下字段：
+  - max_context_items：最大上下文条目数（可选，正整数，默认 200；0 / 负数 / 非整数 / NaN 抛 ValidationError）
   - enable_snapshot_persistence：是否启用上下文快照持久化（可选，默认 true）
 - context：ConfigAgentContextContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ConfigAgentContextOutput（继承 Output），承载返回内容：
+  - max_context_items：当前生效的最大上下文条目数
   - enable_snapshot_persistence：当前生效的快照持久化开关
 
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `agent_context_config` 表获取当前配置；
-2. 若 `enable_snapshot_persistence` 非空：更新；
-3. 调用 RelationDBProvider.updateDB 写入配置；
-4. 返回更新后的配置写入 output；
+1. 校验 `max_context_items`（若传入）：必须为正整数，否则抛 ValidationError；
+2. 调用 RelationDBProvider.selectOneDB 查询 `agent_context_config` 表获取当前配置；若不存在则自动创建默认配置行；
+3. 若 `max_context_items` 非空：更新；若 `enable_snapshot_persistence` 非空：更新；
+4. 调用 RelationDBProvider.updateDB 写入配置；
+5. 返回更新后的配置写入 output；
 
 ## 3. 表设计
 
@@ -220,6 +223,7 @@
 | id | 数据唯一标识 | UUID | N | 主键 | |
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| max_context_items | 最大上下文条目数 | INT | N | | 默认 200，用于限制单次上下文构建的最大 info 条目数 |
 | enable_snapshot_persistence | 是否启用快照持久化 | BOOL | N | | 默认 true，关闭后不写 agent_context / agent_context_item 表 |
 
 ## 4. 与 InfoCore 的关系

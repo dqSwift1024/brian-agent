@@ -266,7 +266,8 @@
 1. 通过图数据库的图遍历能力（如 `MATCH (n)-[*1..depth]-(neighbor)`）从 `node_id` 开始按 `direction` 多跳遍历；
 2. 按 `edge_type` 过滤边（若指定）；
 3. 若 `only_active` 为 true，过滤非激活状态的边（is_active = true）；
-4. 返回 depth 范围内的所有邻居节点；
+4. 扇出熔断：每层遍历统计各节点按方向计数的扇出度（OUT 计出边、IN 计入边、BOTH 计总度），扇出度超过配置 `fan_out_threshold`（默认 500）的节点跳过其邻居扩展，防止 hub 节点导致图爆炸；
+5. 返回 depth 范围内的所有邻居节点；
 
 **返回**：Boolean，表示查询是否完成；邻居节点列表通过 output 参数返回
 
@@ -369,7 +370,7 @@
 
 **返回**：Boolean，表示操作是否完成
 
-> 注：组件初始化时从 graphdb_config 读取 `enabled` 状态以恢复上次的可用状态（如上次为禁用则保持禁用，避免状态丢失）；运行时内存中维护 `enabled` 状态供各操作快速校验，状态变更同步落库。
+> 注：组件初始化时先幂等写入默认配置项（见 4.5 默认配置项，不覆盖已有值），再从 graphdb_config 读取 `enabled` 状态以恢复上次的可用状态（如上次为禁用则保持禁用，避免状态丢失）；运行时内存中维护 `enabled` 状态供各操作快速校验，状态变更同步落库。
 
 #### 3.5.3. 关闭连接（closeGraphDB）
 
@@ -490,12 +491,16 @@
 | config_key | config_value | value_type | description |
 | ------ | ----- | ----- | ----- |
 | enabled | true | BOOLEAN | 图数据库是否启用（enableGraphDB 读写） |
-| retention_days | 30 | INT | 激活统计保留天数（老化观察窗口） |
+| retention_days | 30 | INT | 激活统计保留天数（老化观察窗口与复合权重统计窗口共用） |
 | min_activation_count | 5 | INT | 窗口内最小激活次数阈值 |
-| default_trigger_type | user_query | STRING | 默认触发类型 |
+| default_trigger_type | user_query | STRING | 默认触发类型（user_query 用户交互 / tag_maintenance 标签维护） |
 | default_weight | 1.0 | DOUBLE | 默认边权重 |
 | default_depth | 1 | INT | 默认遍历深度 |
 | default_only_active | true | BOOLEAN | 默认仅遍历激活边 |
+| decay_slope | 0.06 | DOUBLE | 逆比例衰减斜率 (α)，控制复合权重 recency 衰减速度 |
+| total_bonus | 0.4 | DOUBLE | 对数累计补偿 (β)，对长期低频边的补偿 |
+| hop_decay_factor | 0.8 | DOUBLE | 跳衰减因子 (γ)，每多 1 跳权重乘以 γ |
+| fan_out_threshold | 500 | INT | 扇出熔断阈值 (θ)，遍历时节点扇出度超过此值触发截断 |
 
 ## 5. 重要内容
 

@@ -112,11 +112,25 @@ export class GraphDBService {
   // -------------------------------------------------------------------------
 
   /**
-   * 初始化组件：写入默认配置并恢复 enabled 状态。
+   * 初始化组件：写入默认配置（幂等，不覆盖已有值）并恢复 enabled 状态。
    *
-   * PRD 3.5.2 注：组件初始化时从 graphdb_config 读取 enabled 状态以恢复上次的可用状态。
+   * PRD 3.5.2 注：组件初始化时从 graphdb_config 读取 enabled 状态以恢复上次的可用状态；
+   * 默认配置项在首次初始化时写入，供运行时按需读取。
    */
   async initialize(): Promise<void> {
+    await this.config.initDefaults([
+      { config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN', description: '图数据库是否启用（enableGraphDB 读写）' },
+      { config_key: 'retention_days', config_value: '30', value_type: 'INT', description: '激活统计保留天数（老化观察窗口）' },
+      { config_key: 'min_activation_count', config_value: '5', value_type: 'INT', description: '窗口内最小激活次数阈值' },
+      { config_key: 'default_trigger_type', config_value: 'user_query', value_type: 'STRING', description: '默认触发类型' },
+      { config_key: 'default_weight', config_value: '1.0', value_type: 'DOUBLE', description: '默认边权重' },
+      { config_key: 'default_depth', config_value: '1', value_type: 'INT', description: '默认遍历深度' },
+      { config_key: 'default_only_active', config_value: 'true', value_type: 'BOOLEAN', description: '默认仅遍历激活边' },
+      { config_key: 'decay_slope', config_value: '0.06', value_type: 'DOUBLE', description: '逆比例衰减斜率 (α)' },
+      { config_key: 'total_bonus', config_value: '0.4', value_type: 'DOUBLE', description: '对数累计补偿 (β)' },
+      { config_key: 'hop_decay_factor', config_value: '0.8', value_type: 'DOUBLE', description: '跳衰减因子 (γ)' },
+      { config_key: 'fan_out_threshold', config_value: '500', value_type: 'INT', description: '扇出熔断阈值 (θ)' },
+    ]);
     this.enabled = await this.config.getBoolean('enabled', true);
   }
 
@@ -868,7 +882,7 @@ export class GraphDBService {
     // 读取权重参数
     const decaySlope = await this.config.getDouble('decay_slope', 0.06);
     const totalBonus = await this.config.getDouble('total_bonus', 0.4);
-    const retentionDays = await this.config.getInt('retention_days', 60);
+    const retentionDays = await this.config.getInt('retention_days', 30);
 
     // 读取每日激活计数
     const nowMs = IdGenerator.now();
@@ -1041,6 +1055,7 @@ export class GraphDBService {
       input.only_active ??
       (await this.config.getBoolean('default_only_active', true));
     const direction = String(input.direction ?? GraphDirection.BOTH);
+    const fanOutThreshold = await this.config.getInt('fan_out_threshold', 500);
 
     // 校验起始节点存在
     const startNode = await this.graphDb.queryOne(
@@ -1093,6 +1108,29 @@ export class GraphDBService {
           `RETURN from.id AS from_id, to.id AS to_id`,
       );
 
+      // 统计每个 frontier 节点的扇出度（按遍历方向），用于扇出熔断
+      const fanOutMap = new Map<string, number>();
+      for (const edge of edges) {
+        const fromId = String(edge.from_id);
+        const toId = String(edge.to_id);
+        if (direction === GraphDirection.OUT) {
+          fanOutMap.set(fromId, (fanOutMap.get(fromId) ?? 0) + 1);
+        } else if (direction === GraphDirection.IN) {
+          fanOutMap.set(toId, (fanOutMap.get(toId) ?? 0) + 1);
+        } else {
+          fanOutMap.set(fromId, (fanOutMap.get(fromId) ?? 0) + 1);
+          fanOutMap.set(toId, (fanOutMap.get(toId) ?? 0) + 1);
+        }
+      }
+
+      // 扇出熔断：扇出度超过阈值的节点跳过其邻居扩展（防止 hub 节点导致图爆炸）
+      const fusedNodes = new Set<string>();
+      for (const [nodeId, degree] of fanOutMap) {
+        if (degree > fanOutThreshold) {
+          fusedNodes.add(nodeId);
+        }
+      }
+
       // 收集邻居节点 ID
       const nextFrontier: string[] = [];
       for (const edge of edges) {
@@ -1100,20 +1138,22 @@ export class GraphDBService {
         const toId = String(edge.to_id);
         if (direction === GraphDirection.OUT) {
           // 出边：邻居是 to_node_id
+          if (fusedNodes.has(fromId)) continue;
           if (!visited.has(toId)) {
             nextFrontier.push(toId);
           }
         } else if (direction === GraphDirection.IN) {
           // 入边：邻居是 from_node_id
+          if (fusedNodes.has(toId)) continue;
           if (!visited.has(fromId)) {
             nextFrontier.push(fromId);
           }
         } else {
           // BOTH：取对向端点
-          if (frontier.includes(fromId) && !visited.has(toId)) {
+          if (!fusedNodes.has(fromId) && frontier.includes(fromId) && !visited.has(toId)) {
             nextFrontier.push(toId);
           }
-          if (frontier.includes(toId) && !visited.has(fromId)) {
+          if (!fusedNodes.has(toId) && frontier.includes(toId) && !visited.has(fromId)) {
             nextFrontier.push(fromId);
           }
         }

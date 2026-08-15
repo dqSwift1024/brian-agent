@@ -69,6 +69,23 @@ export class RelationDBService {
    * PRD 5.7 条：组件初始化时从 relationdb_config 读取 enabled 状态以恢复上次的可用状态。
    */
   async initialize(): Promise<void> {
+    // 首次初始化时写入默认 enabled 配置（幂等，不覆盖已有值）
+    const existing = this.repository.selectOne({
+      table: RELATIONDB_CONFIG_TABLE,
+      conditions: [
+        { field: 'config_key', operator: Operator.EQ, value: 'enabled' },
+      ],
+    });
+    if (!existing) {
+      this.repository.insert(RELATIONDB_CONFIG_TABLE, [
+        { field: 'config_key', value: 'enabled' },
+        { field: 'config_value', value: 'true' },
+        { field: 'value_type', value: 'BOOLEAN' },
+        { field: 'description', value: '关系数据库组件是否启用' },
+        { field: 'updated', value: IdGenerator.now() },
+      ]);
+    }
+
     // 恢复 enabled 状态
     const row = this.repository.selectOne({
       table: RELATIONDB_CONFIG_TABLE,

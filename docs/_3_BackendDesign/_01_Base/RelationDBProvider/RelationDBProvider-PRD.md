@@ -308,6 +308,6 @@
 4. 条件对象（Condition）支持丰富的操作符（EQ / NE / GT / LT / LIKE / IN / BETWEEN / IS_NULL 等），满足常见查询需求；
 5. 查询参数对象（QueryParam）支持字段过滤、排序、分页、分组，覆盖常见查询场景；
 6. 所有写操作推荐使用 `transactionDB` 保证原子性；
-7. RelationDBProvider 用到的所有配置项（含关系数据库启用 / 禁用状态 `enabled`）统一存储于关系数据库配置表 relationdb_config（库名 `relationdb`，见 4.1），运行时按需读取；enableDB 的启用 / 禁用状态同步持久化，组件初始化时恢复，避免状态丢失；
+7. RelationDBProvider 用到的所有配置项（含关系数据库启用 / 禁用状态 `enabled`）统一存储于关系数据库配置表 relationdb_config（库名 `relationdb`，见 4.1），运行时按需读取；组件初始化时先幂等写入默认 `enabled` 配置（见 4.1 默认配置项，不覆盖已有值），再从 relationdb_config 读取 `enabled` 状态以恢复上次的可用状态；enableDB 的启用 / 禁用状态同步持久化，避免状态丢失；
 8. `enableDB` 为运行时启用 / 禁用（可恢复），`closeDB` 为系统关闭时的终态释放（不可恢复，需重新初始化组件）；
 9. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；

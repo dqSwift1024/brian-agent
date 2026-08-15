@@ -4,6 +4,7 @@ import {
   AGENT_CONTEXT_TABLE,
   AGENT_CONTEXT_ITEM_TABLE,
   AGENT_CONTEXT_CONFIG_TABLE,
+  DEFAULT_MAX_CONTEXT_ITEMS,
   DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE,
 } from '../domain/types';
 
@@ -60,6 +61,7 @@ export class AgentContextSchemaInitializer {
     this.relationDb.executeRaw(
       `CREATE TABLE IF NOT EXISTS ${AGENT_CONTEXT_CONFIG_TABLE} (
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,
+        max_context_items INTEGER NOT NULL DEFAULT ${DEFAULT_MAX_CONTEXT_ITEMS},
         enable_snapshot_persistence INTEGER NOT NULL DEFAULT ${DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE}
       )`,
     );
@@ -77,6 +79,7 @@ export class AgentContextSchemaInitializer {
       { field: 'id', value: IdGenerator.generate() },
       { field: 'created', value: now },
       { field: 'updated', value: now },
+      { field: 'max_context_items', value: DEFAULT_MAX_CONTEXT_ITEMS },
       { field: 'enable_snapshot_persistence', value: DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE },
     ]);
   }
