@@ -454,6 +454,7 @@ describe('MCPProvider MCPService', () => {
   describe('installMcp (PRD 3.2.1)', () => {
     let providerId: string;
     let cacheId: string;
+    let installedId: string;
 
     beforeAll(async () => {
       const addInput = new AddMcpProviderInput();
@@ -483,48 +484,41 @@ describe('MCPProvider MCPService', () => {
       const ok = await mcpAccess.installMcp(input, ctx(), output);
       expect(ok).toBe(true);
       expect(output.id).toBeTruthy();
+      installedId = output.id;
 
       const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: output.id }]);
       expect(row).toBeTruthy();
       expect(row!.mcp_title).toBe(TEST_PKG_NAME);
       expect(row!.mcp_provider_id).toBe(providerId);
+      expect(row!.status).toBe('stopped');
     });
 
-    it('should generate start/stop/uninstall commands', async () => {
+    it('should reject duplicate install', async () => {
       const input = new InstallMcpInput();
       input.mcp_provider_id = providerId;
       input.mcp_id = cacheId;
       const output = new InstallMcpOutput();
-      await mcpAccess.installMcp(input, ctx(), output);
+      await expect(
+        mcpAccess.installMcp(input, ctx(), output),
+      ).rejects.toThrow(ValidationError);
+    });
 
-      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: output.id }]);
+    it('should generate start/stop/uninstall commands', async () => {
+      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: installedId }]);
       expect(row!.mcp_start_cmd).toBe(`npx ${TEST_PKG_NAME}`);
       expect(row!.mcp_stop_cmd).toBe(`pkill -f ${TEST_PKG_NAME}`);
       expect(row!.mcp_uninstall_cmd).toBe(`npm uninstall ${TEST_PKG_NAME}`);
     });
 
     it('should default enable to true', async () => {
-      const input = new InstallMcpInput();
-      input.mcp_provider_id = providerId;
-      input.mcp_id = cacheId;
-      const output = new InstallMcpOutput();
-      await mcpAccess.installMcp(input, ctx(), output);
-
-      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: output.id }]);
+      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: installedId }]);
       expect(row!.enable).toBe(1);
     });
 
     it('should set created and updated timestamps on install record', async () => {
-      const input = new InstallMcpInput();
-      input.mcp_provider_id = providerId;
-      input.mcp_id = cacheId;
-      const output = new InstallMcpOutput();
-      const before = Date.now();
-      await mcpAccess.installMcp(input, ctx(), output);
-
-      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: output.id }]);
+      const row = await dbAccess.selectOne(MCP_INSTALL_TABLE, [{ field: 'id', operator: Operator.EQ, value: installedId }]);
       expect(typeof row!.created).toBe('number');
-      expect(row!.created).toBeGreaterThanOrEqual(before);
+      expect(typeof row!.updated).toBe('number');
     });
 
     it('should throw NotFoundError for non-existent cache entry', async () => {

@@ -51,6 +51,10 @@ export interface McpData {
   mcp_stop_cmd?: string;
   /** MCP 卸载命令 */
   mcp_uninstall_cmd?: string;
+  /** 已安装版本号 */
+  version?: string;
+  /** 运行状态：running / stopped */
+  status?: string;
   /** 是否启用，默认 true */
   enable?: boolean;
 }
@@ -68,6 +72,8 @@ export interface McpInstallRecord extends McpData {
   id: string;
   created: number;
   updated: number;
+  version: string;
+  status: string;
   enable: boolean;
 }
 
@@ -164,6 +170,25 @@ export class StopMcpInput extends Input {
 /** stopMcp 出参 */
 export class StopMcpOutput extends Output {}
 
+/** startMcps 入参（批量启动） */
+export class StartMcpsInput extends Input {
+  ids!: string[];
+}
+/** startMcps 出参 */
+export class StartMcpsOutput extends Output {
+  started_count = 0;
+}
+
+/** refreshMcpStatus 入参 */
+export class RefreshMcpStatusInput extends Input {}
+/** refreshMcpStatus 出参 */
+export class RefreshMcpStatusOutput extends Output {
+  removed = 0;
+  running = 0;
+  stopped = 0;
+  total = 0;
+}
+
 /** uninstallMcp 入参 */
 export class UninstallMcpInput extends Input {
   id!: string;
@@ -178,6 +203,15 @@ export class UpdateMcpInput extends Input {
 }
 /** updateMcp 出参 */
 export class UpdateMcpOutput extends Output {}
+
+/** upgradeMcp 入参 */
+export class UpgradeMcpInput extends Input {
+  id!: string;
+}
+/** upgradeMcp 出参 */
+export class UpgradeMcpOutput extends Output {
+  version = '';
+}
 
 /** getMcp 入参 */
 export class GetMcpInput extends Input {

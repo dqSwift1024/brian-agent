@@ -1749,11 +1749,16 @@ interface BackendMcp {
   name?: string
   description?: string
   version?: string
+  status?: string
+  running?: boolean
   enabled?: boolean
 }
 
 const mcps = ref<BackendMcp[]>([])
 const mcpsLoading = ref(false)
+const selectedMcpIds = ref<string[]>([])
+const mcpRefreshing = ref(false)
+const mcpBatchStarting = ref(false)
 
 async function loadMcps() {
   mcpsLoading.value = true
@@ -1764,6 +1769,39 @@ async function loadMcps() {
     mcps.value = []
   } finally {
     mcpsLoading.value = false
+  }
+}
+
+async function handleBatchStartMcp() {
+  if (selectedMcpIds.value.length === 0 || mcpBatchStarting.value) return
+  mcpBatchStarting.value = true
+  try {
+    const res = await fetchApi<{ started_count?: number }>('/mcp/batch-start', {
+      method: 'POST',
+      body: JSON.stringify({ ids: selectedMcpIds.value }),
+    })
+    await loadMcps()
+    selectedMcpIds.value = []
+    showToast(`已启动 ${res.started_count ?? selectedMcpIds.value.length} 个 MCP`, 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '批量启动失败')
+  } finally {
+    mcpBatchStarting.value = false
+  }
+}
+
+async function handleRefreshMcp() {
+  if (mcpRefreshing.value) return
+  mcpRefreshing.value = true
+  try {
+    const res = await fetchApi<{ removed?: number; running?: number; stopped?: number; total?: number }>('/mcp/refresh', { method: 'POST' })
+    await loadMcps()
+    const removed = res.removed ?? 0
+    showToast(removed > 0 ? `刷新完成，清理 ${removed} 条已卸载记录` : '刷新完成', 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '刷新失败')
+  } finally {
+    mcpRefreshing.value = false
   }
 }
 
@@ -2112,6 +2150,16 @@ async function handleStopMcp(mcpId: string) {
     await loadMcps()
   } catch (e: unknown) {
     showToast(e instanceof Error ? e.message : '停止失败')
+  }
+}
+
+async function handleUpgradeMcp(mcpId: string) {
+  try {
+    const res = await fetchApi<{ version?: string }>(`/mcp/${mcpId}/upgrade`, { method: 'POST' })
+    await loadMcps()
+    showToast(res.version ? `已更新至 v${res.version}` : '已更新', 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '更新失败')
   }
 }
 
@@ -4165,6 +4213,26 @@ watch(activeSubSection, async (val) => {
         <div v-if="isEntityView && currentEntityType === 'mcp'" class="px-5 pb-6">
           <div class="flex justify-between items-center mb-4">
             <span class="text-xs text-apple-gray-400">{{ mcps.length }} 个已安装 MCP</span>
+            <div class="flex items-center gap-2">
+              <button
+                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="selectedMcpIds.length === 0 || mcpBatchStarting"
+                @click="handleBatchStartMcp"
+              >
+                <Loader2 v-if="mcpBatchStarting" :size="13" class="animate-spin" />
+                <Zap v-else :size="13" />
+                {{ mcpBatchStarting ? '启动中...' : `批量启动${selectedMcpIds.length ? ` (${selectedMcpIds.length})` : ''}` }}
+              </button>
+              <button
+                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors disabled:opacity-50"
+                :disabled="mcpRefreshing"
+                @click="handleRefreshMcp"
+              >
+                <Loader2 v-if="mcpRefreshing" :size="13" class="animate-spin" />
+                <RefreshCw v-else :size="13" />
+                {{ mcpRefreshing ? '刷新中...' : '刷新' }}
+              </button>
+            </div>
           </div>
           <div v-if="mcpsLoading" class="flex justify-center py-16"><Loader2 :size="24" class="animate-spin text-brian-blue" /></div>
           <div v-else-if="mcps.length === 0" class="flex flex-col items-center justify-center py-16">
@@ -4172,28 +4240,34 @@ watch(activeSubSection, async (val) => {
             <p class="text-sm text-apple-gray-500 mb-2">暂无已安装的 MCP 服务</p>
             <p class="text-xs text-apple-gray-400">请在"<span class="text-brian-blue">MCP 市场</span>"中浏览并安装 MCP 工具</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
             <div
               v-for="item in mcps" :key="item.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 aspect-[3/2] flex flex-col"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
+                  <input type="checkbox" :value="item.id" v-model="selectedMcpIds" class="w-3.5 h-3.5 rounded border-apple-gray-300 text-brian-blue focus:ring-brian-blue flex-shrink-0 cursor-pointer" />
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Plug :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ item.displayName || item.name || item.id }}</h3>
-                    <p class="text-[11px] text-apple-gray-400">{{ item.enabled ?? true ? '启用' : '停用' }} · v{{ item.version || '1.0' }}</p>
+                    <p class="text-[11px] text-apple-gray-400">{{ item.enabled ?? true ? '启用' : '停用' }} · <span :class="item.running ? 'text-success-green' : ''">{{ item.running ? '运行中' : '已停止' }}</span>{{ item.version ? ` · v${item.version}` : '' }}</p>
                   </div>
                 </div>
+                <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="item.description">{{ item.description || '暂无描述' }}</p>
               </div>
-              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-3 min-h-[32px] line-clamp-2">{{ item.description || '暂无描述' }}</p>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-success-green/10 text-success-green hover:bg-success-green/20 transition-colors" @click="handleStartMcp(item.id)"><Zap :size="11" /> 启动</button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-warning-orange/10 text-warning-orange hover:bg-warning-orange/20 transition-colors" @click="handleStopMcp(item.id)"><span class="inline-block w-1.5 h-1.5 rounded-full bg-current" /> 停止</button>
-                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(item.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="handleToggleMcp(item.id)">
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(item.enabled ?? true) ? 'translate-x-4' : ''" />
-                </button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleUninstallMcp(item.id)"><Trash2 :size="11" /> 卸载</button>
+              <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <div class="flex items-center gap-1">
+                  <button v-if="!item.running" class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-success-green/10 text-success-green hover:bg-success-green/20 transition-colors" @click="handleStartMcp(item.id)"><Zap :size="11" /> 启动</button>
+                  <button v-else class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-warning-orange/10 text-warning-orange hover:bg-warning-orange/20 transition-colors" @click="handleStopMcp(item.id)"><span class="inline-block w-1.5 h-1.5 rounded-full bg-current" /> 停止</button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="handleUpgradeMcp(item.id)"><RefreshCw :size="11" /> 更新</button>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="(item.enabled ?? true) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="handleToggleMcp(item.id)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="(item.enabled ?? true) ? 'translate-x-4' : ''" />
+                  </button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleUninstallMcp(item.id)"><Trash2 :size="11" /> 卸载</button>
+                </div>
               </div>
             </div>
           </div>

@@ -28,10 +28,16 @@ import {
   StartMcpOutput,
   StopMcpInput,
   StopMcpOutput,
+  StartMcpsInput,
+  StartMcpsOutput,
+  RefreshMcpStatusInput,
+  RefreshMcpStatusOutput,
   UninstallMcpInput,
   UninstallMcpOutput,
   UpdateMcpInput,
   UpdateMcpOutput,
+  UpgradeMcpInput,
+  UpgradeMcpOutput,
   GetMcpInput,
   GetMcpOutput,
   SoMcpInput,
@@ -65,6 +71,11 @@ export class MCPAccess {
     return this.service.syncInstallStatus();
   }
 
+  /** 停止所有运行中的 MCP（后端关闭时调用） */
+  async stopAllMcp(): Promise<number> {
+    return this.service.stopAllMcp();
+  }
+
   // --- 提供商管理 ---
   async addMcpProvider(i: AddMcpProviderInput, c: McpContext, o: AddMcpProviderOutput) {
     return this.service.addMcpProvider(i, c, o);
@@ -95,11 +106,20 @@ export class MCPAccess {
   async stopMcp(i: StopMcpInput, c: McpContext, o: StopMcpOutput) {
     return this.service.stopMcp(i, c, o);
   }
+  async startMcps(i: StartMcpsInput, c: McpContext, o: StartMcpsOutput) {
+    return this.service.startMcps(i, c, o);
+  }
+  async refreshMcpStatus(i: RefreshMcpStatusInput, c: McpContext, o: RefreshMcpStatusOutput) {
+    return this.service.refreshMcpStatus(i, c, o);
+  }
   async uninstallMcp(i: UninstallMcpInput, c: McpContext, o: UninstallMcpOutput) {
     return this.service.uninstallMcp(i, c, o);
   }
   async updateMcp(i: UpdateMcpInput, c: McpContext, o: UpdateMcpOutput) {
     return this.service.updateMcp(i, c, o);
+  }
+  async upgradeMcp(i: UpgradeMcpInput, c: McpContext, o: UpgradeMcpOutput) {
+    return this.service.upgradeMcp(i, c, o);
   }
   async getMcp(i: GetMcpInput, c: McpContext, o: GetMcpOutput) {
     return this.service.getMcp(i, c, o);

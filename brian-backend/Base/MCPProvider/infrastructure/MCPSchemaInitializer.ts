@@ -91,9 +91,17 @@ export class MCPSchemaInitializer {
         "mcp_start_cmd"       TEXT    NOT NULL,
         "mcp_stop_cmd"        TEXT    NOT NULL,
         "mcp_uninstall_cmd"   TEXT    NOT NULL,
+        "version"             TEXT,
+        "status"              TEXT    NOT NULL DEFAULT 'stopped',
         "enable"              INTEGER NOT NULL DEFAULT 1
       )
     `);
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "version" TEXT`);
+    } catch { /* 已存在 version 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'stopped'`);
+    } catch { /* 已存在 status 列时忽略 */ }
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${MCP_INSTALL_TABLE}_created" ON "${MCP_INSTALL_TABLE}" ("created")`,
     );

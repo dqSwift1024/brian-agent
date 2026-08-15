@@ -5,7 +5,7 @@
  * 实现所有用例：提供商管理、MCP 管理、MCP 调用、可视化运维。
  */
 
-import { execSync } from 'child_process';
+import { execSync, spawn, type ChildProcess } from 'child_process';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
@@ -36,10 +36,16 @@ import {
   StartMcpOutput,
   StopMcpInput,
   StopMcpOutput,
+  StartMcpsInput,
+  StartMcpsOutput,
+  RefreshMcpStatusInput,
+  RefreshMcpStatusOutput,
   UninstallMcpInput,
   UninstallMcpOutput,
   UpdateMcpInput,
   UpdateMcpOutput,
+  UpgradeMcpInput,
+  UpgradeMcpOutput,
   GetMcpInput,
   GetMcpOutput,
   SoMcpInput,
@@ -63,7 +69,7 @@ import {
 export class MCPService {
   private enabled = true;
   private readonly config: ConfigService;
-  private readonly runningMcps = new Set<string>();
+  private readonly runningMcps = new Map<string, ChildProcess>();
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, MCP_CONFIG_TABLE);
@@ -85,17 +91,22 @@ export class MCPService {
 
   /**
    * 通过 npm list -g 同步 mcp_install 表的安装状态：
-   * 对通过 npm 安装的记录，若全局已不再存在对应 npm 包，则移除该记录。
+   * 对通过 npm 安装的记录，若全局已不再存在对应 npm 包，则移除该记录；
+   * 若仍存在，则同步更新其版本号。
    * 返回移除的记录数。
    */
   async syncInstallStatus(): Promise<number> {
-    let globalPkgs = new Set<string>();
-    const parse = (raw: string): Set<string> => {
+    let globalPkgs = new Map<string, string>();
+    const parse = (raw: string): Map<string, string> => {
       try {
-        const json = JSON.parse(raw) as { dependencies?: Record<string, unknown> };
-        return new Set(Object.keys(json.dependencies ?? {}));
+        const json = JSON.parse(raw) as { dependencies?: Record<string, { version?: string }> };
+        const map = new Map<string, string>();
+        for (const [name, info] of Object.entries(json.dependencies ?? {})) {
+          map.set(name, String(info?.version ?? ''));
+        }
+        return map;
       } catch {
-        return new Set<string>();
+        return new Map<string, string>();
       }
     };
     try {
@@ -114,12 +125,25 @@ export class MCPService {
     for (const r of records) {
       const installCmd = String(r.mcp_install_cmd ?? '');
       if (!installCmd.startsWith('npm install') && !installCmd.startsWith('npm i ')) continue;
+      // 仅校验全局安装（npm list -g 只能反映全局包），--prefix 等本地安装跳过
+      if (!/\s(-g|--global)(\s|$)/.test(installCmd)) continue;
       const pkg = this.extractPackageName(installCmd);
-      if (pkg && !globalPkgs.has(pkg)) {
+      if (!pkg) continue;
+      if (!globalPkgs.has(pkg)) {
         await this.relationDb.delete(MCP_INSTALL_TABLE, [
           { field: 'id', operator: Operator.EQ, value: String(r.id) },
         ]);
         removed++;
+      } else {
+        const version = globalPkgs.get(pkg) ?? '';
+        if (version && String(r.version ?? '') !== version) {
+          await this.relationDb.update(MCP_INSTALL_TABLE, [
+            { field: 'version', value: version },
+            { field: 'updated', value: IdGenerator.now() },
+          ], [
+            { field: 'id', operator: Operator.EQ, value: String(r.id) },
+          ]);
+        }
       }
     }
     return removed;
@@ -435,6 +459,16 @@ export class MCPService {
     }
 
     const installCmd = String(mcpCache.mcp_install_cmd);
+
+    // 校验：同一 provider + title 不允许重复安装
+    const existing = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
+      { field: 'mcp_provider_id', operator: Operator.EQ, value: input.mcp_provider_id },
+      { field: 'mcp_title', operator: Operator.EQ, value: String(mcpCache.mcp_title) },
+    ]);
+    if (existing) {
+      throw new ValidationError(`MCP 已安装：${mcpCache.mcp_title}`);
+    }
+
     // 通过 npm 安装
     try {
       execSync(installCmd, { timeout: 120000, stdio: 'pipe' });
@@ -458,15 +492,16 @@ export class MCPService {
       { field: 'mcp_start_cmd', value: cmds.start },
       { field: 'mcp_stop_cmd', value: cmds.stop },
       { field: 'mcp_uninstall_cmd', value: cmds.uninstall },
+      { field: 'status', value: 'stopped' },
       { field: 'enable', value: 1 },
     ]);
     output.id = id;
-    // 安装完成后同步一次安装状态（通过 npm list -g 校验是否真实安装成功）
+    // 安装完成后同步一次安装状态（通过 npm list -g 校验是否真实安装成功，并同步版本号）
     await this.syncInstallStatus();
     return true;
   }
 
-  /** 启动 MCP（PRD 3.2.2） */
+  /** 启动 MCP（PRD 3.2.2）- 后台启动进程并跟踪 */
   async startMcp(
     input: StartMcpInput,
     _context: McpContext,
@@ -479,15 +514,25 @@ export class MCPService {
     if (!mcp) {
       throw new NotFoundError('MCP Install', input.id);
     }
+    // 先清理已存在的旧进程
+    this.killRunningMcp(input.id);
     try {
-      execSync(String(mcp.mcp_start_cmd), {
-        timeout: 30000,
-        stdio: 'pipe',
+      const child = spawn(String(mcp.mcp_start_cmd), {
+        shell: true,
+        detached: true,
+        stdio: 'ignore',
       });
+      child.unref();
+      this.runningMcps.set(input.id, child);
     } catch {
-      // 启动命令可能为长时间运行进程，超时不算失败
+      // 启动失败不阻断
     }
-    this.runningMcps.add(input.id);
+    await this.relationDb.update(MCP_INSTALL_TABLE, [
+      { field: 'status', value: 'running' },
+      { field: 'updated', value: IdGenerator.now() },
+    ], [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
     return true;
   }
 
@@ -504,6 +549,7 @@ export class MCPService {
     if (!mcp) {
       throw new NotFoundError('MCP Install', input.id);
     }
+    this.killRunningMcp(input.id);
     try {
       execSync(String(mcp.mcp_stop_cmd), {
         timeout: 10000,
@@ -512,7 +558,106 @@ export class MCPService {
     } catch {
       // 停止命令失败忽略
     }
-    this.runningMcps.delete(input.id);
+    await this.relationDb.update(MCP_INSTALL_TABLE, [
+      { field: 'status', value: 'stopped' },
+      { field: 'updated', value: IdGenerator.now() },
+    ], [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
+    return true;
+  }
+
+  /** 终止指定 MCP 的托管进程 */
+  private killRunningMcp(id: string): void {
+    const child = this.runningMcps.get(id);
+    if (child && child.pid) {
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        try { child.kill('SIGTERM'); } catch { /* ignore */ }
+      }
+    }
+    this.runningMcps.delete(id);
+  }
+
+  /** 停止所有运行中的 MCP（后端关闭时调用），并将状态重置为 stopped，返回停止数量 */
+  async stopAllMcp(): Promise<number> {
+    const count = this.runningMcps.size;
+    for (const id of Array.from(this.runningMcps.keys())) {
+      this.killRunningMcp(id);
+    }
+    this.runningMcps.clear();
+    // 重置所有 status=running 的记录为 stopped（含崩溃遗留）
+    const running = await this.relationDb.select(MCP_INSTALL_TABLE, {
+      conditions: [{ field: 'status', operator: Operator.EQ, value: 'running' }],
+    });
+    for (const r of running) {
+      await this.relationDb.update(MCP_INSTALL_TABLE, [
+        { field: 'status', value: 'stopped' },
+        { field: 'updated', value: IdGenerator.now() },
+      ], [
+        { field: 'id', operator: Operator.EQ, value: String(r.id) },
+      ]);
+    }
+    return count;
+  }
+
+  /** 批量启动多个 MCP */
+  async startMcps(
+    input: StartMcpsInput,
+    context: McpContext,
+    output: StartMcpsOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    for (const id of input.ids ?? []) {
+      const startIn = Object.assign(new StartMcpInput(), { id });
+      await this.startMcp(startIn, context, new StartMcpOutput());
+      output.started_count++;
+    }
+    return true;
+  }
+
+  /** 刷新运行状态：检查被托管进程是否仍存活，若已退出则重置为 stopped */
+  private async refreshRunningStatus(): Promise<void> {
+    for (const id of Array.from(this.runningMcps.keys())) {
+      const child = this.runningMcps.get(id);
+      let alive = false;
+      if (child && child.pid) {
+        try {
+          process.kill(child.pid, 0);
+          alive = child.exitCode === null && child.signalCode === null;
+        } catch {
+          alive = false;
+        }
+      }
+      if (!alive) {
+        this.runningMcps.delete(id);
+        await this.relationDb.update(MCP_INSTALL_TABLE, [
+          { field: 'status', value: 'stopped' },
+          { field: 'updated', value: IdGenerator.now() },
+        ], [
+          { field: 'id', operator: Operator.EQ, value: id },
+        ]);
+      }
+    }
+  }
+
+  /** 刷新本机所有已安装 MCP 的安装状态与运行状态 */
+  async refreshMcpStatus(
+    _input: RefreshMcpStatusInput,
+    _context: McpContext,
+    output: RefreshMcpStatusOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    // 1. 同步 npm 安装状态（清理已卸载、更新版本号）
+    output.removed = await this.syncInstallStatus();
+    // 2. 刷新运行状态（清理已退出的进程）
+    await this.refreshRunningStatus();
+    // 3. 统计
+    const records = await this.relationDb.select(MCP_INSTALL_TABLE, {});
+    output.total = records.length;
+    output.running = records.filter((r) => String(r.status) === 'running').length;
+    output.stopped = records.filter((r) => String(r.status) === 'stopped').length;
     return true;
   }
 
@@ -529,6 +674,8 @@ export class MCPService {
     if (!mcp) {
       throw new NotFoundError('MCP Install', input.id);
     }
+    // 先终止运行中的进程
+    this.killRunningMcp(input.id);
     try {
       execSync(String(mcp.mcp_uninstall_cmd), {
         timeout: 60000,
@@ -581,6 +728,36 @@ export class MCPService {
       data,
       [{ field: 'id', operator: Operator.EQ, value: input.id }],
     );
+    return true;
+  }
+
+  /** 升级 MCP（PRD 3.2.5）- 重新执行 npm 安装命令更新到最新版本 */
+  async upgradeMcp(
+    input: UpgradeMcpInput,
+    _context: McpContext,
+    output: UpgradeMcpOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
+    if (!mcp) {
+      throw new NotFoundError('MCP Install', input.id);
+    }
+    const installCmd = String(mcp.mcp_install_cmd);
+    if (!installCmd.startsWith('npm install') && !installCmd.startsWith('npm i ')) {
+      throw new ValidationError('仅 npm 安装的 MCP 支持更新');
+    }
+    try {
+      execSync(installCmd, { timeout: 120000, stdio: 'pipe' });
+    } catch {
+      // 更新失败不阻断
+    }
+    await this.syncInstallStatus();
+    const updated = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
+    output.version = updated ? String(updated.version ?? '') : '';
     return true;
   }
 

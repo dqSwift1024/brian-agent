@@ -109,7 +109,10 @@ import {
   InstallMcpInput, InstallMcpOutput,
   StartMcpInput, StartMcpOutput,
   StopMcpInput, StopMcpOutput,
+  StartMcpsInput, StartMcpsOutput,
+  RefreshMcpStatusInput, RefreshMcpStatusOutput,
   UninstallMcpInput, UninstallMcpOutput,
+  UpgradeMcpInput, UpgradeMcpOutput,
 } from './Base/MCPProvider';
 import {
   AgentLibraryContext, GetAgentInput, GetAgentOutput, DelAgentInput, DelAgentOutput, ToggleAgentInput, ToggleAgentOutput,
@@ -157,6 +160,11 @@ async function buildContext() {
   try {
     const synced = await mcpAccess.syncInstallStatus();
     if (synced > 0) logger.info('[startup] MCP sync', `清理了 ${synced} 条已卸载的 npm 安装记录`);
+  } catch { /* best-effort */ }
+
+  // 启动时重置遗留的 running 状态（崩溃/异常退出后进程已不存在）
+  try {
+    await mcpAccess.stopAllMcp();
   } catch { /* best-effort */ }
 
   const soulAccess = new SoulAccess(relationDb, logger);
@@ -1060,6 +1068,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             const pkgRes = await fetch(`https://registry.npmjs.org/${toolId}/latest`);
             if (!pkgRes.ok) { sendJson(res, 400, { error: `npm 包 ${toolId} 不存在` }); return; }
             const pkg = await pkgRes.json() as { name: string; description: string; bin?: Record<string, string>; version?: string };
+            // 校验：不能重复安装
+            const dup = ctx.relationDb.queryRaw<{ id: string }>(
+              'SELECT "id" FROM "mcp_install" WHERE "mcp_provider_id"=? AND "mcp_title"=?',
+              [provId, toolId],
+            )[0];
+            if (dup) { sendJson(res, 409, { error: `MCP 已安装：${toolId}` }); return; }
             const installCmd = `npm install -g ${toolId}`;
             const startCmd = `npx ${toolId}`;
             const stopCmd = `pkill -f ${toolId}`;
@@ -1068,8 +1082,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             const id = `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const now = Date.now();
             ctx.relationDb.executeRaw(
-              `INSERT OR REPLACE INTO "mcp_install" ("id","created","updated","mcp_provider_id","mcp_title","mcp_brief","mcp_install_cmd","mcp_start_cmd","mcp_stop_cmd","mcp_uninstall_cmd","enable") VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-              [id, now, now, provId, toolId, pkg.description || '', installCmd, startCmd, stopCmd, uninstallCmd, 1],
+              `INSERT INTO "mcp_install" ("id","created","updated","mcp_provider_id","mcp_title","mcp_brief","mcp_install_cmd","mcp_start_cmd","mcp_stop_cmd","mcp_uninstall_cmd","version","status","enable") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              [id, now, now, provId, toolId, pkg.description || '', installCmd, startCmd, stopCmd, uninstallCmd, pkg.version || '', 'stopped', 1],
             );
             // 安装完成后同步一次安装状态（校验 npm 包是否真实安装成功）
             await ctx.mcpAccess.syncInstallStatus();
@@ -1077,11 +1091,16 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
           // Smithery: record as HTTP connection
           } else if (provId === 'smithery') {
+            const dup = ctx.relationDb.queryRaw<{ id: string }>(
+              'SELECT "id" FROM "mcp_install" WHERE "mcp_provider_id"=? AND "mcp_title"=?',
+              [provId, toolId],
+            )[0];
+            if (dup) { sendJson(res, 409, { error: `MCP 已安装：${toolId}` }); return; }
             const id = `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const now = Date.now();
             ctx.relationDb.executeRaw(
-              `INSERT OR REPLACE INTO "mcp_install" ("id","created","updated","mcp_provider_id","mcp_title","mcp_brief","mcp_install_cmd","mcp_start_cmd","mcp_stop_cmd","mcp_uninstall_cmd","enable") VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-              [id, now, now, provId, toolId, 'Smithery MCP server', 'smithery connect', 'smithery start', 'smithery stop', 'smithery disconnect', 1],
+              `INSERT INTO "mcp_install" ("id","created","updated","mcp_provider_id","mcp_title","mcp_brief","mcp_install_cmd","mcp_start_cmd","mcp_stop_cmd","mcp_uninstall_cmd","status","enable") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+              [id, now, now, provId, toolId, 'Smithery MCP server', 'smithery connect', 'smithery start', 'smithery stop', 'smithery disconnect', 'stopped', 1],
             );
             sendJson(res, 200, { success: true, id });
 
@@ -1205,11 +1224,24 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ---- MCP (Standalone) ----
       } else if (method === 'GET' && pathname === '/api/mcp') {
-        const insRows = ctx.relationDb.queryRaw<{ id: string; mcp_title: string; mcp_brief: string | null; enable: number }>(
-          'SELECT "id", "mcp_title", "mcp_brief", "enable" FROM "mcp_install" ORDER BY "mcp_title" ASC',
+        const insRows = ctx.relationDb.queryRaw<{ id: string; mcp_title: string; mcp_brief: string | null; version: string | null; status: string | null; enable: number }>(
+          'SELECT "id", "mcp_title", "mcp_brief", "version", "status", "enable" FROM "mcp_install" ORDER BY "mcp_title" ASC',
           [],
         );
-        sendJson(res, 200, { installed: (insRows || []).map(r => ({ id: r.id, displayName: r.mcp_title, description: r.mcp_brief || '', enabled: !!r.enable })) });
+        sendJson(res, 200, { installed: (insRows || []).map(r => ({ id: r.id, displayName: r.mcp_title, description: r.mcp_brief || '', version: r.version || '', status: r.status || 'stopped', running: r.status === 'running', enabled: !!r.enable })) });
+
+      } else if (method === 'POST' && pathname === '/api/mcp/batch-start') {
+        const ids = ((body as Record<string, unknown>).ids as string[]) || [];
+        const input = Object.assign(new StartMcpsInput(), { ids });
+        const output = new StartMcpsOutput();
+        await ctx.mcpAccess.startMcps(input, new McpContext(), output);
+        sendJson(res, 200, { success: true, started_count: output.started_count });
+
+      } else if (method === 'POST' && pathname === '/api/mcp/refresh') {
+        const input = new RefreshMcpStatusInput();
+        const output = new RefreshMcpStatusOutput();
+        await ctx.mcpAccess.refreshMcpStatus(input, new McpContext(), output);
+        sendJson(res, 200, { success: true, removed: output.removed, running: output.running, stopped: output.stopped, total: output.total });
 
       } else if (method === 'GET' && pathname === '/api/mcp/market') {
         const provOut = new SoMcpProviderOutput();
@@ -1255,6 +1287,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const stopInput = Object.assign(new StopMcpInput(), { id });
         await ctx.mcpAccess.stopMcp(stopInput, new McpContext(), new StopMcpOutput());
         sendJson(res, 200, { success: true });
+
+      } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/upgrade$/.test(pathname)) {
+        const id = pathname.split('/api/mcp/')[1].split('/')[0];
+        const upInput = Object.assign(new UpgradeMcpInput(), { id });
+        const upOutput = new UpgradeMcpOutput();
+        await ctx.mcpAccess.upgradeMcp(upInput, new McpContext(), upOutput);
+        sendJson(res, 200, { success: true, version: upOutput.version });
 
       } else if (method === 'DELETE' && /\/api\/mcp\/[^/]+$/g.test(pathname) && !pathname.includes('/install') && !pathname.includes('/toggle') && !pathname.includes('/start') && !pathname.includes('/stop')) {
         const id = pathname.split('/api/mcp/')[1];
@@ -2105,16 +2144,21 @@ async function main() {
 
   const gracefulShutdown = (signal: string) => {
     console.log(`\n[dev-server] Shutting down (${signal})...`);
+    const finish = () => server.close(() => process.exit(0));
     try {
-      import('./Base/CDTProvider/domain/types').then(async (t) => {
-        const { CDTContext, StopCDTInput, StopCDTOutput } = t;
-        await ctx.cdtAccess.stopCDT(new StopCDTInput(), new CDTContext(), new StopCDTOutput());
-        console.log('[dev-server] CDT stopped');
-      }).finally(() => {
-        server.close(() => process.exit(0));
+      // 关闭所有运行中的 MCP 进程，并重置状态
+      ctx.mcpAccess.stopAllMcp().then((count) => {
+        if (count > 0) console.log(`[dev-server] MCP stopped (${count})`);
+      }).catch(() => {}).finally(() => {
+        // 停止 CDT
+        import('./Base/CDTProvider/domain/types').then(async (t) => {
+          const { CDTContext, StopCDTInput, StopCDTOutput } = t;
+          await ctx.cdtAccess.stopCDT(new StopCDTInput(), new CDTContext(), new StopCDTOutput());
+          console.log('[dev-server] CDT stopped');
+        }).catch(() => {}).finally(finish);
       });
     } catch {
-      server.close(() => process.exit(0));
+      finish();
     }
   };
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));

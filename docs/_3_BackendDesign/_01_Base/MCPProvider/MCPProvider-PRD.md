@@ -205,14 +205,14 @@
 **处理流程**：
 
 1. 根据 market_id + tool_id 从 mcp_tool 表获取工具元数据；
-2. 根据 install_type 执行安装：
+2. 校验不能重复安装：按 `mcp_provider_id + mcp_title` 查 `mcp_install` 表，已存在则抛 ValidationError（HTTP 409）；
+3. 根据 install_type 执行安装：
    - `npm`：执行 `npm install -g {package_name}`，生成 stdio transport 配置（command: npx, args: [package_name]）；
    - `http`：验证 HTTP endpoint 可达性，生成 http transport 配置；
-3. 安装成功后写入 `mcp_install` 表，状态为 `installed`；
-4. 若安装失败，写入状态为 `error`，记录错误信息；
-5. 安装完成后触发安装状态同步（`syncInstallStatus`），通过 `npm list -g` 校验 npm 包是否真实安装成功；
+4. 安装成功后写入 `mcp_install` 表，`status = 'stopped'`（默认不启动，由用户手动启动），保存版本号；
+5. 安装完成后触发安装状态同步（`syncInstallStatus`），通过 `npm list -g` 校验 npm 包是否真实安装成功并同步版本号；
 
-> 注：npm 安装超时 120s；处于启动状态的 MCP 不可卸载。
+> 注：npm 安装超时 120s；安装后默认不启动，需用户手动调用 `startMcp`。
 
 **返回**：Boolean，安装的 MCP ID 通过 output 参数返回
 
@@ -224,9 +224,11 @@
 
 **处理流程**：
 
-1. 执行 `npm list -g --depth=0 --json` 获取全局已安装的 npm 包名集合；
-2. 遍历 `mcp_install` 表中 `mcp_install_cmd` 以 `npm install` / `npm i` 开头的记录；
-3. 用 `extractPackageName` 提取包名，若全局已不再存在该包，则删除该记录；
+1. 执行 `npm list -g --depth=0 --json` 获取全局已安装的 npm 包名及版本集合；
+2. 遍历 `mcp_install` 表中 `mcp_install_cmd` 以 `npm install` / `npm i` 开头**且为全局安装（含 `-g`/`--global`）**的记录；
+3. 用 `extractPackageName` 提取包名：
+   - 若全局已不再存在该包，则删除该记录；
+   - 若仍存在，则同步更新其 `version` 字段；
 
 **触发时机（由后端自动执行，前端不直接触发）**：
 
@@ -246,11 +248,9 @@
 
 **处理流程**：
 
-1. 根据 transport_type 启动连接：
-   - `stdio`：child_process.exec 执行 transport_config.command + args，建立 stdio 管道；
-   - `http`：建立 HTTP 长连接或 SSE 连接；
-2. 记录 PID（stdio）或连接状态（http）；
-3. 将 `connected` 置为 true；
+1. 终止该 MCP 已有的托管进程（若存在）；
+2. 通过 `spawn`（`shell:true, detached:true, stdio:'ignore'`）后台启动 `mcp_start_cmd`，`unref()` 托管进程，存入内存 `runningMcps` Map；
+3. 将 `mcp_install.status` 置为 `running`；
 
 **返回**：Boolean
 
@@ -262,6 +262,12 @@
 
 **入参**：`id`（STRING，必选）
 
+**处理流程**：
+
+1. 按进程组 `process.kill(-pid)` 终止托管进程（并执行 `mcp_stop_cmd` 兜底）；
+2. 从 `runningMcps` 移除；
+3. 将 `mcp_install.status` 置为 `stopped`；
+
 #### 3.2.4. 卸载 MCP（uninstallMcp）
 
 **功能**：卸载指定的 MCP 工具
@@ -272,17 +278,57 @@
 
 **处理流程**：
 
-1. 若处于运行状态，先执行 stopMcp；
+1. 若处于运行状态，先终止托管进程；
 2. 根据 install_type 执行卸载（npm uninstall 或清理 HTTP 配置）；
 3. 从 mcp_install 表删除记录；
 
-#### 3.2.5. 搜索已安装 MCP（soMcp）
+#### 3.2.5. 升级 MCP（upgradeMcp）
+
+**功能**：将已安装的 MCP 更新到最新版本（仅 npm 安装支持）
+
+**方法签名**：`Boolean upgradeMcp(UpgradeMcpInput input, McpContext context, UpgradeMcpOutput output)`
+
+**处理流程**：
+
+1. 重新执行 `mcp_install_cmd`（`npm install -g`）；
+2. 调用 `syncInstallStatus()` 同步最新版本号；
+3. output 返回更新后的 `version`；
+
+#### 3.2.6. 批量启动 MCP（startMcps）
+
+**功能**：批量启动多个 MCP
+
+**方法签名**：`Boolean startMcps(StartMcpsInput input, McpContext context, StartMcpsOutput output)`
+
+**入参**：`ids`（STRING[]，必选）；output 返回 `started_count`
+
+#### 3.2.7. 刷新 MCP 状态（refreshMcpStatus）
+
+**功能**：刷新本机所有已安装 MCP 的安装状态与运行状态
+
+**方法签名**：`Boolean refreshMcpStatus(RefreshMcpStatusInput input, McpContext context, RefreshMcpStatusOutput output)`
+
+**处理流程**：
+
+1. `syncInstallStatus()` 同步 npm 安装状态与版本；
+2. 遍历 `runningMcps`，用 `process.kill(pid, 0)` 检测进程存活，已退出则重置 `status = 'stopped'`；
+3. output 返回 `removed` / `running` / `stopped` / `total` 统计；
+
+#### 3.2.8. 停止所有 MCP（stopAllMcp）
+
+**功能**：后端关闭时停止所有运行中的 MCP，并将状态重置为 `stopped`（含崩溃遗留）
+
+**方法签名**：`async stopAllMcp(): Promise<number>`（返回停止数量）
+
+**触发时机**：后端优雅关闭（SIGINT/SIGTERM）时调用；启动时也调用一次以重置崩溃遗留的 `running` 状态。
+
+#### 3.2.9. 搜索已安装 MCP（soMcp）
 
 **功能**：搜索已安装的 MCP，支持关键词、条件过滤、排序、分页
 
 **方法签名**：`Boolean soMcp(SoMcpInput input, McpContext context, SoMcpOutput output)`
 
-#### 3.2.6. 获取已安装 MCP 详情（getMcp）
+#### 3.2.10. 获取已安装 MCP 详情（getMcp）
 
 **功能**：获取指定已安装 MCP 的详细信息（含工具 schema、调用方法、解析方法）
 
@@ -413,6 +459,11 @@
 
 > 唯一约束：`(market_id, tool_id)` — 同一工具不可重复安装
 
+> **注（实际实现字段）**：当前实现 `mcp_install` 表实际字段为：`id / created / updated / mcp_provider_id / mcp_title / mcp_brief / mcp_install_cmd / mcp_start_cmd / mcp_stop_cmd / mcp_uninstall_cmd / version / status / enable`。其中：
+> - `version`：已安装版本号（TEXT，由 `syncInstallStatus` 通过 `npm list -g` 同步）；
+> - `status`：运行状态（TEXT，`running` / `stopped`，默认 `stopped`），由 `startMcp` / `stopMcp` 更新；
+> - 唯一约束：`(mcp_provider_id, mcp_title)` — 同一工具不可重复安装。
+
 ### 4.4. MCP 使用统计表（SQLite）
 
 - `表名`： mcp_usage
@@ -516,3 +567,27 @@
 **可能存在的问题**：
 - `smithery` 为 HTTP 连接型安装（`mcp_install_cmd = 'smithery connect'`），不参与 npm 同步，其「已安装」仍按 `mcp_install` 表记录判断。
 - 周期性同步每 5 分钟执行一次 `npm list -g`，若全局包数量巨大可能有一定开销（当前超时 20s，失败自动忽略）。
+
+### [2026-08-15] MCP 实例管理增强：去重/版本/更新/运行状态/优雅关闭/批量操作
+
+**变更原因**：MCP 实例管理能力不完整——缺少重复安装校验、版本号记录、更新能力、运行状态持久化；`startMcp` 用 `execSync` 阻塞启动导致进程无法真正后台运行；后端关闭时未停止运行中的 MCP；前端缺少批量操作与状态刷新。
+
+**修改的方法**：
+- `mcp_install` 表新增 `version`、`status` 字段（SchemaInitializer CREATE TABLE + ALTER TABLE 迁移）。
+- `installMcp` — 新增按 `mcp_provider_id + mcp_title` 去重校验（重复抛 ValidationError / HTTP 409）；插入 `status='stopped'`、保存版本号。
+- `syncInstallStatus` — 增强：仅校验全局安装（含 `-g`/`--global`），同步更新 `version`。
+- `startMcp` — 由 `execSync` 改为 `spawn`（`detached:true, stdio:'ignore'`）后台启动并托管进程（`runningMcps: Map<id, ChildProcess>`），置 `status='running'`。
+- `stopMcp` / `uninstallMcp` — 终止托管进程（`process.kill(-pid)` + `mcp_stop_cmd` 兜底），置 `status='stopped'`。
+- 新增 `upgradeMcp`（更新到最新版并同步版本）、`startMcps`（批量启动）、`refreshMcpStatus`（刷新安装+运行状态）、`stopAllMcp`（后端关闭时全部停止并重置状态）。
+- `dev-server` 优雅关闭（SIGINT/SIGTERM）调用 `stopAllMcp()`；启动时也调用一次重置崩溃遗留 `running` 状态。
+- 新增路由：`POST /api/mcp/batch-start`、`POST /api/mcp/refresh`；`/api/mcp` 返回 `version`/`status`/`running`。
+- 前端 MCP 实例页：卡片复选框、批量启动按钮、刷新按钮；展示真实版本号与运行/停止状态（启动/停止按钮合并为条件切换）。
+
+**影响的端点**：
+- `POST /api/config/mcp/install` — 去重校验（409）。
+- `POST /api/mcp/{id}/start|stop|upgrade`、`POST /api/mcp/batch-start`、`POST /api/mcp/refresh` — 实例生命周期与批量操作。
+- `GET /api/mcp` — 返回 `version`/`status`/`running`/`enabled`。
+
+**可能存在的问题**：
+- `spawn` + `detached` 启动的进程为进程组 leader，靠 `process.kill(-pid)` 杀组；`npx` 内部再起的子进程在极端情况下可能残留（已加 `mcp_stop_cmd` 的 `pkill -f` 兜底）。
+- `stopAllMcp` 依赖内存 `runningMcps` Map，后端崩溃（SIGKILL）无法执行，故启动时额外重置 `running` 记录兜底。
