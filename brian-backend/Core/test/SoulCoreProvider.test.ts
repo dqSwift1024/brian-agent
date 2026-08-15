@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -13,6 +13,7 @@ import {
   AddPromptInput,
   AddPromptOutput,
   PromptContext,
+  LLM_AVAILABLE_TABLE,
 } from '@brian-agent/base';
 import {
   SoulCoreAccess,
@@ -168,6 +169,111 @@ describe('SoulCoreProvider', () => {
       const output = new MatchSoulOutput();
       await soulCore.matchSoul(input, new SoulCoreContext(), output);
       expect(output.from_cache).toBe(true);
+    });
+  });
+
+  describe('generateAndAddSoul (Soul 自生成)', () => {
+    const insertEnabledLLM = async (id = 'llm-gen') => {
+      await relationDb.insert(LLM_AVAILABLE_TABLE, [
+        { field: 'id', value: id },
+        { field: 'created', value: IdGenerator.now() },
+        { field: 'updated', value: IdGenerator.now() },
+        { field: 'llm_provider_id', value: 'provider-gen' },
+        { field: 'llm_title', value: 'mock-llm' },
+        { field: 'llm_type', value: 'text' },
+        { field: 'enable', value: 1 },
+      ]);
+    };
+
+    const buildMatchInput = (agentId: string): MatchSoulInput => {
+      const input = new MatchSoulInput();
+      input.agent_id = agentId;
+      input.context_id = 'c-gen';
+      input.interact_id = 'i-gen';
+      return input;
+    };
+
+    it('should generate a complete Soul with soul_brief/content/usage', async () => {
+      await insertEnabledLLM('llm-gen-1');
+      const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
+        async (_input, _ctx, output) => {
+          output.result = '```json\n{"soul_brief":"编码专家","soul_content":"专业、严谨的编码专家。","soul_usage":"代码编写与调试"}\n```';
+          return true;
+        },
+      );
+
+      const output = new MatchSoulOutput();
+      await soulCore.matchSoul(buildMatchInput('agent-gen-1'), new SoulCoreContext(), output);
+
+      expect(output.from_cache).toBe(false);
+      expect(output.soul_id).toBeTruthy();
+      expect(output.soul).not.toBeNull();
+      expect(output.soul!.soul_brief).toBe('编码专家');
+      expect(output.soul!.soul_content).toBe('专业、严谨的编码专家。');
+      expect(output.soul!.soul_usage).toBe('代码编写与调试');
+
+      spy.mockRestore();
+    });
+
+    it('should parse JSON with surrounding text', async () => {
+      await insertEnabledLLM('llm-gen-2');
+      const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
+        async (_input, _ctx, output) => {
+          output.result = '好的，以下是生成的 Soul：\n{"soul_brief":"导师","soul_content":"严苛的导师。","soul_usage":"教学与答疑"}\n希望有帮助。';
+          return true;
+        },
+      );
+
+      const output = new MatchSoulOutput();
+      await soulCore.matchSoul(buildMatchInput('agent-gen-2'), new SoulCoreContext(), output);
+
+      expect(output.soul!.soul_brief).toBe('导师');
+      expect(output.soul!.soul_usage).toBe('教学与答疑');
+
+      spy.mockRestore();
+    });
+
+    it('should retry on LLM failure then succeed', async () => {
+      await insertEnabledLLM('llm-gen-3');
+      let calls = 0;
+      const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
+        async (_input, _ctx, output) => {
+          calls += 1;
+          if (calls === 1) {
+            output.error = 'temporary failure';
+            return false;
+          }
+          output.result = '{"soul_brief":"重试成功","soul_content":"重试后的内容。","soul_usage":"通用场景"}';
+          return true;
+        },
+      );
+
+      const output = new MatchSoulOutput();
+      await soulCore.matchSoul(buildMatchInput('agent-gen-3'), new SoulCoreContext(), output);
+
+      expect(calls).toBe(2);
+      expect(output.soul!.soul_brief).toBe('重试成功');
+
+      spy.mockRestore();
+    });
+
+    it('should use Chinese fallbacks for missing fields', async () => {
+      await insertEnabledLLM('llm-gen-4');
+      const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
+        async (_input, _ctx, output) => {
+          output.result = '{}';
+          return true;
+        },
+      );
+
+      const output = new MatchSoulOutput();
+      await soulCore.matchSoul(buildMatchInput('agent-gen-4'), new SoulCoreContext(), output);
+
+      expect(output.soul!.soul_brief).toBe('自动生成的 Soul');
+      expect(output.soul!.soul_content).toBe('乐于助人的 AI 助手。');
+      expect(output.soul!.soul_usage).toBe('通用对话、信息查询、任务辅助');
+
+      spy.mockRestore();
     });
   });
 

@@ -34,6 +34,7 @@ import {
   Operator,
   OperationType,
   IdGenerator,
+  JsonParser,
   ValidationError,
   NotFoundError,
 } from '@brian-agent/base';
@@ -523,36 +524,38 @@ export class SoulCoreService {
       '仅输出 JSON，不要包含其他内容。',
     ].join('\n');
 
-    const llmOutput = new ExecLLMOutput();
-    const ok = await this.llmAccess.execLLM(
-      { id: llmId, params: { prompt: generationPrompt } },
-      new LLMContext(),
-      llmOutput,
-    );
-    if (!ok) {
-      throw new ProcessingError(
-        `Soul 生成 LLM 调用失败: ${llmOutput.error ?? '未知错误'}`,
+    // 最多重试 3 次，容忍 LLM 偶发失败 / 返回格式异常
+    let parsed: Record<string, unknown> | null = null;
+    let lastError = '未知错误';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const llmOutput = new ExecLLMOutput();
+      const ok = await this.llmAccess.execLLM(
+        { id: llmId, params: { prompt: generationPrompt } },
+        new LLMContext(),
+        llmOutput,
       );
+      if (!ok) {
+        lastError = llmOutput.error ?? '未知错误';
+        continue;
+      }
+      parsed = JsonParser.parseObject(llmOutput.result);
+      if (parsed) {
+        break;
+      }
+      lastError = 'LLM 生成的 Soul JSON 解析失败';
     }
 
-    let parsed: { soul_brief: string; soul_content: string; soul_usage: string };
-    try {
-      const trimmed = llmOutput.result.trim();
-      const jsonStr = trimmed.startsWith('```')
-        ? trimmed.replace(/```(?:json)?\n?/g, '').trim()
-        : trimmed;
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      throw new ProcessingError('LLM 生成的 Soul JSON 解析失败');
+    if (!parsed) {
+      throw new ProcessingError(`Soul 生成失败: ${lastError}`);
     }
 
     const addOutput = new AddSoulOutput();
     await this.soulAccess.addSoul(
       {
         data: {
-          soul_brief: parsed.soul_brief || 'Auto-generated Soul',
-          soul_content: parsed.soul_content || 'A helpful AI assistant.',
-          soul_usage: parsed.soul_usage || 'General purpose',
+          soul_brief: this.asTrimmedString(parsed.soul_brief) || '自动生成的 Soul',
+          soul_content: this.asTrimmedString(parsed.soul_content) || '乐于助人的 AI 助手。',
+          soul_usage: this.asTrimmedString(parsed.soul_usage) || '通用对话、信息查询、任务辅助',
         },
       } as AddSoulInput,
       new SoulContext(),
@@ -560,6 +563,11 @@ export class SoulCoreService {
     );
 
     return addOutput.id;
+  }
+
+  /** 将任意 LLM 字段安全转为去空白字符串，非字符串返回空串 */
+  private asTrimmedString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
   }
 
   // ---------------------------------------------------------------------------
@@ -741,19 +749,14 @@ export class SoulCoreService {
       );
     }
 
-    try {
-      const trimmed = llmOutput.result.trim();
-      const jsonStr = trimmed.startsWith('```')
-        ? trimmed.replace(/```(?:json)?\n?/g, '').trim()
-        : trimmed;
-      const parsed = JSON.parse(jsonStr);
-      return {
-        better: parsed.better === true,
-        reason: parsed.reason || '',
-      };
-    } catch {
+    const parsed = JsonParser.parseObject(llmOutput.result);
+    if (!parsed) {
       throw new ProcessingError('LLM Soul 比较结果 JSON 解析失败');
     }
+    return {
+      better: parsed.better === true,
+      reason: this.asTrimmedString(parsed.reason),
+    };
   }
 
   // ---------------------------------------------------------------------------

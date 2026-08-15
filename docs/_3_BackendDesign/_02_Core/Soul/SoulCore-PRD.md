@@ -25,7 +25,7 @@
 3. 若随机数 < regen_rate 或不存在绑定，执行重新匹配流程：
    a. 根据 Context 参数中的 `interact_id` 和 `agent_id` 获取当前工作内容（由 Context 参数携带，无需显式调用 InfoCore.context）；
    b. 调用 SoulProvider.soSoul 加载所有已启用的 Soul（conditions: `{ enable: true }`），获取各 Soul 的 ID 和应用场景描述；
-   c. 若没有可用的 Soul：调用 PromptsProvider.execPrompt 构建 Soul 生成 prompt（使用 `soul_core_config` 中的 `prompt_template_id`），调用 LLMProvider.execLLM 根据工作内容生成一个新 Soul（含内容、摘要、应用场景），调用 SoulProvider.addSoul 将生成的 Soul 保存到 `soul` 表，返回新生成的 soul_id；
+   c. 若没有可用的 Soul：调用 LLMProvider.execLLM 生成一个新 Soul，要求模型返回 JSON（含 `soul_brief` 摘要、`soul_content` 内容、`soul_usage` 应用场景三个字段），解析后调用 SoulProvider.addSoul 将生成的 Soul 保存到 `soul` 表，返回新生成的 soul_id；解析使用 `JsonParser.parseObject` 容忍 markdown 代码围栏与 JSON 前后附加文本，最多重试 3 次；字段缺失时使用中文兜底值（摘要 `自动生成的 Soul`、内容 `乐于助人的 AI 助手。`、应用场景 `通用对话、信息查询、任务辅助`）；
    d. 若有可用的 Soul：调用 PromptsProvider.execPrompt 构建 Soul 匹配 prompt，调用 LLMProvider.execLLM 由模型推荐合适的 soul_id；
 4. 返回匹配到的 soul_id；
 
