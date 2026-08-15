@@ -83,6 +83,48 @@ export class MCPService {
     return match ? match[1].trim() : installCmd;
   }
 
+  /**
+   * 通过 npm list -g 同步 mcp_install 表的安装状态：
+   * 对通过 npm 安装的记录，若全局已不再存在对应 npm 包，则移除该记录。
+   * 返回移除的记录数。
+   */
+  async syncInstallStatus(): Promise<number> {
+    let globalPkgs = new Set<string>();
+    const parse = (raw: string): Set<string> => {
+      try {
+        const json = JSON.parse(raw) as { dependencies?: Record<string, unknown> };
+        return new Set(Object.keys(json.dependencies ?? {}));
+      } catch {
+        return new Set<string>();
+      }
+    };
+    try {
+      globalPkgs = parse(execSync('npm list -g --depth=0 --json', {
+        timeout: 20000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf-8',
+      }));
+    } catch (e) {
+      // npm list 存在缺失依赖时返回非零退出码，但 JSON 仍输出在 stdout
+      globalPkgs = parse(String((e as { stdout?: string }).stdout ?? ''));
+    }
+
+    const records = await this.relationDb.select(MCP_INSTALL_TABLE, {});
+    let removed = 0;
+    for (const r of records) {
+      const installCmd = String(r.mcp_install_cmd ?? '');
+      if (!installCmd.startsWith('npm install') && !installCmd.startsWith('npm i ')) continue;
+      const pkg = this.extractPackageName(installCmd);
+      if (pkg && !globalPkgs.has(pkg)) {
+        await this.relationDb.delete(MCP_INSTALL_TABLE, [
+          { field: 'id', operator: Operator.EQ, value: String(r.id) },
+        ]);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   /** 根据 install_cmd 生成 start/stop/uninstall 命令 */
   private generateCommands(installCmd: string): {
     start: string;
@@ -419,6 +461,8 @@ export class MCPService {
       { field: 'enable', value: 1 },
     ]);
     output.id = id;
+    // 安装完成后同步一次安装状态（通过 npm list -g 校验是否真实安装成功）
+    await this.syncInstallStatus();
     return true;
   }
 

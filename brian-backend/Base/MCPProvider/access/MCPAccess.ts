@@ -60,6 +60,11 @@ export class MCPAccess {
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
+  /** 通过 npm list -g 同步 mcp_install 表的安装状态（返回移除的记录数） */
+  async syncInstallStatus(): Promise<number> {
+    return this.service.syncInstallStatus();
+  }
+
   // --- 提供商管理 ---
   async addMcpProvider(i: AddMcpProviderInput, c: McpContext, o: AddMcpProviderOutput) {
     return this.service.addMcpProvider(i, c, o);

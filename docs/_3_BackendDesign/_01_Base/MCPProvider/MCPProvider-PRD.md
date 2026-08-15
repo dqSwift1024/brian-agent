@@ -210,10 +210,31 @@
    - `http`：验证 HTTP endpoint 可达性，生成 http transport 配置；
 3. 安装成功后写入 `mcp_install` 表，状态为 `installed`；
 4. 若安装失败，写入状态为 `error`，记录错误信息；
+5. 安装完成后触发安装状态同步（`syncInstallStatus`），通过 `npm list -g` 校验 npm 包是否真实安装成功；
 
 > 注：npm 安装超时 120s；处于启动状态的 MCP 不可卸载。
 
 **返回**：Boolean，安装的 MCP ID 通过 output 参数返回
+
+#### 3.2.0. 安装状态同步（syncInstallStatus）
+
+**功能**：通过 `npm list -g` 命令同步 `mcp_install` 表的安装状态，清理全局已卸载的 npm 记录。
+
+**方法签名**：`async syncInstallStatus(): Promise<number>`（返回移除的记录数）
+
+**处理流程**：
+
+1. 执行 `npm list -g --depth=0 --json` 获取全局已安装的 npm 包名集合；
+2. 遍历 `mcp_install` 表中 `mcp_install_cmd` 以 `npm install` / `npm i` 开头的记录；
+3. 用 `extractPackageName` 提取包名，若全局已不再存在该包，则删除该记录；
+
+**触发时机（由后端自动执行，前端不直接触发）**：
+
+- 系统启动时（`buildContext` 中调用一次）
+- 每 5 分钟定时（`setInterval`）
+- 每次安装完成后（`installMcp` 内 + `/api/config/mcp/install` 的 github 分支）
+
+> 注：市场工具列表接口只从 `mcp_install` 表读取安装状态（`installed`），不再每次请求执行 npm 命令，保证检查效率。
 
 #### 3.2.2. 启动 MCP（startMcp）
 
@@ -475,3 +496,23 @@
 **可能存在的问题**：
 - 全新安装（空库）不再自动生成内置市场数据，需通过接口手动创建或由部署流程预置数据。
 - 原 PRD 中 `mcp_market` 表设计（market_key/market_name/auth_type 等）与实现中的 `mcp_provider` 表（provider_code/mcp_provider_title 等）存在差异，本 PRD 仅同步了本次变更，未整体重写表结构定义。
+
+### [2026-08-15] MCP 安装状态改为 npm list -g 同步 mcp_install 表
+
+**变更原因**：安装状态原先仅按 `mcp_install` 表记录名称匹配，与真实 npm 安装状态可能不一致（如用户手动 `npm uninstall -g` 后记录仍残留）；且最初实现在每次市场列表请求时执行 `npm list -g`，效率低。
+
+**修改的方法**：
+- `MCPService.syncInstallStatus()` — 新增：执行 `npm list -g --depth=0 --json`，遍历 `mcp_install` 中 `mcp_install_cmd` 以 `npm install`/`npm i` 开头的记录，用 `extractPackageName` 提取包名，全局已不存在则删除记录，返回移除数。
+- `MCPAccess.syncInstallStatus()` — 新增：暴露同步方法。
+- `installMcp`（Service）与 `/api/config/mcp/install` 的 github 分支 — 安装完成后调用 `syncInstallStatus()` 校验真实安装状态。
+- `dev-server.ts` — 启动时同步一次 + `setInterval` 每 5 分钟定时同步；市场列表路由恢复为从 `mcp_install` 表读取 `installed`（不再每次请求跑 npm）。
+- 前端 — 移除「检查」按钮（同步由后端自动完成，前端不直接触发）；MCP 市场工具卡片尺寸与市场卡片统一（`grid` + `aspect-[3/2]`）。
+
+**影响的端点**：
+- `GET /api/mcp` — 返回 `mcp_install` 表中同步后的已安装列表。
+- `POST /api/config/mcp/provider/{id}/list` — `installed` 字段来自同步后的 `mcp_install` 表。
+- `POST /api/config/mcp/install`（github）— 安装后触发同步。
+
+**可能存在的问题**：
+- `smithery` 为 HTTP 连接型安装（`mcp_install_cmd = 'smithery connect'`），不参与 npm 同步，其「已安装」仍按 `mcp_install` 表记录判断。
+- 周期性同步每 5 分钟执行一次 `npm list -g`，若全局包数量巨大可能有一定开销（当前超时 20s，失败自动忽略）。

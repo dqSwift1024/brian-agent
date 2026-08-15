@@ -4033,18 +4033,16 @@ watch(activeSubSection, async (val) => {
                 <p class="text-sm mb-1" :class="mcpMarketMessage ? 'text-warning-orange' : 'text-apple-gray-500'" v-else>{{ mcpMarketMessage || '暂无可用工具' }}</p>
                 <p class="text-xs text-apple-gray-400" v-if="!mcpMarketSearchQuery && !mcpMarketMessage">请点击右上角刷新按钮从市场获取工具列表</p>
               </div>
-              <div v-else class="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4 pb-4">
+              <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
                 <div
                   v-for="tool in filteredMcpMarketTools" :key="tool.id"
-                  class="break-inside-avoid rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:border-brian-blue/30 hover:shadow-sm transition-all p-4"
+                  class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:border-brian-blue/30 hover:shadow-sm transition-all p-4 aspect-[3/2] flex flex-col"
                 >
-                  <div class="flex items-start justify-between gap-3 mb-2">
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-apple-gray-900 dark:text-apple-gray-50 leading-snug">{{ tool.title || tool.id }}</p>
-                      <p v-if="tool.brief" class="text-xs text-apple-gray-400 mt-1.5 leading-relaxed">{{ tool.brief }}</p>
-                    </div>
+                  <div class="mb-3">
+                    <p class="text-sm font-medium text-apple-gray-900 dark:text-apple-gray-50 leading-snug truncate">{{ tool.title || tool.id }}</p>
+                    <p v-if="tool.brief" class="text-[11px] text-apple-gray-400 mt-1.5 line-clamp-2" :title="tool.brief">{{ tool.brief }}</p>
                   </div>
-                  <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
+                  <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
                     <span class="text-[10px] text-apple-gray-400">{{ mcpMarketSelectedProvider === 'github' ? 'npm' : 'http' }}</span>
                     <button
                       class="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors"

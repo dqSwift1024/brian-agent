@@ -5,6 +5,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
 import { IdGenerator } from './Base/shared/id/IdGenerator';
@@ -151,6 +152,12 @@ async function buildContext() {
   await llmAccess.initialize();
 
   const mcpAccess = new MCPAccess(relationDb, logger);
+
+  // 启动时通过 npm list -g 同步一次 mcp_install 表的安装状态（清理全局已卸载的 npm 记录）
+  try {
+    const synced = await mcpAccess.syncInstallStatus();
+    if (synced > 0) logger.info('[startup] MCP sync', `清理了 ${synced} 条已卸载的 npm 安装记录`);
+  } catch { /* best-effort */ }
 
   const soulAccess = new SoulAccess(relationDb, logger);
   await soulAccess.initialize();
@@ -329,6 +336,15 @@ async function buildContext() {
     }, msUntilMidnight);
   }
   scheduleInfoCleanup();
+
+  // 周期性同步 MCP 安装状态（每 5 分钟通过 npm list -g 清理全局已卸载的 npm 记录）
+  setInterval(() => {
+    try {
+      mcpAccess.syncInstallStatus().then((removed) => {
+        if (removed > 0) logger.info('[cron] MCP install sync', `清理了 ${removed} 条已卸载的 npm 安装记录`);
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }, 5 * 60 * 1000);
 
   return {
     relationDb, llmAccess, mcpAccess, soulAccess, skillAccess, promptsAccess,
@@ -993,7 +1009,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               install_cmd: `npx ${obj.package.name}`,
               installed: false,
             }));
-            // Check which are already installed
+            // 从 mcp_install 表读取安装状态（由 syncInstallStatus 通过 npm list -g 同步更新）
             const instRows = ctx.relationDb.queryRaw<{ mcp_title: string }>(
               'SELECT "mcp_title" FROM "mcp_install"', [],
             );
@@ -1048,7 +1064,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             const startCmd = `npx ${toolId}`;
             const stopCmd = `pkill -f ${toolId}`;
             const uninstallCmd = `npm uninstall -g ${toolId}`;
-            const { execSync } = await import('node:child_process');
             try { execSync(installCmd, { timeout: 120000, stdio: 'pipe' }); } catch { /* npm install may fail but tool may already be usable */ }
             const id = `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const now = Date.now();
@@ -1056,6 +1071,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               `INSERT OR REPLACE INTO "mcp_install" ("id","created","updated","mcp_provider_id","mcp_title","mcp_brief","mcp_install_cmd","mcp_start_cmd","mcp_stop_cmd","mcp_uninstall_cmd","enable") VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
               [id, now, now, provId, toolId, pkg.description || '', installCmd, startCmd, stopCmd, uninstallCmd, 1],
             );
+            // 安装完成后同步一次安装状态（校验 npm 包是否真实安装成功）
+            await ctx.mcpAccess.syncInstallStatus();
             sendJson(res, 200, { success: true, id });
 
           // Smithery: record as HTTP connection
