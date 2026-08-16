@@ -7,6 +7,8 @@
 
 import * as lancedb from '@lancedb/lancedb';
 import type { Connection, Table } from '@lancedb/lancedb';
+import { makeArrowTable } from '@lancedb/lancedb';
+import { Float32, DataType } from 'apache-arrow';
 import { existsSync, mkdirSync, statSync, readdirSync } from 'fs';
 import { DatabaseError } from '../../shared/errors';
 
@@ -62,20 +64,80 @@ export class VectorDBComponent {
     const tables = await this.conn.tableNames();
     if (tables.includes(VECTOR_RECORD_TABLE)) {
       this.table = await this.conn.openTable(VECTOR_RECORD_TABLE);
+      // 旧版本表可能将 embedding 推断为非向量列（如 List<Float64>），
+      // 导致 nearestTo 无法识别向量列而搜索失败；若表为空则重建以纠正 schema。
+      await this.ensureVectorColumn();
     } else {
-      const placeholder = {
-        id: '__placeholder__',
-        content: '',
-        embedding: new Array(dimension).fill(0),
-        user_id: '__placeholder__',
-        metadata: '{}',
-        created: 0,
-        updated: 0,
-      };
-      this.table = await this.conn.createTable(VECTOR_RECORD_TABLE, [placeholder]);
-      await this.table.delete("id = '__placeholder__'");
+      this.table = await this.createTableWithVectorColumn();
     }
 
+    this.initialized = true;
+  }
+
+  /**
+   * 创建向量表，并显式将 embedding 注册为 FixedSizeList<Float32> 向量列。
+   *
+   * LanceDB 仅默认把名为 `vector` 的列识别为向量列；embedding 必须通过
+   * makeArrowTable 的 vectorColumns 选项显式声明，否则会被推断为 List<Float64>，
+   * 导致 nearestTo 抛出 "No vector column found"。
+   */
+  private async createTableWithVectorColumn(): Promise<Table> {
+    const placeholder = {
+      id: '__placeholder__',
+      content: '',
+      embedding: new Array(this.dimension).fill(0),
+      user_id: '__placeholder__',
+      metadata: '{}',
+      created: 0,
+      updated: 0,
+    };
+    const arrowTable = makeArrowTable([placeholder], {
+      vectorColumns: { embedding: { type: new Float32() } },
+    });
+    const table = await this.conn!.createTable(VECTOR_RECORD_TABLE, arrowTable);
+    await table.delete("id = '__placeholder__'");
+    return table;
+  }
+
+  /**
+   * 校验 embedding 列是否为向量列；若非向量列且表为空，则重建表修复 schema。
+   */
+  private async ensureVectorColumn(): Promise<void> {
+    try {
+      const schema = await this.table!.schema();
+      const field = schema.fields.find((f: { name: string }) => f.name === 'embedding');
+      const isVector = !!field && DataType.isFixedSizeList(field.type);
+      if (isVector) return;
+      const count = await this.table!.countRows();
+      if (count > 0) {
+        throw new DatabaseError('向量表 embedding 列类型非法（非向量列）且已有数据，无法自动迁移');
+      }
+      await this.conn!.dropTable(VECTOR_RECORD_TABLE);
+      this.table = await this.createTableWithVectorColumn();
+    } catch (e) {
+      if (e instanceof DatabaseError) throw e;
+      // schema() 异常等情况下保持现状，交由后续操作报错
+    }
+  }
+
+  /**
+   * 按新维度/度量重建向量表（用于运行时修改维度或度量）。
+   *
+   * 仅允许在无向量数据时调用（由上层 VectorDBAccess.applyDimension / applyMetric 保证）；
+   * 重建会删除并重新创建向量表。
+   */
+  async recreate(dimension: number, metric: string): Promise<void> {
+    this.dimension = dimension;
+    this.metric = metric;
+
+    if (!this.conn) {
+      this.conn = await lancedb.connect(this.lancePath);
+    }
+    const tables = await this.conn.tableNames();
+    if (tables.includes(VECTOR_RECORD_TABLE)) {
+      await this.conn.dropTable(VECTOR_RECORD_TABLE);
+    }
+    this.table = await this.createTableWithVectorColumn();
     this.initialized = true;
   }
 
@@ -257,7 +319,9 @@ export class VectorDBComponent {
    * 这是 normalizeMetricScore 的逆向操作。
    */
   static normalizedThresholdToRaw(threshold: number, metric: string, dimension: number): number {
-    if (threshold <= 0 || threshold >= 100) return -Infinity;
+    // 边界：0 表示不设阈值（返回全部）；100 表示仅完全匹配。
+    // 注意：原实现 `threshold >= 100` 也返回 -Infinity（返回全部），与语义相反，已修正。
+    if (threshold <= 0) return -Infinity;
     const t = threshold / 100;
     const m = (metric || '').toLowerCase();
     if (m === 'cosine') {
@@ -268,7 +332,6 @@ export class VectorDBComponent {
     }
     if (m === 'dot' || m === 'ip') {
       const safeDim = dimension > 0 ? dimension : 1536;
-      if (t <= 0) return -Infinity;
       if (t >= 1) return Infinity;
       return -Math.log(1 / t - 1) * Math.sqrt(safeDim);
     }
@@ -418,6 +481,7 @@ export class VectorDBComponent {
     let query = tbl
       .query()
       .nearestTo(queryVector)
+      .column('embedding')
       .distanceType(this.distanceTypeForLanceDB());
 
     if (whereClause) {
@@ -426,19 +490,35 @@ export class VectorDBComponent {
 
     const results = await query.limit(topK).toArray();
 
-    const hits: VectorSearchHit[] = results.map((row: Record<string, unknown>) => {
+    // 原生 ANN 分支阈值过滤：需用「原始相似度」与「原始阈值」比较（与暴力扫描分支一致）。
+    // 原实现误用归一化分数(0-100)与原始阈值比较，导致阈值在原生分支失效，已修正。
+    // LanceDB 各度量返回的 _distance 语义不同，据此换算原始相似度：
+    //   cosine: _distance = 1 - cosine（值域 [0,2]） → raw = 1 - _distance；
+    //   l2:     _distance = 欧氏距离（值域 [0,∞)） → raw = 1 / (1 + _distance)；
+    //   dot:    _distance = -dot（内积取负）        → raw = -_distance。
+    const hits: VectorSearchHit[] = [];
+    for (const row of results) {
       const lanceDistance = Number(row._distance ?? 0);
-      const rawSimilarity = this.metric === 'cosine' ? 1 - lanceDistance : 1 / (1 + lanceDistance);
-      return {
+      let rawSimilarity: number;
+      if (this.metric === 'cosine') {
+        rawSimilarity = 1 - lanceDistance;
+      } else if (this.metric === 'euclidean' || this.metric === 'l2') {
+        rawSimilarity = 1 / (1 + lanceDistance);
+      } else {
+        // dot / ip
+        rawSimilarity = -lanceDistance;
+      }
+      if (rawSimilarity < threshold) continue;
+      hits.push({
         id: String(row.id ?? ''),
         content: String(row.content ?? ''),
         similarity: VectorDBComponent.normalizeMetricScore(rawSimilarity, this.metric, this.dimension),
         user_id: row.user_id != null ? String(row.user_id) : null,
         metadata: this.parseMetadata(row.metadata),
-      };
-    });
+      });
+    }
 
-    return hits.filter((h) => h.similarity >= threshold);
+    return hits;
   }
 
   getDimension(): number {
@@ -447,6 +527,16 @@ export class VectorDBComponent {
 
   getMetric(): string {
     return this.metric;
+  }
+
+  /**
+   * 运行时切换距离度量方式。
+   *
+   * 仅允许在无向量数据时调用（由上层 VectorDBAccess.applyMetric 保证）；
+   * 度量方式在查询时通过 distanceType 指定，无需重建表。
+   */
+  setMetric(metric: string): void {
+    this.metric = metric;
   }
 
   getTableName(): string {

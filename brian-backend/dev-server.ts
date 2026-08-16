@@ -21,7 +21,7 @@ import { LogAccess } from './Base/LogProvider';
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
-import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext } from './Core/InfoCoreProvider';
+import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
 import { SkillCoreAccess, SkillCoreContext, AgeSkillInput, AgeSkillOutput } from './Core/SkillCoreProvider';
@@ -128,6 +128,7 @@ import {
   GetChatHistoryInput, GetChatHistoryOutput,
   SearchMessageInput, SearchMessageOutput,
   CancelWorkInput, CancelWorkOutput,
+  OpenChatStreamInput, OpenChatStreamOutput,
 } from './Application/Chat/domain/types';
 
 import { AopProxy } from './Base/shared/aop/AopProxy';
@@ -143,6 +144,24 @@ function createLogger(): any {
 
 function addColIfMissing(relationDb: any, table: string, column: string, type: string): void {
   try { relationDb.executeRaw(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`); } catch { /* exists */ }
+}
+
+/**
+ * 从 SQLite 配置表 info_vector_config 读取向量维度。
+ *
+ * 向量维度统一由配置系统（info_core.vector_config.dimension）管理，向量表（LanceDB）
+ * 按其创建；此处仅在 infoCore 初始化后从 SQLite 读取，作为向量表的维度来源。
+ */
+function readVectorDimension(relationDb: any): number {
+  try {
+    const rows = relationDb.queryRaw<{ dimension: number }>(
+      'SELECT "dimension" FROM "info_vector_config" LIMIT 1', [],
+    );
+    if (rows.length > 0 && Number(rows[0].dimension) > 0) {
+      return Number(rows[0].dimension);
+    }
+  } catch { /* table may not exist yet */ }
+  return 1536;
 }
 
 async function buildContext() {
@@ -186,14 +205,12 @@ async function buildContext() {
   const logAccess = new LogAccess(relationDb, logger);
   await logAccess.initialize();
 
-  // VectorDB with LanceDB backend
+  // VectorDB with LanceDB backend（维度不在此硬编码，改为下方从 SQLite info_vector_config 读取）
   const vectorDBAccess = new VectorDBAccess(relationDb, {
     lancePath: path.join(DATA_DIR, 'vectordb'),
-    dimension: 1536,
     metric: 'cosine',
     logger,
   });
-  await vectorDBAccess.initialize();
 
   addColIfMissing(relationDb, 'skill_usage', 'agent_skill_id', 'TEXT');
   addColIfMissing(relationDb, 'skill_usage', 'timestamp', 'INTEGER');
@@ -210,6 +227,11 @@ async function buildContext() {
   // ---- Core Providers ----
   const infoCore = new InfoCoreAccess(relationDb, llmAccess, promptsAccess, vectorDBAccess, graphDBAccess, logger);
   await infoCore.initialize();
+
+  // 向量维度统一由 SQLite 的 info_vector_config.dimension 管理（配置中心可修改），
+  // 读取后作为向量表（LanceDB）的维度来源初始化。
+  const vectorDimension = readVectorDimension(relationDb);
+  await vectorDBAccess.initialize(vectorDimension);
 
   const llmCore = new LLMCoreAccess(relationDb, llmAccess, promptsAccess, logger);
   await llmCore.initialize();
@@ -1404,6 +1426,69 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.chatAccess.submitWork(input, context, output);
         sendJson(res, 200, { msgId: output.interact_id, workId: output.work_id });
 
+      } else if (method === 'POST' && pathname === '/api/chat/stream') {
+        // SSE 流式对话端点：通过 chat_config.sse_heartbeat_interval_ms 控制心跳间隔
+        const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
+        const msgContent = typeof body.msg_content === 'string' ? body.msg_content : '';
+        const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : [];
+
+        if (!sessionId) { sendJson(res, 400, { error: 'session_id is required' }); return; }
+        if (!msgContent.trim()) { sendJson(res, 400, { error: 'msg_content cannot be empty' }); return; }
+
+        // 读取心跳间隔（chat_config.sse_heartbeat_interval_ms，默认 30000ms）
+        let heartbeatIntervalMs = 30000;
+        try {
+          const cfgRows = ctx.relationDb.queryRaw<{ sse_heartbeat_interval_ms: number }>(
+            'SELECT "sse_heartbeat_interval_ms" FROM "chat_config" LIMIT 1', [],
+          );
+          if (cfgRows.length > 0 && Number(cfgRows[0].sse_heartbeat_interval_ms) > 0) {
+            heartbeatIntervalMs = Number(cfgRows[0].sse_heartbeat_interval_ms);
+          }
+        } catch { /* use default */ }
+
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+
+        let clientClosed = false;
+        req.on('close', () => { clientClosed = true; });
+
+        const write = (str: string) => {
+          if (clientClosed) return;
+          try { res.write(str); } catch { /* ignore */ }
+        };
+
+        const heartbeat = setInterval(() => {
+          if (clientClosed) { clearInterval(heartbeat); return; }
+          try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+        }, heartbeatIntervalMs);
+
+        const onEvent = (evt: { event: string; data: Record<string, unknown> }) => {
+          // SSE data 行：{ event, ...data } 扁平化，供前端按 event 名分发
+          write(`data: ${JSON.stringify({ event: evt.event, ...evt.data })}\n\n`);
+        };
+
+        const streamInput = Object.assign(new OpenChatStreamInput(), {
+          session_id: sessionId,
+          msg_content: msgContent,
+          citing_msg_ids: citingMsgIds,
+          force_orchestration_strategy: typeof body.force_orchestration_strategy === 'string' ? body.force_orchestration_strategy : undefined,
+        });
+        const streamOutput = new OpenChatStreamOutput();
+
+        try {
+          await ctx.chatAccess.openChatStream(streamInput, new ChatContext(), streamOutput, onEvent);
+        } catch (err: any) {
+          onEvent({ event: 'error', data: { error_message: err?.message || 'Stream failed', error_code: 'INTERNAL' } });
+        } finally {
+          clearInterval(heartbeat);
+          if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+        }
+        return;
+
       } else if (method === 'DELETE' && pathname.startsWith('/api/chat/session/')) {
         const sid = pathname.split('/api/chat/session/')[1];
         const input = Object.assign(new DeleteSessionInput(), { session_ids: [sid] });
@@ -2063,67 +2148,42 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           return;
         }
         try {
-          // 1. Get embedding model from info_vector_config
-          const vectorConfigRows = ctx.relationDb.queryRaw<{ llm_id: string; dimension: number }>(
-            'SELECT "llm_id", "dimension" FROM "info_vector_config" LIMIT 1',
+          // 校验向量化模型是否已配置（未配置则给出可操作提示）
+          const vectorConfigRows = ctx.relationDb.queryRaw<{ llm_id: string }>(
+            'SELECT "llm_id" FROM "info_vector_config" LIMIT 1',
             [],
           );
           if (vectorConfigRows.length === 0 || !vectorConfigRows[0].llm_id) {
-            sendJson(res, 400, { error: 'No embedding model configured in info_vector_config' });
-            return;
-          }
-          const { llm_id, dimension } = vectorConfigRows[0];
-
-          // 2. Generate embedding via LLM
-          const { ExecLLMInput, ExecLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
-          const execInput = Object.assign(new ExecLLMInput(), {
-            id: llm_id,
-            params: { prompt: `Generate a ${dimension}-dimensional embedding vector as a JSON array of floats for the following text:\n\n${searchText}\n\nRespond with ONLY the JSON array.`, temperature: 0.1, max_tokens: 4096 },
-          });
-          const execOutput = new ExecLLMOutput();
-          await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);
-
-          const result = execOutput.result;
-          if (!result) {
-            sendJson(res, 500, { error: 'LLM returned empty embedding' });
+            sendJson(res, 400, { error: '未配置向量化模型：请在「配置中心 > 记忆 > 向量化」中选择一个 embedding 类型模型（llm_id）后再进行语义搜索' });
             return;
           }
 
-          const embedding = (() => {
-            try {
-              const arr = JSON.parse(result);
-              return Array.isArray(arr) ? arr.map(Number) : [];
-            } catch {
-              const match = result.match(/\[[\d.,\s\-\+eE]+\]/);
-              if (match) return JSON.parse(match[0]).map(Number);
-              return [];
-            }
-          })();
-
-          if (embedding.length === 0) {
-            sendJson(res, 500, { error: 'Failed to parse embedding from LLM response' });
-            return;
-          }
-
-          // 3. Search vectors
-          const { SoVectorInput, SoVectorOutput, VectorContext } = await import('./Base/VectorDBProvider/domain/types');
-          const topK = typeof body.top_k === 'number' && body.top_k > 0 ? body.top_k : undefined;
+          // 语义搜索：对 info_vector 表中全部信息向量做余弦相似度搜索，返回信息记录 + 相似度分数
+          const topK = typeof body.top_k === 'number' && body.top_k > 0 ? body.top_k : 10;
           const threshold = typeof body.similarity_threshold === 'number' ? body.similarity_threshold : undefined;
-          const soInput = Object.assign(new SoVectorInput(), {
-            query_param: { embedding, top_k: topK, similarity_threshold: threshold },
+          const input = Object.assign(new SimilarKInfoInput(), {
+            info: searchText,
+            topK,
+            similarity_threshold: threshold,
           });
-          const soOutput = new SoVectorOutput();
-          await ctx.vectorDBAccess.soVector(soInput, new VectorContext(), soOutput);
+          const output = new SimilarKInfoOutput();
+          await ctx.infoCore.similarKInfo(input, new InfoCoreContext(), output);
 
           sendJson(res, 200, {
-            results: soOutput.list.map(hit => ({
-              id: hit.id,
-              content: hit.content,
-              score: hit.score,
-              user_id: hit.user_id,
-              metadata: hit.metadata,
+            results: output.list.map((r: any) => ({
+              info_id: r.info_id,
+              info_type: r.info_type,
+              info_creator_role: r.info_creator_role,
+              info_creator_id: r.info_creator_id,
+              info: r.info,
+              info_length: r.info_length,
+              created: r.created,
+              session_id: r.session_id,
+              work_id: r.work_id,
+              interact_id: r.interact_id,
+              score: r.score,
             })),
-            count: soOutput.list.length,
+            count: output.list.length,
           });
         } catch (err: any) {
           sendJson(res, 500, { error: err.message || 'Vector search failed' });

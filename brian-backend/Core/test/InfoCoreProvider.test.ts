@@ -721,7 +721,7 @@ describe('InfoCoreProvider', () => {
       const output = new SoInfoVectorConfigOutput();
       await infoCore.soInfoVectorConfig(new SoInfoVectorConfigInput(), new InfoCoreContext(), output);
       expect(output.config).not.toBeNull();
-      expect(output.config!.dimension).toBe(1024);
+      expect(output.config!.dimension).toBe(1536);
     });
 
     it('should update vector config', async () => {

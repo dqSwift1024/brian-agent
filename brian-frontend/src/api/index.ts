@@ -282,11 +282,24 @@ export const visualizationApi = {
     request<Record<string, unknown>>(`/visualization/resource/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`),
 }
 
-export interface VectorSearchResult { id: string; content: string; score: number; user_id: string | null; metadata: Record<string, unknown> | null }
+/** 语义搜索结果：命中信息记录（相似度搜索直接返回 info 的 id 及其详情） */
+export interface VectorSearchInfo {
+  info_id: string;
+  info_type: string;
+  info_creator_role: string;
+  info_creator_id: string;
+  info: string;
+  info_length: number;
+  created: number;
+  session_id: string;
+  work_id: string;
+  interact_id: string;
+  score: number;
+}
 
 export const vectorDbApi = {
   searchByText: (text: string, topK?: number, threshold?: number) =>
-    request<{ results: VectorSearchResult[]; count: number }>('/vectordb/search', {
+    request<{ results: VectorSearchInfo[]; count: number }>('/vectordb/search', {
       method: 'POST',
       body: JSON.stringify({ text, top_k: topK, similarity_threshold: threshold }),
     }),

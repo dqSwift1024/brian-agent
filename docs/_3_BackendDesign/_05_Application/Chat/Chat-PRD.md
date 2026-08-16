@@ -41,10 +41,15 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 
 **功能**：建立 SSE 连接，将 work 执行过程中的各阶段事件实时推送给前端
 
-**URL**：`GET /api/chat/stream`
+**URL**：`POST /api/chat/stream`
 
-**入参（Query String）**：
+**入参（JSON Body）**：
 - `session_id`（STRING，必选）：会话 ID
+- `msg_content`（STRING，必选）：用户输入内容
+- `citing_msg_ids`（STRING[]，可选）：引用的消息 ID 列表
+- `force_orchestration_strategy`（ENUM，可选）：强制编排策略（"SIMPLE" | "PLANNING"）
+
+**SSE 消息格式**：`data: {json}\n\n`，其中 json 为扁平对象 `{ event: <事件类型>, ...payload }`（事件名内嵌在 data 行中，前端按 `event` 字段分发）。心跳为 SSE 注释行 `: ping`，间隔由 `chat_config.sse_heartbeat_interval_ms` 配置（默认 30000ms）。
 
 **SSE 事件类型**：
 
@@ -62,12 +67,13 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 
 **处理流程**：
 
-1. 设置 SSE 响应头（`Content-Type: text/event-stream`，`Cache-Control: no-cache`，`Connection: keep-alive`）；
-2. 发送 `connected` 事件确认连接建立；
-3. 维护一个事件队列（per-session），下层通过回调/事件机制向该队列推送事件；
-4. 循环从事件队列取出事件，格式化为 SSE 消息（`event: xxx\ndata: {...}\n\n`）写入响应流；
-5. 当接收到 `done` 或 `error` 事件时，关闭 SSE 连接；
-6. 客户端断开连接时，清理事件队列和关联资源。
+1. 校验 session_id 与 msg_content；
+2. 读取 `chat_config.sse_heartbeat_interval_ms` 作为心跳间隔；
+3. 设置 SSE 响应头（`Content-Type: text/event-stream`，`Cache-Control: no-cache`，`Connection: keep-alive`，`X-Accel-Buffering: no`）；
+4. 启动心跳定时器，按间隔写入 SSE 注释 `: ping` 保活；
+5. 调用 openChatStream 执行编排，通过 onEvent 回调实时将事件格式化为 `data: {...}` 写入响应流；
+6. 当接收到 `done` 或 `error` 事件后，清理心跳定时器并关闭 SSE 连接；
+7. 客户端断开连接时（req close），停止写入并清理资源。
 
 ### 3.2. 提交工作（submitWork）
 
@@ -347,7 +353,7 @@ Chat 模块的配置通过 Config Application 统一管理（`/api/config/update
 |--------|-----------|------|--------|------|
 | max_messages_per_session | `chat.max_messages_per_session` | INT | 1000 | 每会话最大消息数 |
 | sse_heartbeat_interval_ms | `chat.sse_heartbeat_interval_ms` | INT | 30000 | SSE 心跳间隔（ms） |
-| default_history_lastN | `chat.default_history_lastN` | INT | 50 | 默认历史消息查询数量 |
+| default_history_lastN | `chat.default_history_lastN` | INT | 50 | 首次加载历史对话时返回给前端展示的消息数量（对话区/图谱）；仅用于 getChatHistory 的展示，与 InfoCore 的上下文构建（context_config）无关 |
 
 **处理流程**：
 

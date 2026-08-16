@@ -1414,6 +1414,21 @@ describe('ChatService', () => {
       const doneEvent = output.events.find(e => e.event === 'done');
       expect(doneEvent!.data.token_usage).toEqual(expect.any(Object));
     });
+
+    it('onEvent 回调实时收到与 output.events 一致的事件流', async () => {
+      const input = Object.assign(new OpenChatStreamInput(), {
+        session_id: 'sse-headers', msg_content: 'hi',
+      });
+      const output = new OpenChatStreamOutput();
+      const received: Array<{ event: string; data: Record<string, unknown> }> = [];
+
+      await service.openChatStream(input, new ChatContext(), output, (evt) => {
+        received.push({ event: evt.event, data: evt.data });
+      });
+
+      expect(received.length).toBeGreaterThan(0);
+      expect(received.map((e) => e.event)).toEqual(output.events.map((e) => e.event));
+    });
   });
 
   describe('createSession - extended', () => {

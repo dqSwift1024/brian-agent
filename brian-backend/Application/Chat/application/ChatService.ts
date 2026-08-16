@@ -189,6 +189,7 @@ export class ChatService {
     input: OpenChatStreamInput,
     context: ChatContext,
     output: OpenChatStreamOutput,
+    onEvent?: (event: SSEEvent) => void,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -218,7 +219,9 @@ export class ChatService {
 
     const events: SSEEvent[] = [];
     const emit = (event: string, data: Record<string, unknown>) => {
-      events.push({ event, data });
+      const evt: SSEEvent = { event, data };
+      events.push(evt);
+      onEvent?.(evt);
     };
 
     emit('connected', { session_id: input.session_id });

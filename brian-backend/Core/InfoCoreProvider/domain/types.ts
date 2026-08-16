@@ -264,6 +264,8 @@ export class GraphNInfoOutput extends Output {
 export class SimilarKInfoInput extends Input {
   info!: string;
   topK!: number;
+  /** 归一化相似度阈值 0-100（0=返回全部，100=仅完全匹配），低于此值结果不返回 */
+  similarity_threshold?: number;
 }
 
 /** similarKInfo 出参 */
@@ -466,7 +468,7 @@ export const INFO_CONTEXT_CONFIG_TABLE = 'info_context_config';
 
 export const DEFAULT_TAG_TOP_K = 5;
 export const DEFAULT_ALIVE_MAX_DAYS = 30;
-export const DEFAULT_VECTOR_DIMENSION = 1024;
+export const DEFAULT_VECTOR_DIMENSION = 1536;
 export const DEFAULT_BASE_TIMELINE_COUNT = 500;
 export const DEFAULT_BASE_TAG_RELATIVE_COUNT = 200;
 export const DEFAULT_BASE_SIMILARITY_COUNT = 150;

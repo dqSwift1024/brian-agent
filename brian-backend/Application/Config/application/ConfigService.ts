@@ -1056,6 +1056,11 @@ export class ConfigService {
       return;
     }
 
+    // 向量数据库距离度量变更需同步运行时组件（有向量数据时 applyMetric 抛错，阻止写入）
+    if (module === 'vectordb_provider' && key === 'default_distance_metric') {
+      await this.vectorDBAccess.applyMetric(value as string);
+    }
+
     const table = ConfigService.BASE_PROVIDER_CONFIG_TABLES[module];
     const reg = this.registryMap.get(configKey);
     const type = (reg?.config_type ?? 'STRING').toUpperCase();

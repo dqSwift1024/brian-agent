@@ -109,7 +109,7 @@ export interface VectorSearchResult {
   id: string;
   /** 原始文本内容 */
   content: string;
-  /** 相似度分数（余弦相似度，取值范围 [-1, 1]） */
+  /** 归一化相似度分数（0-100，由各度量方式原始相似度统一映射） */
   score: number;
   /** 用户 ID */
   user_id: string | null;

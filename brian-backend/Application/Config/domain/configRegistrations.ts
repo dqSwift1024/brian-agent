@@ -184,7 +184,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'summary_config', 'summary_config.prompt_template_id', '摘要生成 Prompt', 'STRING', ''),
   core('info_core', 'summary_config', 'summary_config.enable', '摘要生成启用', 'BOOLEAN', true),
   core('info_core', 'vector_config', 'vector_config.llm_id', '向量化 LLM', 'STRING', ''),
-  core('info_core', 'vector_config', 'vector_config.dimension', '向量维度', 'INT', 1024),
+  core('info_core', 'vector_config', 'vector_config.dimension', '向量维度', 'INT', 1536, '向量维度须与向量数据库表维度一致（默认 1536，OpenAI text-embedding 常用）'),
   core('info_core', 'vector_config', 'vector_config.enable', '向量化启用', 'BOOLEAN', true),
   core('info_core', 'context_config', 'context_config.base_timeline_count', '时间线基础数量', 'INT', 500, '上下文构建-时间线'),
   core('info_core', 'context_config', 'context_config.base_tag_relative_count', '标签关联基础数量', 'INT', 200, '上下文构建-标签关联'),
@@ -282,7 +282,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- Chat ---
   app('chat', 'basic', 'max_messages_per_session', '每会话最大消息数', 'INT', 1000),
   app('chat', 'basic', 'sse_heartbeat_interval_ms', 'SSE 心跳间隔（ms）', 'INT', 30000, 'SSE 长连接保活心跳间隔'),
-  app('chat', 'basic', 'default_history_lastN', '默认历史消息数', 'INT', 50, '聊天上下文携带的历史消息数'),
+  app('chat', 'basic', 'default_history_lastN', '默认历史消息数', 'INT', 50, '首次加载历史对话时返回给前端展示的消息数量（对话区/图谱）；与「记忆与信息 > 上下文构建」的上下文参数无关'),
 
   // --- SelfLearning ---
   app('self_learning', 'weight', 'random_factor', '随机因子', 'INT', 10),

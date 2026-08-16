@@ -196,7 +196,7 @@ export class InfoCoreSchemaInitializer {
         "created"   INTEGER NOT NULL,
         "updated"   INTEGER NOT NULL,
         "llm_id"    TEXT    NOT NULL,
-        "dimension" INTEGER NOT NULL DEFAULT 1024,
+        "dimension" INTEGER NOT NULL DEFAULT 1536,
         "enable"    INTEGER NOT NULL DEFAULT 1
       )
     `);

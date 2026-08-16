@@ -97,7 +97,7 @@ export class VectorDBAccess {
 
   private readonly relationDb: RelationDBAccess;
 
-  private readonly dimension: number;
+  private dimension: number;
 
   private metric: string;
 
@@ -125,8 +125,11 @@ export class VectorDBAccess {
    * 初始化组件：先创建配置表、写默认值、恢复存储的 metric，再初始化 LanceDB。
    *
    * 必须在首次使用前调用。
+   *
+   * @param dimension 向量维度。若传入则覆盖构造器传入的维度（上层从 SQLite 配置
+   *                  表 info_vector_config.dimension 读取后传入，作为向量表维度来源）。
    */
-  async initialize(): Promise<void> {
+  async initialize(dimension?: number): Promise<void> {
     // 1. 创建关系数据库配置表（仅创建表结构，不初始化 LanceDB）
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS "${VECTORDB_CONFIG_TABLE}" (
@@ -147,7 +150,12 @@ export class VectorDBAccess {
       this.metric = storedMetric;
     }
 
-    // 4. 用最终确定的 metric 初始化 LanceDB 表
+    // 4. 维度以 SQLite 配置为准（若上层传入则覆盖构造器默认值）
+    if (dimension !== undefined && dimension > 0) {
+      this.dimension = dimension;
+    }
+
+    // 5. 用最终确定的 metric / dimension 初始化 LanceDB 表
     await this.vectorDb.init(this.dimension, this.metric);
   }
 
@@ -159,6 +167,45 @@ export class VectorDBAccess {
   /** 获取当前度量方式 */
   getMetric(): string {
     return this.vectorDb.getMetric();
+  }
+
+  /** 获取当前向量维度 */
+  getDimension(): number {
+    return this.vectorDb.getDimension();
+  }
+
+  /**
+   * 运行时应用新的向量维度（供配置中心修改 info_core.vector_config.dimension 时调用）。
+   *
+   * 存在向量数据时禁止修改，避免已写入向量与新维度不一致；修改时重建向量表。
+   */
+  async applyDimension(dimension: number): Promise<void> {
+    if (!Number.isInteger(dimension) || dimension <= 0) {
+      throw new Error('向量维度必须是正整数');
+    }
+    const count = await this.vectorDb.count();
+    if (count > 0) {
+      throw new Error(`已存在 ${count} 条向量数据，写入数据后不支持更改向量维度。如需更改请先删除所有向量数据。`);
+    }
+    this.dimension = dimension;
+    await this.vectorDb.recreate(dimension, this.metric);
+  }
+
+  /**
+   * 运行时应用新的距离度量方式（供配置中心修改 default_distance_metric 时调用）。
+   *
+   * 将配置枚举值（COSINE / L2 / IP）映射为内部值（cosine / euclidean / dot），
+   * 并同步到 VectorDB 组件；存在向量数据时禁止修改，保证已有向量与新度量语义一致。
+   */
+  async applyMetric(metric: string): Promise<void> {
+    const map: Record<string, string> = { COSINE: 'cosine', L2: 'euclidean', IP: 'dot' };
+    const normalized = map[String(metric).toUpperCase()] || String(metric).toLowerCase();
+    const count = await this.vectorDb.count();
+    if (count > 0) {
+      throw new Error(`已存在 ${count} 条向量数据，写入数据后不支持更改距离度量方式。如需更改请先删除所有向量数据。`);
+    }
+    this.metric = normalized;
+    this.vectorDb.setMetric(normalized);
   }
 
   /** 新增/更新向量（upsert） */

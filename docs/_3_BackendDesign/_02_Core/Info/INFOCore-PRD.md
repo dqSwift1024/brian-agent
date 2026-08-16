@@ -266,7 +266,7 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_vector_config` 表，获取唯一配置记录；
 2. 将查询到的配置（llm_id, dimension, enable）写入 output 返回；
-3. 若配置表为空（首次使用），返回默认值：enable=true, dimension=1024, llm_id 为空；
+3. 若配置表为空（首次使用），返回默认值：enable=true, dimension=1536, llm_id 为空；
 
 **返回**：Boolean，表示查询是否完成
 
@@ -289,7 +289,7 @@
 4. 若 `dimension` 非空：
    a. 调用 RelationDBProvider.selectOneDB 检查 `info_vector` 表是否已有向量数据（count > 0）；
    b. 若已有向量数据，dimension 不允许修改（维度不匹配会导致已有向量失效），返回 false 并记录错误日志："dimension 只允许在没有计算过向量数据的情况下修改"；
-   c. 若无向量数据，校验 dimension 为正整数且与模型输出维度一致（如 1024、1536、768），更新 dimension 字段；
+   c. 若无向量数据，校验 dimension 为正整数且与模型输出维度一致（如 1536、1024、768），更新 dimension 字段，并同步重建向量表（VectorDBAccess.applyDimension）；
 5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_vector_config` 表；
 
 **返回**：Boolean，表示更新是否完成
@@ -384,15 +384,19 @@
 - input：SimilarKInfoInput（继承 Input），包含以下字段：
   - info：信息内容
   - topK：最相似的K条信息
+  - similarity_threshold：归一化相似度阈值 0-100（可选，0=返回全部，100=仅完全匹配），低于此值结果不返回
 - context：SimilarKInfoContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：SimilarKInfoOutput（继承 Output），承载返回内容：
-  - info_list：信息内容列表
+  - list：信息记录列表（`InfoRawRecord & { score?: number }`），按相似度分数降序
 **处理流程**：
 
 1. 根据入参中的 info 文本内容，调用 LLMProvider.execLLM 使用 embedding 模型计算文本的向量；
-2. 调用 VectorDBProvider.soVector 根据向量搜索 `info_vector` 表，返回语义最相似的前 topK 条记录的 info_id 列表及相似度分数（score）；
-3. 根据 info_id 列表调用 `lastNInfo` 接口（传入 info_id 列表作为过滤条件），获取每条信息的实际内容；
-4. 返回信息内容列表（按相似度分数降序），写入 output 返回；
+2. 从 SQLite `info_vector` 表加载全部信息向量，逐条计算与查询向量的余弦相似度，并归一化到 0-100（与向量库余弦相似度口径一致）；
+3. 过滤低于 `similarity_threshold` 的结果，按分数降序取前 topK 条；
+4. 根据 info_id 列表查询 `info_raw` 表，获取每条信息的实际内容（含 info_id、info_type、info_length、created、info 等），附上相似度分数 score；
+5. 返回信息内容列表（按相似度分数降序），写入 output 返回；
+
+> 说明：info 的向量存储于 SQLite `info_vector` 表（而非 LanceDB `vector_record` 表），因此 similarKInfo 直接在 SQLite 表上做余弦相似度检索，无需经 VectorDBProvider.soVector。
 
 ### 2.5.4. 关键词搜索信息（keywordKInfo）
 
@@ -603,7 +607,7 @@
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | info_id | 信息ID | UUID | N | | |
-| embedding | embedding向量（1024维度） | embedding | N | | |
+| embedding | embedding向量（维度由 info_vector_config.dimension 决定，默认 1536） | embedding | N | | |
 
 ### 3.4. INFO标签表（SQLite）
 
@@ -631,7 +635,7 @@
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | tag_id | 信息ID | UUID | N | | |
-| embedding | embedding向量（1024维度） | embedding | N | | |
+| embedding | embedding向量（维度由 info_vector_config.dimension 决定，默认 1536） | embedding | N | | |
 
 ### 3.6. INFO标签配置表（SQLite）
 

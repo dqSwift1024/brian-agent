@@ -712,7 +712,10 @@ export class InfoCoreService {
   }
 
   /**
-   * 语义相似度搜索：生成 embedding 后通过 VectorDB 搜索相似向量。
+   * 语义相似度搜索：生成 embedding 后，对 SQLite info_vector 表中全部信息向量计算余弦相似度。
+   *
+   * 返回语义最相似的 topK 条信息记录（含 info_id、info_type、info_length、created、info 等字段
+   * 及归一化相似度分数 score）。阈值 similarity_threshold 为归一化值 0-100。
    */
   async similarKInfo(
     input: SimilarKInfoInput,
@@ -724,7 +727,7 @@ export class InfoCoreService {
     }
 
     const vectorConfig = await this.getInfoVectorConfig();
-    if (!vectorConfig || vectorConfig.enable !== 1) {
+    if (!vectorConfig || vectorConfig.enable !== 1 || !vectorConfig.llm_id) {
       output.list = [];
       return true;
     }
@@ -735,32 +738,53 @@ export class InfoCoreService {
       return true;
     }
 
-    const soOutput = new SoVectorOutput();
-    await this.vectorDb.soVector(
-      {
-        query_param: {
-          embedding,
-          top_k: input.topK,
-        } as VectorQueryParam,
-      } as SoVectorInput,
-      new VectorContext(),
-      soOutput,
+    const topK = Math.max(1, Math.floor(input.topK));
+    const threshold = input.similarity_threshold ?? 0;
+
+    // 从 SQLite info_vector 表加载全部信息向量，逐条计算余弦相似度
+    const vectorRows = await this.relationDb.queryRaw<{ info_id: string; embedding: string }>(
+      `SELECT "info_id", "embedding" FROM "${INFO_VECTOR_TABLE}"`, [],
     );
 
-    const results: Array<InfoRawRecord & { score?: number }> = [];
+    const scored: Array<{ infoId: string; score: number }> = [];
+    for (const row of vectorRows || []) {
+      const emb = this.parseJSONArray(row.embedding);
+      if (!emb || emb.length !== embedding.length) continue;
+      const raw = this.cosineSimilarity(embedding, emb);
+      // 归一化到 0-100（与向量库余弦相似度口径一致）
+      const score = Math.max(0, Math.min(100, Math.round((raw + 1) * 50)));
+      if (score < threshold) continue;
+      scored.push({ infoId: row.info_id, score });
+    }
 
-    for (const hit of soOutput.list) {
-      if (hit.metadata && hit.metadata['info_id']) {
-        const infoId = hit.metadata['info_id'] as string;
-        const infoRow = await this.getInfoByInfoId(infoId);
-        if (infoRow) {
-          results.push({ ...infoRow, score: hit.score });
-        }
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, topK);
+
+    const results: Array<InfoRawRecord & { score?: number }> = [];
+    for (const s of top) {
+      const infoRow = await this.getInfoByInfoId(s.infoId);
+      if (infoRow) {
+        results.push({ ...infoRow, score: s.score });
       }
     }
 
     output.list = results;
     return true;
+  }
+
+  /** 计算两个等长向量之间的余弦相似度（[-1, 1]） */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length || a.length === 0) return 0;
+    let dot = 0;
+    let magA = 0;
+    let magB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      magA += a[i] * a[i];
+      magB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(magA) * Math.sqrt(magB);
+    return denom === 0 ? 0 : dot / denom;
   }
 
   /**
@@ -1296,10 +1320,14 @@ export class InfoCoreService {
         throw new ValidationError(`llm_id ${input.llm_id} 不是向量模型（llm_type=${llmOutput.llm.llm_type}），向量化仅支持 embedding 类型模型`);
       }
     }
+    // 维度变更需同步重建向量表（applyDimension 内部校验 LanceDB 无数据时重建）
+    if (input.dimension !== undefined) {
+      await this.vectorDb.applyDimension(input.dimension);
+    }
     await this.upsertConfigRow(INFO_VECTOR_CONFIG_TABLE, input, {
       defaultRecord: {
         llm_id: '',
-        dimension: 1024,
+        dimension: 1536,
         enable: 1,
       },
     });
@@ -1854,7 +1882,7 @@ export class InfoCoreService {
     );
     await this.ensureDefaultConfigRow(
       INFO_VECTOR_CONFIG_TABLE,
-      { llm_id: '', dimension: 1024, enable: 1 },
+      { llm_id: '', dimension: 1536, enable: 1 },
     );
     await this.ensureDefaultConfigRow(
       INFO_TAG_CONFIG_TABLE,

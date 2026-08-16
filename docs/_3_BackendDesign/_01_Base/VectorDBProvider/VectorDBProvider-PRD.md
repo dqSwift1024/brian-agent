@@ -178,12 +178,12 @@ VectorDBProvider 采用 **DDD 四层架构**：
 **处理流程**：
 
 1. 接收查询参数对象；
-2. 若 `top_k` 未指定，从 SQLite 配置表 vectordb_config 读取 `default_top_k`（默认 10）；若 `similarity_threshold` 未指定，从 vectordb_config 读取 `default_similarity_threshold`（默认 0.0）；
+2. 若 `top_k` 未指定，从 SQLite 配置表 vectordb_config 读取 `default_top_k`（默认 10）；若 `similarity_threshold` 未指定，从 vectordb_config 读取 `default_similarity_threshold`（默认 0.0）。`similarity_threshold` 为归一化阈值 0-100（0=返回全部，100=仅完全匹配），由 `normalizedThresholdToRaw` 转换为当前度量方式下的原始阈值后再过滤；
 3. 根据是否有 metadata 过滤条件选择搜索模式：
-   - **无 metadata filter**：使用 LanceDB 原生 `query().nearestTo(embedding).distanceType('cosine').limit(topK)` 执行 ANN 搜索，将 `_distance` 转换为 `similarity = 1 - _distance`；若有 user_id 过滤，通过 `where("user_id = 'xxx'")` 在 LanceDB 层完成过滤；
+   - **无 metadata filter**：使用 LanceDB 原生 `query().nearestTo(embedding).column('embedding').distanceType('cosine').limit(topK)` 执行 ANN 搜索，将 `_distance` 转换为原始相似度（cosine: `1 - _distance`；l2: `1/(1+_distance)`；dot: `-_distance`）；若有 user_id 过滤，通过 `where("user_id = 'xxx'")` 在 LanceDB 层完成过滤；
    - **有 metadata filter**：全表扫描（`query().toArray()`），JS 端逐条计算相似度，再在内存中应用 metadata 过滤条件；
-4. 按相似度降序排序，过滤低于 `similarity_threshold` 的结果；
-5. 返回前 `top_k` 条结果（含向量 id、内容、相似度分数 score、用户 ID、元数据）；
+4. 两个分支统一用「原始相似度 >= 原始阈值」过滤低于阈值的结果（原生分支与暴力扫描分支口径一致）；
+5. 按相似度降序排序，返回前 `top_k` 条结果（含向量 id、内容、相似度分数 score、用户 ID、元数据）；`score` 为统一归一化到 0-100 的相似度分数；
 
 **出参（SoVectorOutput extends Output）**：
 
@@ -191,7 +191,7 @@ VectorDBProvider 采用 **DDD 四层架构**：
 | ------ | ----- | ----- |
 | list | VectorSearchResult[] | 搜索结果列表（按相似度降序） |
 
-> 搜索结果对象 `VectorSearchResult`：含 `id`、`content`、`user_id`、`score`（余弦相似度 [-1,1]）、`metadata`。
+> 搜索结果对象 `VectorSearchResult`：含 `id`、`content`、`user_id`、`score`（归一化相似度分数 0-100）、`metadata`。
 
 **返回**：Boolean，表示搜索是否完成；搜索结果通过 output.list 返回
 
@@ -354,13 +354,15 @@ VectorDBProvider 采用 **DDD 四层架构**：
 
 - `表名`： vector_record
 - `存储`： LanceDB（`@lancedb/lancedb`），数据目录由 `lancePath` 指定
-- `距离度量`： COSINE（余弦相似度），由 `search()` 查询时通过 `.distanceType('cosine')` 指定
+- `距离度量`： COSINE（余弦相似度），由 `search()` 查询时通过 `.distanceType('cosine')` 指定（随 `default_distance_metric` 配置在 COSINE / L2 / IP 间切换）
+- `向量维度`： 由 SQLite 配置表 `info_vector_config.dimension`（即 `info_core.vector_config.dimension` 配置项）统一管理，不在代码中硬编码；`VectorDBAccess.initialize(dimension)` 按该值创建向量表，运行时修改维度会通过 `applyDimension` 重建向量表（仅无数据时允许）。
+- `向量列类型`： `embedding` 列显式声明为 `FixedSizeList<Float32>` 向量列（通过 `makeArrowTable` 的 `vectorColumns` 选项）。LanceDB 默认只识别名为 `vector` 的列，若不显式声明会被推断为 `List<Float64>`，导致 `nearestTo` 抛 "No vector column found"；启动时会自动迁移旧表（表为空时重建）。
 
 | 字段名 | 含义 | 类型 | 是否可以为空 | 备注 |
 | ------ | ----- | ----- | ----- | ----- |
 | id | 数据唯一标识 | STRING | N | UUID，主键 |
 | content | 原始文本内容 | STRING | N | |
-| embedding | 向量数据 | FLOAT[] | N | 向量列，用于 nearestTo 向量搜索 |
+| embedding | 向量数据 | FLOAT[] | N | 向量列，`FixedSizeList<Float32>`，用于 nearestTo 向量搜索 |
 | user_id | 用户 ID | STRING | Y | 用于按用户过滤，支持 LanceDB SQL WHERE |
 | metadata | 元数据 | JSON(STRING) | Y | 以 JSON 字符串存储，用于按条件过滤 |
 | created | 创建时间 | INT64 | N | 毫秒时间戳 |
@@ -387,8 +389,8 @@ VectorDBProvider 采用 **DDD 四层架构**：
 | ------ | ----- | ----- | ----- |
 | enabled | true | BOOLEAN | 向量数据库是否启用（enableVectorDB 读写） |
 | default_top_k | 10 | INT | 默认返回结果数量（soVector 读取） |
-| default_similarity_threshold | 0.0 | DOUBLE | 默认相似度阈值（soVector 读取） |
-| default_distance_metric | COSINE | STRING | 默认距离度量方式（COSINE / L2 / IP） |
+| default_similarity_threshold | 0.0 | DOUBLE | 默认相似度阈值（soVector 读取），归一化阈值 0-100（0=返回全部，100=仅完全匹配），低于此值结果不返回 |
+| default_distance_metric | COSINE | STRING | 默认距离度量方式（COSINE / L2 / IP）；修改后运行时即时生效（`applyMetric`），存在向量数据时禁止修改 |
 
 ## 5. 重要内容
 

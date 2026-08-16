@@ -12,12 +12,13 @@ import {
   Globe, Key, Plus, Pencil, Download, ExternalLink,
   Eye, EyeOff,
   Search, Monitor, Terminal, MessageSquare, Send,
-  BarChart3, Zap, Plug, Radio,
+  BarChart3, Zap, Plug, Radio, Clock,
 } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi } from '@/api'
+import type { VectorSearchInfo } from '@/api'
 import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
 
 // ============================================================
@@ -358,8 +359,53 @@ const vectordbSearchText = ref('')
 const vectordbSearchTopK = ref(10)
 const vectordbSearchThreshold = ref(0)
 const vectordbSearching = ref(false)
-const vectordbSearchResults = ref<{ id: string; content: string; score: number; metadata: Record<string, unknown> | null; user_id: string | null }[]>([])
+const vectordbSearchResults = ref<VectorSearchInfo[]>([])
 const vectordbSearchError = ref('')
+const vectordbModalVisible = ref(false)
+const vectordbContentFilter = ref('')
+
+const filteredVectorDbResults = computed(() => {
+  const kw = vectordbContentFilter.value.trim().toLowerCase()
+  if (!kw) return vectordbSearchResults.value
+  return vectordbSearchResults.value.filter(r =>
+    r.info.toLowerCase().includes(kw) ||
+    r.info_type.toLowerCase().includes(kw) ||
+    r.info_id.toLowerCase().includes(kw) ||
+    r.info_creator_role.toLowerCase().includes(kw),
+  )
+})
+
+const INFO_TYPE_LABELS: Record<string, string> = {
+  REQUEST: '请求',
+  RESPONSE: '回复',
+  THINK: '思考',
+  SKILL: '技能',
+  MCP: 'MCP',
+  ACT: '行动',
+  REFLECT: '反思',
+}
+
+const INFO_CREATOR_LABELS: Record<string, string> = {
+  USER: '用户',
+  LEARNING: '自学习',
+  AGENT: 'Agent',
+  SKILL: '技能',
+  MCP: 'MCP',
+}
+
+function infoTypeLabel(t: string): string {
+  return INFO_TYPE_LABELS[t] ?? t
+}
+
+function infoCreatorLabel(r: string): string {
+  return INFO_CREATOR_LABELS[r] ?? r
+}
+
+function formatVectorTime(ts: number): string {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return d.toLocaleString('zh-CN', { hour12: false })
+}
 
 async function runVectorDbSearch() {
   const text = vectordbSearchText.value.trim()
@@ -367,9 +413,11 @@ async function runVectorDbSearch() {
   vectordbSearching.value = true
   vectordbSearchError.value = ''
   vectordbSearchResults.value = []
+  vectordbContentFilter.value = ''
   try {
     const resp = await vectorDbApi.searchByText(text, vectordbSearchTopK.value, vectordbSearchThreshold.value)
     vectordbSearchResults.value = resp.results || []
+    vectordbModalVisible.value = true
   } catch (e: unknown) {
     vectordbSearchError.value = e instanceof Error ? e.message : '搜索失败'
   } finally {
@@ -3639,26 +3687,78 @@ watch(activeSubSection, async (val) => {
                 <div v-if="vectordbSearchError" class="flex items-center gap-2 text-xs text-error-red">
                   <AlertCircle :size="14" /> {{ vectordbSearchError }}
                 </div>
-                <div v-if="vectordbSearchResults.length > 0" class="space-y-1.5 max-h-64 overflow-y-auto">
-                  <p class="text-xs text-apple-gray-400">共 {{ vectordbSearchResults.length }} 条结果</p>
-                  <div
-                    v-for="hit in vectordbSearchResults"
-                    :key="hit.id"
-                    class="px-3 py-2 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800/50 border border-apple-gray-100 dark:border-apple-gray-700"
+                <div v-if="vectordbSearchResults.length > 0" class="flex items-center justify-between gap-2 text-xs">
+                  <span class="text-apple-gray-400">共 {{ vectordbSearchResults.length }} 条结果</span>
+                  <button
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-brian-blue border border-brian-blue/30 hover:bg-brian-blue/5 transition-colors"
+                    @click="vectordbModalVisible = true"
                   >
-                    <div class="flex items-center justify-between gap-2">
-                      <p class="text-xs font-medium text-apple-gray-800 dark:text-apple-gray-200 line-clamp-1">{{ hit.content }}</p>
-                      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-                        :class="hit.score >= 80 ? 'bg-success-green/10 text-success-green' : hit.score >= 50 ? 'bg-warning-orange/10 text-warning-orange' : 'bg-apple-gray-200 dark:bg-apple-gray-700 text-apple-gray-500'"
-                      >{{ hit.score }}</span>
-                    </div>
-                    <p v-if="hit.metadata && Object.keys(hit.metadata).length" class="text-[10px] text-apple-gray-400 mt-1">
-                      {{ JSON.stringify(hit.metadata) }}
-                    </p>
-                  </div>
+                    <Eye :size="13" /> 查看结果
+                  </button>
                 </div>
               </div>
             </div>
+
+            <!-- VectorDB 语义搜索结果弹窗 -->
+            <Teleport to="body">
+              <div
+                v-if="vectordbModalVisible"
+                class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                @click.self="vectordbModalVisible = false"
+              >
+                <div class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 w-full max-w-3xl mx-4 overflow-hidden flex flex-col" style="height: 85vh; max-height: 800px;">
+                  <div class="px-5 py-3.5 border-b border-apple-gray-200 dark:border-apple-gray-700 flex items-center justify-between flex-shrink-0">
+                    <div class="flex items-center gap-2">
+                      <Search :size="16" class="text-brian-blue" />
+                      <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">语义搜索结果</h3>
+                      <span class="text-xs text-apple-gray-400">{{ filteredVectorDbResults.length }} / {{ vectordbSearchResults.length }} 条</span>
+                    </div>
+                    <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="vectordbModalVisible = false">
+                      <X :size="18" />
+                    </button>
+                  </div>
+                  <div class="px-5 py-3 border-b border-apple-gray-100 dark:border-apple-gray-700 flex-shrink-0">
+                    <div class="relative">
+                      <Search :size="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+                      <input
+                        v-model="vectordbContentFilter"
+                        type="text"
+                        placeholder="在结果内容中搜索..."
+                        :class="inputClass + ' !pl-9'"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex-1 overflow-y-auto px-5 py-3 space-y-2" style="min-height: 0;">
+                    <div v-if="filteredVectorDbResults.length === 0" class="flex flex-col items-center justify-center py-16 text-apple-gray-400">
+                      <Search :size="24" class="mb-2" />
+                      <p class="text-xs">{{ vectordbSearchResults.length === 0 ? '没有搜索到匹配的信息' : '没有匹配过滤条件的结果' }}</p>
+                    </div>
+                    <div
+                      v-for="hit in filteredVectorDbResults"
+                      :key="hit.info_id"
+                      class="px-3 py-2.5 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800/50 border border-apple-gray-100 dark:border-apple-gray-700"
+                    >
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span
+                          class="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                          :class="hit.info_type === 'REQUEST' ? 'bg-brian-blue/10 text-brian-blue' : hit.info_type === 'RESPONSE' ? 'bg-success-green/10 text-success-green' : 'bg-warning-orange/10 text-warning-orange'"
+                        >{{ infoTypeLabel(hit.info_type) }}</span>
+                        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500">{{ infoCreatorLabel(hit.info_creator_role) }}</span>
+                        <span class="text-[10px] font-mono text-apple-gray-400">{{ hit.info_id }}</span>
+                        <span class="ml-auto flex items-center gap-3 text-[10px] text-apple-gray-400">
+                          <span class="flex items-center gap-1"><Clock :size="11" /> {{ formatVectorTime(hit.created) }}</span>
+                          <span>{{ hit.info_length }} 字符</span>
+                          <span class="font-mono px-1.5 py-0.5 rounded-full"
+                            :class="hit.score >= 80 ? 'bg-success-green/10 text-success-green' : hit.score >= 50 ? 'bg-warning-orange/10 text-warning-orange' : 'bg-apple-gray-200 dark:bg-apple-gray-700 text-apple-gray-500'"
+                          >{{ hit.score }}</span>
+                        </span>
+                      </div>
+                      <p class="text-xs text-apple-gray-700 dark:text-apple-gray-300 mt-2 whitespace-pre-wrap break-words">{{ hit.info }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Teleport>
             <!-- GraphDB 标签图遍历搜索（仅 graphdb_provider 模块展示） -->
             <div v-if="currentSub?.configModule === 'graphdb_provider'" class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800">
               <div class="px-4 py-3 border-b border-apple-gray-200 dark:border-apple-gray-700">

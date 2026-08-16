@@ -21,6 +21,7 @@ import {
   CancelWorkInput, CancelWorkOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
+  SSEEvent,
 } from '../domain/types';
 
 export class ChatAccess {
@@ -113,8 +114,9 @@ export class ChatAccess {
 
   async openChatStream(
     i: OpenChatStreamInput, c: ChatContext, o: OpenChatStreamOutput,
+    onEvent?: (event: SSEEvent) => void,
   ): Promise<boolean> {
-    return this.service.openChatStream(i, c, o);
+    return this.service.openChatStream(i, c, o, onEvent);
   }
 
   async configChat(
