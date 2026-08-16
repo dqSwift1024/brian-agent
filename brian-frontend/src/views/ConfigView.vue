@@ -1452,6 +1452,62 @@ const modelForm = ref({
 })
 const modelSubmitting = ref(false)
 
+// 模型测试（发送消息并展示原始结果）
+const modelChatPrompt = ref('')
+const modelChatResult = ref('')
+const modelChatMeta = ref<{ input_tokens: number; output_tokens: number; duration_ms: number }>({ input_tokens: 0, output_tokens: 0, duration_ms: 0 })
+const modelChatError = ref('')
+const modelChatLoading = ref(false)
+
+async function sendModelChat() {
+  const p = modelChatPrompt.value.trim()
+  if (!p || !editingModel.value) return
+  modelChatLoading.value = true
+  modelChatError.value = ''
+  modelChatResult.value = ''
+  try {
+    const res = await configApi.model.chat(editingModel.value.id, p)
+    if (res.error) {
+      modelChatError.value = res.error
+    } else {
+      modelChatResult.value = res.result || '(空回复)'
+      modelChatMeta.value = { input_tokens: res.input_tokens, output_tokens: res.output_tokens, duration_ms: res.duration_ms }
+    }
+  } catch (e: unknown) {
+    modelChatError.value = e instanceof Error ? e.message : '调用失败'
+  } finally {
+    modelChatLoading.value = false
+  }
+}
+
+// 从模型原始返回中提取 JSON（支持代码围栏包裹），成功返回解析后的字符串，否则返回原文
+function extractModelJson(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try { JSON.parse(trimmed); return trimmed } catch { /* 非严格 JSON，继续尝试 */ }
+  }
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenceMatch) {
+    try { JSON.parse(fenceMatch[1].trim()); return fenceMatch[1].trim() } catch { /* ignore */ }
+  }
+  return null
+}
+
+const isModelResultJson = computed(() => {
+  if (!modelChatResult.value) return false
+  return extractModelJson(modelChatResult.value) !== null
+})
+
+const formattedModelResult = computed(() => {
+  const raw = modelChatResult.value
+  if (!raw) return ''
+  const jsonStr = extractModelJson(raw)
+  if (jsonStr !== null) {
+    try { return JSON.stringify(JSON.parse(jsonStr), null, 2) } catch { /* ignore */ }
+  }
+  return raw
+})
+
 async function loadModels() {
   modelsLoading.value = true
   try {
@@ -1491,6 +1547,10 @@ function openModelModal(model?: BackendModel) {
     }
   }
   modelModalVisible.value = true
+  modelChatPrompt.value = ''
+  modelChatResult.value = ''
+  modelChatMeta.value = { input_tokens: 0, output_tokens: 0, duration_ms: 0 }
+  modelChatError.value = ''
 }
 
 function closeModelModal() { modelModalVisible.value = false; editingModel.value = null }
@@ -5616,6 +5676,43 @@ watch(activeSubSection, async (val) => {
             <div>
               <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">模型用途</label>
               <textarea v-model="modelForm.usageDesc" :class="inputClass" rows="3" placeholder="描述模型的典型用途，用于模型动态选择（如：代码生成、长文本写作、数学推理）" />
+            </div>
+
+            <!-- 模型测试：发送消息并展示原始结果 -->
+            <div v-if="editingModel" class="border-t border-apple-gray-200 dark:border-apple-gray-700 pt-3">
+              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">模型测试</label>
+              <textarea
+                v-model="modelChatPrompt"
+                :class="inputClass"
+                rows="2"
+                placeholder="输入消息，调用模型查看原始返回结果..."
+                :disabled="modelChatLoading"
+              />
+              <div class="flex items-center justify-between mt-2">
+                <button
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
+                  :disabled="modelChatLoading || !modelChatPrompt.trim()"
+                  @click="sendModelChat"
+                >
+                  <Loader2 v-if="modelChatLoading" :size="13" class="animate-spin" />
+                  <Send v-else :size="13" />
+                  {{ modelChatLoading ? '调用中...' : '发送' }}
+                </button>
+                <span v-if="modelChatResult || modelChatError" class="text-[11px] text-apple-gray-400">
+                  {{ modelChatMeta.input_tokens }} in / {{ modelChatMeta.output_tokens }} out · {{ modelChatMeta.duration_ms }}ms
+                </span>
+              </div>
+              <div v-if="modelChatError" class="mt-2 flex items-start gap-1.5 text-xs text-error-red">
+                <AlertCircle :size="13" class="shrink-0 mt-0.5" />
+                <span class="whitespace-pre-wrap break-words">{{ modelChatError }}</span>
+              </div>
+              <div v-else-if="modelChatResult" class="mt-2 rounded-lg border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden">
+                <div class="flex items-center justify-between px-3 py-1.5 bg-apple-gray-50 dark:bg-apple-gray-900/60 border-b border-apple-gray-200 dark:border-apple-gray-700">
+                  <span class="text-[11px] font-medium text-apple-gray-500 dark:text-apple-gray-400">输出结果</span>
+                  <span v-if="isModelResultJson" class="text-[10px] px-1.5 py-0.5 rounded-full bg-brian-blue/10 text-brian-blue">JSON</span>
+                </div>
+                <pre class="text-xs text-apple-gray-700 dark:text-apple-gray-300 p-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto font-mono">{{ formattedModelResult }}</pre>
+              </div>
             </div>
           </div>
           <div class="flex justify-end gap-2 px-5 py-4 border-t border-apple-gray-200 dark:border-apple-gray-700">

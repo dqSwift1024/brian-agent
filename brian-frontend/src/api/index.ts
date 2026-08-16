@@ -104,6 +104,9 @@ export const configApi = {
       request<void>(`/config/model/${encodeURIComponent(id)}/default`, { method: 'POST' }),
     test: (id: string) =>
       request<{ success: boolean; latency: number; message: string }>(`/config/model/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+    chat: (id: string, prompt: string, temperature?: number) =>
+      request<{ result: string; input_tokens: number; output_tokens: number; duration_ms: number; error: string }>(
+        `/config/model/${encodeURIComponent(id)}/chat`, { method: 'POST', body: JSON.stringify({ prompt, temperature }) }),
   },
   provider: {
     list: () => request<ModelProvider[]>('/config/provider'),

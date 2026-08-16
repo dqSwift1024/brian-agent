@@ -75,11 +75,15 @@ Provider 代表一个 LLM 服务端点。用户可按需新增，删除，修改
 |------|------|------|------|
 | `llm_provider_id` | Ref | 是 | 所属 Provider |
 | `llm_title` | String | 是 | 模型名称（如 gpt-4o） |
-| `llm_brief` | Text | 否 | 模型描述 |
-| `llm_usage` | Enum | 否 | 用途类型：text（文本生成）/ vision（多模态）/ embedding（向量化） |
+| `llm_brief` | Text | 否 | 模型简介（参与 LLMCore 动态模型选择排名） |
+| `llm_type` | Enum | 否 | 用途类型：text（文本生成）/ vision（多模态）/ embedding（向量化） |
+| `max_tokens` | Int | 否 | 最大 Token 数（不超过提供商上限） |
+| `model_usage` | Text | 否 | 模型用途描述（参与 LLMCore 动态模型选择排名） |
 | `enable` | Boolean | — | 启用/停用 |
 
-**操作**：新建 Model、编辑、删除、启停、设为系统默认、连接测试。
+**操作**：新建 Model、编辑、删除、启停、设为系统默认、连接测试、**模型测试**。
+
+> **模型测试**：编辑模型弹窗内提供消息发送框与「发送」按钮，输入消息后调用该模型执行推理，返回结果在输出框内展示；若返回为 JSON 内容则自动缩进格式化并标注「JSON」徽章，同时展示输入/输出 Token 数与耗时。
 
 ### 2.2 运行参数
 

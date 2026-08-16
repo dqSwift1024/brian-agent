@@ -772,6 +772,29 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           sendJson(res, 200, { success: false, latency: 0, message: 'Model has no provider' });
         }
 
+      } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/chat$/.test(pathname)) {
+        const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
+        const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+        if (!prompt) { sendJson(res, 400, { error: 'prompt is required' }); return; }
+        try {
+          const { ExecLLMInput, ExecLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
+          const execInput = Object.assign(new ExecLLMInput(), {
+            id,
+            params: { prompt, temperature: typeof body.temperature === 'number' ? body.temperature : 0.7 },
+          });
+          const execOutput = new ExecLLMOutput();
+          await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);
+          sendJson(res, 200, {
+            result: execOutput.result ?? '',
+            input_tokens: execOutput.input_tokens ?? 0,
+            output_tokens: execOutput.output_tokens ?? 0,
+            duration_ms: execOutput.duration_ms ?? 0,
+            error: execOutput.error || '',
+          });
+        } catch (err: any) {
+          sendJson(res, 500, { error: err?.message || '模型调用失败' });
+        }
+
       } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/default$/.test(pathname)) {
         const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
         ctx.relationDb.executeRaw('UPDATE "llm_available" SET "is_default" = 0', []);
