@@ -38,11 +38,12 @@
 | ------ | ----- | ----- | ----- |
 | llm_provider_id | STRING | Y | LLM 提供商 ID，关联 llm_provider.id |
 | llm_title | STRING | Y | LLM 名称 |
-| llm_brief | STRING | N | LLM 摘要 |
+| llm_brief | STRING | N | LLM 摘要（用于 LLMCore 动态模型选择排名） |
 | llm_type | STRING | N | LLM 类型：text / vision / embedding，默认 text |
 | enable | BOOLEAN | N | 是否启用，默认 true |
 | is_default | BOOLEAN | N | 是否为系统默认模型 |
 | max_tokens | INT | N | 最大 Token 数 |
+| model_usage | STRING | N | 模型用途描述（用于 LLMCore 动态模型选择排名） |
 
 ## 3. 功能设计
 
@@ -243,7 +244,7 @@
 2. 自动更新 updated 字段；
 3. max_tokens 不得超过模型提供商的 `llm_cache.max_tokens` 上限；
 
-> 可更新字段：llm_title、llm_brief、llm_type、enable、max_tokens。
+> 可更新字段：llm_title、llm_brief、llm_type、enable、max_tokens、model_usage。
 
 **返回**：Boolean，表示更新是否完成；影响行数通过 output 参数返回
 
@@ -410,12 +411,12 @@
 | updated | 最后更新时间 | INT64 | N | 普通索引 | 毫秒时间戳 |
 | llm_provider_id | LLM 提供商 ID | STRING | N | 普通索引 | 关联 llm_provider.id |
 | llm_title | LLM 名称 | STRING | N | 普通索引 | |
-| llm_brief | LLM 摘要 | STRING | Y | | |
+| llm_brief | LLM 摘要 | STRING | Y | | 用于 LLMCore 动态模型选择排名 |
 | llm_type | LLM 类型 | STRING | N | 普通索引 | text / vision / embedding，默认 text |
 | enable | 是否启用 | BOOLEAN | N | | 默认 true |
 | is_default | 是否为默认模型 | BOOLEAN | N | | 默认 false，系统仅一个默认模型 |
 | max_tokens | 最大 Token 数 | INT | Y | | 不超过 llm_cache.max_tokens |
-| model_usage | 模型用途 | STRING | Y | | 描述模型用途（如 text / embedding / vision），默认空字符串 |
+| model_usage | 模型用途 | STRING | Y | | 描述模型典型用途（如代码生成、长文本写作），用于 LLMCore 动态模型选择排名，默认空字符串 |
 | UNIQUE | 唯一约束 | - | - | (llm_provider_id, llm_title) | 同一提供商下模型名唯一 |
 
 ### 4.4. llm_usage 表（调用统计）

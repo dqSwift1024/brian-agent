@@ -163,6 +163,8 @@ export interface LLMAvailableRecord {
   is_default?: boolean;
   /** 最大 Token 数 */
   max_tokens?: number;
+  /** 模型用途描述（用于模型动态选择） */
+  model_usage?: string;
 }
 
 /**

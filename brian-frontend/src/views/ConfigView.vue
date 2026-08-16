@@ -1412,6 +1412,8 @@ interface BackendModel {
   status?: string
   isDefault?: boolean
   llm_type?: string
+  llm_brief?: string
+  model_usage?: string
 }
 
 const models = ref<BackendModel[]>([])
@@ -1432,7 +1434,7 @@ const filteredModels = computed(() => {
 })
 const editingModel = ref<BackendModel | null>(null)
 const modelForm = ref({
-  title: '', usage: 'text', providerId: '', maxTokens: 0, usageDesc: '',
+  title: '', usage: 'text', providerId: '', maxTokens: 0, usageDesc: '', brief: '',
   providerMaxTokens: 0,
 })
 const modelSubmitting = ref(false)
@@ -1459,17 +1461,18 @@ function openModelModal(model?: BackendModel) {
     editingModel.value = model
     modelForm.value = {
       title: model.modelName || '',
-      usage: 'text',
+      usage: model.llm_type || 'text',
       providerId: model.providerId || '',
       maxTokens: model.maxTokens || 0,
-      usageDesc: '',
+      usageDesc: model.model_usage || '',
+      brief: model.llm_brief || '',
       providerMaxTokens: model.maxTokens || 0,
     }
   } else {
     editingModel.value = null
     modelForm.value = {
       title: '', usage: 'text', providerId: providers.value[0]?.id || '',
-      maxTokens: 0, usageDesc: '', providerMaxTokens: 0,
+      maxTokens: 0, usageDesc: '', brief: '', providerMaxTokens: 0,
     }
   }
   modelModalVisible.value = true
@@ -1486,6 +1489,7 @@ async function submitModelForm() {
     const data: Record<string, unknown> = {
       llm_title: modelForm.value.title,
       llm_type: modelForm.value.usage,
+      llm_brief: modelForm.value.brief,
       maxTokens: tokens,
       model_usage: modelForm.value.usageDesc,
     }
@@ -4177,36 +4181,38 @@ watch(activeSubSection, async (val) => {
             <Globe :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">暂无提供商配置</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
             <div
               v-for="p in providers" :key="p.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openProviderModal(p)"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Globe :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ p._displayName || p.id }}</h3>
-                    <p class="text-[11px] text-apple-gray-400 truncate">{{ p.llm_provider_brief || '' }}</p>
+                    <p class="text-[11px] text-apple-gray-400 truncate">{{ p._displayUrl || '' }}</p>
                   </div>
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="(p.api_key as string) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" :title="(p.api_key as string) ? '已配置密钥' : '未配置密钥'" />
                 </div>
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="(p.api_key as string) ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" :title="(p.api_key as string) ? '已配置密钥' : '未配置密钥'" />
+                <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="p.llm_provider_brief || ''">
+                  {{ p.llm_provider_brief || '暂无描述' }}
+                </p>
               </div>
-              <p class="text-[11px] text-apple-gray-600 dark:text-apple-gray-300 font-mono bg-apple-gray-100 dark:bg-apple-gray-900/60 rounded px-2 py-1 truncate mb-3">
-                {{ p._displayUrl || '' }}
-              </p>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openProviderModal(p)"><Pencil :size="11" /> 编辑</button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="handleTestProvider(p.id)"><FlaskConical :size="11" /> 测试</button>
-                <button
-                  class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
-                  :class="p.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
-                  title="启用/停用"
-                  @click="handleToggleProvider(p.id)"
-                >
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="p.enable ? 'translate-x-4' : ''" />
-                </button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="handleDeleteProvider(p.id)"><Trash2 :size="11" /> 删除</button>
+              <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <div class="flex items-center gap-1">
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-brian-blue hover:bg-brian-blue/10 transition-colors" @click.stop="handleTestProvider(p.id)"><FlaskConical :size="11" /> 测试</button>
+                  <button
+                    class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
+                    :class="p.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
+                    title="启用/停用"
+                    @click.stop="handleToggleProvider(p.id)"
+                  >
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="p.enable ? 'translate-x-4' : ''" />
+                  </button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="handleDeleteProvider(p.id)"><Trash2 :size="11" /> 删除</button>
+                </div>
               </div>
             </div>
           </div>
@@ -4230,38 +4236,38 @@ watch(activeSubSection, async (val) => {
             <Search :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">没有匹配的模型</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
             <div
               v-for="m in filteredModels" :key="m.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openModelModal(m)"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Boxes :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ m.modelName || '' }}</h3>
-                    <div class="flex items-center gap-2 mt-0.5">
-                      <span class="text-[11px] text-apple-gray-400">{{ m.providerName || m.providerId || '' }}</span>
-                      <span class="text-[10px] font-mono text-apple-gray-400">{{ (m.maxTokens || 0) >= 1000000 ? ((m.maxTokens || 0) / 1000000).toFixed(1) + 'M' : (m.maxTokens || 0) >= 1000 ? ((m.maxTokens || 0) / 1000).toFixed(0) + 'K' : (m.maxTokens || 0) }} tokens</span>
-                      <span class="w-1.5 h-1.5 rounded-full" :class="m.status === 'active' ? 'bg-success-green' : 'bg-apple-gray-300'" />
-                    </div>
+                    <p class="text-[11px] text-apple-gray-400 truncate">{{ m.providerName || m.providerId || '' }}</p>
                   </div>
+                  <span v-if="m.isDefault" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-brian-blue/10 text-brian-blue flex-shrink-0"><Star :size="10" /> 默认</span>
+                  <span v-else class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="m.status === 'active' ? 'bg-success-green' : 'bg-apple-gray-300'" />
                 </div>
-                <span v-if="m.isDefault" class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-brian-blue/10 text-brian-blue flex-shrink-0"><Star :size="11" /> 默认</span>
+                <p class="text-[11px] text-apple-gray-400">
+                  {{ (m.maxTokens || 0) >= 1000000 ? ((m.maxTokens || 0) / 1000000).toFixed(1) + 'M' : (m.maxTokens || 0) >= 1000 ? ((m.maxTokens || 0) / 1000).toFixed(0) + 'K' : (m.maxTokens || 0) }} tokens
+                </p>
               </div>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button
-                  class="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg transition-colors"
-                  :class="m.isDefault ? 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400 cursor-not-allowed' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
-                  :disabled="!!m.isDefault"
-                  @click="handleSetDefault(m.id)"
-                >
-                  <Star :size="12" /> {{ m.isDefault ? '已是默认' : '设为默认' }}
-                </button>
-                <button class="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="openModelModal(m)">
-                  <Pencil :size="12" /> 编辑
-                </button>
-                <button class="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg text-error-red hover:bg-error-red/10 transition-colors" @click="handleDeleteModel(m.id)"><Trash2 :size="12" /> 删除</button>
+              <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <div class="flex items-center gap-1">
+                  <button
+                    class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded transition-colors"
+                    :class="m.isDefault ? 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400 cursor-not-allowed' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
+                    :disabled="!!m.isDefault"
+                    @click.stop="handleSetDefault(m.id)"
+                  >
+                    <Star :size="11" /> {{ m.isDefault ? '默认' : '设为默认' }}
+                  </button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="handleDeleteModel(m.id)"><Trash2 :size="11" /> 删除</button>
+                </div>
               </div>
             </div>
           </div>
@@ -5587,6 +5593,10 @@ watch(activeSubSection, async (val) => {
             <div>
               <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">Max Tokens<span v-if="editingModel" class="text-apple-gray-400 ml-1">(≤ {{ modelForm.providerMaxTokens.toLocaleString() }})</span></label>
               <input v-model.number="modelForm.maxTokens" type="number" :class="inputClass" :max="modelForm.providerMaxTokens || undefined" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">简介 (llm_brief)</label>
+              <textarea v-model="modelForm.brief" :class="inputClass" rows="2" placeholder="模型简要介绍，参与模型动态选择排名（如：通用对话模型、擅长代码生成）" />
             </div>
             <div>
               <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">模型用途</label>

@@ -732,13 +732,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           providerId: r.llm_provider_id,
           providerName: r.llm_provider_id,
           llm_type: r.llm_type || 'text',
-          maxTokens: 4096,
+          maxTokens: r.max_tokens || 0,
           supportsVision: false,
           supportsTools: true,
           isDefault: !!r.is_default,
           status: r.enable ? 'active' : 'inactive',
+          llm_brief: r.llm_brief || '',
           model_usage: r.model_usage || '',
-          maxTokens: r.max_tokens || 0,
         }));
         sendJson(res, 200, models);
 

@@ -603,12 +603,12 @@ export class LLMCoreService {
   /** 构建默认的 LLM 选择排名 Prompt */
   private buildDefaultSelectionPrompt(
     input: MatchLLMInput,
-    availableLLMs: Array<{ id: string; llm_title?: string; llm_brief?: string | null; llm_usage?: string }>,
+    availableLLMs: Array<{ id: string; llm_title?: string; llm_brief?: string | null; model_usage?: string }>,
   ): string {
     const llmList = availableLLMs.map((l) => {
       const title = l.llm_title ?? 'Unknown';
       const brief = l.llm_brief ?? '';
-      const usage = l.llm_usage ?? '';
+      const usage = l.model_usage ?? '';
       return `- id: ${l.id}, name: ${title}, brief: ${brief}, usage: ${usage}`;
     }).join('\n');
 
