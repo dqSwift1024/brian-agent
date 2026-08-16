@@ -288,6 +288,9 @@ const loadingGraph = ref(false)
 const selectedTag = ref<string | null>(null)
 const selectedTagMemories = ref<MemoryItem[]>([])
 const hoveredEdge = ref<LayoutEdge | null>(null)
+const keywordGraphNodes = ref<GraphNode[]>([])
+const keywordGraphEdges = ref<GraphEdge[]>([])
+const loadingKeywordGraph = ref(false)
 const hoveredKeyword = ref<GraphNode | null>(null)
 const selectedKeyword = ref<string | null>(null)
 const selectedKeywordMemories = ref<MemoryItem[]>([])
@@ -318,12 +321,22 @@ async function selectKeywordNode(nodeId: string) {
   selectedKeyword.value = selectedKeyword.value === nodeId ? null : nodeId
   if (selectedKeyword.value) {
     try {
-      const kw = graphNodes.value.find(n => n.id === nodeId)?.name || nodeId
+      const kw = keywordGraphNodes.value.find(n => n.id === nodeId)?.name || nodeId
       selectedKeywordMemories.value = await memoryApi.search('default-user', kw, undefined, 20)
     } catch { selectedKeywordMemories.value = [] }
   } else {
     selectedKeywordMemories.value = []
   }
+}
+
+async function loadKeywordGraph() {
+  loadingKeywordGraph.value = true
+  try {
+    const data = await memoryApi.keywordGraph()
+    keywordGraphNodes.value = data.nodes || []
+    keywordGraphEdges.value = data.edges || []
+  } catch { keywordGraphNodes.value = []; keywordGraphEdges.value = [] }
+  finally { loadingKeywordGraph.value = false }
 }
 
 const tagGraphLayout = computed(() => {
@@ -362,9 +375,9 @@ const tagGraphLayout = computed(() => {
 })
 
 const keywordLayout = computed(() => {
-  const top = [...graphNodes.value].sort((a, b) => b.weight - a.weight).slice(0, 12)
+  const top = [...keywordGraphNodes.value].sort((a, b) => b.weight - a.weight).slice(0, 12)
   const topIds = new Set(top.map(n => n.id))
-  const topEdges = graphEdges.value.filter(e => topIds.has(e.source) && topIds.has(e.target))
+  const topEdges = keywordGraphEdges.value.filter(e => topIds.has(e.source) && topIds.has(e.target))
   const n = top.length
   if (n === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] }
   const cx = 250, cy = 250, radius = 160
@@ -397,6 +410,7 @@ onMounted(() => {
   loadMemory()
   loadLibraries()
   loadTagGraph()
+  loadKeywordGraph()
 })
 
 watch(activeTab, (val) => {
@@ -665,7 +679,9 @@ watch(activeTab, (val) => {
       <!-- Keyword graph tab -->
       <div v-if="activeTab === 'keywordGraph'" class="space-y-4">
         <h3 class="text-lg font-semibold">关键词关联图</h3>
-        <div class="flex gap-4">
+        <div v-if="loadingKeywordGraph" class="text-center py-16 text-apple-gray-400">加载中...</div>
+        <div v-else-if="keywordGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm">暂无关键词数据</div>
+        <div v-else class="flex gap-4">
           <div class="flex-1 block-card rounded-xl p-4">
             <svg viewBox="0 0 500 500" class="w-full" style="aspect-ratio: 1; max-height: 600px;">
               <line v-for="(edge, i) in keywordLayout.edges" :key="'ke-' + i" :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2" :stroke-width="edge.strokeWidth" stroke="#d1d1d6" opacity="0.3" />
@@ -678,7 +694,7 @@ watch(activeTab, (val) => {
           </div>
           <div v-if="selectedKeyword" class="w-80 flex-shrink-0 block-card rounded-xl p-4 max-h-[600px] overflow-y-auto">
             <div class="flex items-center justify-between mb-3">
-              <h4 class="text-sm font-semibold">关键词: {{ graphNodes.find(n => n.id === selectedKeyword)?.name }}</h4>
+              <h4 class="text-sm font-semibold">关键词: {{ keywordGraphNodes.find(n => n.id === selectedKeyword)?.name }}</h4>
               <button class="p-1 text-apple-gray-400 hover:text-apple-gray-600" @click="selectedKeyword = null; selectedKeywordMemories = []"><X :size="14" /></button>
             </div>
             <div v-if="selectedKeywordMemories.length === 0" class="text-center py-8 text-apple-gray-400 text-sm">暂无关联信息</div>

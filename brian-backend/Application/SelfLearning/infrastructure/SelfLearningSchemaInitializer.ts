@@ -143,6 +143,13 @@ export class SelfLearningSchemaInitializer {
         id TEXT PRIMARY KEY NOT NULL,
         created INTEGER NOT NULL,
         updated INTEGER NOT NULL,
+        learning_mode TEXT DEFAULT 'ALL',
+        document_auto_enable INTEGER DEFAULT 1,
+        conversation_auto_enable INTEGER DEFAULT 1,
+        tag_auto_enable INTEGER DEFAULT 1,
+        document_random_factor INTEGER DEFAULT 10,
+        conversation_random_factor INTEGER DEFAULT 10,
+        tag_random_factor INTEGER DEFAULT 10,
         random_factor INTEGER DEFAULT 10,
         document_weight INTEGER DEFAULT 40,
         conversation_weight INTEGER DEFAULT 30,
@@ -156,6 +163,41 @@ export class SelfLearningSchemaInitializer {
         chunk_overlap_ratio REAL DEFAULT 0.2
       )
     `);
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "learning_mode" TEXT DEFAULT 'ALL'`,
+      );
+    } catch { /* 已存在 learning_mode 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "document_auto_enable" INTEGER DEFAULT 1`,
+      );
+    } catch { /* 已存在 document_auto_enable 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "conversation_auto_enable" INTEGER DEFAULT 1`,
+      );
+    } catch { /* 已存在 conversation_auto_enable 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "tag_auto_enable" INTEGER DEFAULT 1`,
+      );
+    } catch { /* 已存在 tag_auto_enable 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "document_random_factor" INTEGER DEFAULT 10`,
+      );
+    } catch { /* 已存在 document_random_factor 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "conversation_random_factor" INTEGER DEFAULT 10`,
+      );
+    } catch { /* 已存在 conversation_random_factor 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "tag_random_factor" INTEGER DEFAULT 10`,
+      );
+    } catch { /* 已存在 tag_random_factor 列时忽略 */ }
 
     const configCount = await this.relationDb.count('self_learning_config');
     if (configCount === 0) {
@@ -164,6 +206,13 @@ export class SelfLearningSchemaInitializer {
         { field: 'id', value: IdGenerator.generate() },
         { field: 'created', value: now },
         { field: 'updated', value: now },
+        { field: 'learning_mode', value: 'ALL' },
+        { field: 'document_auto_enable', value: 1 },
+        { field: 'conversation_auto_enable', value: 1 },
+        { field: 'tag_auto_enable', value: 1 },
+        { field: 'document_random_factor', value: 10 },
+        { field: 'conversation_random_factor', value: 10 },
+        { field: 'tag_random_factor', value: 10 },
         { field: 'random_factor', value: 10 },
         { field: 'document_weight', value: 40 },
         { field: 'conversation_weight', value: 30 },

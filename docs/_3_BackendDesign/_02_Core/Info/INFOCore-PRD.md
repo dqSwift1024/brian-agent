@@ -64,10 +64,10 @@
 - output：VectorInfoOutput（继承 Output），承载返回内容
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `info_vector_config` 表获取配置（enable, llm_id, dimension）；如果 enable=false 或 llm_id 为空，直接返回 true（跳过向量化）；
+1. 调用 RelationDBProvider.selectOneDB 查询 `info_vector_config` 表获取配置（enable, llm_id, dimension）；如果 enable=false，直接返回 true（跳过向量化）；
 2. 根据 info_id 调用 RelationDBProvider.selectOneDB 查询 `info_raw` 表获取信息内容（info 字段）；
-3. 根据信息内容调用 LLMProvider.execLLM 使用配置的 llm_id 对应的 embedding 模型获取内容的向量（浮点数组，长度等于 dimension）；
-4. 调用 VectorDBProvider.addVector 将向量和信息 ID 保存到 `info_vector` 表（upsert 语义：若 info_id 已存在则更新向量）；
+3. 调用 LLMProvider.embedLLM 使用配置的 llm_id（embedding 类型模型，llm_id 为空时自动选择默认 embedding 模型）获取内容的向量（浮点数组，长度等于 dimension）；
+4. 调用 RelationDBProvider.insertDB 将 `{ info_id, embedding: JSON 序列化的向量 }` 保存到 `info_vector` 表（已存在则跳过，不做覆盖）；
 
 #### 2.3.2. 对信息抽取标签（tagInfo）
 
@@ -85,7 +85,7 @@
 3. 将信息内容和 prompt_template_id 调用 PromptsProvider.execPrompt 生成 Prompt；
 4. 根据 llm_id 和 prompt 调用 LLMProvider.execLLM 得到 tag 列表（JSON 数组格式，如 `["标签1", "标签2", ...]`）；
 5. 遍历 tag 列表，调用 RelationDBProvider.insertDB 将每条 tag 和 info_id 的关系保存到 `info_tag` 表（使用 upsert 语义：tag + info_id 联合唯一，存在则跳过）；
-6. 对每个 tag，调用 LLMProvider.execLLM 使用 embedding 模型计算 tag 文本的向量，调用 VectorDBProvider.addVector 将向量和 tag 的数据库 ID（tag_id）保存到 `info_tag_vector` 表；
+6. 对每个 tag，调用 LLMProvider.embedLLM 使用 embedding 模型计算 tag 文本的向量，调用 RelationDBProvider.insertDB 将向量和 tag 文本（tag_id）保存到 `info_tag_vector` 表；
 
 #### 2.3.3. 对信息标签进行建立连接图（graphTag）
 
@@ -99,7 +99,7 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_tag_config` 表获取 `tag_top_k` 和 `enable`；如果 enable=false，直接返回 true（跳过建图）；
 2. 调用 RelationDBProvider.selectOneDB 根据 tag_id 查询 `info_tag` 表获取标签文本内容（tag 字段）；
-3. 调用 LLMProvider.execLLM 使用 embedding 模型计算标签文本的向量；
+3. 调用 LLMProvider.embedLLM 使用 embedding 模型计算标签文本的向量；
 4. 调用 VectorDBProvider.soVector 根据标签向量搜索语义最相似的 top_k 个 tag_id 及相似距离（排除自身，即过滤掉与 tag_id 相同的结果）；
 5. 遍历 top_k 结果，对每个相似 tag_id：
    a. 调用 GraphDBProvider.addGraphEdge 在 tag_id 和相似 tag_id 之间建立 `similarTo` 类型的边，边属性包含 `similarity`（相似距离）和 `actMap`（激活图，初始化为空 JSON 对象 `{}`）；
@@ -136,7 +136,7 @@
 
 1. 根据 info_id 调用 RelationDBProvider.selectOneDB 查询 `info_raw` 表获取信息内容（info 字段）；
 2. 调用 nodejieba（Node.js 中文分词库）对信息内容进行分词，去除停用词（的、了、是、在、和、等中文常见虚词），得到关键词列表；
-3. 遍历关键词列表，调用 RelationDBProvider 将每条 `{ info_id, word: 关键词 }` 写入 FTS5 虚拟表 `info_keyword`（使用 SQLite FTS5 INSERT，FTS5 自动维护全文索引）；
+3. 遍历关键词列表，调用 RelationDBProvider.executeRaw 将每条 `{ info_id, word: 关键词 }` 写入 `info_keyword` 表（普通表，位置参数 `(?, ?)` 绑定；不支持重复，按 info_id + word 去重写入）；
 
 **确认**：关键词提取使用 nodejieba（Node.js 中文分词库）进行中文分词并去除停用词，结果存储于 SQLite FTS5 虚拟表 `info_keyword` 中以支持全文搜索；
 
@@ -705,11 +705,11 @@
 | info_id | 信息ID | UUID | N | 普通索引 | |
 | summary | 信息摘要 | TEXT | N | | |
 
-### 3.11. INFO Keyword表（SQLite-FST5虚拟表）
+### 3.11. INFO Keyword表（SQLite）
 
 - 表名：info_keyword
 - 库名：info
-- 分词器：unicode61
+- 说明：普通表（非 FTS5 虚拟表），按 info_id + word 存储关键词索引，写入时由 keywordInfo 去重
 
 | 字段名 | 含义 | 类型 | 是否可以为空（Y可以为空/N不能为空） | 索引类型 | 备注 |
 | ------ | ----- | ----- | ----- | ----- | ----- |
@@ -732,3 +732,30 @@
 | base_keyword_count | 基于关键词搜索的信息加载数量 | INT | N | | 默认100 |
 | base_random_count | 随机联想的信息加载数量 | INT | N | | 默认50 |
 | total | 总的消息量 | INT | N | | 默认为1000 |
+
+## 4. HTTP 路由映射（dev-server.ts 装配）
+
+InfoCore 的业务方法通过 `dev-server.ts` 手写路由分发暴露给前端「信息」页面。以下路由均直接读取 `info_raw` / `info_tag` / `info_keyword` 等表，将 info 记录映射为前端 `MemoryItem`（`{ id, type, content, tags, confidence, createdAt, updatedAt }`）。
+
+| 方法 | 路由 | 数据来源 | 说明 |
+| :--- | :--- | :--- | :--- |
+| GET | `/api/memory/list` | `info_raw` + `info_tag` | 按 created 倒序取最近 500 条信息，批量关联标签，映射为 `MemoryItem` |
+| GET | `/api/memory/search?keyword=&type=&limit=` | `info_raw` + `info_tag` | 内容/标签 LIKE 搜索；`type` 为前端类型（semantic/episodic/procedural/working），映射到 `info_type` 集合 |
+| GET | `/api/memory/tags` | `info_tag` | 去重标签列表（按频次降序） |
+| GET | `/api/memory/tag/:userId/:tag` | `info_raw` JOIN `info_tag` | 按标签文本查询关联信息，映射为 `MemoryItem` |
+| GET | `/api/memory/tag-graph` | `info_tag` | Tag 共现图：节点为去重标签（weight=频次），边为同一 info 上标签的共现对 |
+| GET | `/api/memory/keyword-graph` | `info_keyword` | 关键词共现图：节点为去重关键词（weight=频次），边为同一 info 上关键词的共现对 |
+| GET | `/api/memory/stats/:userId` | `info_raw` | 统计信息总数及按 `info_type` 分布 |
+
+### 4.1 info_type → 前端展示类型映射
+
+| info_type | 前端 type | 展示含义 |
+| :--- | :--- | :--- |
+| REQUEST | episodic | 用户请求（情景记忆） |
+| RESPONSE | semantic | 模型回复（语义知识） |
+| THINK / REFLECT / SKILL / MCP | procedural | 思考/反思/技能/MCP（程序性记忆） |
+| ACT | working | Agent 行动（工作记忆） |
+
+### 4.2 Tag 图 / 关键词图说明
+
+Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两个标签（或关键词）出现在同一条 info 记录上即建立一条边，边权重为共现次数。该策略不依赖向量相似度（`similarTo` 边），保证在未完成向量化或标签建图时也能稳定展示关联网络。`graphTag` 构建的 `similarTo` 边仍用于 `relationKInfo` 相关性搜索与图搜索（`/api/memory/graph-search`）。

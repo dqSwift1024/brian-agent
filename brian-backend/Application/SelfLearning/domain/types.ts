@@ -134,12 +134,17 @@ export class GetTagRelatedInfoOutput extends Output {
 // getLearningProgress
 // ─────────────────────────────────────────────────────────────────────────
 
-export class GetLearningProgressInput extends Input {}
+export class GetLearningProgressInput extends Input {
+  /** 学习方式来源（DOCUMENT / CONVERSATION / TAG_MAINTENANCE），不传则返回全部 */
+  source?: string;
+}
 
 export class GetLearningProgressOutput extends Output {
   current_task: Record<string, unknown> | null = null;
   task_queue: Array<Record<string, unknown>> = [];
   builtin_tasks: Array<Record<string, unknown>> = [];
+  /** 学习引擎是否正在运行（任一后台定时器处于活动状态） */
+  running = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -162,7 +167,10 @@ export class GetLearningResultsOutput extends Output {
 // getLearningStats
 // ─────────────────────────────────────────────────────────────────────────
 
-export class GetLearningStatsInput extends Input {}
+export class GetLearningStatsInput extends Input {
+  /** 学习方式来源（DOCUMENT / CONVERSATION / TAG_MAINTENANCE），不传则返回全局统计 */
+  source?: string;
+}
 
 export class GetLearningStatsOutput extends Output {
   stats: Record<string, unknown> = {};
@@ -173,6 +181,13 @@ export class GetLearningStatsOutput extends Output {
 // ─────────────────────────────────────────────────────────────────────────
 
 export class ConfigSelfLearningInput extends Input {
+  learning_mode?: string;
+  document_auto_enable?: boolean;
+  conversation_auto_enable?: boolean;
+  tag_auto_enable?: boolean;
+  document_random_factor?: number;
+  conversation_random_factor?: number;
+  tag_random_factor?: number;
   random_factor?: number;
   document_weight?: number;
   conversation_weight?: number;

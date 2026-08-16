@@ -1922,7 +1922,7 @@ describe('SelfLearningService', () => {
       expect(tagStats).toHaveProperty('new_edges_this_week');
     });
 
-    it('TC-SL-168: Learning trend has 7 entries', async () => {
+    it('TC-SL-168: Learning trend has 365 entries', async () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
@@ -1930,7 +1930,7 @@ describe('SelfLearningService', () => {
 
       const trend = output.stats.learning_trend as Array<Record<string, unknown>>;
       expect(Array.isArray(trend)).toBe(true);
-      expect(trend.length).toBe(7);
+      expect(trend.length).toBe(365);
       for (const entry of trend) {
         expect(entry).toHaveProperty('date');
         expect(entry).toHaveProperty('count');

@@ -21,6 +21,7 @@ import { LogAccess } from './Base/LogProvider';
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
+import { ChunkAccess } from './Base/ChunkProvider';
 import { CronAccess } from './Base/CronProvider';
 import {
   CronContext, ListCronTasksOutput,
@@ -60,6 +61,19 @@ import { ChatAccess } from './Application/Chat/access/ChatAccess';
 import { ChatSchemaInitializer } from './Application/Chat/infrastructure/ChatSchemaInitializer';
 import { ConfigAccess } from './Application/Config/access/ConfigAccess';
 import { SelfLearningAccess } from './Application/SelfLearning/access/SelfLearningAccess';
+import {
+  SelfLearningContext,
+  AddLibraryInput, AddLibraryOutput,
+  DeleteLibraryInput, DeleteLibraryOutput,
+  SearchLibraryInput, SearchLibraryOutput,
+  GetLibraryFilesInput, GetLibraryFilesOutput,
+  StartLearningInput, StartLearningOutput,
+  StopLearningInput, StopLearningOutput,
+  GetLearningProgressInput, GetLearningProgressOutput,
+  GetLearningResultsInput, GetLearningResultsOutput,
+  GetLearningStatsInput, GetLearningStatsOutput,
+  ConfigSelfLearningInput, ConfigSelfLearningOutput,
+} from './Application/SelfLearning/domain/types';
 import { UserProfileAccess } from './Application/UserProfile/access/UserProfileAccess';
 import {
   UserProfileContext,
@@ -186,6 +200,74 @@ function createLogger(logAccess?: LogAccess): any {
 
 function addColIfMissing(relationDb: any, table: string, column: string, type: string): void {
   try { relationDb.executeRaw(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`); } catch { /* exists */ }
+}
+
+/** 前端学习模式值 → 后端学习模式 */
+function mapLearningMode(mode: string): string {
+  const m = (mode || '').toLowerCase();
+  if (m.includes('document')) return 'DOCUMENT';
+  if (m.includes('conversation')) return 'CONVERSATION';
+  if (m.includes('tag')) return 'TAG_MAINTENANCE';
+  return 'ALL';
+}
+
+/** 后端学习模式 → 配置中对应的自动学习开关字段名 */
+function mapAutoField(mode: string): string {
+  if (mode === 'DOCUMENT') return 'document_auto_enable';
+  if (mode === 'CONVERSATION') return 'conversation_auto_enable';
+  if (mode === 'TAG_MAINTENANCE') return 'tag_auto_enable';
+  return '';
+}
+
+/** 后端学习模式 → 配置中对应的随机因子字段名 */
+function mapRandomFactorField(mode: string): string {
+  if (mode === 'DOCUMENT') return 'document_random_factor';
+  if (mode === 'CONVERSATION') return 'conversation_random_factor';
+  if (mode === 'TAG_MAINTENANCE') return 'tag_random_factor';
+  return '';
+}
+
+/**
+ * info_raw 行 → 前端 MemoryItem（记忆条目）。
+ *
+ * info_type（REQUEST/RESPONSE/THINK/REFLECT/ACT/SKILL/MCP）映射到前端展示类型
+ * （semantic/episodic/procedural/working），仅用于颜色与分类展示。
+ */
+function mapInfoToMemory(row: any, tags: string[] = []): any {
+  const typeMap: Record<string, string> = {
+    REQUEST: 'episodic',
+    RESPONSE: 'semantic',
+    THINK: 'procedural',
+    REFLECT: 'procedural',
+    ACT: 'working',
+    SKILL: 'procedural',
+    MCP: 'procedural',
+  };
+  const type = typeMap[row.info_type] || (row.info_creator_role === 'USER' ? 'episodic' : 'semantic');
+  return {
+    id: row.info_id || row.id,
+    type,
+    content: row.info || '',
+    tags,
+    confidence: 1,
+    createdAt: Number(row.created) || 0,
+    updatedAt: Number(row.updated) || 0,
+  };
+}
+
+/** 批量查询 info_tag，返回 info_id → tag[] 映射 */
+function queryInfoTagsByInfoIds(relationDb: any, infoIds: string[]): Map<string, string[]> {
+  const tagMap = new Map<string, string[]>();
+  if (infoIds.length === 0) return tagMap;
+  const tagRows = relationDb.queryRaw<{ info_id: string; tag: string }>(
+    `SELECT "info_id", "tag" FROM "info_tag" WHERE "info_id" IN (${infoIds.map(() => '?').join(',')})`,
+    infoIds,
+  );
+  for (const t of tagRows) {
+    if (!tagMap.has(t.info_id)) tagMap.set(t.info_id, []);
+    tagMap.get(t.info_id)!.push(t.tag);
+  }
+  return tagMap;
 }
 
 /**
@@ -338,7 +420,15 @@ async function buildContext() {
   new ChatSchemaInitializer(relationDb).init();
   const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
 
-  const selfLearningAccess = new SelfLearningAccess(relationDb, graphDBAccess, mqAccess, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, logger);
+  const chunkAccess = new ChunkAccess(logger);
+  const selfLearningAccess = new SelfLearningAccess(relationDb, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, graphDBAccess, mqAccess, chunkAccess, logger);
+
+  // 系统启动时自动开启随机触发学习（自动学习后台常驻：空闲时按 random_factor 随机触发）
+  await selfLearningAccess.startLearning(
+    Object.assign(new StartLearningInput(), { learning_mode: 'RANDOM' }),
+    new SelfLearningContext(),
+    new StartLearningOutput(),
+  );
 
   // ---- CronProvider（定时任务调度中心）----
   const cronAccess = new CronAccess(relationDb, logger);
@@ -1713,67 +1803,159 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ===== Memory Routes =====
       } else if (method === 'GET' && pathname === '/api/memory/list') {
-        const input = Object.assign(new SearchSessionInput(), { keyword: params.get('keyword') || undefined });
-        const output = new SearchSessionOutput();
-        const context = new ChatContext();
-        await ctx.chatAccess.searchSession(input, context, output);
-        sendJson(res, 200, { memories: (output.sessions || []).map((s: any) => ({ workId: s.session_id, summary: s.session_title, timeRange: { start: s.created, end: s.updated } })) });
+        const rows = ctx.relationDb.queryRaw<any>(
+          'SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw" ORDER BY "created" DESC LIMIT 500',
+        );
+        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
+        sendJson(res, 200, { memories: rows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])) });
 
-      } else if (method === 'GET' && /\/api\/memory\/tag\//.test(pathname)) { sendJson(res, 200, []);
+      } else if (method === 'GET' && /\/api\/memory\/tag\//.test(pathname)) {
+        const parts = pathname.split('/');
+        const tag = decodeURIComponent(parts[parts.length - 1] || '');
+        const rows = ctx.relationDb.queryRaw<any>(
+          'SELECT r."id", r."info_id", r."info_type", r."info_creator_role", r."info", r."created", r."updated" FROM "info_raw" r INNER JOIN "info_tag" t ON t."info_id" = r."info_id" WHERE t."tag" = ? ORDER BY r."created" DESC LIMIT 200',
+          [tag],
+        );
+        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
+        sendJson(res, 200, rows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])));
+
       } else if (method === 'GET' && pathname === '/api/memory/search') {
-        const kw = params.get('keyword') || '';
-        const input = Object.assign(new SearchMessageInput(), { keyword: kw });
-        const output = new SearchMessageOutput();
-        const context = new ChatContext();
-        await ctx.chatAccess.searchMessage(input, context, output);
-        sendJson(res, 200, output.messages || []);
-      } else if (method === 'GET' && pathname === '/api/memory/tags') { sendJson(res, 200, { tags: [] });
+        const kw = (params.get('keyword') || '').trim();
+        const type = (params.get('type') || '').trim();
+        const limit = Math.min(Math.max(parseInt(params.get('limit') || '20', 10) || 20, 1), 200);
+        const conds: string[] = [];
+        const args: any[] = [];
+        if (kw) {
+          conds.push('("info" LIKE ? OR "info_id" IN (SELECT "info_id" FROM "info_tag" WHERE "tag" LIKE ?))');
+          args.push(`%${kw}%`, `%${kw}%`);
+        }
+        if (type) {
+          const typeToInfo: Record<string, string[]> = {
+            semantic: ['RESPONSE'],
+            episodic: ['REQUEST'],
+            procedural: ['THINK', 'REFLECT', 'SKILL', 'MCP'],
+            working: ['ACT'],
+          };
+          const infoTypes = typeToInfo[type] || [];
+          if (infoTypes.length > 0) {
+            conds.push(`"info_type" IN (${infoTypes.map(() => '?').join(',')})`);
+            args.push(...infoTypes);
+          }
+        }
+        const where = conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : '';
+        const rows = ctx.relationDb.queryRaw<any>(
+          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC LIMIT ${limit}`,
+          args,
+        );
+        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
+        sendJson(res, 200, rows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])));
+
+      } else if (method === 'GET' && pathname === '/api/memory/tags') {
+        const tagRows = ctx.relationDb.queryRaw<{ tag: string; cnt: number }>(
+          'SELECT "tag", COUNT(*) AS "cnt" FROM "info_tag" GROUP BY "tag" ORDER BY "cnt" DESC',
+        );
+        sendJson(res, 200, { tags: tagRows.map((r) => r.tag) });
+
       } else if (method === 'GET' && pathname === '/api/memory/tag-graph') {
         try {
-          // Query all edges of type 'similarTo' from GraphDB
-          const edges = ctx.relationDb.queryRaw<{ id: string; from_node_id: string; to_node_id: string; edge_type: string; weight: number; is_active: number }>(
-            'SELECT "id", "from_node_id", "to_node_id", "edge_type", "weight", "is_active" FROM "graph_edge" WHERE "edge_type" = \'similarTo\'',
-            [],
+          // 节点：info_tag 去重标签（按文本），weight = 频次
+          const tagRows = ctx.relationDb.queryRaw<{ tag: string; cnt: number }>(
+            'SELECT "tag", COUNT(*) AS "cnt" FROM "info_tag" GROUP BY "tag" ORDER BY "cnt" DESC',
           );
-          if (!edges || edges.length === 0) {
+          if (!tagRows || tagRows.length === 0) {
             sendJson(res, 200, { nodes: [], edges: [] });
             return;
           }
-          const nodeIds = new Set<string>();
-          for (const e of edges) { nodeIds.add(e.from_node_id); nodeIds.add(e.to_node_id); }
-          // Fetch tag names for all involved nodes
-          const tagRows = ctx.relationDb.queryRaw<{ id: string; tag: string }>(
-            `SELECT "id", "tag" FROM "info_tag" WHERE "id" IN (${Array.from(nodeIds).map(() => '?').join(',')})`,
-            Array.from(nodeIds),
+          // 共现边：同一 info_id 下同时出现的标签对
+          const coRows = ctx.relationDb.queryRaw<{ info_id: string; tag: string }>(
+            'SELECT "info_id", "tag" FROM "info_tag" ORDER BY "info_id"',
           );
-          const tagMap = new Map<string, string>();
-          for (const t of tagRows) { tagMap.set(t.id, t.tag || t.id); }
-          // Compute node degree and aggregated weight
-          const degreeMap = new Map<string, number>();
-          const weightMap = new Map<string, number>();
-          for (const e of edges) {
-            degreeMap.set(e.from_node_id, (degreeMap.get(e.from_node_id) || 0) + 1);
-            degreeMap.set(e.to_node_id, (degreeMap.get(e.to_node_id) || 0) + 1);
-            weightMap.set(e.from_node_id, (weightMap.get(e.from_node_id) || 0) + e.weight);
-            weightMap.set(e.to_node_id, (weightMap.get(e.to_node_id) || 0) + e.weight);
+          const byInfo = new Map<string, string[]>();
+          for (const r of coRows) {
+            if (!byInfo.has(r.info_id)) byInfo.set(r.info_id, []);
+            byInfo.get(r.info_id)!.push(r.tag);
           }
-          const activeEdgeSet = new Set<string>();
-          for (const e of edges) { if (e.is_active) { activeEdgeSet.add(e.from_node_id + '|' + e.to_node_id); } }
-          const graphNodes = Array.from(nodeIds).map(id => ({
-            id,
-            name: tagMap.get(id) || id.substring(0, 8),
-            weight: weightMap.get(id) || 0,
-            degree: degreeMap.get(id) || 0,
+          const edgeMap = new Map<string, { source: string; target: string; weight: number }>();
+          for (const tags of byInfo.values()) {
+            for (let i = 0; i < tags.length; i++) {
+              for (let j = i + 1; j < tags.length; j++) {
+                const a = tags[i] < tags[j] ? tags[i] : tags[j];
+                const b = tags[i] < tags[j] ? tags[j] : tags[i];
+                const key = `${a}\u0001${b}`;
+                const existing = edgeMap.get(key);
+                if (existing) existing.weight += 1;
+                else edgeMap.set(key, { source: a, target: b, weight: 1 });
+              }
+            }
+          }
+          const degreeMap = new Map<string, number>();
+          for (const e of edgeMap.values()) {
+            degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+            degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+          }
+          const graphNodes = tagRows.map((r) => ({
+            id: r.tag,
+            name: r.tag,
+            weight: r.cnt,
+            degree: degreeMap.get(r.tag) || 0,
           }));
-          const graphEdges = edges.map(e => ({
-            source: e.from_node_id,
-            target: e.to_node_id,
+          const graphEdges = Array.from(edgeMap.values()).map((e) => ({
+            source: e.source,
+            target: e.target,
             weight: e.weight,
-            isActive: !!e.is_active,
           }));
           sendJson(res, 200, { nodes: graphNodes, edges: graphEdges });
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
-      } else if (method === 'GET' && pathname === '/api/memory/keyword-graph') { sendJson(res, 200, { nodes: [], edges: [] });
+
+      } else if (method === 'GET' && pathname === '/api/memory/keyword-graph') {
+        try {
+          const rows = ctx.relationDb.queryRaw<{ info_id: string; word: string }>(
+            'SELECT "info_id", "word" FROM "info_keyword" ORDER BY "word"',
+          );
+          if (!rows || rows.length === 0) {
+            sendJson(res, 200, { nodes: [], edges: [] });
+            return;
+          }
+          const wordFreq = new Map<string, number>();
+          const byInfo = new Map<string, Set<string>>();
+          for (const r of rows) {
+            wordFreq.set(r.word, (wordFreq.get(r.word) || 0) + 1);
+            if (!byInfo.has(r.info_id)) byInfo.set(r.info_id, new Set());
+            byInfo.get(r.info_id)!.add(r.word);
+          }
+          // 共现边：两个关键词出现在同一 info 上
+          const edgeMap = new Map<string, { source: string; target: string; weight: number }>();
+          for (const ws of byInfo.values()) {
+            const arr = Array.from(ws);
+            for (let i = 0; i < arr.length; i++) {
+              for (let j = i + 1; j < arr.length; j++) {
+                const a = arr[i] < arr[j] ? arr[i] : arr[j];
+                const b = arr[i] < arr[j] ? arr[j] : arr[i];
+                const key = `${a}\u0001${b}`;
+                const existing = edgeMap.get(key);
+                if (existing) existing.weight += 1;
+                else edgeMap.set(key, { source: a, target: b, weight: 1 });
+              }
+            }
+          }
+          const degreeMap = new Map<string, number>();
+          for (const e of edgeMap.values()) {
+            degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+            degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+          }
+          const keywordNodes = Array.from(wordFreq.keys()).map((w) => ({
+            id: w,
+            name: w,
+            weight: wordFreq.get(w) || 0,
+            degree: degreeMap.get(w) || 0,
+          }));
+          const keywordEdges = Array.from(edgeMap.values()).map((e) => ({
+            source: e.source,
+            target: e.target,
+            weight: e.weight,
+          }));
+          sendJson(res, 200, { nodes: keywordNodes, edges: keywordEdges });
+        } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
       // ---- Graph Search: text-based tag traversal ----
       } else if (method === 'POST' && pathname === '/api/memory/graph-search') {
         const query = typeof body.query === 'string' ? body.query.trim() : '';
@@ -1874,22 +2056,162 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           sendJson(res, 200, { root_tags: Array.from(rootTagMap.values()), paths });
         } catch { sendJson(res, 200, { root_tags: [], paths: [] }); }
       } else if (method === 'GET' && /\/api\/memory\/stats\//.test(pathname)) {
-        const input = Object.assign(new SearchSessionInput(), {});
-        const output = new SearchSessionOutput();
-        const context = new ChatContext();
-        await ctx.chatAccess.searchSession(input, context, output);
-        sendJson(res, 200, { totalMemories: output.total || 0, byType: {} });
+        const totalRows = ctx.relationDb.queryRaw<{ cnt: number }>(
+          'SELECT COUNT(*) AS "cnt" FROM "info_raw"',
+        );
+        const typeRows = ctx.relationDb.queryRaw<{ info_type: string; cnt: number }>(
+          'SELECT "info_type", COUNT(*) AS "cnt" FROM "info_raw" GROUP BY "info_type"',
+        );
+        const byType: Record<string, number> = {};
+        for (const r of typeRows) { byType[r.info_type || 'unknown'] = r.cnt; }
+        sendJson(res, 200, { totalMemories: totalRows[0]?.cnt || 0, byType });
 
       // ===== Learning Routes =====
-      } else if (method === 'POST' && pathname === '/api/learning/start') { sendJson(res, 200, { success: true });
-      } else if (method === 'POST' && pathname === '/api/learning/stop') { sendJson(res, 200, { success: true });
-      } else if (method === 'PUT' && pathname === '/api/learning/mode') { sendJson(res, 200, { success: true });
-      } else if (method === 'PUT' && pathname === '/api/learning/driver-weights') { sendJson(res, 200, { success: true });
-      } else if (method === 'GET' && pathname === '/api/learning/stats') { sendJson(res, 200, { totalLearnCount: 0, knowledgeCount: 0, insightCount: 0, weeklyLearnCount: 0 });
-      } else if (method === 'GET' && pathname === '/api/learning/progress-enhanced') { sendJson(res, 200, { currentTask: null, queue: [], status: 'IDLE' });
-      } else if (method === 'GET' && pathname === '/api/learning/queue') { sendJson(res, 200, { tasks: [] });
-      } else if (method === 'GET' && pathname === '/api/learning/knowledge') { sendJson(res, 200, { items: [] });
-      } else if (method === 'GET' && pathname === '/api/learning/insights') { sendJson(res, 200, { items: [] });
+      } else if (method === 'POST' && pathname === '/api/learning/start') {
+        // 手动触发指定学习模式；未传 mode 时读取存储的当前模式
+        const bodyMode = String((body as Record<string, unknown>).mode || '');
+        let backendMode = bodyMode ? mapLearningMode(bodyMode) : 'ALL';
+        if (!bodyMode) {
+          const cfgOut = new ConfigSelfLearningOutput();
+          await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+          backendMode = mapLearningMode(String((cfgOut.config as Record<string, unknown>).learning_mode || 'ALL'));
+        }
+        await ctx.selfLearningAccess.startLearning(
+          Object.assign(new StartLearningInput(), { learning_mode: backendMode }),
+          new SelfLearningContext(),
+          new StartLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'PUT' && pathname === '/api/learning/auto') {
+        // 设置某学习模式的自动学习开关
+        const mode = String((body as Record<string, unknown>).mode || '');
+        const enabled = !!((body as Record<string, unknown>).enabled);
+        const backendMode = mapLearningMode(mode);
+        const autoField = mapAutoField(backendMode);
+        if (!autoField) { sendJson(res, 400, { error: '未知的学习模式' }); return; }
+        await ctx.selfLearningAccess.configSelfLearning(
+          Object.assign(new ConfigSelfLearningInput(), { [autoField]: enabled }),
+          new SelfLearningContext(),
+          new ConfigSelfLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'PUT' && pathname === '/api/learning/random-factor') {
+        // 设置某学习模式的随机因子（0-100）
+        const mode = String((body as Record<string, unknown>).mode || '');
+        const value = Number((body as Record<string, unknown>).value ?? 10);
+        const backendMode = mapLearningMode(mode);
+        const field = mapRandomFactorField(backendMode);
+        if (!field) { sendJson(res, 400, { error: '未知的学习模式' }); return; }
+        const clamped = Math.max(0, Math.min(100, value));
+        await ctx.selfLearningAccess.configSelfLearning(
+          Object.assign(new ConfigSelfLearningInput(), { [field]: clamped }),
+          new SelfLearningContext(),
+          new ConfigSelfLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'POST' && pathname === '/api/learning/stop') {
+        // 仅停止手动触发的学习模式，不停止系统启动时自动开启的随机触发（RANDOM）
+        const cfgOut = new ConfigSelfLearningOutput();
+        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+        const storedMode = String((cfgOut.config as Record<string, unknown>).learning_mode || 'ALL');
+        const backendMode = mapLearningMode(storedMode) === 'ALL' ? 'DOCUMENT' : mapLearningMode(storedMode);
+        await ctx.selfLearningAccess.stopLearning(
+          Object.assign(new StopLearningInput(), { learning_mode: backendMode }),
+          new SelfLearningContext(),
+          new StopLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'PUT' && pathname === '/api/learning/mode') {
+        const mode = String((body as Record<string, unknown>).mode || 'from-conversation');
+        await ctx.selfLearningAccess.configSelfLearning(
+          Object.assign(new ConfigSelfLearningInput(), { learning_mode: mode }),
+          new SelfLearningContext(),
+          new ConfigSelfLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'PUT' && pathname === '/api/learning/driver-weights') {
+        const randomFactor = Number((body as Record<string, unknown>).randomFactor ?? (body as Record<string, unknown>).random_factor ?? 50);
+        await ctx.selfLearningAccess.configSelfLearning(
+          Object.assign(new ConfigSelfLearningInput(), { random_factor: randomFactor }),
+          new SelfLearningContext(),
+          new ConfigSelfLearningOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'GET' && pathname === '/api/learning/stats') {
+        const srcParam = params.get('source') || undefined;
+        const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
+        const output = new GetLearningStatsOutput();
+        await ctx.selfLearningAccess.getLearningStats(
+          Object.assign(new GetLearningStatsInput(), { source: backendSource }),
+          new SelfLearningContext(),
+          output,
+        );
+        const s = output.stats || {};
+        sendJson(res, 200, {
+          totalLearnCount: Number(s.total_learning_count) || 0,
+          knowledgeCount: Number(s.total_knowledge_count) || 0,
+          insightCount: Number(s.total_insight_count) || 0,
+          weeklyLearnCount: Number(s.this_week_learning_count) || 0,
+          trend: Array.isArray(s.learning_trend) ? s.learning_trend.map(t => ({ date: (t as Record<string, unknown>).date, count: Number((t as Record<string, unknown>).count) || 0 })) : [],
+        });
+
+      } else if (method === 'GET' && pathname === '/api/learning/progress-enhanced') {
+        const progressOut = new GetLearningProgressOutput();
+        await ctx.selfLearningAccess.getLearningProgress(new GetLearningProgressInput(), new SelfLearningContext(), progressOut);
+        const cfgOut = new ConfigSelfLearningOutput();
+        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+        const cfg = cfgOut.config || {};
+        sendJson(res, 200, {
+          mode: String(cfg.learning_mode || 'from-conversation'),
+          running: !!progressOut.running,
+          randomFactor: Number(cfg.random_factor) || 0,
+          queueSize: (progressOut.task_queue || []).length,
+          completedToday: 0,
+          modes: {
+            'from-document': { auto: Number(cfg.document_auto_enable) !== 0, randomFactor: Number(cfg.document_random_factor) || 0 },
+            'from-conversation': { auto: Number(cfg.conversation_auto_enable) !== 0, randomFactor: Number(cfg.conversation_random_factor) || 0 },
+            'tag-graph': { auto: Number(cfg.tag_auto_enable) !== 0, randomFactor: Number(cfg.tag_random_factor) || 0 },
+          },
+        });
+
+      } else if (method === 'GET' && pathname === '/api/learning/queue') {
+        const srcParam = params.get('source') || undefined;
+        const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
+        const progressOut = new GetLearningProgressOutput();
+        await ctx.selfLearningAccess.getLearningProgress(
+          Object.assign(new GetLearningProgressInput(), { source: backendSource }),
+          new SelfLearningContext(),
+          progressOut,
+        );
+        sendJson(res, 200, { tasks: progressOut.task_queue || [] });
+
+      } else if (method === 'GET' && pathname === '/api/learning/knowledge') {
+        const srcParam = params.get('source') || undefined;
+        const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
+        const output = new GetLearningResultsOutput();
+        await ctx.selfLearningAccess.getLearningResults(
+          Object.assign(new GetLearningResultsInput(), { type: 'KNOWLEDGE', source: backendSource, page_current: 1, page_size: 20 }),
+          new SelfLearningContext(),
+          output,
+        );
+        sendJson(res, 200, { items: output.results || [] });
+
+      } else if (method === 'GET' && pathname === '/api/learning/insights') {
+        const srcParam = params.get('source') || undefined;
+        const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
+        const output = new GetLearningResultsOutput();
+        await ctx.selfLearningAccess.getLearningResults(
+          Object.assign(new GetLearningResultsInput(), { type: 'INSIGHT', source: backendSource, page_current: 1, page_size: 20 }),
+          new SelfLearningContext(),
+          output,
+        );
+        sendJson(res, 200, { items: output.results || [] });
 
       // ===== MQ Config Routes =====
       } else if (method === 'POST' && pathname === '/api/config/mq/send') {
@@ -1950,11 +2272,57 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { deleted, queue });
 
       // ===== Library Routes =====
-      } else if (method === 'GET' && pathname === '/api/library/paths') { sendJson(res, 200, { paths: [] });
-      } else if (method === 'POST' && pathname === '/api/library/paths') { sendJson(res, 200, { id: `lib-${++_seq}`, name: body.name, path: body.path });
+      } else if (method === 'GET' && pathname === '/api/library/paths') {
+        const output = new SearchLibraryOutput();
+        await ctx.selfLearningAccess.searchLibrary(new SearchLibraryInput(), new SelfLearningContext(), output);
+        sendJson(res, 200, { paths: (output.libraries || []).map(l => ({
+          id: String(l.library_id || ''),
+          name: String(l.library_name || ''),
+          path: String(l.library_path || ''),
+          category: '',
+          description: '',
+          createdAt: Number(l.created) || 0,
+          totalFiles: Number(l.total_files) || 0,
+          learnedFiles: Number(l.learned_files) || 0,
+          enableSelfLearning: Number(l.enable_self_learning) === 1,
+        })) });
+
+      } else if (method === 'POST' && pathname === '/api/library/paths') {
+        const pathVal = String((body as Record<string, unknown>).path || '');
+        const nameVal = String((body as Record<string, unknown>).name || '');
+        const addOut = new AddLibraryOutput();
+        await ctx.selfLearningAccess.addLibrary(
+          Object.assign(new AddLibraryInput(), {
+            library_path: pathVal,
+            library_name: nameVal || undefined,
+            enable_self_learning: true,
+          }),
+          new SelfLearningContext(),
+          addOut,
+        );
+        sendJson(res, 201, { id: addOut.library_id, name: nameVal, path: pathVal, fileCount: addOut.file_count });
+
+      } else if (method === 'DELETE' && pathname.startsWith('/api/library/paths/')) {
+        const id = pathname.split('/api/library/paths/')[1];
+        await ctx.selfLearningAccess.deleteLibrary(
+          Object.assign(new DeleteLibraryInput(), { library_id: id }),
+          new SelfLearningContext(),
+          new DeleteLibraryOutput(),
+        );
+        sendJson(res, 200, { success: true });
+
       } else if (method === 'POST' && pathname === '/api/library/check-path') {
-        const exists = !!(body.path && body.path.length > 0);
-        sendJson(res, 200, { exists, isReadable: exists, isWritable: exists });
+        const p = String((body as Record<string, unknown>).path || '');
+        let exists = false, isReadable = false, isWritable = false;
+        if (p) {
+          try {
+            const st = fs.statSync(p);
+            exists = st.isDirectory();
+            try { fs.accessSync(p, fs.constants.R_OK); isReadable = true; } catch { /* ignore */ }
+            try { fs.accessSync(p, fs.constants.W_OK); isWritable = true; } catch { /* ignore */ }
+          } catch { exists = false; }
+        }
+        sendJson(res, 200, { exists, isReadable, isWritable });
 
       // ===== Feedback Routes =====
       } else if (method === 'POST' && pathname === '/api/feedback') { sendJson(res, 200, { success: true });

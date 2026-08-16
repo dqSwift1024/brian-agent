@@ -110,6 +110,8 @@ import type {
 import {
   ExecLLMInput,
   ExecLLMOutput,
+  EmbedLLMInput,
+  EmbedLLMOutput,
   LLMContext,
   PromptContext,
   VectorContext,
@@ -409,6 +411,7 @@ export class InfoCoreService {
         await this.relationDb.insert(INFO_TAG_TABLE, [
           { field: 'id', value: tagId },
           { field: 'created', value: now },
+          { field: 'updated', value: now },
           { field: 'info_id', value: input.info_id },
           { field: 'tag', value: tag },
         ]);
@@ -463,6 +466,7 @@ export class InfoCoreService {
     await this.relationDb.insert(INFO_SUMMARY_TABLE, [
       { field: 'id', value: id },
       { field: 'created', value: now },
+      { field: 'updated', value: now },
       { field: 'info_id', value: input.info_id },
       { field: 'summary', value: summary },
     ]);
@@ -495,8 +499,8 @@ export class InfoCoreService {
 
     for (const word of keywords) {
       await this.relationDb.executeRaw(
-        `INSERT INTO "${INFO_KEYWORD_TABLE}" ("info_id", "word") VALUES (@info_id, @word)`,
-        [{ field: 'info_id', value: input.info_id }, { field: 'word', value: word }],
+        `INSERT INTO "${INFO_KEYWORD_TABLE}" ("info_id", "word") VALUES (?, ?)`,
+        [input.info_id, word],
       );
     }
 
@@ -542,7 +546,7 @@ export class InfoCoreService {
 
     // 3. 计算标签向量
     const vectorConfig = await this.getInfoVectorConfig();
-    if (!vectorConfig || vectorConfig.enable !== 1 || !vectorConfig.llm_id) {
+    if (!vectorConfig || vectorConfig.enable !== 1) {
       return true;
     }
 
@@ -1605,25 +1609,16 @@ export class InfoCoreService {
     vectorConfig: InfoVectorConfigRecord,
   ): Promise<number[]> {
     try {
-      if (!vectorConfig.llm_id) return [];
-
-      const prompt = `Generate a ${vectorConfig.dimension}-dimensional embedding vector as a JSON array of floats for the following text:\n\n${text}\n\nRespond with ONLY the JSON array.`;
-
-      const execOutput = new ExecLLMOutput();
-      await this.llmAccess.execLLM(
-        {
-          id: vectorConfig.llm_id,
-          params: { prompt, temperature: 0.1, max_tokens: 4096 },
-        } as ExecLLMInput,
+      const embedOutput = new EmbedLLMOutput();
+      await this.llmAccess.embedLLM(
+        Object.assign(new EmbedLLMInput(), { id: vectorConfig.llm_id, input: text }),
         new LLMContext(),
-        execOutput,
+        embedOutput,
       );
-
-      const arr = this.parseJSONArray(execOutput.result);
-      if (arr && arr.length === vectorConfig.dimension) {
-        return arr;
+      if (!embedOutput.embedding || embedOutput.embedding.length === 0) {
+        return [];
       }
-      return arr || [];
+      return embedOutput.embedding;
     } catch {
       return [];
     }
@@ -1740,6 +1735,7 @@ export class InfoCoreService {
         await this.relationDb.insert(INFO_GRAPH_TABLE, [
           { field: 'id', value: edgeId },
           { field: 'created', value: now },
+          { field: 'updated', value: now },
           { field: 'session_id', value: sessionId },
           { field: 'info_id', value: infoId },
           { field: 'citing_info_id', value: infoId },
@@ -1852,7 +1848,7 @@ export class InfoCoreService {
       if (existing.length > 0) return;
 
       const vectorConfig = await this.getInfoVectorConfig();
-      if (!vectorConfig || !vectorConfig.llm_id) return;
+      if (!vectorConfig || vectorConfig.enable !== 1) return;
 
       const embedding = await this.generateEmbedding(tag, vectorConfig);
       if (!embedding || embedding.length === 0) return;
@@ -1863,6 +1859,7 @@ export class InfoCoreService {
       await this.relationDb.insert(INFO_TAG_VECTOR_TABLE, [
         { field: 'id', value: id },
         { field: 'created', value: now },
+        { field: 'updated', value: now },
         { field: 'tag_id', value: tag },
         { field: 'embedding', value: JSON.stringify(embedding) },
       ]);

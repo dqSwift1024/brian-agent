@@ -202,17 +202,22 @@ export const mcpApi = {
 }
 
 export const learningApi = {
-  start: () => request<void>('/learning/start', { method: 'POST' }),
+  start: (mode?: string) =>
+    request<void>('/learning/start', { method: 'POST', body: JSON.stringify(mode ? { mode } : {}) }),
   stop: () => request<void>('/learning/stop', { method: 'POST' }),
   setMode: (mode: string) =>
     request<void>('/learning/mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
+  setAuto: (mode: string, enabled: boolean) =>
+    request<void>('/learning/auto', { method: 'PUT', body: JSON.stringify({ mode, enabled }) }),
+  setRandomFactor: (mode: string, value: number) =>
+    request<void>('/learning/random-factor', { method: 'PUT', body: JSON.stringify({ mode, value }) }),
   setDriverWeights: (randomFactor: number) =>
     request<void>('/learning/driver-weights', { method: 'PUT', body: JSON.stringify({ randomFactor }) }),
-  getStats: () => request<LearningStats>('/learning/stats'),
+  getStats: (source?: string) => request<LearningStats>(`/learning/stats${source ? `?source=${encodeURIComponent(source)}` : ''}`),
   getProgress: () => request<LearningProgress>('/learning/progress-enhanced'),
-  getQueue: () => request<{ tasks: unknown[] }>('/learning/queue').then(r => r.tasks),
-  getKnowledge: () => request<{ items: unknown[] }>('/learning/knowledge').then(r => r.items),
-  getInsights: () => request<{ items: unknown[] }>('/learning/insights').then(r => r.items),
+  getQueue: (source?: string) => request<{ tasks: unknown[] }>(`/learning/queue${source ? `?source=${encodeURIComponent(source)}` : ''}`).then(r => r.tasks),
+  getKnowledge: (source?: string) => request<{ items: unknown[] }>(`/learning/knowledge${source ? `?source=${encodeURIComponent(source)}` : ''}`).then(r => r.items),
+  getInsights: (source?: string) => request<{ items: unknown[] }>(`/learning/insights${source ? `?source=${encodeURIComponent(source)}` : ''}`).then(r => r.items),
 }
 
 export const monitorApi = {

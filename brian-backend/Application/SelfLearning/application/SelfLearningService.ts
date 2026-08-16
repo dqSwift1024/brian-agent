@@ -358,24 +358,27 @@ export class SelfLearningService {
         const hasRecentActivity = await this.checkUserRecentActivity(5 * 60 * 1000);
         if (hasRecentActivity) return;
 
-        const randomFactor = (config.random_factor as number) ?? 10;
-        const documentWeight = (config.document_weight as number) ?? 40;
-        const conversationWeight = (config.conversation_weight as number) ?? 30;
-        const tagMaintenanceWeight = (config.tag_maintenance_weight as number) ?? 30;
+        // 每次 tick 读取最新配置，各模式独立按自己的随机因子与自动开关决定是否触发
+        const fresh = await this.getConfig();
+        const rate = (fresh.default_learning_rate as number) ?? 5;
 
-        const rand = Math.floor(Math.random() * 101);
-        if (rand >= randomFactor) return;
-
-        const totalWeight = documentWeight + conversationWeight + tagMaintenanceWeight;
-        if (totalWeight <= 0) return;
-
-        const selection = Math.random() * totalWeight;
-        if (selection < documentWeight) {
-          await this.startDocumentLearning(undefined, (config.default_learning_rate as number) ?? 5, learningIntervalMs);
-        } else if (selection < documentWeight + conversationWeight) {
-          await this.startConversationLearning();
-        } else {
-          await this.startTagMaintenance(config);
+        if (Number(fresh.document_auto_enable) !== 0) {
+          const rf = (fresh.document_random_factor as number) ?? 10;
+          if (Math.floor(Math.random() * 101) < rf) {
+            await this.startDocumentLearning(undefined, rate, learningIntervalMs);
+          }
+        }
+        if (Number(fresh.conversation_auto_enable) !== 0) {
+          const rf = (fresh.conversation_random_factor as number) ?? 10;
+          if (Math.floor(Math.random() * 101) < rf) {
+            await this.startConversationLearning();
+          }
+        }
+        if (Number(fresh.tag_auto_enable) !== 0) {
+          const rf = (fresh.tag_random_factor as number) ?? 10;
+          if (Math.floor(Math.random() * 101) < rf) {
+            await this.startTagMaintenance(fresh);
+          }
         }
       } catch (err: unknown) {
         this.logger?.error?.('Random trigger learning error', { error: err instanceof Error ? err.message : String(err) });
@@ -1192,16 +1195,20 @@ export class SelfLearningService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async getLearningProgress(
-    _input: GetLearningProgressInput,
+    input: GetLearningProgressInput,
     _context: SelfLearningContext,
     output: GetLearningProgressOutput,
   ): Promise<boolean> {
+    const sourceCond = input.source
+      ? [{ field: 'task_type', operator: Operator.EQ, value: input.source }] as Condition[]
+      : [];
     const runningSel = Object.assign(new SelectOneDBOutput(), {});
     await this.relationDb.selectOneDB(
       Object.assign(new SelectOneDBInput(), {
         query_param: {
           table: 'self_learning_task',
           conditions: [
+            ...sourceCond,
             { field: 'status', operator: Operator.EQ, value: 'RUNNING' },
           ] as Condition[],
         },
@@ -1217,6 +1224,7 @@ export class SelfLearningService {
         query_param: {
           table: 'self_learning_task',
           conditions: [
+            ...sourceCond,
             { field: 'status', operator: Operator.EQ, value: 'PENDING' },
           ] as Condition[],
           order_by: [{ field: 'created', direction: 'ASC' }],
@@ -1239,7 +1247,21 @@ export class SelfLearningService {
     );
     output.builtin_tasks = builtinSel.rows;
 
+    output.running = this.isLearningRunning();
+
     return true;
+  }
+
+  /** 手动学习是否正在运行（文档/对话评估/Tag 维护 Worker 处于活动状态，不含自动随机触发） */
+  private isLearningRunning(): boolean {
+    return !!(
+      this.documentLearningTimer ||
+      this.evalScheduleRunning ||
+      this.tagConnectionTimer ||
+      this.tagEstablishTimer ||
+      this.tagAgingTimer ||
+      this.orphanTagTimer
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1315,21 +1337,27 @@ export class SelfLearningService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async getLearningStats(
-    _input: GetLearningStatsInput,
+    input: GetLearningStatsInput,
     _context: SelfLearningContext,
     output: GetLearningStatsOutput,
   ): Promise<boolean> {
     const now = IdGenerator.now();
+    const sourceConds = input.source
+      ? [{ field: 'source', operator: Operator.EQ, value: input.source }] as Condition[]
+      : [];
 
-    const totalResults = await this.relationDb.count('self_learning_result');
+    const totalResults = await this.relationDb.count('self_learning_result', sourceConds);
     const totalKnowledgeCount = await this.relationDb.count('self_learning_result', [
+      ...sourceConds,
       { field: 'type', operator: Operator.EQ, value: 'KNOWLEDGE' },
     ]);
     const totalInsightCount = await this.relationDb.count('self_learning_result', [
+      ...sourceConds,
       { field: 'type', operator: Operator.EQ, value: 'INSIGHT' },
     ]);
     const thisWeekStart = now - 7 * 24 * 60 * 60 * 1000;
     const thisWeekLearningCount = await this.relationDb.count('self_learning_result', [
+      ...sourceConds,
       { field: 'learned_at', operator: Operator.GE, value: thisWeekStart },
     ]);
 
@@ -1407,18 +1435,24 @@ export class SelfLearningService {
       /* graph DB might not have Tag nodes yet */
     }
 
+    // 学习趋势：近 365 天，用单条 GROUP BY 查询统计每日学习次数
+    const trendDays = 365;
+    const trendStart = now - trendDays * 24 * 60 * 60 * 1000;
+    const trendRows = this.relationDb.queryRaw<{ date: string; count: number }>(
+      sourceConds.length > 0
+        ? 'SELECT strftime(\'%Y-%m-%d\', "learned_at" / 1000, \'unixepoch\') AS "date", COUNT(*) AS "count" FROM "self_learning_result" WHERE "learned_at" >= ? AND "source" = ? GROUP BY "date"'
+        : 'SELECT strftime(\'%Y-%m-%d\', "learned_at" / 1000, \'unixepoch\') AS "date", COUNT(*) AS "count" FROM "self_learning_result" WHERE "learned_at" >= ? GROUP BY "date"',
+      sourceConds.length > 0 ? [trendStart, input.source] : [trendStart],
+    );
+    const countMap = new Map<string, number>();
+    for (const r of trendRows) {
+      countMap.set(String(r.date), Number(r.count) || 0);
+    }
     const trend: Array<Record<string, unknown>> = [];
-    for (let day = 6; day >= 0; day--) {
-      const dayStart = now - (day + 1) * 24 * 60 * 60 * 1000;
+    for (let day = trendDays - 1; day >= 0; day--) {
       const dayEnd = now - day * 24 * 60 * 60 * 1000;
-      const count = await this.relationDb.count('self_learning_result', [
-        { field: 'learned_at', operator: Operator.GE, value: dayStart },
-        { field: 'learned_at', operator: Operator.LT, value: dayEnd },
-      ]);
-      trend.push({
-        date: new Date(dayEnd).toISOString().split('T')[0],
-        count,
-      });
+      const dateStr = new Date(dayEnd).toISOString().split('T')[0];
+      trend.push({ date: dateStr, count: countMap.get(dateStr) || 0 });
     }
 
     output.stats = {
@@ -1470,15 +1504,19 @@ export class SelfLearningService {
     ];
 
     const fields: Array<keyof ConfigSelfLearningInput> = [
+      'learning_mode', 'document_auto_enable', 'conversation_auto_enable', 'tag_auto_enable',
+      'document_random_factor', 'conversation_random_factor', 'tag_random_factor',
       'random_factor', 'document_weight', 'conversation_weight',
       'tag_maintenance_weight', 'learning_interval_ms', 'default_learning_rate',
       'tag_connection_check_interval_ms', 'tag_aging_cron',
       'orphan_tag_check_cron', 'document_split_threshold', 'chunk_overlap_ratio',
     ];
 
+    const booleanFields = new Set<string>(['document_auto_enable', 'conversation_auto_enable', 'tag_auto_enable']);
     for (const field of fields) {
       if (input[field] !== undefined) {
-        data.push({ field, value: input[field] });
+        const value = booleanFields.has(field) ? (input[field] ? 1 : 0) : input[field];
+        data.push({ field, value });
       }
     }
 

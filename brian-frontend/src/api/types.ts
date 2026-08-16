@@ -171,6 +171,9 @@ export interface LibraryPath {
   category: string
   description: string
   createdAt: number
+  totalFiles?: number
+  learnedFiles?: number
+  enableSelfLearning?: boolean
 }
 
 export interface GraphNode {
@@ -210,6 +213,7 @@ export interface LearningStats {
   knowledgeCount: number
   insightCount: number
   weeklyLearnCount: number
+  trend?: { date: string; count: number }[]
 }
 
 export interface LearningProgress {
@@ -218,6 +222,7 @@ export interface LearningProgress {
   randomFactor: number
   queueSize: number
   completedToday: number
+  modes?: Record<string, { auto: boolean; randomFactor: number }>
 }
 
 export interface SystemHealth {
