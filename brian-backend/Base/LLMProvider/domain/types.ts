@@ -183,6 +183,10 @@ export interface LLMUsageRecord {
   usage_date: string;
   /** 当日使用次数 */
   usage_count: number;
+  /** 当日累计输入 Token 数 */
+  input_tokens: number;
+  /** 当日累计输出 Token 数 */
+  output_tokens: number;
 }
 
 // ---------------------------------------------------------------------------

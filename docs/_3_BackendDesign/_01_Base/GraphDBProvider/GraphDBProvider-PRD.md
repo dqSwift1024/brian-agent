@@ -493,7 +493,7 @@
 | enabled | true | BOOLEAN | 图数据库是否启用（enableGraphDB 读写） |
 | retention_days | 30 | INT | 激活统计保留天数（老化观察窗口与复合权重统计窗口共用） |
 | min_activation_count | 5 | INT | 窗口内最小激活次数阈值 |
-| default_trigger_type | user_query | STRING | 默认触发类型（user_query 用户交互 / tag_maintenance 标签维护） |
+| default_trigger_type | user_query | STRING | 默认触发类型（user_query 用户交互 / tag_maintenance 标签维护 / all 所有触发方式） |
 | default_weight | 1.0 | DOUBLE | 默认边权重 |
 | default_depth | 1 | INT | 默认遍历深度 |
 | default_only_active | true | BOOLEAN | 默认仅遍历激活边 |

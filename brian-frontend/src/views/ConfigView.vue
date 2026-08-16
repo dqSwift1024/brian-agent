@@ -102,6 +102,7 @@ const navSections: NavSection[] = [
     desc: 'Soul 人格管理与 Prompt 模板',
     subsections: [
       { key: 'roles-soul', label: 'Soul 管理', icon: Heart, type: 'entity', entityType: 'soul' },
+      { key: 'roles-match', label: '匹配与优化', icon: Zap, type: 'params', configModule: 'soul_core', configCategories: ['basic', 'opt_rule'] },
       { key: 'roles-prompt', label: 'Prompt 模板', icon: MessageSquare, type: 'entity', entityType: 'prompt' },
     ],
   },
@@ -1040,6 +1041,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   'graphdb_provider.default_trigger_type': {
     user_query: '用户交互触发',
     tag_maintenance: '标签维护触发',
+    all: '所有触发方式',
   },
 }
 

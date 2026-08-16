@@ -1995,23 +1995,105 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
       // ===== Monitor Routes =====
       } else if (method === 'GET' && pathname === '/api/monitor/health-all') {
-        sendJson(res, 200, {
-          components: [
-            { name: 'LLM Provider', status: 'HEALTHY', responseTime: 45 },
-            { name: 'MCP', status: 'HEALTHY', responseTime: 12 },
-            { name: 'RelationDB', status: 'HEALTHY', responseTime: 3 },
-            { name: 'GraphDB', status: 'HEALTHY', responseTime: 8 },
-            { name: 'VectorDB', status: 'HEALTHY', responseTime: 5 },
-            { name: 'MQ', status: 'HEALTHY', responseTime: 2 },
-          ],
-        });
+        const components: Array<{ name: string; status: string; message?: string }> = [];
+
+        // RelationDB
+        try {
+          const start = Date.now();
+          ctx.relationDb.queryRaw('SELECT 1');
+          components.push({ name: 'RelationDB', status: 'healthy', message: `${Date.now() - start}ms` });
+        } catch (e: any) {
+          components.push({ name: 'RelationDB', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        // GraphDB
+        try {
+          const { GraphContext, VisualizedGraphInput, VisualizedGraphOutput } = await import('./Base/GraphDBProvider/domain/types');
+          const o = new VisualizedGraphOutput();
+          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'health' }), new GraphContext(), o);
+          const d = o.data || {};
+          components.push({
+            name: 'GraphDB',
+            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
+            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+          });
+        } catch (e: any) {
+          components.push({ name: 'GraphDB', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        // VectorDB
+        try {
+          const { VectorContext, VisualizedVectorInput, VisualizedVectorOutput } = await import('./Base/VectorDBProvider/domain/types');
+          const o = new VisualizedVectorOutput();
+          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'health' }), new VectorContext(), o);
+          const d = o.data || {};
+          components.push({
+            name: 'VectorDB',
+            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
+            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+          });
+        } catch (e: any) {
+          components.push({ name: 'VectorDB', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        // LLM Provider
+        try {
+          const { VisualizedLLMInput, VisualizedLLMOutput } = await import('./Base/LLMProvider/domain/types');
+          const o = new VisualizedLLMOutput();
+          await ctx.llmAccess.visualizedLLM(Object.assign(new VisualizedLLMInput(), { scope: 'health' }), new LLMContext(), o);
+          const d = o.data || {};
+          components.push({
+            name: 'LLM Provider',
+            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
+            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+          });
+        } catch (e: any) {
+          components.push({ name: 'LLM Provider', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        // MCP
+        try {
+          const o = new SoMcpOutput();
+          await ctx.mcpAccess.soMcp(new SoMcpInput(), new McpContext(), o);
+          components.push({ name: 'MCP', status: 'healthy', message: `${o.total ?? 0} 个实例` });
+        } catch (e: any) {
+          components.push({ name: 'MCP', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        // MQ
+        try {
+          const o = new GetQueueStatsOutput();
+          await ctx.mqAccess.getQueueStats(new GetQueueStatsInput(), new MQContext(), o);
+          components.push({ name: 'MQ', status: 'healthy', message: `${o.stats?.total ?? 0} 条消息` });
+        } catch (e: any) {
+          components.push({ name: 'MQ', status: 'unhealthy', message: e?.message || '连接失败' });
+        }
+
+        const status = components.some((c) => c.status === 'unhealthy')
+          ? 'unhealthy'
+          : components.some((c) => c.status === 'degraded')
+            ? 'degraded'
+            : 'healthy';
+        sendJson(res, 200, { status, uptime: Math.round(process.uptime()), components });
 
       } else if (method === 'GET' && pathname === '/api/monitor/resources') {
         sendJson(res, 200, { cpu: 25.5, memory: 42.3, disk: 58.1 });
       } else if (method === 'GET' && pathname === '/api/analytics/token-trend') {
-        sendJson(res, 200, { points: [{ date: '2026-08-01', tokens: 1500 }] });
+        // 按天聚合 llm_usage 的 token 用量（input_tokens + output_tokens）
+        const rows = ctx.relationDb.queryRaw<{ date: string; tokens: number }>(
+          'SELECT "usage_date" AS "date", SUM(COALESCE("input_tokens",0) + COALESCE("output_tokens",0)) AS "tokens" FROM "llm_usage" GROUP BY "usage_date" ORDER BY "usage_date" ASC',
+          [],
+        );
+        sendJson(res, 200, { points: (rows || []).map(r => ({ date: r.date, tokens: Number(r.tokens) || 0 })) });
+
       } else if (method === 'GET' && pathname === '/api/analytics/model-distribution') {
-        sendJson(res, 200, { models: [{ model: 'mock-model', tokens: 1500 }] });
+        // 按模型聚合 token 用量（关联 llm_available 取模型名）
+        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number }>(
+          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
+          [],
+        );
+        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, tokens: Number(r.tokens) || 0 })) });
+
       } else if (method === 'GET' && pathname === '/api/monitor/logs/query') {
         sendJson(res, 200, { entries: [
           { timestamp: Date.now(), level: 'INFO', source: 'system', message: 'Server started successfully' },

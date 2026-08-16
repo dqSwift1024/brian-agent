@@ -302,7 +302,7 @@
 2. 根据 ID 获取 llm_available 记录及关联的 llm_provider；
 3. 使用提供商的 api_key 进行认证，构造 OpenAI 兼容 POST 请求；
 4. 从 API 响应中提取 result、input_tokens（prompt_tokens）、output_tokens（completion_tokens）、duration_ms；
-5. 更新 llm_usage 表当天 usage_count；
+5. 更新 llm_usage 表当天 usage_count 并累计 input_tokens / output_tokens；
 
 **出参（ExecLLMOutput extends Output）**：
 
@@ -339,7 +339,7 @@
 3. 校验模型 llm_type 必须为 embedding；
 4. 构造 OpenAI 兼容 `POST {base}/v1/embeddings` 请求，请求体 `{ model, input }`；
 5. 从 API 响应中解析 `data[0].embedding` 作为向量结果；
-6. 更新 llm_usage 表当天 usage_count；
+6. 更新 llm_usage 表当天 usage_count 并累计 input_tokens（向量化无输出 token）；
 
 **出参（EmbedLLMOutput extends Output）**：
 
@@ -458,7 +458,7 @@
 ### 4.4. llm_usage 表（调用统计）
 
 - `表名`： llm_usage
-- `说明`： 按天统计每次成功调用的次数
+- `说明`： 按天统计每次成功调用的次数与 Token 用量
 
 | 字段名 | 含义 | 类型 | 是否可以为空 | 索引类型 | 备注 |
 | ------ | ----- | ----- | ----- | ----- | ----- |
@@ -468,8 +468,10 @@
 | llm_available_id | 可用模型 ID | STRING | N | 普通索引 | 关联 llm_available.id |
 | usage_date | 使用日期 | STRING | N | 普通索引 | 格式：YYYY-MM-DD |
 | usage_count | 当日使用次数 | INT | N | | 默认 0 |
+| input_tokens | 当日累计输入 Token 数 | INT | N | | 默认 0 |
+| output_tokens | 当日累计输出 Token 数 | INT | N | | 默认 0 |
 
-**重要**：仅当 `execLLM` 调用成功时，当天的 usage_count 才会加 1
+**重要**：仅当 `execLLM` / `embedLLM` 调用成功时，当天的 usage_count 加 1 并累计 `input_tokens` / `output_tokens`（对话补全取 `prompt_tokens`/`completion_tokens`，向量化仅累计 `prompt_tokens`）。
 
 ### 4.5. llm_config 表（组件配置）
 

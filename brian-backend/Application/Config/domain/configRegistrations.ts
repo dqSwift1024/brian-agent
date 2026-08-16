@@ -142,7 +142,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   base('graphdb_provider', 'basic', 'enabled', '图数据库启用', 'BOOLEAN', true, '图数据库是否启用'),
   base('graphdb_provider', 'aging', 'retention_days', '激活统计保留天数', 'INT', 30, '老化观察窗口'),
   base('graphdb_provider', 'aging', 'min_activation_count', '窗口内最小激活次数阈值', 'INT', 5),
-  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'ENUM', 'user_query', '边激活事件的默认触发来源', ['user_query', 'tag_maintenance']),
+  base('graphdb_provider', 'basic', 'default_trigger_type', '默认触发类型', 'ENUM', 'user_query', '边激活事件的默认触发来源（user_query 用户交互 / tag_maintenance 标签维护 / all 所有触发方式）', ['user_query', 'tag_maintenance', 'all']),
   base('graphdb_provider', 'basic', 'default_weight', '默认边权重', 'DOUBLE', 1.0),
   base('graphdb_provider', 'basic', 'default_depth', '默认遍历深度', 'INT', 1),
   base('graphdb_provider', 'basic', 'default_only_active', '默认仅遍历激活边', 'BOOLEAN', true),
@@ -205,7 +205,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
 
   // --- SoulCoreProvider ---
   core('soul_core', 'basic', 'regen_rate', 'Soul 重新生成概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
-  core('soul_core', 'basic', 'prompt_template_id', 'Soul 匹配排名的 Prompt 模板 ID', 'STRING', '', '用于 Soul 匹配排名'),
+  core('soul_core', 'basic', 'prompt_template_id', 'Soul 匹配 Prompt', 'STRING', '', '用于 Soul 匹配排名'),
   core('soul_core', 'opt_rule', 'opt_rule.days', '优化规则观察天数', 'INT', 30, 'Soul 淘汰/优化规则的观察窗口'),
   core('soul_core', 'opt_rule', 'opt_rule.min_usage_count', '优化规则最小使用次数', 'INT', 5, '低于此次数的 Soul 可能被淘汰'),
 

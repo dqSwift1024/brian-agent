@@ -131,10 +131,17 @@ export class SkillCoreService {
       return true;
     }
 
-    // 获取 Prompt 模板并渲染
+    // 获取 Prompt 模板并渲染（skills 预格式化为 JSON 字符串，供模板 {{skills}} 使用）
+    const skillsJson = JSON.stringify(
+      availableSkills.map((s) => ({
+        name: s.name,
+        skill_brief: s.skill_brief,
+        skill_md: s.skill_md,
+      })),
+    );
     const promptText = await this.renderPrompt(
       config.prompt_template_id,
-      { agent_id, context_id, interact_id, skills: availableSkills },
+      { agent_id, context_id, interact_id, skills: skillsJson },
     );
 
     // 调用 LLM 排序
@@ -438,10 +445,7 @@ export class SkillCoreService {
     variables: Record<string, unknown>,
   ): Promise<string> {
     if (!templateId) {
-      const skills = variables.skills as Array<{ skill_brief: string; skill_md: string }> | undefined;
-      const skillDescriptions = skills
-        ? skills.map((s) => `- ${s.skill_brief}\n${s.skill_md}`).join('\n\n')
-        : '(无可用 Skill)';
+      const skillDescriptions = String(variables.skills ?? '(无可用 Skill)');
       return [
         '你是一个 Skill 匹配助手。请根据以下可用 Skill 列表，按照相关性从高到低排序，',
         '输出 Skill 的 skill_brief 和 relevance（0~1 小数）。以 JSON 数组格式输出：',

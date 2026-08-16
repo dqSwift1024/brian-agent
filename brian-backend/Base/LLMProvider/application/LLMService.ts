@@ -180,14 +180,21 @@ export class LLMService {
   }
 
   /**
-   * 更新 LLM 当日使用次数（upsert 语义）。
-   *
-   * 若当天记录已存在则 usage_count + 1，否则新增一条记录。
-   * 仅当 execLLM 调用成功时调用本方法。
-   *
-   * @param llmEnableId 启用的 LLM ID（llm_enable.id）
-   */
-  private async upsertUsage(llmEnableId: string): Promise<void> {
+    * 更新 LLM 当日使用次数与 Token 用量（upsert 语义）。
+    *
+    * 若当天记录已存在则 usage_count + 1 且累计 input_tokens / output_tokens，
+    * 否则新增一条记录。
+    * 仅当 execLLM / embedLLM 调用成功时调用本方法。
+    *
+    * @param llmEnableId 启用的 LLM ID（llm_available.id）
+    * @param inputTokens 本次调用输入 Token 数
+    * @param outputTokens 本次调用输出 Token 数
+    */
+  private async upsertUsage(
+    llmEnableId: string,
+    inputTokens = 0,
+    outputTokens = 0,
+  ): Promise<void> {
     const today = IdGenerator.today();
     const now = IdGenerator.now();
 
@@ -198,10 +205,14 @@ export class LLMService {
 
     if (existing) {
       const currentCount = (existing.usage_count as number) ?? 0;
+      const currentInput = (existing.input_tokens as number) ?? 0;
+      const currentOutput = (existing.output_tokens as number) ?? 0;
       await this.relationDb.update(
         LLM_USAGE_TABLE,
         [
           { field: 'usage_count', value: currentCount + 1 },
+          { field: 'input_tokens', value: currentInput + inputTokens },
+          { field: 'output_tokens', value: currentOutput + outputTokens },
           { field: 'updated', value: now },
         ],
         [
@@ -218,6 +229,8 @@ export class LLMService {
         { field: 'llm_available_id', value: llmEnableId },
         { field: 'usage_date', value: today },
         { field: 'usage_count', value: 1 },
+        { field: 'input_tokens', value: inputTokens },
+        { field: 'output_tokens', value: outputTokens },
       ]);
     }
   }
@@ -952,8 +965,8 @@ let models: Array<{
       return false;
     }
 
-    // 成功后更新 llm_usage 表当天的 usage_count + 1
-    await this.upsertUsage(input.id);
+    // 成功后更新 llm_usage 表当天的 usage_count 与 token 用量
+    await this.upsertUsage(input.id, output.input_tokens, output.output_tokens);
     return true;
   }
 
@@ -1069,7 +1082,7 @@ let models: Array<{
       return false;
     }
 
-    await this.upsertUsage(input.id);
+    await this.upsertUsage(input.id, output.input_tokens, 0);
     return true;
   }
 

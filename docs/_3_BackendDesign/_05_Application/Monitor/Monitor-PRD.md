@@ -33,39 +33,22 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
 **输出**：
 ```json
 {
+  "status": "healthy",
+  "uptime": 1234,
   "components": [
-    {
-      "name": "RelationDB",
-      "status": "HEALTHY",
-      "responseTime": 2,
-      "details": { "type": "SQLite" }
-    },
-    {
-      "name": "GraphDB",
-      "status": "HEALTHY",
-      "responseTime": 0,
-      "details": {
-        "type": "TinyGraphDB"
-      }
-    },
-    {
-      "name": "VectorDB",
-      "status": "HEALTHY",
-      "responseTime": 0,
-      "details": { "type": "LanceDB" }
-    },
-    {
-      "name": "MQ",
-      "status": "HEALTHY",
-      "responseTime": 0,
-      "details": { "type": "SQLiteMQ" }
-    }
-  ],
-  "timestamp": 1234567890000
+    { "name": "RelationDB", "status": "healthy", "message": "0ms" },
+    { "name": "GraphDB", "status": "healthy", "message": "2ms" },
+    { "name": "VectorDB", "status": "healthy", "message": "1ms" },
+    { "name": "LLM Provider", "status": "healthy", "message": "0ms" },
+    { "name": "MCP", "status": "healthy", "message": "1 个实例" },
+    { "name": "MQ", "status": "healthy", "message": "0 条消息" }
+  ]
 }
 ```
 
-**状态取值**：`HEALTHY`（绿色）/ `WARNING`（黄色）/ `ERROR`（红色）
+**状态取值**：顶层 `status` 与组件 `status` 均为 `healthy`（绿色）/ `degraded`（黄色）/ `unhealthy`（红色）。`uptime` 为服务运行秒数（`process.uptime()`）。
+
+**检查方式**：RelationDB 执行 `SELECT 1`；GraphDB/VectorDB/LLM Provider 调用各自 `visualized*(scope='health')` 探测连接；MCP 调用 `soMcp` 查询实例数；MQ 调用 `getQueueStats` 查询队列统计。任一组件检查抛错即 `unhealthy`，组件禁用则 `degraded`。
 
 ### 3.2. 系统资源监控 (`GET /api/monitor/resources`)
 
@@ -98,19 +81,17 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
 
 ### 3.3. Token 趋势数据 (`GET /api/analytics/token-trend`)
 
-**入参**：`range`（Query String，可选）：`7`（默认）/ `30` / `90`
-
 **输出**：
 ```json
 {
   "points": [
-    { "timestamp": "2026-08-01 10:00", "value": 1500 },
-    { "timestamp": "2026-08-01 11:00", "value": 2300 }
+    { "date": "2026-08-02", "tokens": 0 },
+    { "date": "2026-08-16", "tokens": 742 }
   ]
 }
 ```
 
-**粒度**：≤7 天按小时，>7 天按天。
+**数据来源**：按 `usage_date` 聚合 `llm_usage` 表的 `SUM(input_tokens + output_tokens)`，按日期升序返回。
 
 ### 3.4. 模型用量分布 (`GET /api/analytics/model-distribution`)
 
@@ -118,13 +99,13 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
 ```json
 {
   "models": [
-    { "name": "GPT-4o", "tokens": 2500000 },
-    { "name": "Claude-3.5-Sonnet", "tokens": 1200000 }
+    { "model": "deepseek-v4-flash-ga-260731", "tokens": 742 },
+    { "model": "nomic-embed-text-v1.5.Q4_K_M.gguf", "tokens": 0 }
   ]
 }
 ```
 
-取 Top 10 模型。
+**数据来源**：按模型聚合 token 用量（`llm_usage` LEFT JOIN `llm_available` 取模型名，无对应模型时回退为 `llm_available_id`），按 token 降序返回。
 
 ### 3.5. 日志查询 (`GET /api/monitor/logs/query`)
 
@@ -176,7 +157,7 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
 
 ## 4. 表设计
 
-Monitor 模块本身不维护独立数据表。Token 统计使用 `call_history` 表（已有），日志查询使用 `log_record` 表（由 LogProvider 管理）。
+Monitor 模块本身不维护独立数据表。Token 统计使用 `llm_usage` 表（由 LLMProvider 维护，含 `input_tokens`/`output_tokens` 列），日志查询使用 `log_record` 表（由 LogProvider 管理）。
 
 ## 5. 前端页面需求覆盖
 
@@ -198,6 +179,6 @@ Monitor 模块本身不维护独立数据表。Token 统计使用 `call_history`
 1. Monitor Application 不直接操作 Provider，通过现有的 `systemRoutes`（系统资源）、`analyticsRoutes`（Token 统计）和新增的 `monitorRoutes`（健康检查 + 日志查询）实现；
 2. 日志查询依赖 LogProvider 的 SQLite 持久化模式（`write_mode=BOTH`）；
 3. 系统资源数据通过 Node.js `os` 和 `fs` 模块实时获取，不缓存；
-4. Token 统计通过 `call_history` 表的 SQL 聚合查询实现；
-5. 健康检查对 RelationDB 执行 `SELECT 1` 判定连接状态，其他组件暂为静态状态标识；
+4. Token 统计通过 `llm_usage` 表的 SQL 聚合查询实现（`SUM(input_tokens + output_tokens)`）；
+5. 健康检查为真实探测：RelationDB `SELECT 1`、GraphDB/VectorDB/LLM Provider `visualized*(scope='health')`、MCP `soMcp`、MQ `getQueueStats`，不再使用静态状态标识；
 6. 告警逻辑（CPU >90%、ERROR 日志频率等）由前端根据接口返回值自行判断，后端不内置告警阈值。

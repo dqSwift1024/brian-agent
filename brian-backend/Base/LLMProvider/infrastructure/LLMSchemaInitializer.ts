@@ -191,7 +191,9 @@ export class LLMSchemaInitializer {
         "updated"         INTEGER NOT NULL,
         "llm_available_id" TEXT   NOT NULL,
         "usage_date"      TEXT    NOT NULL,
-        "usage_count"     INTEGER NOT NULL DEFAULT 0
+        "usage_count"     INTEGER NOT NULL DEFAULT 0,
+        "input_tokens"    INTEGER NOT NULL DEFAULT 0,
+        "output_tokens"   INTEGER NOT NULL DEFAULT 0
       )
     `);
     try {
@@ -199,6 +201,16 @@ export class LLMSchemaInitializer {
         `ALTER TABLE "${LLM_USAGE_TABLE}" RENAME COLUMN "llm_enable_id" TO "llm_available_id"`,
       );
     } catch { /* already renamed */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE "${LLM_USAGE_TABLE}" ADD COLUMN "input_tokens" INTEGER NOT NULL DEFAULT 0`,
+      );
+    } catch { /* 已存在 input_tokens 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE "${LLM_USAGE_TABLE}" ADD COLUMN "output_tokens" INTEGER NOT NULL DEFAULT 0`,
+      );
+    } catch { /* 已存在 output_tokens 列时忽略 */ }
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${LLM_USAGE_TABLE}_created" ON "${LLM_USAGE_TABLE}" ("created")`,
     );

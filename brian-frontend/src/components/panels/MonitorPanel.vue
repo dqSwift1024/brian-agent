@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watchEffect } from 'vue'
 import { Activity, Cpu, HardDrive, Database, TrendingUp, Layers, RefreshCw, Eye } from '@lucide/vue'
 import { monitorApi } from '@/api'
 import type { SystemHealth } from '@/api/types'
@@ -12,6 +12,9 @@ const logs = ref<{ timestamp: number; level: string; source: string; message: st
 const logLevel = ref('')
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const _loading = ref(false)
+const calendarBox = ref<HTMLElement | null>(null)
+const calendarBoxWidth = ref(0)
+let resizeObserver: ResizeObserver | null = null
 
 async function fetchAll() {
   try { health.value = await monitorApi.health() } catch { /* */ }
@@ -25,7 +28,21 @@ onMounted(() => {
   fetchAll()
   pollTimer.value = setInterval(fetchAll, 10000)
 })
-onUnmounted(() => { if (pollTimer.value) clearInterval(pollTimer.value) })
+onUnmounted(() => {
+  if (pollTimer.value) clearInterval(pollTimer.value)
+  if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
+})
+
+// 步骤1/2/3：当日历容器渲染后（tokenTrend 为空时该容器不渲染），监听其宽度变化，
+// 按「格子宽度(10px) + 间距(3px)」计算可容纳的周数，从而确定日期范围。
+watchEffect(() => {
+  const el = calendarBox.value
+  if (!el || resizeObserver) return
+  resizeObserver = new ResizeObserver((entries) => {
+    for (const e of entries) calendarBoxWidth.value = e.contentRect.width
+  })
+  resizeObserver.observe(el)
+})
 
 const statusColor = (s: string) =>
   s === 'healthy' ? 'text-success-green' : s === 'degraded' ? 'text-warning-orange' : 'text-error-red'
@@ -45,6 +62,70 @@ function formatUptime(seconds: number) {
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   return `${d}d ${h}h ${m}m`
+}
+
+// Token 使用趋势：GitHub 贡献图风格的日历热力图
+const DAY_LABELS = ['一', '', '三', '', '五', '', '日']
+
+// 根据容器宽度动态计算可容纳的周数，填充宽度、避免过多留白
+// 容器宽度 ≈ 标签列(12px) + 间距(3px) + N个格子(10px) + (N-1)个间距(3px) = 12 + 13N
+const calendarWeeks = computed(() => {
+  const w = calendarBoxWidth.value
+  if (!w) return 53
+  return Math.max(26, Math.min(156, Math.floor((w - 12) / 13)))
+})
+
+function formatDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const tokenMap = computed(() => {
+  const m = new Map<string, number>()
+  for (const p of tokenTrend.value) m.set(p.date, p.tokens)
+  return m
+})
+
+const maxDailyTokens = computed(() => Math.max(0, ...tokenTrend.value.map(p => p.tokens)))
+
+const tokenCalendar = computed(() => {
+  const weeks: Array<Array<{ date: string; tokens: number; future: boolean }>> = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const mondayOffset = (today.getDay() + 6) % 7
+  const currentMonday = new Date(today)
+  currentMonday.setDate(today.getDate() - mondayOffset)
+  const totalWeeks = calendarWeeks.value
+  const start = new Date(currentMonday)
+  start.setDate(start.getDate() - (totalWeeks - 1) * 7)
+  for (let w = 0; w < totalWeeks; w++) {
+    const days: Array<{ date: string; tokens: number; future: boolean }> = []
+    for (let d = 0; d < 7; d++) {
+      const dt = new Date(start)
+      dt.setDate(start.getDate() + w * 7 + d)
+      const dateStr = formatDate(dt)
+      days.push({ date: dateStr, tokens: tokenMap.value.get(dateStr) ?? 0, future: dt > today })
+    }
+    weeks.push(days)
+  }
+  return weeks
+})
+
+// 展平为一维数组（周优先 → 天优先），供 grid-flow-col 按列填充
+const flatCalendar = computed(() => tokenCalendar.value.flat())
+
+function tokenCellColor(tokens: number, future: boolean): string {
+  if (future) return 'bg-transparent border border-transparent'
+  const base = 'border border-apple-gray-200 dark:border-apple-gray-600'
+  if (tokens <= 0) return `${base} bg-apple-gray-100 dark:bg-apple-gray-700`
+  const max = maxDailyTokens.value || 1
+  const r = tokens / max
+  if (r < 0.25) return `${base} bg-brian-blue/20`
+  if (r < 0.5) return `${base} bg-brian-blue/40`
+  if (r < 0.75) return `${base} bg-brian-blue/70`
+  return `${base} bg-brian-blue`
 }
 </script>
 
@@ -95,14 +176,30 @@ function formatUptime(seconds: number) {
           <TrendingUp :size="16" class="text-brian-blue" /> Token 使用趋势
         </h3>
         <div v-if="tokenTrend.length === 0" class="text-center py-6 text-apple-gray-400 text-sm">暂无数据</div>
-        <div v-else class="h-40 flex items-end gap-1">
-          <div
-            v-for="(point, i) in tokenTrend.slice(-30)"
-            :key="i"
-            class="flex-1 bg-brian-blue/30 dark:bg-brian-blue/50 rounded-t"
-            :style="{ height: `${(point.tokens / Math.max(...tokenTrend.map(p => p.tokens))) * 100}%` }"
-            :title="`${point.date}: ${point.tokens.toLocaleString()} tokens`"
-          />
+        <div v-else ref="calendarBox">
+          <div class="flex gap-[3px] w-full">
+            <div class="grid grid-rows-7 gap-[3px] w-3 shrink-0">
+              <span v-for="(label, i) in DAY_LABELS" :key="i" class="flex items-center h-2.5 text-[10px] leading-none text-apple-gray-400">{{ label }}</span>
+            </div>
+            <div class="grid grid-rows-7 grid-flow-col gap-[3px]">
+              <div
+                v-for="(day, idx) in flatCalendar"
+                :key="idx"
+                class="w-2.5 h-2.5 rounded-sm"
+                :class="tokenCellColor(day.tokens, day.future)"
+                :title="day.future ? day.date : `${day.date}: ${day.tokens.toLocaleString()} tokens`"
+              />
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-1 mt-2 text-[10px] text-apple-gray-400">
+            <span>少</span>
+            <span class="w-2.5 h-2.5 rounded-sm border border-apple-gray-200 dark:border-apple-gray-600 bg-apple-gray-100 dark:bg-apple-gray-700" />
+            <span class="w-2.5 h-2.5 rounded-sm border border-apple-gray-200 dark:border-apple-gray-600 bg-brian-blue/20" />
+            <span class="w-2.5 h-2.5 rounded-sm border border-apple-gray-200 dark:border-apple-gray-600 bg-brian-blue/40" />
+            <span class="w-2.5 h-2.5 rounded-sm border border-apple-gray-200 dark:border-apple-gray-600 bg-brian-blue/70" />
+            <span class="w-2.5 h-2.5 rounded-sm border border-apple-gray-200 dark:border-apple-gray-600 bg-brian-blue" />
+            <span>多</span>
+          </div>
         </div>
       </div>
 
