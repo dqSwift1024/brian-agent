@@ -5142,39 +5142,37 @@ watch(activeSubSection, async (val) => {
             <Layers :size="28" class="text-apple-gray-400 mb-3" />
             <p class="text-sm text-apple-gray-500">暂无画像维度</p>
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
             <div
               v-for="d in profileDirections" :key="d.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4"
+              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openProfileDirModal(d)"
             >
-              <div class="flex items-start justify-between mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
+              <div class="mb-3">
+                <div class="flex items-center gap-2.5 mb-2">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Layers :size="18" /></div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ d.direction_name }}</h3>
                     <p class="text-[11px] text-apple-gray-400">{{ d.direction_key }}</p>
                   </div>
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="d.enable ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
                 </div>
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="d.enable ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
-              </div>
-              <div class="space-y-1.5 mb-3">
-                <div class="flex justify-between text-xs text-apple-gray-500">
-                  <span>权重: {{ d.weight }}</span>
-                  <span v-if="d.llm_id">LLM: {{ d.llm_id.slice(0, 12) }}...</span>
-                  <span>Temp: {{ d.llm_temperature ?? 0.3 }}</span>
-                  <span>Tokens: {{ d.llm_max_tokens ?? 512 }}</span>
+                <div class="flex items-center gap-2 text-[11px] text-apple-gray-400 mb-1">
+                  <span>权重 {{ d.weight }}</span>
+                  <span v-if="d.prompt_template_id" class="text-brian-blue">· 自定义 Prompt</span>
+                  <span v-if="d.llm_id" class="text-brian-blue">· 自定义 LLM</span>
                 </div>
-                <p v-if="d.prompt_template_id" class="text-xs text-apple-gray-400 truncate" :title="d.prompt_template_id">
-                  Prompt: {{ getPromptTitle(d.prompt_template_id) }}
+                <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="d.direction_description || ''">
+                  {{ d.direction_description || '暂无描述' }}
                 </p>
-                <p class="text-xs text-apple-gray-400 line-clamp-2">{{ d.direction_description || '暂无描述' }}</p>
               </div>
-              <div class="flex items-center justify-end gap-1.5 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="openProfileDirModal(d)"><Pencil :size="11" /> 编辑</button>
-                <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="d.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click="toggleProfileDir(d)">
-                  <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="d.enable ? 'translate-x-4' : ''" />
-                </button>
-                <button class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click="deleteProfileDir(d.direction_key)"><Trash2 :size="11" /> 删除</button>
+              <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+                <div class="flex items-center gap-1">
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="d.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" @click.stop="toggleProfileDir(d)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="d.enable ? 'translate-x-4' : ''" />
+                  </button>
+                  <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-error-red hover:bg-error-red/10 transition-colors" @click.stop="deleteProfileDir(d.direction_key)"><Trash2 :size="11" /> 删除</button>
+                </div>
               </div>
             </div>
           </div>

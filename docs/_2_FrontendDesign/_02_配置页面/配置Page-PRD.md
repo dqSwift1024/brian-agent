@@ -631,6 +631,8 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 | 画像保留版本数 | INT | 20 | 保留最近 N 个版本的画像 |
 | 最小置信度阈值 | DOUBLE | 0.5 | 低于此置信度的画像维度不被采纳 |
 
+> **画像维度**：用户画像下的「画像维度」子页面为实体管理视图，管理画像分析维度（direction_key / direction_name / description / weight / enable / prompt_template_id / llm_temperature / llm_max_tokens / llm_id）。维度卡片采用与参数卡片一致的紧凑网格（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`、`aspect-[3/2]`），点击卡片打开编辑弹窗，卡片底部提供启停开关与删除按钮。
+
 ### 9.4 可视化应用
 
 | 参数 | 类型 | 默认值 | 说明 |
@@ -647,7 +649,7 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 
 | 交互模式 | 适用场景 | 界面形态 |
 |----------|----------|----------|
-| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy | 卡片网格/列表 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作；Agent 与执行策略以卡片网格展示 |
+| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy、画像维度 | 卡片网格/列表 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作；Agent 与执行策略以卡片网格展示 |
 | **参数配置** | 上述各功能域的运行参数 | 竖条卡片网格（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`），卡片为 `aspect-[3/2]`，每张卡片直接显示控件（Switch/Select/Input）与底部「确认」按钮，点击确认保存 |
 
 ### 10.2 引用类型配置项的处理
