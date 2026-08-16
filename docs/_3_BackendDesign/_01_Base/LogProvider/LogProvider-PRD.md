@@ -195,7 +195,9 @@ await logAccess.enableLog(
 | ------ | ---- | ---- |
 | level | STRING | 日志级别（DEBUG/INFO/WARN/ERROR） |
 | source | STRING | 日志来源模块（模糊匹配） |
-| keyword | STRING | 关键词（匹配 message 字段） |
+| keyword | STRING | 关键词（匹配 message 字段，SQL LIKE） |
+| trace_id | STRING | 请求追踪 ID（模糊匹配） |
+| log_source | STRING | 消息来源类型（AOP/MANUAL/SYSTEM，匹配 metadata.log_source） |
 | start_time | INT | 起始时间（毫秒时间戳） |
 | end_time | INT | 结束时间（毫秒时间戳） |
 | page | INT | 页码，默认 1 |

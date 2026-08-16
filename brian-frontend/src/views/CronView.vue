@@ -112,13 +112,15 @@ onMounted(loadTasks)
   <div class="min-h-screen relative">
     <NeuralBackground />
     <Header />
-    <div class="pt-14 px-5 py-2.5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md relative z-10 flex items-center justify-between">
-      <PageBreadcrumb :path="['定时任务']" />
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-apple-gray-400">{{ runningCount }}/{{ tasks.length }} 启用</span>
-        <button class="icon-btn" title="刷新" @click="loadTasks">
-          <RefreshCw :size="16" :class="loading ? 'animate-spin' : ''" />
-        </button>
+    <div class="pt-14 relative z-10">
+      <div class="h-10 flex items-center justify-between px-5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
+        <PageBreadcrumb :path="['定时任务']" />
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-apple-gray-400">{{ runningCount }}/{{ tasks.length }} 启用</span>
+          <button class="icon-btn" title="刷新" @click="loadTasks">
+            <RefreshCw :size="16" :class="loading ? 'animate-spin' : ''" />
+          </button>
+        </div>
       </div>
     </div>
 

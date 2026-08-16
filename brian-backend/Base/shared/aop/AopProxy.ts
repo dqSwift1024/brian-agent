@@ -267,17 +267,20 @@ export class AopProxy {
     return {
       beforeExecute(ctx: InterceptContext): void {
         logger.debug(`${ctx.methodName} invoke`, {
+          source: ctx.targetName,
           args: AopProxy.summarizeValue(ctx.input),
         });
       },
       afterExecute(ctx: InterceptContext, error?: Error): void {
         if (error) {
           logger.error(`${ctx.methodName} failed`, {
+            source: ctx.targetName,
             elapsed_ms: ctx.elapsedMs,
             error: error.message,
           });
         } else {
           logger.debug(`${ctx.methodName} done`, {
+            source: ctx.targetName,
             elapsed_ms: ctx.elapsedMs,
           });
         }

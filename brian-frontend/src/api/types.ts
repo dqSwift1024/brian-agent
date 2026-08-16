@@ -222,7 +222,7 @@ export interface LearningProgress {
 
 export interface SystemHealth {
   status: 'healthy' | 'degraded' | 'unhealthy'
-  components: { name: string; status: string; message?: string }[]
+  components: { name: string; status: string; message?: string; details?: Record<string, string | number> }[]
   uptime: number
 }
 

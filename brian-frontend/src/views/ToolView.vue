@@ -129,8 +129,10 @@ async function runRegex() {
   <div class="min-h-screen relative">
     <NeuralBackground />
     <Header />
-    <div class="pt-14 px-5 py-2.5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md relative z-10">
-      <PageBreadcrumb :path="['工具']" />
+    <div class="pt-14 relative z-10">
+      <div class="h-10 flex items-center px-5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
+        <PageBreadcrumb :path="['工具']" />
+      </div>
     </div>
     <div class="px-6 pb-6 min-h-screen relative z-10">
       <div class="flex items-center gap-1 mb-6 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">

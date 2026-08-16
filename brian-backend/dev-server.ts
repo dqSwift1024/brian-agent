@@ -149,8 +149,39 @@ let _seq = 0;
 const DATA_DIR = process.env.BRIAN_DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-function createLogger(): any {
-  return { debug: (..._a: any[]) => {}, info: (..._a: any[]) => {}, warn: (..._a: any[]) => {}, error: (..._a: any[]) => {} };
+function createLogger(logAccess?: LogAccess): any {
+  if (!logAccess) {
+    return { debug: (..._a: any[]) => {}, info: (..._a: any[]) => {}, warn: (..._a: any[]) => {}, error: (..._a: any[]) => {} };
+  }
+  const rawService = logAccess.getRawService();
+  const write = (level: string, message: string, meta?: unknown) => {
+    let source = 'system';
+    let metadata: Record<string, unknown> | undefined;
+    let elapsed: number | undefined;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+      const m = meta as Record<string, unknown>;
+      if (typeof m.source === 'string') source = m.source;
+      if (typeof m.elapsed_ms === 'number') elapsed = m.elapsed_ms;
+      metadata = { ...m, log_source: 'AOP' };
+    } else if (meta !== undefined && meta !== null) {
+      metadata = { detail: meta, log_source: 'SYSTEM' };
+    } else {
+      metadata = { log_source: 'SYSTEM' };
+    }
+    try {
+      rawService.addLog(
+        { data: { level, source, message, metadata, elapsed_ms: elapsed } },
+        {} as any,
+        {} as any,
+      ).catch(() => {});
+    } catch { /* ignore */ }
+  };
+  return {
+    debug: (message: string, meta?: unknown) => write('DEBUG', message, meta),
+    info: (message: string, meta?: unknown) => write('INFO', message, meta),
+    warn: (message: string, meta?: unknown) => write('WARN', message, meta),
+    error: (message: string, meta?: unknown) => write('ERROR', message, meta),
+  };
 }
 
 function addColIfMissing(relationDb: any, table: string, column: string, type: string): void {
@@ -176,11 +207,14 @@ function readVectorDimension(relationDb: any): number {
 }
 
 async function buildContext() {
-  const logger = createLogger();
-
   // ---- Base Providers ----
   const relationDb = new RelationDBAccess({ dbPath: path.join(DATA_DIR, 'brian.db'), wal: true, autoCreateConfigTable: true });
   await relationDb.initialize();
+
+  // LogProvider 需先于其他 Provider 创建，供 logger 落库（AOP 切面日志写入 log_record）
+  const logAccess = new LogAccess(relationDb, createLogger());
+  await logAccess.initialize();
+  const logger = createLogger(logAccess);
 
   const llmAccess = new LLMAccess(relationDb, logger);
   await llmAccess.initialize();
@@ -212,9 +246,6 @@ async function buildContext() {
 
   const mqAccess = new MQAccess(relationDb, logger);
   await mqAccess.initialize();
-
-  const logAccess = new LogAccess(relationDb, logger);
-  await logAccess.initialize();
 
   // VectorDB with LanceDB backend（维度不在此硬编码，改为下方从 SQLite info_vector_config 读取）
   const vectorDBAccess = new VectorDBAccess(relationDb, {
@@ -1995,13 +2026,24 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
       // ===== Monitor Routes =====
       } else if (method === 'GET' && pathname === '/api/monitor/health-all') {
-        const components: Array<{ name: string; status: string; message?: string }> = [];
+        const components: Array<{ name: string; status: string; message?: string; details?: Record<string, string | number> }> = [];
 
         // RelationDB
         try {
           const start = Date.now();
           ctx.relationDb.queryRaw('SELECT 1');
-          components.push({ name: 'RelationDB', status: 'healthy', message: `${Date.now() - start}ms` });
+          const tables = ctx.relationDb.queryRaw<{ name: string }>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+          );
+          let recordCount = 0;
+          for (const t of tables) {
+            const c = ctx.relationDb.queryRaw<{ c: number }>(`SELECT COUNT(*) AS "c" FROM "${t.name}"`)[0];
+            recordCount += Number(c?.c) || 0;
+          }
+          components.push({
+            name: 'RelationDB', status: 'healthy', message: `${Date.now() - start}ms`,
+            details: { '数据表': tables.length, '记录总数': recordCount },
+          });
         } catch (e: any) {
           components.push({ name: 'RelationDB', status: 'unhealthy', message: e?.message || '连接失败' });
         }
@@ -2012,10 +2054,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const o = new VisualizedGraphOutput();
           await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'health' }), new GraphContext(), o);
           const d = o.data || {};
+          const vo = new VisualizedGraphOutput();
+          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'volume' }), new GraphContext(), vo);
+          const vd = vo.data || {};
           components.push({
             name: 'GraphDB',
             status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
             message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+            details: { '节点': Number(vd.total_nodes) || 0, '边': Number(vd.total_edges) || 0 },
           });
         } catch (e: any) {
           components.push({ name: 'GraphDB', status: 'unhealthy', message: e?.message || '连接失败' });
@@ -2027,10 +2073,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const o = new VisualizedVectorOutput();
           await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'health' }), new VectorContext(), o);
           const d = o.data || {};
+          const vo = new VisualizedVectorOutput();
+          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'volume' }), new VectorContext(), vo);
+          const vd = vo.data || {};
           components.push({
             name: 'VectorDB',
             status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
             message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+            details: { '向量': Number(vd.total_vectors) || 0, '维度': Number(vd.dimension) || 0 },
           });
         } catch (e: any) {
           components.push({ name: 'VectorDB', status: 'unhealthy', message: e?.message || '连接失败' });
@@ -2046,6 +2096,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             name: 'LLM Provider',
             status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
             message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
+            details: { '提供商': Number(d.provider_count) || 0, '启用模型': Number(d.enabled_llm_count) || 0 },
           });
         } catch (e: any) {
           components.push({ name: 'LLM Provider', status: 'unhealthy', message: e?.message || '连接失败' });
@@ -2055,7 +2106,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const o = new SoMcpOutput();
           await ctx.mcpAccess.soMcp(new SoMcpInput(), new McpContext(), o);
-          components.push({ name: 'MCP', status: 'healthy', message: `${o.total ?? 0} 个实例` });
+          components.push({ name: 'MCP', status: 'healthy', message: `${o.total ?? 0} 个实例`, details: { '实例': o.total ?? 0 } });
         } catch (e: any) {
           components.push({ name: 'MCP', status: 'unhealthy', message: e?.message || '连接失败' });
         }
@@ -2064,7 +2115,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const o = new GetQueueStatsOutput();
           await ctx.mqAccess.getQueueStats(new GetQueueStatsInput(), new MQContext(), o);
-          components.push({ name: 'MQ', status: 'healthy', message: `${o.stats?.total ?? 0} 条消息` });
+          const s = o.stats || {};
+          components.push({
+            name: 'MQ', status: 'healthy', message: `${s.total ?? 0} 条消息`,
+            details: { '待处理': s.pending ?? 0, '处理中': s.processing ?? 0, '完成': s.completed ?? 0, '失败': s.failed ?? 0 },
+          });
         } catch (e: any) {
           components.push({ name: 'MQ', status: 'unhealthy', message: e?.message || '连接失败' });
         }
@@ -2087,17 +2142,42 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { points: (rows || []).map(r => ({ date: r.date, tokens: Number(r.tokens) || 0 })) });
 
       } else if (method === 'GET' && pathname === '/api/analytics/model-distribution') {
-        // 按模型聚合 token 用量（关联 llm_available 取模型名）
-        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number }>(
-          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
+        // 按模型聚合 token 用量（关联 llm_available 取模型名与类型，模型已删除时标记 deleted）
+        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number; deleted: number; type: string }>(
+          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", COALESCE(e."llm_type", \'deleted\') AS "type", (e."llm_title" IS NULL) AS "deleted", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
           [],
         );
-        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, tokens: Number(r.tokens) || 0 })) });
+        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, type: r.type || 'deleted', tokens: Number(r.tokens) || 0, deleted: !!r.deleted })) });
 
       } else if (method === 'GET' && pathname === '/api/monitor/logs/query') {
-        sendJson(res, 200, { entries: [
-          { timestamp: Date.now(), level: 'INFO', source: 'system', message: 'Server started successfully' },
-        ]});
+        const level = params.get('level') || undefined;
+        const source = params.get('source') || undefined;
+        const keyword = params.get('keyword') || undefined;
+        const traceId = params.get('trace_id') || undefined;
+        const logSource = params.get('log_source') || undefined;
+        const startTime = params.get('start_time') ? Number(params.get('start_time')) : undefined;
+        const endTime = params.get('end_time') ? Number(params.get('end_time')) : undefined;
+        const page = params.get('page') ? Number(params.get('page')) : 1;
+        const pageSize = params.get('pageSize') ? Number(params.get('pageSize')) : (params.get('limit') ? Number(params.get('limit')) : 50);
+        try {
+          const result = await ctx.logAccess.queryLogs({ level, source, keyword, trace_id: traceId, log_source: logSource, start_time: startTime, end_time: endTime, page, pageSize });
+          sendJson(res, 200, {
+            entries: (result.logs || []).map(l => ({
+              id: l.id,
+              timestamp: l.created,
+              level: String(l.level).toLowerCase(),
+              source: l.source,
+              message: l.message,
+              trace_id: l.trace_id || '',
+              caller: l.caller || '',
+            })),
+            total: result.total,
+            page,
+            pageSize,
+          });
+        } catch (e: any) {
+          sendJson(res, 500, { error: e?.message || '日志查询失败' });
+        }
 
       } else if (method === 'GET' && pathname === '/api/config/work') {
         sendJson(res, 200, []);

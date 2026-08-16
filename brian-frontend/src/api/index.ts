@@ -219,11 +219,21 @@ export const monitorApi = {
   health: () => request<SystemHealth>('/monitor/health-all'),
   resources: () => request<{ cpu: number; memory: number; disk: number }>('/monitor/resources'),
   tokenTrend: () => request<{ points: { date: string; tokens: number }[] }>('/analytics/token-trend').then(r => r.points),
-  modelDistribution: () => request<{ models: { model: string; tokens: number }[] }>('/analytics/model-distribution').then(r => r.models),
-  logs: (level?: string, limit = 100) =>
-    request<{ entries: { timestamp: number; level: string; source: string; message: string }[] }>(
-      `/monitor/logs/query?${level ? `level=${level}&` : ''}limit=${limit}`
-    ).then(r => r.entries),
+  modelDistribution: () => request<{ models: { model: string; tokens: number; deleted?: boolean; type?: string }[] }>('/analytics/model-distribution').then(r => r.models),
+  logs: (params?: { level?: string; keyword?: string; trace_id?: string; source?: string; log_source?: string; start_time?: number; end_time?: number; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.level) q.set('level', params.level)
+    if (params?.keyword) q.set('keyword', params.keyword)
+    if (params?.trace_id) q.set('trace_id', params.trace_id)
+    if (params?.source) q.set('source', params.source)
+    if (params?.log_source) q.set('log_source', params.log_source)
+    if (params?.start_time) q.set('start_time', String(params.start_time))
+    if (params?.end_time) q.set('end_time', String(params.end_time))
+    q.set('limit', String(params?.limit ?? 100))
+    return request<{ entries: { id: string; timestamp: number; level: string; source: string; message: string; trace_id?: string; caller?: string }[] }>(
+      `/monitor/logs/query?${q.toString()}`
+    ).then(r => r.entries)
+  },
 }
 
 export const feedbackApi = {

@@ -84,6 +84,7 @@ export class LogAccess {
   }
   async queryLogs(options: {
     level?: string; source?: string; keyword?: string;
+    trace_id?: string; log_source?: string;
     start_time?: number; end_time?: number;
     page?: number; pageSize?: number;
   }) {

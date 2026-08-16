@@ -720,6 +720,8 @@ export class LogService {
     level?: string;
     source?: string;
     keyword?: string;
+    trace_id?: string;
+    log_source?: string;
     start_time?: number;
     end_time?: number;
     page?: number;
@@ -732,6 +734,15 @@ export class LogService {
     }
     if (options.source) {
       conditions.push({ field: 'source', operator: Operator.LIKE, value: `%${options.source}%` });
+    }
+    if (options.keyword) {
+      conditions.push({ field: 'message', operator: Operator.LIKE, value: `%${options.keyword}%` });
+    }
+    if (options.trace_id) {
+      conditions.push({ field: 'trace_id', operator: Operator.LIKE, value: `%${options.trace_id}%` });
+    }
+    if (options.log_source) {
+      conditions.push({ field: 'metadata', operator: Operator.LIKE, value: `%"log_source":"${options.log_source}"%` });
     }
     if (options.start_time !== undefined) {
       conditions.push({ field: 'created', operator: Operator.GE, value: options.start_time });
@@ -766,10 +777,6 @@ export class LogService {
       metadata: r.metadata ? (() => { try { return JSON.parse(String(r.metadata)) as Record<string, unknown>; } catch { return undefined; } })() : undefined,
       elapsed_ms: r.elapsed_ms ? Number(r.elapsed_ms) : undefined,
     }));
-
-    if (options.keyword) {
-      logs = logs.filter(l => l.message.includes(options.keyword!));
-    }
 
     return { logs, total };
   }

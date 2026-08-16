@@ -36,19 +36,34 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
   "status": "healthy",
   "uptime": 1234,
   "components": [
-    { "name": "RelationDB", "status": "healthy", "message": "0ms" },
-    { "name": "GraphDB", "status": "healthy", "message": "2ms" },
-    { "name": "VectorDB", "status": "healthy", "message": "1ms" },
-    { "name": "LLM Provider", "status": "healthy", "message": "0ms" },
-    { "name": "MCP", "status": "healthy", "message": "1 个实例" },
-    { "name": "MQ", "status": "healthy", "message": "0 条消息" }
+    {
+      "name": "RelationDB", "status": "healthy", "message": "0ms",
+      "details": { "数据表": 114, "记录总数": 2989 }
+    },
+    {
+      "name": "GraphDB", "status": "healthy", "message": "2ms",
+      "details": { "节点": 0, "边": 0 }
+    },
+    {
+      "name": "VectorDB", "status": "healthy", "message": "1ms",
+      "details": { "向量": 0, "维度": 768 }
+    },
+    {
+      "name": "LLM Provider", "status": "healthy", "message": "0ms",
+      "details": { "提供商": 14, "启用模型": 2 }
+    },
+    { "name": "MCP", "status": "healthy", "message": "1 个实例", "details": { "实例": 1 } },
+    {
+      "name": "MQ", "status": "healthy", "message": "0 条消息",
+      "details": { "待处理": 0, "处理中": 0, "完成": 0, "失败": 0 }
+    }
   ]
 }
 ```
 
 **状态取值**：顶层 `status` 与组件 `status` 均为 `healthy`（绿色）/ `degraded`（黄色）/ `unhealthy`（红色）。`uptime` 为服务运行秒数（`process.uptime()`）。
 
-**检查方式**：RelationDB 执行 `SELECT 1`；GraphDB/VectorDB/LLM Provider 调用各自 `visualized*(scope='health')` 探测连接；MCP 调用 `soMcp` 查询实例数；MQ 调用 `getQueueStats` 查询队列统计。任一组件检查抛错即 `unhealthy`，组件禁用则 `degraded`。
+**检查方式**：RelationDB 执行 `SELECT 1` 并统计数据表数/记录总数；GraphDB/VectorDB/LLM Provider 调用各自 `visualized*(scope='health')` 探测连接，再调用 `visualized*(scope='volume')` 统计数据量；MCP 调用 `soMcp` 查询实例数；MQ 调用 `getQueueStats` 查询队列统计。任一组件检查抛错即 `unhealthy`，组件禁用则 `degraded`。
 
 ### 3.2. 系统资源监控 (`GET /api/monitor/resources`)
 
@@ -99,36 +114,39 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
 ```json
 {
   "models": [
-    { "model": "deepseek-v4-flash-ga-260731", "tokens": 742 },
-    { "model": "nomic-embed-text-v1.5.Q4_K_M.gguf", "tokens": 0 }
+    { "model": "deepseek-v4-flash-ga-260731", "type": "text", "tokens": 742, "deleted": false },
+    { "model": "nomic-embed-text-v1.5.Q4_K_M.gguf", "type": "embedding", "tokens": 0, "deleted": false }
   ]
 }
 ```
 
-**数据来源**：按模型聚合 token 用量（`llm_usage` LEFT JOIN `llm_available` 取模型名，无对应模型时回退为 `llm_available_id`），按 token 降序返回。
+**数据来源**：按模型聚合 token 用量（`llm_usage` LEFT JOIN `llm_available` 取模型名与类型，无对应模型时 `model` 回退为 `llm_available_id`、`type` 回退为 `deleted`），按 token 降序返回。`type` 取值为 text / vision / embedding / deleted。
 
 ### 3.5. 日志查询 (`GET /api/monitor/logs/query`)
 
 **入参**（Query String）：
 - `level`（STRING，可选）：日志级别（DEBUG / INFO / WARN / ERROR）
-- `source`（STRING，可选）：日志来源模块
-- `keyword`（STRING，可选）：关键词搜索（匹配 message）
+- `source`（STRING，可选）：日志来源模块（LIKE 匹配）
+- `keyword`（STRING，可选）：关键词搜索（匹配 message，SQL LIKE）
+- `trace_id`（STRING，可选）：按请求追踪 ID 搜索（LIKE 匹配）
+- `log_source`（STRING，可选）：消息来源类型（AOP / MANUAL / SYSTEM，匹配 metadata.log_source）
 - `start_time`（INT，可选）：起始时间（毫秒时间戳）
 - `end_time`（INT，可选）：结束时间（毫秒时间戳）
 - `page`（INT，可选）：页码，默认 1
-- `pageSize`（INT，可选）：每页条数，默认 50
+- `pageSize` / `limit`（INT，可选）：每页条数，默认 50
 
 **输出**：
 ```json
 {
-  "logs": [
+  "entries": [
     {
       "id": "log-uuid",
       "timestamp": 1234567890000,
-      "level": "ERROR",
-      "source": "ChatService",
-      "message": "LLM call failed",
-      "stackTrace": "Error: ...\n    at ..."
+      "level": "error",
+      "source": "LLMService",
+      "message": "soLLM done",
+      "trace_id": "",
+      "caller": ""
     }
   ],
   "total": 5000,
