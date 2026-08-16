@@ -17,6 +17,7 @@ import {
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
+import CronConfigModal from '@/components/CronConfigModal.vue'
 import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi } from '@/api'
 import type { VectorSearchInfo } from '@/api'
 import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
@@ -825,6 +826,10 @@ function isTimeConfig(key: string): boolean {
     || SECONDS_SUFFIXES.some((s) => key.endsWith(s))
 }
 
+function isCronConfig(key: string): boolean {
+  return key.endsWith('_cron')
+}
+
 function isSecondsConfig(key: string): boolean {
   return SECONDS_SUFFIXES.some((s) => key.endsWith(s))
 }
@@ -1039,9 +1044,37 @@ function enumLabel(configKey: string, value: string): string {
 }
 
 function startEditParam(item: ParamItem) {
+  if (isCronConfig(item.config_key)) {
+    editingCronItem.value = item
+    cronModalVisible.value = true
+    return
+  }
   editingParam.value = item
   const val = getConfigPrimitiveValue(item)
   editingParamValue.value = val !== undefined && val !== null ? String(val) : ''
+}
+
+// Cron 定时时间弹窗
+const cronModalVisible = ref(false)
+const editingCronItem = ref<ParamItem | null>(null)
+
+function getCronExpression(item: ParamItem): string {
+  const val = getConfigPrimitiveValue(item)
+  return val !== undefined && val !== null ? String(val) : ''
+}
+
+async function saveCronConfig(cron: string) {
+  if (!editingCronItem.value) return
+  try {
+    await configApi.configItem.update(editingCronItem.value.config_key, cron)
+    showToast('配置已保存', 'success')
+    await loadConfigTree()
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '保存失败')
+  } finally {
+    cronModalVisible.value = false
+    editingCronItem.value = null
+  }
 }
 
 function cancelEditParam() {
@@ -3935,6 +3968,15 @@ watch(activeSubSection, async (val) => {
                         >
                           <option v-for="v in item.config_enum_values" :key="String(v)" :value="String(v)">{{ enumLabel(item.config_key, String(v)) }}</option>
                         </select>
+                        <button
+                          v-else-if="isCronConfig(item.config_key)"
+                          class="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-apple-gray-200 dark:border-apple-gray-600 bg-transparent font-mono text-xs text-apple-gray-700 dark:text-apple-gray-300 hover:border-brian-blue/40 transition-colors"
+                          :disabled="item.writable === false"
+                          @click="startEditParam(item)"
+                        >
+                          <span class="truncate">{{ cardValues[item.config_key] || '配置定时时间' }}</span>
+                          <Clock :size="13" class="text-brian-blue shrink-0" />
+                        </button>
                         <input
                           v-else
                           v-model="cardValues[item.config_key]"
@@ -5873,6 +5915,13 @@ watch(activeSubSection, async (val) => {
         </div>
       </div>
     </Transition>
+
+    <CronConfigModal
+      :visible="cronModalVisible"
+      :expression="editingCronItem ? getCronExpression(editingCronItem) : ''"
+      @close="cronModalVisible = false; editingCronItem = null"
+      @save="saveCronConfig"
+    />
   </div>
 </template>
 

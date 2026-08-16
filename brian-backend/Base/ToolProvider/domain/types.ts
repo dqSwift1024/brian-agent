@@ -38,3 +38,44 @@ export interface ToolRegexResult {
   /** 捕获组（仅非全局匹配时返回） */
   groups?: Array<Record<string, string>>;
 }
+
+/** Cron 字段对象（秒/分/时/日/月/周） */
+export interface CronFields {
+  second: string;
+  minute: string;
+  hour: string;
+  day: string;
+  month: string;
+  week: string;
+}
+
+/** Cron 校验结果 */
+export interface ToolCronCheckResult {
+  valid: boolean;
+  error: string;
+  /** 归一化后的 6 字段表达式 */
+  normalized: string;
+}
+
+/** Cron 生成结果 */
+export interface ToolCronGenerateResult {
+  valid: boolean;
+  error: string;
+  /** 生成的 6 字段表达式 */
+  expression: string;
+}
+
+/** Cron 解析结果 */
+export interface ToolCronParseResult {
+  valid: boolean;
+  error: string;
+  fields: CronFields | null;
+}
+
+/** Cron 下次执行时间结果 */
+export interface ToolCronNextResult {
+  valid: boolean;
+  error: string;
+  /** 下次执行时间戳（毫秒），无匹配为 null */
+  next_time: number | null;
+}

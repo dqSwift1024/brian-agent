@@ -486,18 +486,8 @@ export class SelfLearningService {
       });
     }, tagConnMs);
 
-    const twentyFourHrs = 24 * 60 * 60 * 1000;
-    this.tagAgingTimer = setInterval(() => {
-      this.startTagAging().catch((err) => {
-        this.logger?.error?.('Tag aging error', { error: err instanceof Error ? err.message : String(err) });
-      });
-    }, twentyFourHrs);
-
-    this.orphanTagTimer = setInterval(() => {
-      this.startOrphanTagCheck().catch((err) => {
-        this.logger?.error?.('Orphan tag check error', { error: err instanceof Error ? err.message : String(err) });
-      });
-    }, twentyFourHrs);
+    // 标签老化与孤立标签检查已改为 CronProvider 定时调度（cron_task：tag_aging / orphan_tag_check），
+    // 不再使用硬编码 24 小时间隔定时器。
 
     await this.startTagConnectionEstablishment();
     await this.startTagActivation();

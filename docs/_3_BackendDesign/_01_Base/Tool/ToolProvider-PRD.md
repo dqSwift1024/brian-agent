@@ -77,6 +77,10 @@ import { ToolAccess, IdGenerator, JsonParser, XmlParser } from '@brian-agent/bas
 | `xmlFormat(text, indent)` | `ToolTransformResult` | XML 格式化 |
 | `xmlMinify(text)` | `ToolTransformResult` | XML 压缩 |
 | `regexMatch(pattern, text, flags)` | `ToolRegexResult` | 正则匹配 |
+| `cronCheck(expr)` | `ToolCronCheckResult` | cron 表达式校验 |
+| `cronGenerate(fields)` | `ToolCronGenerateResult` | 由秒/分/时/日/月/周字段生成表达式 |
+| `cronParse(expr)` | `ToolCronParseResult` | 解析表达式为字段 |
+| `cronNext(expr, fromMs)` | `ToolCronNextResult` | 计算下次执行时间 |
 
 ## 4. HTTP 路由
 
@@ -90,6 +94,10 @@ import { ToolAccess, IdGenerator, JsonParser, XmlParser } from '@brian-agent/bas
 | POST | `/api/tool/xml/format` | `{ text, indent }` | XML 格式化 |
 | POST | `/api/tool/xml/minify` | `{ text }` | XML 压缩 |
 | POST | `/api/tool/regex` | `{ pattern, text, flags }` | 正则匹配 |
+| POST | `/api/tool/cron/check` | `{ expression }` | cron 校验 |
+| POST | `/api/tool/cron/generate` | `{ second, minute, hour, day, month, week }` | 由字段生成 cron |
+| POST | `/api/tool/cron/parse` | `{ expression }` | 解析 cron 为字段 |
+| POST | `/api/tool/cron/next` | `{ expression, from_ms }` | 计算下次执行时间 |
 
 ## 5. 使用规范
 

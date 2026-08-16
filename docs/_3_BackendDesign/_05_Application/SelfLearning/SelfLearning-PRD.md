@@ -614,17 +614,17 @@ SelfLearning 模块的配置通过 Config Application 统一管理（`/api/confi
 
 | 配置项 | config_key | 类型 | 默认值 | 说明 |
 |--------|-----------|------|--------|------|
-| random_factor | `self_learning.random_factor` | INT | 10 | 随机触发因子（0-100） |
-| document_weight | `self_learning.document_weight` | INT | 40 | 文档学习权重 |
-| conversation_weight | `self_learning.conversation_weight` | INT | 30 | 对话学习权重 |
-| tag_maintenance_weight | `self_learning.tag_maintenance_weight` | INT | 30 | Tag 图维护权重 |
-| learning_interval_ms | `self_learning.learning_interval_ms` | INT | 600000 | 学习检查间隔（ms） |
-| default_learning_rate | `self_learning.default_learning_rate` | INT | 5 | 默认学习速率 |
-| tag_connection_check_interval_ms | `self_learning.tag_connection_check_interval_ms` | INT | 1800000 | Tag 连接检查间隔（ms） |
-| tag_aging_cron | `self_learning.tag_aging_cron` | STRING | "0 0 2 * * *" | Tag 老化 cron 表达式 |
-| orphan_tag_check_cron | `self_learning.orphan_tag_check_cron` | STRING | "0 0 3 * * *" | 孤立 Tag 检测 cron |
-| document_split_threshold | `self_learning.document_split_threshold` | INT | 5000 | 文档拆分阈值（字符数） |
-| chunk_overlap_ratio | `self_learning.chunk_overlap_ratio` | DOUBLE | 0.2 | 分块重叠比例（0-1） |
+| random_factor | `self_learning.random_factor` | INT | 10 | 随机触发学习因子（0-100）：每次学习检查生成随机数，小于该值时触发一次学习 |
+| document_weight | `self_learning.document_weight` | INT | 40 | 文档学习权重：随机触发时按各权重比例选择学习模式 |
+| conversation_weight | `self_learning.conversation_weight` | INT | 30 | 对话学习权重：随机触发时按各权重比例选择学习模式 |
+| tag_maintenance_weight | `self_learning.tag_maintenance_weight` | INT | 30 | 标签图维护权重：随机触发时按各权重比例选择学习模式 |
+| learning_interval_ms | `self_learning.learning_interval_ms` | INT | 600000 | 自学习任务调度间隔时间 |
+| default_learning_rate | `self_learning.default_learning_rate` | INT | 5 | 每次文档学习 tick 中每个知识库最多处理的 PENDING 文件数。知识库级别 learning_rate 优先 |
+| tag_connection_check_interval_ms | `self_learning.tag_connection_check_interval_ms` | INT | 1800000 | 标签关联关系检查间隔时间 |
+| document_split_threshold | `self_learning.document_split_threshold` | INT | 5000 | 文档内容长度超过此值时触发 ChunkProvider 分块 |
+| chunk_overlap_ratio | `self_learning.chunk_overlap_ratio` | DOUBLE | 0.2 | ChunkProvider 分块时相邻块的文本重叠比例，取值 0-1 |
+
+> **说明**：`tag_aging_cron` 与 `orphan_tag_check_cron` 已交由 CronProvider 统一调度（对应任务 `tag_aging` / `orphan_tag_check`）。这两个 config_key 在配置中心仍可见（读写路由到 CronProvider），与定时任务展示页面保持同一时间源。标签老化与孤立标签检查不再由 SelfLearning 内部硬编码 24 小时间隔调度。
 
 **处理流程**：
 
@@ -642,7 +642,7 @@ SelfLearning 模块的配置通过 Config Application 统一管理（`/api/confi
 5. Tag 图维护是核心学习方向，包含三个子任务：相似性连接建立（graphTag）、连接激活（activateGraphEdge）、连接老化（ageGraphEdge），三者协同工作维持 Tag 图的动态平衡；
 6. Tag 连接老化是动态可逆的——被老化的边在后续被激活后会自动恢复为活跃状态；
 7. 学习速率控制：通过 MQ 消费速率和 learning_rate 配置避免短时间内大量调用 LLM 造成成本过高；
-8. 内置学习任务不可删除，但可以通过配置 cron 表达式调整执行频率；
+8. 内置学习任务不可删除，但可以通过 CronProvider 调整定时时间（cron 表达式）；
 9. **用户画像生成调度归口 UserProfile Application**：SelfLearning 不维护独立的 USER_PROFILE 定时任务；
 10. 配置管理委托 Config Application：SelfLearning 不对前端暴露独立配置端点，对内保留 configSelfLearning 供 Config Application 代理；
 11. 所有外部资源访问必须通过对应的 Provider/Access 层，禁止绕过；

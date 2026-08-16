@@ -405,4 +405,78 @@ export const toolApi = {
     request<ToolRegexResult>('/tool/regex', { method: 'POST', body: JSON.stringify({ pattern, text, flags }) }),
 }
 
+// ============================================================
+// Cron 定时任务
+// ============================================================
+
+export interface CronTask {
+  id: string;
+  name: string;
+  description: string;
+  cron: string;
+  enabled: number;
+  last_run: number;
+  next_run: number;
+  created: number;
+  updated: number;
+}
+
+export interface CronTaskRun {
+  id: string;
+  task_id: string;
+  task_name: string;
+  started_at: number;
+  finished_at: number;
+  status: string;
+  result: string;
+  error: string;
+  created: number;
+}
+
+export interface CronFields {
+  second: string;
+  minute: string;
+  hour: string;
+  day: string;
+  month: string;
+  week: string;
+}
+
+export const cronApi = {
+  tasks: () => request<{ tasks: CronTask[] }>('/cron/tasks').then(r => r.tasks),
+  task: (name: string) =>
+    request<{ task: CronTask | null }>(`/cron/tasks/${encodeURIComponent(name)}`).then(r => r.task),
+  setCron: (name: string, cron: string) =>
+    request<{ task: CronTask | null }>(`/cron/tasks/${encodeURIComponent(name)}`, {
+      method: 'PUT', body: JSON.stringify({ cron }),
+    }).then(r => r.task),
+  setEnabled: (name: string, enabled: boolean) =>
+    request<{ task: CronTask | null }>(`/cron/tasks/${encodeURIComponent(name)}/enabled`, {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    }).then(r => r.task),
+  trigger: (name: string) =>
+    request<{ run: CronTaskRun | null }>(`/cron/tasks/${encodeURIComponent(name)}/trigger`, { method: 'POST' }),
+  runs: (name: string, limit = 50) =>
+    request<{ runs: CronTaskRun[] }>(`/cron/tasks/${encodeURIComponent(name)}/runs?limit=${limit}`).then(r => r.runs),
+}
+
+export const cronToolApi = {
+  check: (expression: string) =>
+    request<{ valid: boolean; error: string; normalized: string }>('/tool/cron/check', {
+      method: 'POST', body: JSON.stringify({ expression }),
+    }),
+  generate: (fields: CronFields) =>
+    request<{ valid: boolean; error: string; expression: string }>('/tool/cron/generate', {
+      method: 'POST', body: JSON.stringify(fields),
+    }),
+  parse: (expression: string) =>
+    request<{ valid: boolean; error: string; fields: CronFields | null }>('/tool/cron/parse', {
+      method: 'POST', body: JSON.stringify({ expression }),
+    }),
+  next: (expression: string) =>
+    request<{ valid: boolean; error: string; next_time: number | null }>('/tool/cron/next', {
+      method: 'POST', body: JSON.stringify({ expression }),
+    }),
+}
+
 export { request as fetchApi }

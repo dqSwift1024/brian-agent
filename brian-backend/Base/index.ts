@@ -73,3 +73,6 @@ export * from './BookmarkProvider';
 
 // ChunkProvider
 export * from './ChunkProvider';
+
+// CronProvider
+export * from './CronProvider';

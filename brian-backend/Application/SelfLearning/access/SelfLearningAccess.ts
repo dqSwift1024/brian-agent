@@ -142,4 +142,16 @@ export class SelfLearningAccess {
     await this.initPromise;
     return this.service.configSelfLearning(i, c, o);
   }
+
+  /** 标签老化（供 CronProvider 定时触发） */
+  async startTagAging(): Promise<void> {
+    await this.initPromise;
+    await (this.service as unknown as { startTagAging(): Promise<void> }).startTagAging();
+  }
+
+  /** 孤立标签检查（供 CronProvider 定时触发） */
+  async startOrphanTagCheck(): Promise<void> {
+    await this.initPromise;
+    await (this.service as unknown as { startOrphanTagCheck(): Promise<void> }).startOrphanTagCheck();
+  }
 }

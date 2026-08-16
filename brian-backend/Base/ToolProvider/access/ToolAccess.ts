@@ -13,7 +13,16 @@
  */
 
 import { ToolService } from '../application/ToolService';
-import type { ToolCheckResult, ToolTransformResult, ToolRegexResult } from '../domain/types';
+import type {
+  ToolCheckResult,
+  ToolTransformResult,
+  ToolRegexResult,
+  CronFields,
+  ToolCronCheckResult,
+  ToolCronGenerateResult,
+  ToolCronParseResult,
+  ToolCronNextResult,
+} from '../domain/types';
 
 export class ToolAccess {
   private readonly service = new ToolService();
@@ -71,5 +80,25 @@ export class ToolAccess {
   /** 正则表达式匹配 */
   regexMatch(pattern: string, text: string, flags = ''): ToolRegexResult {
     return this.service.regexMatch(pattern, text, flags);
+  }
+
+  /** 校验 cron 表达式 */
+  cronCheck(expr: string): ToolCronCheckResult {
+    return this.service.cronCheck(expr);
+  }
+
+  /** 由字段生成 cron 表达式 */
+  cronGenerate(fields: CronFields): ToolCronGenerateResult {
+    return this.service.cronGenerate(fields);
+  }
+
+  /** 解析 cron 表达式为字段 */
+  cronParse(expr: string): ToolCronParseResult {
+    return this.service.cronParse(expr);
+  }
+
+  /** 计算 cron 下次执行时间 */
+  cronNext(expr: string, fromMs?: number): ToolCronNextResult {
+    return this.service.cronNext(expr, fromMs);
   }
 }

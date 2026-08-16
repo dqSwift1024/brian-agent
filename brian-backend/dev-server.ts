@@ -21,6 +21,15 @@ import { LogAccess } from './Base/LogProvider';
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
+import { CronAccess } from './Base/CronProvider';
+import {
+  CronContext, ListCronTasksOutput,
+  GetCronTaskInput, GetCronTaskOutput,
+  SetCronTaskInput, SetCronTaskOutput,
+  SetCronTaskEnabledInput, SetCronTaskEnabledOutput,
+  TriggerCronTaskInput, TriggerCronTaskOutput,
+  ListCronTaskRunsInput, ListCronTaskRunsOutput,
+} from './Base/CronProvider';
 import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
@@ -297,6 +306,27 @@ async function buildContext() {
   const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
 
   const selfLearningAccess = new SelfLearningAccess(relationDb, graphDBAccess, mqAccess, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, logger);
+
+  // ---- CronProvider（定时任务调度中心）----
+  const cronAccess = new CronAccess(relationDb, logger);
+
+  // 迁移/注册定时任务：默认 cron 取自 self_learning_config 历史值，之后以 cron_task 表为唯一时间源
+  let tagAgingCron = '0 0 2 * * *';
+  let orphanTagCron = '0 0 3 * * *';
+  try {
+    const slCfg = relationDb.queryRaw<{ tag_aging_cron: string; orphan_tag_check_cron: string }>(
+      'SELECT "tag_aging_cron", "orphan_tag_check_cron" FROM "self_learning_config" LIMIT 1', [],
+    );
+    if (slCfg.length > 0) {
+      if (slCfg[0].tag_aging_cron) tagAgingCron = slCfg[0].tag_aging_cron;
+      if (slCfg[0].orphan_tag_check_cron) orphanTagCron = slCfg[0].orphan_tag_check_cron;
+    }
+  } catch { /* best-effort */ }
+
+  await cronAccess.registerTask('tag_aging', '标签老化', tagAgingCron, () => selfLearningAccess.startTagAging());
+  await cronAccess.registerTask('orphan_tag_check', '孤立标签检查', orphanTagCron, () => selfLearningAccess.startOrphanTagCheck());
+  cronAccess.start();
+
   const userProfileAccess = new UserProfileAccess(relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess, logger);
   await userProfileAccess.initialize();
   const visualizationAccess = new VisualizationAccess(relationDb, orchestrationVisualization, agentExecution, agentLibrary, agentContext, evolutorAgent, plannerAgent, infoCore, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess, graphDBAccess, logger);
@@ -314,6 +344,7 @@ async function buildContext() {
     orchestrationEntry, orchestrationStrategy, orchestrationExecution,
     orchestrationVisualization, jsonNode,
     chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess,
+    cronAccess,
     logger,
   );
 
@@ -433,6 +464,7 @@ async function buildContext() {
     graphDBAccess, mqAccess, logAccess, vectorDBAccess,
     cdtAccess, bookmarkAccess,
     toolAccess,
+    cronAccess,
     infoCore, llmCore, mcpCore, skillCore, soulCore, mqCore,
     cdtCore,
     agentLibrary, agentStrategy, agentContext, agentBuilder,
@@ -2248,6 +2280,66 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'POST' && pathname === '/api/tool/regex') {
         sendJson(res, 200, ctx.toolAccess.regexMatch(body.pattern ?? '', body.text ?? '', body.flags ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/cron/check') {
+        sendJson(res, 200, ctx.toolAccess.cronCheck(body.expression ?? body.cron ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/cron/generate') {
+        sendJson(res, 200, ctx.toolAccess.cronGenerate({
+          second: body.second ?? '*', minute: body.minute ?? '*', hour: body.hour ?? '*',
+          day: body.day ?? '*', month: body.month ?? '*', week: body.week ?? '*',
+        }));
+
+      } else if (method === 'POST' && pathname === '/api/tool/cron/parse') {
+        sendJson(res, 200, ctx.toolAccess.cronParse(body.expression ?? body.cron ?? ''));
+
+      } else if (method === 'POST' && pathname === '/api/tool/cron/next') {
+        sendJson(res, 200, ctx.toolAccess.cronNext(body.expression ?? body.cron ?? '', typeof body.from_ms === 'number' ? body.from_ms : undefined));
+
+      // ---- Cron 定时任务管理 ----
+      } else if (method === 'GET' && pathname === '/api/cron/tasks') {
+        const output = new ListCronTasksOutput();
+        await ctx.cronAccess.listCronTasks(new CronContext(), output);
+        sendJson(res, 200, { tasks: output.tasks });
+
+      } else if (method === 'GET' && pathname.startsWith('/api/cron/tasks/')) {
+        const parts = pathname.split('/').filter(Boolean);
+        const name = parts[parts.length - 1];
+        if (parts.length >= 5 && parts[parts.length - 1] === 'runs') {
+          const input = Object.assign(new ListCronTaskRunsInput(), {
+            name: parts.length === 5 ? parts[3] : undefined,
+            limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : 50,
+          });
+          const output = new ListCronTaskRunsOutput();
+          await ctx.cronAccess.listCronTaskRuns(input, new CronContext(), output);
+          sendJson(res, 200, { runs: output.runs });
+        } else {
+          const input = Object.assign(new GetCronTaskInput(), { name });
+          const output = new GetCronTaskOutput();
+          await ctx.cronAccess.getCronTask(input, new CronContext(), output);
+          sendJson(res, 200, { task: output.task });
+        }
+
+      } else if (method === 'PUT' && /\/api\/cron\/tasks\/[^/]+\/enabled$/.test(pathname)) {
+        const name = pathname.split('/').filter(Boolean)[3];
+        const input = Object.assign(new SetCronTaskEnabledInput(), { name, enabled: !!body.enabled });
+        const output = new SetCronTaskEnabledOutput();
+        await ctx.cronAccess.setCronTaskEnabled(input, new CronContext(), output);
+        sendJson(res, 200, { task: output.task });
+
+      } else if (method === 'PUT' && pathname.startsWith('/api/cron/tasks/')) {
+        const name = pathname.split('/').filter(Boolean)[3];
+        const input = Object.assign(new SetCronTaskInput(), { name, cron: body.cron });
+        const output = new SetCronTaskOutput();
+        await ctx.cronAccess.setCronTask(input, new CronContext(), output);
+        sendJson(res, 200, { task: output.task });
+
+      } else if (method === 'POST' && /\/api\/cron\/tasks\/[^/]+\/trigger$/.test(pathname)) {
+        const name = pathname.split('/').filter(Boolean)[3];
+        const input = Object.assign(new TriggerCronTaskInput(), { name });
+        const output = new TriggerCronTaskOutput();
+        await ctx.cronAccess.triggerCronTask(input, new CronContext(), output);
+        sendJson(res, 200, { run: output.run });
 
       } else if (method === 'GET' && serveFrontend(res, pathname)) {
         // 前端静态文件（SEA 打包模式）—— 已由 serveFrontend 处理

@@ -11,6 +11,7 @@
 
 import type { RelationDBAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
+import type { CronAccess } from '@brian-agent/base';
 
 import type { LLMCoreAccess, InfoCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess } from '@brian-agent/core';
 import type {
@@ -120,6 +121,7 @@ export class ConfigAccess {
     selfLearningAccess: any,
     userProfileAccess: any,
     visualizationAccess: any,
+    cronAccess: CronAccess,
     logger?: Logger,
   ) {
     new ConfigSchemaInitializer(relationDb).init();
@@ -134,6 +136,7 @@ export class ConfigAccess {
       orchestrationEntry, orchestrationStrategy, orchestrationExecution,
       orchestrationVisualization, jsonNode,
       chatAccess, selfLearningAccess, userProfileAccess, visualizationAccess,
+      cronAccess,
     );
     this.service = AopProxy.wrap(rawService, { logger });
   }

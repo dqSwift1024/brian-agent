@@ -8,7 +8,8 @@
  * 4. Base 资源管理代理（LLM/Soul/Skill/MCP/Prompt）
  */
 
-import type { RelationDBAccess, Logger, IdGenerator } from '@brian-agent/base';
+import type { RelationDBAccess, Logger, IdGenerator, CronAccess } from '@brian-agent/base';
+import { GetCronTaskInput, GetCronTaskOutput, CronContext, SetCronTaskInput, SetCronTaskOutput } from '@brian-agent/base';
 import { Operator, ValidationError, NotFoundError } from '@brian-agent/base';
 import type { DataObject, Condition } from '@brian-agent/base';
 import {
@@ -209,6 +210,7 @@ export class ConfigService {
   private readonly selfLearningAccess: any;
   private readonly userProfileAccess: any;
   private readonly visualizationAccess: any;
+  private readonly cronAccess: CronAccess;
 
   /** 内存静态注册表：配置项元数据直接来自 configRegistrations 静态定义（不再写 config_registry 表） */
   private readonly registryMap: Map<string, ConfigRegistration> = new Map(
@@ -261,6 +263,7 @@ export class ConfigService {
     selfLearningAccess: any,
     userProfileAccess: any,
     visualizationAccess: any,
+    cronAccess: CronAccess,
   ) {
     this.relationDb = relationDb;
     this.llmAccess = llmAccess;
@@ -294,6 +297,7 @@ export class ConfigService {
     this.selfLearningAccess = selfLearningAccess;
     this.userProfileAccess = userProfileAccess;
     this.visualizationAccess = visualizationAccess;
+    this.cronAccess = cronAccess;
   }
 
   // =========================================================================
@@ -991,6 +995,13 @@ export class ConfigService {
       );
     }
     if (configKey.startsWith('self_learning.')) {
+      // 定时任务 cron 由 CronProvider 统一管理（与定时任务展示页面同一时间源）
+      if (configKey === 'self_learning.tag_aging_cron' || configKey === 'self_learning.orphan_tag_check_cron') {
+        const taskName = configKey === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
+        const out = new GetCronTaskOutput();
+        await this.cronAccess.getCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), new CronContext(), out);
+        return out.task ? out.task.cron : null;
+      }
       return this.getConfigFromAccess(
         configKey, 'self_learning',
         (i: any, c: any, o: any) => this.selfLearningAccess.configSelfLearning(i, c, o),
@@ -1387,6 +1398,12 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('self_learning.')) {
+      // 定时任务 cron 写入 CronProvider（与定时任务展示页面同一时间源）
+      if (prefix === 'self_learning.tag_aging_cron' || prefix === 'self_learning.orphan_tag_check_cron') {
+        const taskName = prefix === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
+        await this.cronAccess.setCronTask(Object.assign(new SetCronTaskInput(), { name: taskName, cron: value as string }), new CronContext(), new SetCronTaskOutput());
+        return;
+      }
       const input: any = {};
       if (prefix.startsWith('self_learning.random_factor')) input.random_factor = Number(value);
       else if (prefix.startsWith('self_learning.document_weight')) input.document_weight = Number(value);

@@ -13,4 +13,13 @@ export { IdGenerator } from './IdGenerator';
 export { JsonParser } from './JsonParser';
 export { XmlParser } from './XmlParser';
 export type { XmlNode } from './XmlParser';
+export {
+  normalizeCron,
+  checkCron,
+  parseCron,
+  generateCron,
+  matchesCron,
+  nextRunTime,
+} from './CronUtils';
+export type { CronFields } from './CronUtils';
 export * from './domain/types';

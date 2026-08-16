@@ -13,7 +13,22 @@
 import { IdGenerator } from '../IdGenerator';
 import { JsonParser } from '../JsonParser';
 import { XmlParser } from '../XmlParser';
-import type { ToolCheckResult, ToolTransformResult, ToolRegexResult } from '../domain/types';
+import {
+  checkCron,
+  generateCron,
+  parseCron,
+  nextRunTime,
+} from '../CronUtils';
+import type {
+  ToolCheckResult,
+  ToolTransformResult,
+  ToolRegexResult,
+  CronFields,
+  ToolCronCheckResult,
+  ToolCronGenerateResult,
+  ToolCronParseResult,
+  ToolCronNextResult,
+} from '../domain/types';
 
 export class ToolService {
   // -------------------------------------------------------------------------
@@ -149,6 +164,46 @@ export class ToolService {
         matches: [],
         count: 0,
       };
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Cron
+  // -------------------------------------------------------------------------
+
+  /** 校验 cron 表达式 */
+  cronCheck(expr: string): ToolCronCheckResult {
+    const r = checkCron(expr);
+    return { valid: r.valid, error: r.error, normalized: r.normalized };
+  }
+
+  /** 由字段生成 cron 表达式 */
+  cronGenerate(fields: CronFields): ToolCronGenerateResult {
+    try {
+      const expression = generateCron(fields);
+      return { valid: true, error: '', expression };
+    } catch (e) {
+      return { valid: false, error: e instanceof Error ? e.message : String(e), expression: '' };
+    }
+  }
+
+  /** 解析 cron 表达式为字段 */
+  cronParse(expr: string): ToolCronParseResult {
+    try {
+      const fields = parseCron(expr);
+      return { valid: true, error: '', fields };
+    } catch (e) {
+      return { valid: false, error: e instanceof Error ? e.message : String(e), fields: null };
+    }
+  }
+
+  /** 计算 cron 下次执行时间 */
+  cronNext(expr: string, fromMs?: number): ToolCronNextResult {
+    try {
+      const next = nextRunTime(expr, fromMs);
+      return { valid: true, error: '', next_time: next };
+    } catch (e) {
+      return { valid: false, error: e instanceof Error ? e.message : String(e), next_time: null };
     }
   }
 }

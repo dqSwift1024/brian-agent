@@ -8,6 +8,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/monitor', name: 'monitor', component: () => import('@/views/MonitorView.vue'), meta: { title: '监控' } },
   { path: '/config', name: 'config', component: () => import('@/views/ConfigView.vue'), meta: { title: '配置' } },
   { path: '/tool', name: 'tool', component: () => import('@/views/ToolView.vue'), meta: { title: '工具' } },
+  { path: '/cron', name: 'cron', component: () => import('@/views/CronView.vue'), meta: { title: '定时任务' } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

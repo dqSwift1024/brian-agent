@@ -285,15 +285,15 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   app('chat', 'basic', 'default_history_lastN', '默认历史消息数', 'INT', 50, '首次加载历史对话时返回给前端展示的消息数量（对话区/图谱）；与「记忆与信息 > 上下文构建」的上下文参数无关'),
 
   // --- SelfLearning ---
-  app('self_learning', 'weight', 'random_factor', '随机因子', 'INT', 10),
-  app('self_learning', 'weight', 'document_weight', '文档权重', 'INT', 40),
-  app('self_learning', 'weight', 'conversation_weight', '会话权重', 'INT', 30, '会话学习权重（已隐藏）', undefined, false),
-  app('self_learning', 'weight', 'tag_maintenance_weight', '标签维护权重', 'INT', 30),
+  app('self_learning', 'weight', 'random_factor', '随机因子', 'INT', 10, '随机触发学习因子（0-100）：每次学习检查生成随机数，小于该值时触发一次学习'),
+  app('self_learning', 'weight', 'document_weight', '文档权重', 'INT', 40, '文档学习权重：随机触发时按各权重比例选择学习模式'),
+  app('self_learning', 'weight', 'conversation_weight', '会话权重', 'INT', 30, '对话学习权重：随机触发时按各权重比例选择学习模式', undefined, false),
+  app('self_learning', 'weight', 'tag_maintenance_weight', '标签维护权重', 'INT', 30, '标签图维护权重：随机触发时按各权重比例选择学习模式'),
   app('self_learning', 'interval', 'learning_interval_ms', '学习间隔（ms）', 'INT', 600000, '自学习任务调度间隔时间'),
   app('self_learning', 'basic', 'default_learning_rate', '学习率', 'INT', 5, '每次文档学习 tick 中每个知识库最多处理的 PENDING 文件数。知识库级别 learning_rate 优先'),
   app('self_learning', 'interval', 'tag_connection_check_interval_ms', '标签关联检查间隔（ms）', 'INT', 1800000, '标签关联关系检查间隔时间'),
-  app('self_learning', 'interval', 'tag_aging_cron', '标签老化 Cron', 'STRING', '0 0 2 * * *', '每天凌晨 2:00'),
-  app('self_learning', 'interval', 'orphan_tag_check_cron', '孤立标签检查 Cron', 'STRING', '0 0 3 * * *', '每天凌晨 3:00'),
+  app('self_learning', 'interval', 'tag_aging_cron', '标签老化 Cron', 'STRING', '0 0 2 * * *', '标签老化任务的定时时间（默认每天凌晨 2:00），由 CronProvider 统一调度'),
+  app('self_learning', 'interval', 'orphan_tag_check_cron', '孤立标签检查 Cron', 'STRING', '0 0 3 * * *', '孤立标签检查任务的定时时间（默认每天凌晨 3:00），由 CronProvider 统一调度'),
   app('self_learning', 'basic', 'document_split_threshold', '文档分割阈值（字符数）', 'INT', 5000, '文档内容长度超过此值时触发 ChunkProvider 分块'),
   app('self_learning', 'basic', 'chunk_overlap_ratio', '分块重叠比例', 'DOUBLE', 0.2, 'ChunkProvider 分块时相邻块的文本重叠比例，取值 0-1'),
 
