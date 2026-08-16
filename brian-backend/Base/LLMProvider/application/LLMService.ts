@@ -922,12 +922,19 @@ let models: Array<{
         output.duration_ms = Date.now() - startTime;
         return false;
       }
-      const json = (await res.json()) as {
+      const text = await res.text();
+      output.raw_response = text;
+      let json: {
         choices?: Array<{
           message?: { content?: string };
         }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
-      };
+      } = {};
+      try {
+        json = JSON.parse(text) as typeof json;
+      } catch {
+        json = {};
+      }
       output.result = (json.choices?.[0]?.message?.content ?? '') as string;
       output.input_prompt = prompt;
       output.input_tokens = json.usage?.prompt_tokens ?? 0;

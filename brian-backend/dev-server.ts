@@ -112,6 +112,7 @@ import {
 import {
   McpContext, ListMcpInput, ListMcpOutput,
   SoMcpProviderInput, SoMcpProviderOutput,
+  SoMcpInput, SoMcpOutput,
   AddMcpProviderInput, AddMcpProviderOutput,
   UpdateMcpProviderInput, UpdateMcpProviderOutput,
   DelMcpProviderInput, DelMcpProviderOutput,
@@ -780,12 +781,18 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const { ExecLLMInput, ExecLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
           const execInput = Object.assign(new ExecLLMInput(), {
             id,
-            params: { prompt, temperature: typeof body.temperature === 'number' ? body.temperature : 0.7 },
+            params: {
+              prompt,
+              temperature: typeof body.temperature === 'number' ? body.temperature : 0.7,
+              // 显式限制输出 token，避免模型表里存的是上下文窗口（如 1048576）导致请求被提供商拒绝
+              max_tokens: typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : 2048,
+            },
           });
           const execOutput = new ExecLLMOutput();
           await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);
           sendJson(res, 200, {
             result: execOutput.result ?? '',
+            raw_response: execOutput.raw_response ?? '',
             input_tokens: execOutput.input_tokens ?? 0,
             output_tokens: execOutput.output_tokens ?? 0,
             duration_ms: execOutput.duration_ms ?? 0,
@@ -1360,11 +1367,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ---- MCP (Standalone) ----
       } else if (method === 'GET' && pathname === '/api/mcp') {
-        const insRows = ctx.relationDb.queryRaw<{ id: string; mcp_title: string; mcp_brief: string | null; version: string | null; status: string | null; enable: number }>(
-          'SELECT "id", "mcp_title", "mcp_brief", "version", "status", "enable" FROM "mcp_install" ORDER BY "mcp_title" ASC',
-          [],
-        );
-        sendJson(res, 200, { installed: (insRows || []).map(r => ({ id: r.id, displayName: r.mcp_title, description: r.mcp_brief || '', version: r.version || '', status: r.status || 'stopped', running: r.status === 'running', enabled: !!r.enable })) });
+        // 通过 soMcp 获取实例（其 status 已被实时进程状态覆盖，而非 DB 残留值）
+        const soIn = new SoMcpInput();
+        const soOut = new SoMcpOutput();
+        await ctx.mcpAccess.soMcp(soIn, new McpContext(), soOut);
+        sendJson(res, 200, { installed: (soOut.list || []).map(r => ({
+          id: r.id,
+          displayName: r.mcp_title,
+          description: r.mcp_brief || '',
+          version: r.version || '',
+          status: r.status || 'stopped',
+          running: String(r.status) === 'running',
+          enabled: !!r.enable,
+        })) });
 
       } else if (method === 'POST' && pathname === '/api/mcp/batch-start') {
         const ids = ((body as Record<string, unknown>).ids as string[]) || [];

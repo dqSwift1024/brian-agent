@@ -1470,7 +1470,7 @@ async function sendModelChat() {
     if (res.error) {
       modelChatError.value = res.error
     } else {
-      modelChatResult.value = res.result || '(空回复)'
+      modelChatResult.value = res.raw_response || res.result || '(空回复)'
       modelChatMeta.value = { input_tokens: res.input_tokens, output_tokens: res.output_tokens, duration_ms: res.duration_ms }
     }
   } catch (e: unknown) {
@@ -1480,32 +1480,16 @@ async function sendModelChat() {
   }
 }
 
-// 从模型原始返回中提取 JSON（支持代码围栏包裹），成功返回解析后的字符串，否则返回原文
-function extractModelJson(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try { JSON.parse(trimmed); return trimmed } catch { /* 非严格 JSON，继续尝试 */ }
-  }
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) {
-    try { JSON.parse(fenceMatch[1].trim()); return fenceMatch[1].trim() } catch { /* ignore */ }
-  }
-  return null
-}
-
-const isModelResultJson = computed(() => {
-  if (!modelChatResult.value) return false
-  return extractModelJson(modelChatResult.value) !== null
-})
-
+// 原始响应若为 JSON 则缩进格式化展示，非 JSON 原样展示
 const formattedModelResult = computed(() => {
   const raw = modelChatResult.value
   if (!raw) return ''
-  const jsonStr = extractModelJson(raw)
-  if (jsonStr !== null) {
-    try { return JSON.stringify(JSON.parse(jsonStr), null, 2) } catch { /* ignore */ }
+  const trimmed = raw.trim()
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2)
+  } catch {
+    return raw
   }
-  return raw
 })
 
 async function loadModels() {
@@ -4652,12 +4636,17 @@ watch(activeSubSection, async (val) => {
               class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md transition-shadow p-4 aspect-[3/2] flex flex-col"
             >
               <div class="mb-3">
-                <div class="flex items-center gap-2.5 mb-2">
-                  <input type="checkbox" :value="item.id" v-model="selectedMcpIds" class="w-3.5 h-3.5 rounded border-apple-gray-300 text-brian-blue focus:ring-brian-blue flex-shrink-0 cursor-pointer" />
-                  <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Plug :size="18" /></div>
-                  <div class="min-w-0 flex-1">
-                    <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ item.displayName || item.name || item.id }}</h3>
-                    <p class="text-[11px] text-apple-gray-400">{{ item.enabled ?? true ? '启用' : '停用' }} · <span :class="item.running ? 'text-success-green' : ''">{{ item.running ? '运行中' : '已停止' }}</span>{{ item.version ? ` · v${item.version}` : '' }}</p>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><Plug :size="18" /></div>
+                    <div class="min-w-0">
+                      <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ item.displayName || item.name || item.id }}</h3>
+                      <p class="text-[11px] text-apple-gray-400">{{ item.enabled ?? true ? '启用' : '停用' }}{{ item.version ? ` · v${item.version}` : '' }}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="w-2.5 h-2.5 rounded-full" :class="item.running ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" :title="item.running ? '运行中' : '已停止'" />
+                    <input type="checkbox" :value="item.id" v-model="selectedMcpIds" class="w-3.5 h-3.5 rounded border-apple-gray-300 text-brian-blue focus:ring-brian-blue flex-shrink-0 cursor-pointer" />
                   </div>
                 </div>
                 <p class="text-[11px] text-apple-gray-400 line-clamp-2" :title="item.description">{{ item.description || '暂无描述' }}</p>
@@ -4665,7 +4654,7 @@ watch(activeSubSection, async (val) => {
               <div class="flex items-center justify-between pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
                 <div class="flex items-center gap-1">
                   <button v-if="!item.running" class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-success-green/10 text-success-green hover:bg-success-green/20 transition-colors" @click="handleStartMcp(item.id)"><Zap :size="11" /> 启动</button>
-                  <button v-else class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-warning-orange/10 text-warning-orange hover:bg-warning-orange/20 transition-colors" @click="handleStopMcp(item.id)"><span class="inline-block w-1.5 h-1.5 rounded-full bg-current" /> 停止</button>
+                  <button v-else class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-warning-orange/10 text-warning-orange hover:bg-warning-orange/20 transition-colors" @click="handleStopMcp(item.id)"><span class="inline-block w-1.5 h-1.5 rounded-full bg-current" /> 关闭</button>
                   <button class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20 transition-colors" @click="handleUpgradeMcp(item.id)"><RefreshCw :size="11" /> 更新</button>
                 </div>
                 <div class="flex items-center gap-1">
@@ -5708,8 +5697,7 @@ watch(activeSubSection, async (val) => {
               </div>
               <div v-else-if="modelChatResult" class="mt-2 rounded-lg border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden">
                 <div class="flex items-center justify-between px-3 py-1.5 bg-apple-gray-50 dark:bg-apple-gray-900/60 border-b border-apple-gray-200 dark:border-apple-gray-700">
-                  <span class="text-[11px] font-medium text-apple-gray-500 dark:text-apple-gray-400">输出结果</span>
-                  <span v-if="isModelResultJson" class="text-[10px] px-1.5 py-0.5 rounded-full bg-brian-blue/10 text-brian-blue">JSON</span>
+                  <span class="text-[11px] font-medium text-apple-gray-500 dark:text-apple-gray-400">原始响应</span>
                 </div>
                 <pre class="text-xs text-apple-gray-700 dark:text-apple-gray-300 p-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto font-mono">{{ formattedModelResult }}</pre>
               </div>

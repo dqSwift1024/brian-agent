@@ -328,6 +328,8 @@
 
 **方法签名**：`Boolean soMcp(SoMcpInput input, McpContext context, SoMcpOutput output)`
 
+> 说明：`soMcp` 返回的 `status` 字段为**实时进程状态**（通过 `runningMcps` Map + PID 探测判断进程是否真实存活），而非直接返回数据库 `status` 字段；数据库 `status` 仅作持久化兜底，进程崩溃后即使 DB 残留 `running` 也会被实时覆盖为 `stopped`。
+
 #### 3.2.10. 获取已安装 MCP 详情（getMcp）
 
 **功能**：获取指定已安装 MCP 的详细信息（含工具 schema、调用方法、解析方法）
@@ -355,12 +357,13 @@
 **处理流程**：
 
 1. 根据 ID 获取安装信息和工具 schema；
-2. 校验 params 与工具 schema 匹配；
-3. 根据 transport_type 调用：
+2. **校验调用前提：`enable=1` 且实时运行状态为 running（进程真实存活），任一不满足即抛错**（「已禁用，无法调用」/「未启动，请先启动后再调用」）；
+3. 校验 params 与工具 schema 匹配；
+4. 根据 transport_type 调用：
    - `stdio`：通过 JSON-RPC `tools/call` 方法发送参数，stdout 读取结果；
    - `http`：POST 请求到 endpoint，解析 JSON 响应；
-4. 成功后更新 mcp_usage 表当天计数 +1；
-5. 输出结果包含：原始响应 + 按 output_schema 解析后的结构化结果；
+5. 成功后更新 mcp_usage 表当天计数 +1；
+6. 输出结果包含：原始响应 + 按 output_schema 解析后的结构化结果；
 
 **返回**：Boolean，调用结果（原始 + 结构化）通过 output 参数返回
 

@@ -582,6 +582,19 @@ export class MCPService {
     this.runningMcps.delete(id);
   }
 
+  /** 实时判断 MCP 进程是否真实存活（探测 PID，而非依赖数据库 status 字段） */
+  private isMcpRunning(id: string): boolean {
+    const child = this.runningMcps.get(id);
+    if (!child || !child.pid) return false;
+    if (child.exitCode !== null || child.signalCode !== null) return false;
+    try {
+      process.kill(child.pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** 停止所有运行中的 MCP（后端关闭时调用），并将状态重置为 stopped，返回停止数量 */
   async stopAllMcp(): Promise<number> {
     const count = this.runningMcps.size;
@@ -810,6 +823,10 @@ export class MCPService {
       order_by: input.order_by,
       page: input.page,
     });
+    // 用实时进程状态覆盖数据库中的 status 字段（避免进程崩溃后 DB 状态残留为 running）
+    for (const row of rows) {
+      row.status = this.isMcpRunning(String(row.id)) ? 'running' : 'stopped';
+    }
     output.list = rows as unknown as McpInstallRecord[];
     output.total = await this.relationDb.count(
       MCP_INSTALL_TABLE,
@@ -834,6 +851,14 @@ export class MCPService {
     ]);
     if (!mcp) {
       throw new NotFoundError('MCP Install', input.id);
+    }
+
+    // 调用前同时校验启用/禁用 与 启动/停止 状态
+    if (Number(mcp.enable) !== 1) {
+      throw new ValidationError(`MCP ${mcp.mcp_title} 已禁用，无法调用`);
+    }
+    if (!this.isMcpRunning(input.id)) {
+      throw new ValidationError(`MCP ${mcp.mcp_title} 未启动，请先启动后再调用`);
     }
 
     // 调用 MCP：通过启动命令执行并传入参数

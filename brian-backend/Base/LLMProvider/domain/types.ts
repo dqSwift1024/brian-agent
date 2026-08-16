@@ -418,6 +418,8 @@ export class ExecLLMOutput extends Output {
   output_tokens = 0;
   /** 调用耗时（毫秒） */
   duration_ms = 0;
+  /** 模型提供商返回的原始响应正文（未经解析） */
+  raw_response = '';
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@
 2. 若存在绑定的 MCP：生成随机数（0-100），若随机数 >= regen_rate（从 `mcp_core_config` 表读取，默认 75），则直接返回已绑定的 mcp_id 列表（复用已有绑定）；
 3. 若随机数 < regen_rate 或不存在绑定，执行重新匹配流程：
    a. 根据 `interact_id` 和 `agent_id` 调用 `InfoCore.context` 接口获取当前工作内容；
-   b. 调用 MCPProvider.soMcp 加载所有已启用的 MCP（conditions: `{ enable: true }`），获取各 MCP 的 ID 和简要描述（mcp_brief）；
+   b. 调用 MCPProvider.soMcp 加载所有**已启用（enable=1）**的 MCP，再按实时运行状态过滤出**运行中（status='running'）**的 MCP，获取各 MCP 的 ID 和简要描述（mcp_brief）；
    c. 若可用 MCP 列表为空，直接返回空列表（无 MCP 可用）；
    d. 调用 RelationDBProvider.selectOneDB 查询 `mcp_core_config` 表获取 `prompt_template_id`；
    e. 将工作内容和 MCP 列表（ID + brief）与 `prompt_template_id` 调用 PromptsProvider.execPrompt 构建 MCP 匹配 prompt；

@@ -313,6 +313,7 @@
 | input_tokens | NUMBER | 输入 Token 数 |
 | output_tokens | NUMBER | 输出 Token 数 |
 | duration_ms | NUMBER | 调用耗时（毫秒） |
+| raw_response | STRING | 模型提供商返回的原始响应正文（未经解析） |
 | error | STRING? | 错误信息（HTTP / 网络错误时） |
 | error_code | STRING? | 错误码（NETWORK_ERROR / HTTP_{status}） |
 

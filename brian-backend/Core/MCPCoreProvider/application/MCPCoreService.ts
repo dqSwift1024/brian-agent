@@ -198,9 +198,13 @@ export class MCPCoreService {
 
   private async getAvailableMcps(): Promise<McpInstallRecord[]> {
     const soInput = new SoMcpInput();
+    // 仅按启用状态过滤；运行状态由 soMcp 返回的实时进程状态再过滤
+    soInput.conditions = [
+      { field: 'enable', operator: Operator.EQ, value: 1 },
+    ];
     const soOutput = new SoMcpOutput();
     await this.mcpAccess.soMcp(soInput, new McpContext(), soOutput);
-    return soOutput.list;
+    return soOutput.list.filter((r) => String(r.status) === 'running');
   }
 
   private async getMcpDetails(ids: string[]): Promise<McpInstallRecord[]> {
