@@ -102,8 +102,8 @@
 | market_id | STRING | Y | 来源市场 ID |
 | tool_id | STRING | Y | 来源工具 ID，关联 mcp_tool.id |
 | install_status | ENUM | Y | 安装状态：installing / installed / error |
-| transport_type | ENUM | Y | 通信方式：stdio / http |
-| transport_config | JSON | Y | 通信配置（stdio: { command, args } / http: { url, headers }） |
+| transport_type | ENUM | Y | 通信方式：stdio / streamable-http / http-sse / rest |
+| transport_config | JSON | Y | 通信配置（stdio: { command, args } / http: { url, headers } / rest: { url, method, headers, auth_token }） |
 | connected | BOOLEAN | N | 是否已连接 |
 | enable | BOOLEAN | N | 是否启用，默认 true |
 
@@ -249,7 +249,7 @@
 **处理流程**：
 
 1. 终止该 MCP 已有的托管进程（若存在）；
-2. 通过 `spawn`（`shell:true, detached:true, stdio:'ignore'`）后台启动 `mcp_start_cmd`，`unref()` 托管进程，存入内存 `runningMcps` Map；
+2. 仅 `stdio` 传输启动本地进程：`spawn(command, args, { stdio: ['pipe','pipe','pipe'] })`（无 shell，保证 stdout 为纯净 JSON-RPC 流），存入内存 `runningMcps` Map，并异步执行 MCP `initialize` 握手；`http`/`rest` 为远程服务，无需本地进程；
 3. 将 `mcp_install.status` 置为 `running`；
 
 **返回**：Boolean
@@ -357,11 +357,13 @@
 **处理流程**：
 
 1. 根据 ID 获取安装信息和工具 schema；
-2. **校验调用前提：`enable=1` 且实时运行状态为 running（进程真实存活），任一不满足即抛错**（「已禁用，无法调用」/「未启动，请先启动后再调用」）；
+2. **校验调用前提：`enable=1`**；对 stdio 传输额外校验**实时运行状态为 running（进程真实存活）**，任一不满足即抛错（「已禁用，无法调用」/「未启动，请先启动后再调用」）；
 3. 校验 params 与工具 schema 匹配；
-4. 根据 transport_type 调用：
-   - `stdio`：通过 JSON-RPC `tools/call` 方法发送参数，stdout 读取结果；
-   - `http`：POST 请求到 endpoint，解析 JSON 响应；
+4. 根据 `transport_type` 选择调用方式（四种传输方式均支持）：
+   - `stdio`：通过本地进程 stdin/stdout 发送 JSON-RPC 2.0 `tools/call`（换行分隔 JSON），从 stdout 读取响应；
+   - `streamable-http`：POST JSON-RPC 2.0 `tools/call` 到单个 HTTP 端点（`Accept: application/json, text/event-stream`），响应为 JSON 或 SSE 流；
+   - `http-sse`：旧版 HTTP 传输，POST JSON-RPC 2.0 + SSE 响应（与 streamable-http 共用解析逻辑）；
+   - `rest`：平台托管的原生 REST API，POST 到 endpoint 携带认证 token，解析 JSON 响应；
 5. 成功后更新 mcp_usage 表当天计数 +1；
 6. 输出结果包含：原始响应 + 按 output_schema 解析后的结构化结果；
 

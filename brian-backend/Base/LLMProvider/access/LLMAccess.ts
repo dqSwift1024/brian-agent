@@ -41,6 +41,8 @@ import {
   GetLLMOutput,
   ExecLLMInput,
   ExecLLMOutput,
+  EmbedLLMInput,
+  EmbedLLMOutput,
   VisualizedLLMInput,
   VisualizedLLMOutput,
   EnableLLMInput,
@@ -219,6 +221,15 @@ export class LLMAccess {
     output: ExecLLMOutput,
   ): Promise<boolean> {
     return this.service.execLLM(input, context, output);
+  }
+
+  /** 调用 LLM 生成向量 */
+  async embedLLM(
+    input: EmbedLLMInput,
+    context: LLMContext,
+    output: EmbedLLMOutput,
+  ): Promise<boolean> {
+    return this.service.embedLLM(input, context, output);
   }
 
   /** 可视化数据 */

@@ -107,6 +107,9 @@ export const configApi = {
     chat: (id: string, prompt: string, temperature?: number) =>
       request<{ result: string; raw_response: string; input_tokens: number; output_tokens: number; duration_ms: number; error: string }>(
         `/config/model/${encodeURIComponent(id)}/chat`, { method: 'POST', body: JSON.stringify({ prompt, temperature }) }),
+    embed: (id: string, input: string) =>
+      request<{ embedding: number[]; dimension: number; raw_response: string; input_tokens: number; duration_ms: number; error: string }>(
+        `/config/model/${encodeURIComponent(id)}/embed`, { method: 'POST', body: JSON.stringify({ input }) }),
   },
   provider: {
     list: () => request<ModelProvider[]>('/config/provider'),

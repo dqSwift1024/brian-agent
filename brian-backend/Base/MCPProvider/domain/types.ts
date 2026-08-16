@@ -57,6 +57,10 @@ export interface McpData {
   status?: string;
   /** 是否启用，默认 true */
   enable?: boolean;
+  /** 通信方式：stdio / streamable-http / http-sse / rest */
+  transport_type?: string;
+  /** 通信配置（JSON 字符串）：stdio:{command,args} / http:{url,headers} / rest:{url,method,headers,auth_token} */
+  transport_config?: string;
 }
 
 /** mcp_provider 表记录 */
@@ -243,11 +247,15 @@ export class SoMcpOutput extends Output {
 /** execMcp 入参 */
 export class ExecMcpInput extends Input {
   id!: string;
+  /** 工具名（当 MCP 提供多工具时指定） */
+  tool_name?: string;
   params!: Record<string, unknown>;
 }
 /** execMcp 出参 */
 export class ExecMcpOutput extends Output {
   result: unknown = null;
+  /** 原始响应正文（未经解析，供调试） */
+  raw_response = '';
 }
 
 // ---------------------------------------------------------------------------

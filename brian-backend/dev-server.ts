@@ -124,6 +124,7 @@ import {
   GetMcpUsageInput, GetMcpUsageOutput,
   UninstallMcpInput, UninstallMcpOutput,
   UpgradeMcpInput, UpgradeMcpOutput,
+  ExecMcpInput, ExecMcpOutput,
 } from './Base/MCPProvider';
 import {
   AgentLibraryContext, GetAgentInput, GetAgentOutput, DelAgentInput, DelAgentOutput, ToggleAgentInput, ToggleAgentOutput,
@@ -802,6 +803,27 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           sendJson(res, 500, { error: err?.message || '模型调用失败' });
         }
 
+      } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/embed$/.test(pathname)) {
+        const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
+        const input = typeof body.input === 'string' ? body.input.trim() : '';
+        if (!input) { sendJson(res, 400, { error: 'input is required' }); return; }
+        try {
+          const { EmbedLLMInput, EmbedLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
+          const embedInput = Object.assign(new EmbedLLMInput(), { id, input });
+          const embedOutput = new EmbedLLMOutput();
+          await ctx.llmAccess.embedLLM(embedInput, new LLMContext(), embedOutput);
+          sendJson(res, 200, {
+            embedding: embedOutput.embedding ?? [],
+            dimension: (embedOutput.embedding ?? []).length,
+            raw_response: embedOutput.raw_response ?? '',
+            input_tokens: embedOutput.input_tokens ?? 0,
+            duration_ms: embedOutput.duration_ms ?? 0,
+            error: embedOutput.error || '',
+          });
+        } catch (err: any) {
+          sendJson(res, 500, { error: err?.message || '向量化调用失败' });
+        }
+
       } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/default$/.test(pathname)) {
         const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
         ctx.relationDb.executeRaw('UPDATE "llm_available" SET "is_default" = 0', []);
@@ -892,6 +914,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && /\/api\/config\/provider\/[^/]+\/models\/add$/.test(pathname)) {
         const providerId = pathname.split('/api/config/provider/')[1]?.split('/')[0] || '';
         const modelIds = (body as Record<string, unknown>).modelIds as string[] || [];
+        const llmType = (['text', 'vision', 'embedding'] as const).includes((body as Record<string, unknown>).llm_type as any)
+          ? (body as Record<string, unknown>).llm_type as string
+          : 'text';
         let added = 0;
         for (const title of modelIds) {
           if (!title) continue;
@@ -902,7 +927,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             const maxTokens = cachedRow?.max_tokens || 0;
             ctx.relationDb.executeRaw(
               'INSERT OR IGNORE INTO "llm_available" ("id", "created", "updated", "llm_provider_id", "llm_title", "llm_type", "enable", "max_tokens") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              [IdGenerator.generate(), IdGenerator.now(), IdGenerator.now(), providerId, title, 'text', 1, maxTokens],
+              [IdGenerator.generate(), IdGenerator.now(), IdGenerator.now(), providerId, title, llmType, 1, maxTokens],
             );
             if (maxTokens > 0) {
               try { ctx.relationDb.executeRaw('UPDATE "llm_available" SET "max_tokens" = ? WHERE "llm_provider_id" = ? AND "llm_title" = ?', [maxTokens, providerId, title]); } catch {}
@@ -1379,6 +1404,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           status: r.status || 'stopped',
           running: String(r.status) === 'running',
           enabled: !!r.enable,
+          transport_type: (r as unknown as Record<string, unknown>).transport_type || 'stdio',
         })) });
 
       } else if (method === 'POST' && pathname === '/api/mcp/batch-start') {
@@ -1455,6 +1481,17 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const upOutput = new UpgradeMcpOutput();
         await ctx.mcpAccess.upgradeMcp(upInput, new McpContext(), upOutput);
         sendJson(res, 200, { success: true, version: upOutput.version });
+
+      } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/call$/.test(pathname)) {
+        const id = pathname.split('/api/mcp/')[1].split('/')[0];
+        const callInput = Object.assign(new ExecMcpInput(), {
+          id,
+          tool_name: (body as Record<string, unknown>).tool_name || undefined,
+          params: (body as Record<string, unknown>).params || {},
+        });
+        const callOutput = new ExecMcpOutput();
+        await ctx.mcpAccess.execMcp(callInput, new McpContext(), callOutput);
+        sendJson(res, 200, { result: callOutput.result, raw_response: callOutput.raw_response });
 
       } else if (method === 'DELETE' && /\/api\/mcp\/[^/]+$/g.test(pathname) && !pathname.includes('/install') && !pathname.includes('/toggle') && !pathname.includes('/start') && !pathname.includes('/stop')) {
         const id = pathname.split('/api/mcp/')[1];

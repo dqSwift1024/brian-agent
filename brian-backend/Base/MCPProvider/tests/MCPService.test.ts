@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -871,14 +871,26 @@ describe('MCPProvider MCPService', () => {
         { field: 'mcp_start_cmd', value: 'echo' },
         { field: 'mcp_stop_cmd', value: 'echo stop' },
         { field: 'mcp_uninstall_cmd', value: 'echo uninstall' },
+        { field: 'transport_type', value: 'rest' },
+        { field: 'transport_config', value: JSON.stringify({ url: 'http://fake-mcp/call', method: 'POST' }) },
         { field: 'enable', value: 1 },
       ]);
       installId = 'install-exec-test';
+      // rest 传输走 fetch，返回 JSON-RPC 响应
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )));
+    });
+
+    afterAll(() => {
+      vi.unstubAllGlobals();
     });
 
     it('should execute MCP and return result', async () => {
       const input = new ExecMcpInput();
       input.id = installId;
+      input.tool_name = 'demo_tool';
       input.params = { test: 'hello' };
       const output = new ExecMcpOutput();
       const ok = await mcpAccess.execMcp(input, ctx(), output);

@@ -423,6 +423,30 @@ export class ExecLLMOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// embedLLM
+// ---------------------------------------------------------------------------
+
+/** embedLLM 入参 */
+export class EmbedLLMInput extends Input {
+  /** LLM ID（llm_available.id），为空则使用系统默认 embedding 模型 */
+  id!: string;
+  /** 待向量化的文本 */
+  input!: string;
+}
+
+/** embedLLM 出参 */
+export class EmbedLLMOutput extends Output {
+  /** 向量（浮点数组） */
+  embedding: number[] = [];
+  /** 输入 Token 数量 */
+  input_tokens = 0;
+  /** 调用耗时（毫秒） */
+  duration_ms = 0;
+  /** 模型提供商返回的原始响应正文（未经解析） */
+  raw_response = '';
+}
+
+// ---------------------------------------------------------------------------
 // visualizedLLM
 // ---------------------------------------------------------------------------
 

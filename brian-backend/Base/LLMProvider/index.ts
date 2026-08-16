@@ -35,6 +35,8 @@ export {
   GetLLMOutput,
   ExecLLMInput,
   ExecLLMOutput,
+  EmbedLLMInput,
+  EmbedLLMOutput,
   VisualizedLLMInput,
   VisualizedLLMOutput,
   EnableLLMInput,

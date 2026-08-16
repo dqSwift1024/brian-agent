@@ -53,6 +53,8 @@ import {
   SoLLMOutput,
   ExecLLMInput,
   ExecLLMOutput,
+  EmbedLLMInput,
+  EmbedLLMOutput,
   VisualizedLLMInput,
   VisualizedLLMOutput,
   EnableLLMInput,
@@ -81,6 +83,9 @@ const MODELS_PATH = 'v1/models';
 
 /** OpenAI 兼容 API 路径：对话补全 */
 const CHAT_PATH = 'v1/chat/completions';
+
+/** OpenAI 兼容 API 路径：向量化（embedding） */
+const EMBED_PATH = 'v1/embeddings';
 
 /**
  * LLMProvider 应用服务。
@@ -948,6 +953,122 @@ let models: Array<{
     }
 
     // 成功后更新 llm_usage 表当天的 usage_count + 1
+    await this.upsertUsage(input.id);
+    return true;
+  }
+
+  /**
+   * 调用 LLM 生成向量（embedLLM）。
+   *
+   * 面向 llm_type = 'embedding' 的模型，调用 OpenAI 兼容的
+   * `POST {base}/v1/embeddings` 接口，请求体为 `{ model, input }`。
+   *
+   * 处理流程：
+   * 1. 若未传 ID，自动查找 llm_type='embedding' 且 enable=1 的模型；
+   * 2. 根据 ID 获取可用模型及提供商；
+   * 3. 校验模型类型为 embedding；
+   * 4. 调用向量化 API，解析 data[0].embedding 作为结果；
+   * 5. 更新 llm_usage 表当天 usage_count。
+   */
+  async embedLLM(
+    input: EmbedLLMInput,
+    _context: LLMContext,
+    output: EmbedLLMOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    if (!input.id) {
+      const defaultEmbedding = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+        { field: 'llm_type', operator: Operator.EQ, value: 'embedding' },
+        { field: 'enable', operator: Operator.EQ, value: 1 },
+      ]);
+      if (!defaultEmbedding) {
+        throw new ValidationError('id 不能为空，且无可用默认 embedding 模型');
+      }
+      input.id = (defaultEmbedding as unknown as LLMAvailableRecord).id;
+    }
+    const text = String(input.input ?? '');
+    if (!text) {
+      throw new ValidationError('input 不能为空');
+    }
+
+    const startTime = Date.now();
+
+    const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
+    if (!llmRow) {
+      throw new NotFoundError('LLM', input.id);
+    }
+    const llm = llmRow as unknown as LLMAvailableRecord;
+    if (!llm.enable) {
+      throw new ValidationError(`LLM ${input.id} 已禁用`);
+    }
+    if (llm.llm_type !== 'embedding') {
+      throw new ValidationError(`LLM ${input.id} 类型为 ${llm.llm_type}，不支持向量化调用`);
+    }
+
+    const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
+    ]);
+    if (!providerRow) {
+      throw new NotFoundError('LLMProvider', llm.llm_provider_id);
+    }
+    const provider = providerRow as unknown as LLMProviderRecord;
+    if (!provider.enable) {
+      throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
+    }
+
+    const body: Record<string, unknown> = {
+      model: llm.llm_title,
+      input: text,
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (provider.api_key) {
+      headers['Authorization'] = `Bearer ${provider.api_key}`;
+    }
+
+    const url = this.buildEndpoint(provider.llm_provider_url, EMBED_PATH);
+    try {
+      const res = await this.fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        },
+        EXEC_TIMEOUT_MS,
+      );
+      if (!res.ok) {
+        const errText = await res.text();
+        output.error = `向量化调用失败: HTTP ${res.status} ${errText}`;
+        output.error_code = 'REMOTE_ERROR';
+        output.duration_ms = Date.now() - startTime;
+        return false;
+      }
+      const rawText = await res.text();
+      output.raw_response = rawText;
+      let json: {
+        data?: Array<{ embedding?: number[] }>;
+        usage?: { prompt_tokens?: number };
+      } = {};
+      try {
+        json = JSON.parse(rawText) as typeof json;
+      } catch {
+        json = {};
+      }
+      output.embedding = json.data?.[0]?.embedding ?? [];
+      output.input_tokens = json.usage?.prompt_tokens ?? 0;
+      output.duration_ms = Date.now() - startTime;
+    } catch (err) {
+      output.error = err instanceof Error ? err.message : String(err);
+      output.error_code = 'CONNECT_ERROR';
+      output.duration_ms = Date.now() - startTime;
+      return false;
+    }
+
     await this.upsertUsage(input.id);
     return true;
   }

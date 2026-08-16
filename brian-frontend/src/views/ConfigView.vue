@@ -1183,6 +1183,7 @@ interface FetchedModel { id: string; name: string; brief: string; features?: Rec
 const cachedModels = ref<FetchedModel[]>([])
 const modelSearchQuery = ref('')
 const selectedModelIds = ref<Set<string>>(new Set())
+const modelAddType = ref<'text' | 'vision' | 'embedding'>('text')
 
 const filteredCachedModels = computed(() => {
   const q = modelSearchQuery.value.toLowerCase()
@@ -1208,7 +1209,7 @@ async function handleAddModels(providerId: string) {
   try {
     const res = await fetchApi<{ added: number }>(`/config/provider/${providerId}/models/add`, {
       method: 'POST',
-      body: JSON.stringify({ modelIds: [...selectedModelIds.value] }),
+      body: JSON.stringify({ modelIds: [...selectedModelIds.value], llm_type: modelAddType.value }),
     })
     showToast(`已添加 ${res.added} 个模型`, 'success')
     selectedModelIds.value = new Set()
@@ -1456,8 +1457,11 @@ const modelSubmitting = ref(false)
 const modelChatPrompt = ref('')
 const modelChatResult = ref('')
 const modelChatMeta = ref<{ input_tokens: number; output_tokens: number; duration_ms: number }>({ input_tokens: 0, output_tokens: 0, duration_ms: 0 })
+const modelChatDimension = ref(0)
 const modelChatError = ref('')
 const modelChatLoading = ref(false)
+
+const isEmbeddingModel = computed(() => (editingModel.value?.llm_type || modelForm.value.usage) === 'embedding')
 
 async function sendModelChat() {
   const p = modelChatPrompt.value.trim()
@@ -1465,13 +1469,25 @@ async function sendModelChat() {
   modelChatLoading.value = true
   modelChatError.value = ''
   modelChatResult.value = ''
+  modelChatDimension.value = 0
   try {
-    const res = await configApi.model.chat(editingModel.value.id, p)
-    if (res.error) {
-      modelChatError.value = res.error
+    if (isEmbeddingModel.value) {
+      const res = await configApi.model.embed(editingModel.value.id, p)
+      if (res.error) {
+        modelChatError.value = res.error
+      } else {
+        modelChatResult.value = res.raw_response || JSON.stringify(res.embedding || [])
+        modelChatDimension.value = res.dimension || (res.embedding?.length ?? 0)
+        modelChatMeta.value = { input_tokens: res.input_tokens, output_tokens: 0, duration_ms: res.duration_ms }
+      }
     } else {
-      modelChatResult.value = res.raw_response || res.result || '(空回复)'
-      modelChatMeta.value = { input_tokens: res.input_tokens, output_tokens: res.output_tokens, duration_ms: res.duration_ms }
+      const res = await configApi.model.chat(editingModel.value.id, p)
+      if (res.error) {
+        modelChatError.value = res.error
+      } else {
+        modelChatResult.value = res.raw_response || res.result || '(空回复)'
+        modelChatMeta.value = { input_tokens: res.input_tokens, output_tokens: res.output_tokens, duration_ms: res.duration_ms }
+      }
     }
   } catch (e: unknown) {
     modelChatError.value = e instanceof Error ? e.message : '调用失败'
@@ -1534,6 +1550,7 @@ function openModelModal(model?: BackendModel) {
   modelChatPrompt.value = ''
   modelChatResult.value = ''
   modelChatMeta.value = { input_tokens: 0, output_tokens: 0, duration_ms: 0 }
+  modelChatDimension.value = 0
   modelChatError.value = ''
 }
 
@@ -5595,7 +5612,12 @@ watch(activeSubSection, async (val) => {
                       </div>
                     </label>
                   </div>
-                  <div v-if="selectedModelIds.size > 0" class="flex justify-end pt-2">
+                  <div v-if="selectedModelIds.size > 0" class="flex items-center justify-end gap-2 pt-2">
+                    <select v-model="modelAddType" class="px-2 py-1.5 text-xs rounded-lg border border-apple-gray-200 dark:border-apple-gray-600 bg-transparent text-apple-gray-700 dark:text-apple-gray-300">
+                      <option value="text">文本生成 (text)</option>
+                      <option value="vision">多模态 (vision)</option>
+                      <option value="embedding">向量化 (embedding)</option>
+                    </select>
                     <button
                       class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
                       :disabled="addingModels"
@@ -5667,14 +5689,17 @@ watch(activeSubSection, async (val) => {
               <textarea v-model="modelForm.usageDesc" :class="inputClass" rows="3" placeholder="描述模型的典型用途，用于模型动态选择（如：代码生成、长文本写作、数学推理）" />
             </div>
 
-            <!-- 模型测试：发送消息并展示原始结果 -->
+            <!-- 模型测试：根据模型类型调用不同接口 -->
             <div v-if="editingModel" class="border-t border-apple-gray-200 dark:border-apple-gray-700 pt-3">
-              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">模型测试</label>
+              <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">
+                模型测试
+                <span class="ml-1 text-[11px] font-normal text-apple-gray-400">{{ isEmbeddingModel ? '(向量化 / embedding)' : '(对话补全 / chat)' }}</span>
+              </label>
               <textarea
                 v-model="modelChatPrompt"
                 :class="inputClass"
                 rows="2"
-                placeholder="输入消息，调用模型查看原始返回结果..."
+                :placeholder="isEmbeddingModel ? '输入文本，调用模型生成向量...' : '输入消息，调用模型查看原始返回结果...'"
                 :disabled="modelChatLoading"
               />
               <div class="flex items-center justify-between mt-2">
@@ -5688,7 +5713,12 @@ watch(activeSubSection, async (val) => {
                   {{ modelChatLoading ? '调用中...' : '发送' }}
                 </button>
                 <span v-if="modelChatResult || modelChatError" class="text-[11px] text-apple-gray-400">
-                  {{ modelChatMeta.input_tokens }} in / {{ modelChatMeta.output_tokens }} out · {{ modelChatMeta.duration_ms }}ms
+                  <template v-if="isEmbeddingModel">
+                    维度 {{ modelChatDimension }} · {{ modelChatMeta.input_tokens }} in · {{ modelChatMeta.duration_ms }}ms
+                  </template>
+                  <template v-else>
+                    {{ modelChatMeta.input_tokens }} in / {{ modelChatMeta.output_tokens }} out · {{ modelChatMeta.duration_ms }}ms
+                  </template>
                 </span>
               </div>
               <div v-if="modelChatError" class="mt-2 flex items-start gap-1.5 text-xs text-error-red">

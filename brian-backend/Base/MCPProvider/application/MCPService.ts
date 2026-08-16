@@ -5,8 +5,14 @@
  * 实现所有用例：提供商管理、MCP 管理、MCP 调用、可视化运维。
  */
 
-import { execSync, spawn, type ChildProcess } from 'child_process';
+import { execSync } from 'child_process';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import {
+  StdioMcpClient,
+  callToolOverHttp,
+  callToolOverRest,
+  type McpTransportConfig,
+} from './McpTransport';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
@@ -71,7 +77,7 @@ import {
 export class MCPService {
   private enabled = true;
   private readonly config: ConfigService;
-  private readonly runningMcps = new Map<string, ChildProcess>();
+  private readonly runningMcps = new Map<string, StdioMcpClient>();
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, MCP_CONFIG_TABLE);
@@ -89,6 +95,32 @@ export class MCPService {
     // 支持 "npm install pkg" / "npm i pkg" / "npm install -g pkg" / "npm install --prefix /tmp pkg" 等
     const match = installCmd.match(/npm\s+(?:install|i)\s+(?:(?:-g|--prefix\s+\S+)\s+)?(.+)/);
     return match ? match[1].trim() : installCmd;
+  }
+
+  /** 获取 MCP 的通信方式（默认 stdio） */
+  private getTransportType(mcp: Record<string, unknown>): string {
+    return String(mcp.transport_type || 'stdio');
+  }
+
+  /** 解析 transport_config（JSON 字符串） */
+  private parseTransportConfig(mcp: Record<string, unknown>): McpTransportConfig {
+    const raw = String(mcp.transport_config || '');
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as McpTransportConfig;
+    } catch {
+      return {};
+    }
+  }
+
+  /** 解析 stdio 启动命令（优先 transport_config.command/args，回退到 mcp_start_cmd 拆分） */
+  private resolveStdioCommand(mcp: Record<string, unknown>): { command: string; args: string[] } {
+    const cfg = this.parseTransportConfig(mcp);
+    if (cfg.command) {
+      return { command: cfg.command, args: cfg.args || [] };
+    }
+    const parts = String(mcp.mcp_start_cmd || '').split(/\s+/).filter(Boolean);
+    return { command: parts[0] || '', args: parts.slice(1) };
   }
 
   /**
@@ -483,6 +515,13 @@ export class MCPService {
     const id = IdGenerator.generate();
     const now = IdGenerator.now();
 
+    // 根据市场 provider_code 决定通信方式（transport_type / transport_config）
+    const provider = await this.relationDb.selectOne(MCP_PROVIDER_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: input.mcp_provider_id },
+    ]);
+    const providerCode = provider ? String((provider as Record<string, unknown>).provider_code || '') : '';
+    const { transportType, transportConfig } = this.resolveTransport(providerCode, cmds.start);
+
     await this.relationDb.insert(MCP_INSTALL_TABLE, [
       { field: 'id', value: id },
       { field: 'created', value: now },
@@ -494,6 +533,8 @@ export class MCPService {
       { field: 'mcp_start_cmd', value: cmds.start },
       { field: 'mcp_stop_cmd', value: cmds.stop },
       { field: 'mcp_uninstall_cmd', value: cmds.uninstall },
+      { field: 'transport_type', value: transportType },
+      { field: 'transport_config', value: transportConfig },
       { field: 'status', value: 'stopped' },
       { field: 'enable', value: 1 },
     ]);
@@ -501,6 +542,25 @@ export class MCPService {
     // 安装完成后同步一次安装状态（通过 npm list -g 校验是否真实安装成功，并同步版本号）
     await this.syncInstallStatus();
     return true;
+  }
+
+  /** 根据市场 provider_code 解析通信方式与配置 */
+  private resolveTransport(providerCode: string, startCmd: string): { transportType: string; transportConfig: string } {
+    let transportType = 'stdio';
+    let transportConfig: McpTransportConfig = {};
+    if (providerCode === 'modelscope') {
+      transportType = 'streamable-http';
+    } else if (providerCode === 'smithery') {
+      transportType = 'http-sse';
+    } else if (providerCode === 'aliyun_bailian') {
+      transportType = 'rest';
+    } else {
+      // github / 默认：stdio，command/args 由 startCmd 拆分
+      const parts = startCmd.split(/\s+/).filter(Boolean);
+      transportType = 'stdio';
+      transportConfig = { command: parts[0] || '', args: parts.slice(1) };
+    }
+    return { transportType, transportConfig: JSON.stringify(transportConfig) };
   }
 
   /** 启动 MCP（PRD 3.2.2）- 后台启动进程并跟踪 */
@@ -516,18 +576,23 @@ export class MCPService {
     if (!mcp) {
       throw new NotFoundError('MCP Install', input.id);
     }
-    // 先清理已存在的旧进程
-    this.killRunningMcp(input.id);
-    try {
-      const child = spawn(String(mcp.mcp_start_cmd), {
-        shell: true,
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.unref();
-      this.runningMcps.set(input.id, child);
-    } catch {
-      // 启动失败不阻断
+    const transportType = this.getTransportType(mcp);
+    // 仅 stdio 传输需要启动本地进程；http/rest 为远程服务，无需本地进程
+    if (transportType === 'stdio') {
+      this.killRunningMcp(input.id);
+      const { command, args } = this.resolveStdioCommand(mcp);
+      if (!command) {
+        throw new ValidationError(`MCP ${mcp.mcp_title} 缺少启动命令`);
+      }
+      const client = new StdioMcpClient();
+      try {
+        client.spawn(command, args);
+      } catch {
+        // 启动失败不阻断
+      }
+      this.runningMcps.set(input.id, client);
+      // 异步完成 MCP 握手（不阻塞启动返回）
+      client.initialize().catch(() => { /* 握手失败忽略，调用时再报错 */ });
     }
     await this.relationDb.update(MCP_INSTALL_TABLE, [
       { field: 'status', value: 'running' },
@@ -552,13 +617,15 @@ export class MCPService {
       throw new NotFoundError('MCP Install', input.id);
     }
     this.killRunningMcp(input.id);
-    try {
-      execSync(String(mcp.mcp_stop_cmd), {
-        timeout: 10000,
-        stdio: 'pipe',
-      });
-    } catch {
-      // 停止命令失败忽略
+    if (String(mcp.mcp_stop_cmd || '')) {
+      try {
+        execSync(String(mcp.mcp_stop_cmd), {
+          timeout: 10000,
+          stdio: 'pipe',
+        });
+      } catch {
+        // 停止命令失败忽略
+      }
     }
     await this.relationDb.update(MCP_INSTALL_TABLE, [
       { field: 'status', value: 'stopped' },
@@ -571,28 +638,19 @@ export class MCPService {
 
   /** 终止指定 MCP 的托管进程 */
   private killRunningMcp(id: string): void {
-    const child = this.runningMcps.get(id);
-    if (child && child.pid) {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        try { child.kill('SIGTERM'); } catch { /* ignore */ }
-      }
+    const client = this.runningMcps.get(id);
+    if (client) {
+      client.kill();
     }
     this.runningMcps.delete(id);
   }
 
   /** 实时判断 MCP 进程是否真实存活（探测 PID，而非依赖数据库 status 字段） */
-  private isMcpRunning(id: string): boolean {
-    const child = this.runningMcps.get(id);
-    if (!child || !child.pid) return false;
-    if (child.exitCode !== null || child.signalCode !== null) return false;
-    try {
-      process.kill(child.pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
+  private isMcpRunning(id: string, transportType?: string): boolean {
+    // http/rest 为远程服务，无本地进程，视为「可用」（调用时按 enable 校验）
+    if (transportType && transportType !== 'stdio') return true;
+    const client = this.runningMcps.get(id);
+    return client ? client.isAlive() : false;
   }
 
   /** 停止所有运行中的 MCP（后端关闭时调用），并将状态重置为 stopped，返回停止数量 */
@@ -635,17 +693,8 @@ export class MCPService {
   /** 刷新运行状态：检查被托管进程是否仍存活，若已退出则重置为 stopped */
   private async refreshRunningStatus(): Promise<void> {
     for (const id of Array.from(this.runningMcps.keys())) {
-      const child = this.runningMcps.get(id);
-      let alive = false;
-      if (child && child.pid) {
-        try {
-          process.kill(child.pid, 0);
-          alive = child.exitCode === null && child.signalCode === null;
-        } catch {
-          alive = false;
-        }
-      }
-      if (!alive) {
+      const client = this.runningMcps.get(id);
+      if (!client || !client.isAlive()) {
         this.runningMcps.delete(id);
         await this.relationDb.update(MCP_INSTALL_TABLE, [
           { field: 'status', value: 'stopped' },
@@ -671,8 +720,13 @@ export class MCPService {
     // 3. 统计
     const records = await this.relationDb.select(MCP_INSTALL_TABLE, {});
     output.total = records.length;
-    output.running = records.filter((r) => String(r.status) === 'running').length;
-    output.stopped = records.filter((r) => String(r.status) === 'stopped').length;
+    let runningCount = 0;
+    for (const r of records) {
+      const transportType = String(r.transport_type || 'stdio');
+      if (this.isMcpRunning(String(r.id), transportType)) runningCount++;
+    }
+    output.running = runningCount;
+    output.stopped = records.length - runningCount;
     return true;
   }
 
@@ -731,6 +785,12 @@ export class MCPService {
     }
     if (patch.mcp_uninstall_cmd !== undefined) {
       data.push({ field: 'mcp_uninstall_cmd', value: patch.mcp_uninstall_cmd });
+    }
+    if (patch.transport_type !== undefined) {
+      data.push({ field: 'transport_type', value: patch.transport_type });
+    }
+    if (patch.transport_config !== undefined) {
+      data.push({ field: 'transport_config', value: patch.transport_config });
     }
     if (patch.enable !== undefined) {
       if (!patch.enable && this.runningMcps.has(input.id)) {
@@ -825,7 +885,8 @@ export class MCPService {
     });
     // 用实时进程状态覆盖数据库中的 status 字段（避免进程崩溃后 DB 状态残留为 running）
     for (const row of rows) {
-      row.status = this.isMcpRunning(String(row.id)) ? 'running' : 'stopped';
+      const transportType = String(row.transport_type || 'stdio');
+      row.status = this.isMcpRunning(String(row.id), transportType) ? 'running' : 'stopped';
     }
     output.list = rows as unknown as McpInstallRecord[];
     output.total = await this.relationDb.count(
@@ -857,22 +918,34 @@ export class MCPService {
     if (Number(mcp.enable) !== 1) {
       throw new ValidationError(`MCP ${mcp.mcp_title} 已禁用，无法调用`);
     }
-    if (!this.isMcpRunning(input.id)) {
+    const transportType = this.getTransportType(mcp);
+    // 仅 stdio 传输依赖本地进程运行；http/rest 为远程服务，仅校验 enable
+    if (transportType === 'stdio' && !this.isMcpRunning(input.id, 'stdio')) {
       throw new ValidationError(`MCP ${mcp.mcp_title} 未启动，请先启动后再调用`);
     }
 
-    // 调用 MCP：通过启动命令执行并传入参数
-    // 实际场景中 MCP 可能为 stdio 协议或 HTTP 协议
-    // 此处以命令行调用 + JSON 参数方式实现
+    const toolName = input.tool_name || '';
+    const args = input.params || {};
+    const config = this.parseTransportConfig(mcp);
+
     let success = false;
     try {
-      const paramsJson = JSON.stringify(input.params);
-      const result = execSync(`${String(mcp.mcp_start_cmd)} '${paramsJson}'`, {
-        timeout: 60000,
-        stdio: 'pipe',
-        encoding: 'utf-8',
-      });
-      output.result = result;
+      if (transportType === 'stdio') {
+        const client = this.runningMcps.get(input.id);
+        if (!client || !client.isAlive()) {
+          throw new ValidationError(`MCP ${mcp.mcp_title} 未启动，请先启动后再调用`);
+        }
+        output.result = await client.callTool(toolName, args);
+      } else if (transportType === 'rest') {
+        const { result, raw } = await callToolOverRest(config, toolName, args);
+        output.result = result;
+        output.raw_response = raw;
+      } else {
+        // streamable-http / http-sse
+        const { result, raw } = await callToolOverHttp(config, toolName, args);
+        output.result = result;
+        output.raw_response = raw;
+      }
       success = true;
     } catch (err) {
       output.result = { error: err instanceof Error ? err.message : String(err) };

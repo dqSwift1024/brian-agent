@@ -92,6 +92,8 @@ export class MCPSchemaInitializer {
         "mcp_stop_cmd"        TEXT    NOT NULL,
         "mcp_uninstall_cmd"   TEXT    NOT NULL,
         "version"             TEXT,
+        "transport_type"      TEXT,
+        "transport_config"    TEXT,
         "status"              TEXT    NOT NULL DEFAULT 'stopped',
         "enable"              INTEGER NOT NULL DEFAULT 1
       )
@@ -99,6 +101,12 @@ export class MCPSchemaInitializer {
     try {
       this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "version" TEXT`);
     } catch { /* 已存在 version 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "transport_type" TEXT`);
+    } catch { /* 已存在 transport_type 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "transport_config" TEXT`);
+    } catch { /* 已存在 transport_config 列时忽略 */ }
     try {
       this.relationDb.executeRaw(`ALTER TABLE "${MCP_INSTALL_TABLE}" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'stopped'`);
     } catch { /* 已存在 status 列时忽略 */ }

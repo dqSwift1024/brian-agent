@@ -319,6 +319,41 @@
 
 **返回**：Boolean，表示调用是否完成
 
+#### 3.3.2. 调用 LLM 生成向量（embedLLM）
+
+**功能**：调用指定的 embedding 模型生成向量
+
+**方法签名**：`Boolean embedLLM(EmbedLLMInput input, LLMContext context, EmbedLLMOutput output)`
+
+**入参（EmbedLLMInput extends Input）**：
+
+| 属性 | 类型 | 是否必填 | 说明 |
+| ------ | ----- | ----- | ----- |
+| id | STRING | N | LLM ID，为空则使用 llm_type='embedding' 且 enable=1 的模型 |
+| input | STRING | Y | 待向量化的文本 |
+
+**处理流程**：
+
+1. 若未传 ID，自动查找 llm_type='embedding' 且 enable=1 的模型；
+2. 根据 ID 获取 llm_available 记录及关联的 llm_provider；
+3. 校验模型 llm_type 必须为 embedding；
+4. 构造 OpenAI 兼容 `POST {base}/v1/embeddings` 请求，请求体 `{ model, input }`；
+5. 从 API 响应中解析 `data[0].embedding` 作为向量结果；
+6. 更新 llm_usage 表当天 usage_count；
+
+**出参（EmbedLLMOutput extends Output）**：
+
+| 属性 | 类型 | 说明 |
+| ------ | ----- | ----- |
+| embedding | NUMBER[] | 向量（浮点数组） |
+| input_tokens | NUMBER | 输入 Token 数 |
+| duration_ms | NUMBER | 调用耗时（毫秒） |
+| raw_response | STRING | 模型提供商返回的原始响应正文（未经解析） |
+| error | STRING? | 错误信息（HTTP / 网络错误时） |
+| error_code | STRING? | 错误码（NETWORK_ERROR / HTTP_{status}） |
+
+**返回**：Boolean，表示调用是否完成
+
 ### 3.4. 可视化与运维
 
 #### 3.4.1. 可视化数据（visualizedLLM）
