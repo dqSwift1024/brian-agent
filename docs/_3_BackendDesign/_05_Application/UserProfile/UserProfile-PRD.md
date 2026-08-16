@@ -309,18 +309,19 @@ UserProfile 模块的配置通过 Config Application 统一管理（`/api/config
 
 | 配置项 | config_key | 类型 | 默认值 | 说明 |
 |--------|-----------|------|--------|------|
-| auto_generate_interval_ms | `user_profile.auto_generate_interval_ms` | INT | 86400000 | 自动生成间隔（ms，默认 24h） |
+| auto_generate_interval_ms | `user_profile.auto_generate_interval_ms` | INT | 86400000 | 自动生成画像的调度间隔（ms，默认 24h；须为正整数） |
 | profile_analysis_prompt_template_id | `user_profile.profile_analysis_prompt_template_id` | STRING | — | 画像分析 prompt 模板 ID |
-| max_conversation_sample_count | `user_profile.max_conversation_sample_count` | INT | 500 | 最大对话采样数 |
-| profile_retention_versions | `user_profile.profile_retention_versions` | INT | 20 | 保留历史版本数 |
-| min_confidence_threshold | `user_profile.min_confidence_threshold` | DOUBLE | 0.5 | 最低置信度阈值 |
+| max_conversation_sample_count | `user_profile.max_conversation_sample_count` | INT | 500 | 最大对话采样数（须为正整数） |
+| profile_retention_versions | `user_profile.profile_retention_versions` | INT | 20 | 保留历史版本数（须为正整数） |
+| min_confidence_threshold | `user_profile.min_confidence_threshold` | DOUBLE | 0.5 | 最低置信度阈值（取值 0-1） |
 
 **处理流程**：
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `user_profile_config` 表；
-2. 校验并更新传入的非空字段；
+2. 校验并更新传入的非空字段（含范围校验：间隔/采样数/版本数为正整数，置信度 0-1）；
 3. 调用 RelationDBProvider.updateDB 写入配置；
-4. 返回更新后的配置；
+4. 若 `auto_generate_interval_ms` 变更，重新调度自动生成定时器；
+5. 返回更新后的配置；
 
 ## 4. 重要内容
 
@@ -329,9 +330,10 @@ UserProfile 模块的配置通过 Config Application 统一管理（`/api/config
 3. 画像维度可配置：通过 configProfileDirection 增删改画像维度，EvolutorAgent 和系统学习模块根据这些维度指导学习方向；
 4. 画像版本管理：每次 generateProfile 生成新版本，保留历史版本（最多 profile_retention_versions 个），支持版本追溯和趋势分析；
 5. 画像生成通过 LLM 分析对话数据，需注意 Token 消耗——通过 max_conversation_sample_count 限制采样数量；
-6. 所有外部资源访问必须通过对应的 Provider/Access 层，禁止绕过；
-7. 所有日志通过 LogProvider 记录，禁止 console.log；
-8. 所有 ID 通过 IdGenerator.generate() 生成；
+6. 画像自动生成调度：系统启动时及 `auto_generate_interval_ms` 变更时，按该间隔周期触发 `generateProfile`（全局画像，无 session 过滤）；通过内存守卫避免并发重入，异常记录日志不影响调度循环；
+7. 所有外部资源访问必须通过对应的 Provider/Access 层，禁止绕过；
+8. 所有日志通过 LogProvider 记录，禁止 console.log；
+9. 所有 ID 通过 IdGenerator.generate() 生成；
 
 ## 5. 表设计
 

@@ -329,6 +329,8 @@ async function buildContext() {
 
   const userProfileAccess = new UserProfileAccess(relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess, logger);
   await userProfileAccess.initialize();
+  // 启动用户画像自动生成调度（按 auto_generate_interval_ms 周期触发）
+  await userProfileAccess.startAutoGeneration();
   const visualizationAccess = new VisualizationAccess(relationDb, orchestrationVisualization, agentExecution, agentLibrary, agentContext, evolutorAgent, plannerAgent, infoCore, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess, graphDBAccess, logger);
   await visualizationAccess.initialize();
 

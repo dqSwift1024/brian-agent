@@ -33,12 +33,24 @@ export class UserProfileAccess {
   ) {
     this.initPromise = new UserProfileSchemaInitializer(relationDb).init();
     const raw = new UserProfileService(
-      relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess,
+      relationDb, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess, logger,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }
 
   async initialize(): Promise<void> { await this.initPromise; }
+
+  /** 启动自动生成画像调度 */
+  async startAutoGeneration(): Promise<void> {
+    await this.initPromise;
+    await (this.service as unknown as { startAutoGeneration(): void }).startAutoGeneration();
+  }
+
+  /** 停止自动生成画像调度 */
+  async stopAutoGeneration(): Promise<void> {
+    await this.initPromise;
+    (this.service as unknown as { stopAutoGeneration(): void }).stopAutoGeneration();
+  }
 
   async configProfileDirection(
     i: ConfigProfileDirectionInput, c: UserProfileContext, o: ConfigProfileDirectionOutput,

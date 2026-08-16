@@ -1420,7 +1420,12 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('user_profile.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('user_profile.auto_generate_interval_ms')) input.auto_generate_interval_ms = Number(value);
+      else if (prefix.startsWith('user_profile.profile_analysis_prompt_template_id')) input.profile_analysis_prompt_template_id = value as string;
+      else if (prefix.startsWith('user_profile.max_conversation_sample_count')) input.max_conversation_sample_count = Number(value);
+      else if (prefix.startsWith('user_profile.profile_retention_versions')) input.profile_retention_versions = Number(value);
+      else if (prefix.startsWith('user_profile.min_confidence_threshold')) input.min_confidence_threshold = Number(value);
       const output: any = {};
       await this.userProfileAccess.configUserProfile(input, {} as any, output);
       return;

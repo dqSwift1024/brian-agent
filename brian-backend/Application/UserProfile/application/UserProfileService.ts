@@ -39,6 +39,12 @@ import {
 } from '../domain/types';
 
 export class UserProfileService {
+  /** 自动生成画像的定时器 */
+  private autoGenerateTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** 是否正在执行自动生成（避免并发重入） */
+  private autoGenerating = false;
+
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly writerAgent: WriterAgentAccess,
@@ -47,6 +53,7 @@ export class UserProfileService {
     private readonly llmCore: LLMCoreAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
+    private readonly logger?: { error?: (msg: string, meta?: Record<string, unknown>) => void },
   ) {}
 
   async configProfileDirection(
@@ -478,11 +485,23 @@ export class UserProfileService {
     if (!config) throw new ValidationError('config init failed');
 
     const data: DataObject[] = [];
-    if (input.auto_generate_interval_ms !== undefined) data.push({ field: 'auto_generate_interval_ms', value: input.auto_generate_interval_ms });
+    if (input.auto_generate_interval_ms !== undefined) {
+      if (input.auto_generate_interval_ms <= 0) throw new ValidationError('auto_generate_interval_ms must be positive');
+      data.push({ field: 'auto_generate_interval_ms', value: input.auto_generate_interval_ms });
+    }
     if (input.profile_analysis_prompt_template_id !== undefined) data.push({ field: 'profile_analysis_prompt_template_id', value: input.profile_analysis_prompt_template_id });
-    if (input.max_conversation_sample_count !== undefined) data.push({ field: 'max_conversation_sample_count', value: input.max_conversation_sample_count });
-    if (input.profile_retention_versions !== undefined) data.push({ field: 'profile_retention_versions', value: input.profile_retention_versions });
-    if (input.min_confidence_threshold !== undefined) data.push({ field: 'min_confidence_threshold', value: input.min_confidence_threshold });
+    if (input.max_conversation_sample_count !== undefined) {
+      if (input.max_conversation_sample_count <= 0) throw new ValidationError('max_conversation_sample_count must be positive');
+      data.push({ field: 'max_conversation_sample_count', value: input.max_conversation_sample_count });
+    }
+    if (input.profile_retention_versions !== undefined) {
+      if (input.profile_retention_versions <= 0) throw new ValidationError('profile_retention_versions must be positive');
+      data.push({ field: 'profile_retention_versions', value: input.profile_retention_versions });
+    }
+    if (input.min_confidence_threshold !== undefined) {
+      if (input.min_confidence_threshold < 0 || input.min_confidence_threshold > 1) throw new ValidationError('min_confidence_threshold must be between 0 and 1');
+      data.push({ field: 'min_confidence_threshold', value: input.min_confidence_threshold });
+    }
 
     if (data.length > 0) {
       data.push({ field: 'updated', value: now });
@@ -491,8 +510,63 @@ export class UserProfileService {
       ]);
     }
 
+    // 自动生成间隔变更时重新调度
+    if (input.auto_generate_interval_ms !== undefined) {
+      this.scheduleAutoGeneration();
+    }
+
     output.config = await this.getConfig();
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 自动生成画像调度
+  // ---------------------------------------------------------------------------
+
+  /** 启动自动生成画像调度（按 auto_generate_interval_ms 间隔周期触发 generateProfile） */
+  startAutoGeneration(): void {
+    this.scheduleAutoGeneration();
+  }
+
+  /** 停止自动生成画像调度 */
+  stopAutoGeneration(): void {
+    if (this.autoGenerateTimer) {
+      clearInterval(this.autoGenerateTimer);
+      this.autoGenerateTimer = null;
+    }
+  }
+
+  /** 读取配置中的 auto_generate_interval_ms 并（重新）调度 */
+  private async scheduleAutoGeneration(): Promise<void> {
+    this.stopAutoGeneration();
+    try {
+      const config = await this.getConfig();
+      const interval = Number(config.auto_generate_interval_ms ?? 86400000);
+      if (interval <= 0) return;
+
+      this.autoGenerateTimer = setInterval(() => {
+        this.runAutoGeneration().catch((err: unknown) => {
+          this.logger?.error?.('UserProfile auto generation error', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }, interval);
+    } catch { /* best-effort */ }
+  }
+
+  /** 执行一次自动生成（全局画像，无 session 过滤） */
+  private async runAutoGeneration(): Promise<void> {
+    if (this.autoGenerating) return;
+    this.autoGenerating = true;
+    try {
+      await this.generateProfile(
+        Object.assign(new GenerateProfileInput(), { session_id: undefined }),
+        new UserProfileContext(),
+        new GenerateProfileOutput(),
+      );
+    } finally {
+      this.autoGenerating = false;
+    }
   }
 
   // ---------------------------------------------------------------------------
