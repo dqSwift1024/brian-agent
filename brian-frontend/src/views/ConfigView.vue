@@ -1175,6 +1175,8 @@ const providerForm = ref({ name: '', url: '', apiKey: '', modelsPath: '', chatPa
 const providerSubmitting = ref(false)
 const showApiKey = ref(false)
 const fetchingModels = ref(false)
+// 获取模型列表的请求序号：弹窗切换时自增，使进行中的旧请求结果失效，避免跨提供商串状态
+let fetchModelSeq = 0
 const fetchedModels = ref<Array<{ id: string; name: string; brief: string; features?: Record<string, unknown> }>>([])
 interface FetchedModel { id: string; name: string; brief: string; features?: Record<string, unknown>; enabled?: boolean }
 
@@ -1227,28 +1229,34 @@ function selectAllModels() {
 }
 
 async function loadCachedModels(providerId: string) {
+  const seq = fetchModelSeq
   try {
     const res = await fetchApi<{ models: FetchedModel[] }>(`/config/provider/${providerId}/models`)
+    if (seq !== fetchModelSeq) return
     cachedModels.value = res.models || []
   } catch {
+    if (seq !== fetchModelSeq) return
     cachedModels.value = []
   }
 }
 
 async function handleFetchModels(providerId: string) {
+  const seq = ++fetchModelSeq
   fetchingModels.value = true
   fetchedModels.value = []
   try {
     const res = await fetchApi<{ models: FetchedModel[]; total: number; cached: boolean }>(
       `/config/provider/${providerId}/fetch-models`, { method: 'POST' },
     )
+    if (seq !== fetchModelSeq) return
     fetchedModels.value = res.models || []
     cachedModels.value = res.models || []
     showToast(`获取到 ${fetchedModels.value.length} 个模型`, 'success')
   } catch (e: unknown) {
+    if (seq !== fetchModelSeq) return
     showToast(e instanceof Error ? e.message : '获取模型列表失败')
   } finally {
-    fetchingModels.value = false
+    if (seq === fetchModelSeq) fetchingModels.value = false
   }
 }
 
@@ -1284,6 +1292,9 @@ async function loadProviders() {
 }
 
 function openProviderModal(provider?: BackendProvider) {
+  // 切换弹窗时使进行中的旧请求失效，并重置加载状态，避免跨提供商串状态
+  fetchModelSeq++
+  fetchingModels.value = false
   if (provider) {
     editingProvider.value = provider
     providerForm.value = {
@@ -1317,6 +1328,8 @@ function openProviderModal(provider?: BackendProvider) {
 }
 
 function closeProviderModal() {
+  fetchModelSeq++
+  fetchingModels.value = false
   providerModalVisible.value = false
   editingProvider.value = null
   showApiKey.value = false
@@ -1442,6 +1455,8 @@ const modelSubmitting = ref(false)
 async function loadModels() {
   modelsLoading.value = true
   try {
+    // 确保提供商列表已加载，才能把 providerId 解析为提供商名称
+    if (providers.value.length === 0) await loadProviders()
     const raw = await configApi.model.list()
     const list = (Array.isArray(raw) ? raw : []) as BackendModel[]
     for (const m of list) {

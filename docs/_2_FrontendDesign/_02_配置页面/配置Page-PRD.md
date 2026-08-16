@@ -649,7 +649,7 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 
 | 交互模式 | 适用场景 | 界面形态 |
 |----------|----------|----------|
-| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy、画像维度 | 卡片网格/列表 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作；Agent 与执行策略以卡片网格展示 |
+| **实体管理** | LLM Provider/Model、Soul、Skill、MCP Provider/Instance、Prompt Template、Agent、Strategy、Orchestration Strategy、画像维度 | 卡片网格 + 新建/编辑弹窗，支持启停、测试连接、安装/卸载等操作；实体卡片统一采用紧凑网格（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`）+ `aspect-[3/2]` 固定比例，点击卡片即编辑，底部提供启停/测试/删除等快捷操作 |
 | **参数配置** | 上述各功能域的运行参数 | 竖条卡片网格（`grid-cols-2 sm:grid-cols-3 xl:grid-cols-6`），卡片为 `aspect-[3/2]`，每张卡片直接显示控件（Switch/Select/Input）与底部「确认」按钮，点击确认保存 |
 
 ### 10.2 引用类型配置项的处理
