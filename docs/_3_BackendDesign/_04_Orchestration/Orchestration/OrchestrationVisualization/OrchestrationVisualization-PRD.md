@@ -377,7 +377,7 @@
 **功能**：配置可视化模块的参数
 **入参**：
 - input：ConfigOrchestrationVisualizationInput（继承 Input），包含以下字段：
-  - max_nodes_in_graph：单图最大节点数（可选，默认 50，防止超大 DAG 返回）
+  - max_nodes_in_graph：Agent 执行 DAG 最大节点数（可选，默认 50，生成 Agent DAG 时超过则截断，防止超大 DAG 返回）
 - context：ConfigOrchestrationVisualizationContext（继承 Context），会话上下文（session_id 等）
 - output：ConfigOrchestrationVisualizationOutput（继承 Output），承载返回内容：
   - 当前生效的全部配置

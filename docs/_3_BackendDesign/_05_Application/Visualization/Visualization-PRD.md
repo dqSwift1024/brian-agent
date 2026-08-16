@@ -440,10 +440,9 @@ Visualization 模块的配置通过 Config Application 统一管理（`/api/conf
 
 | 配置项 | config_key | 类型 | 默认值 | 说明 |
 |--------|-----------|------|--------|------|
-| max_nodes_per_graph | `visualization.max_nodes_per_graph` | INT | 200 | 单图最大节点数 |
-| default_message_summary_length | `visualization.default_message_summary_length` | INT | 50 | 消息摘要默认长度（字符数） |
-| resolve_content_by_default | `visualization.resolve_content_by_default` | BOOLEAN | true | 是否默认解析 ID 引用为完整内容 |
-| max_context_samples_per_source | `visualization.max_context_samples_per_source` | INT | 3 | 每个上下文来源最多展示的样本数 |
+| max_nodes_per_graph | `visualization.max_nodes_per_graph` | INT | 200 | 消息引用关系图 / 消息 DAG 中最多展示的消息节点数，超过则截断 |
+| default_message_summary_length | `visualization.default_message_summary_length` | INT | 50 | 消息图节点中消息摘要的截取长度（字符数） |
+| resolve_content_by_default | `visualization.resolve_content_by_default` | BOOLEAN | true | 查看 Agent 执行 DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容 |
 
 **处理流程**：
 
@@ -480,7 +479,6 @@ Visualization 模块的配置通过 Config Application 统一管理（`/api/conf
 | max_nodes_per_graph | 单图最大节点数 | INT | N | | 默认 200 |
 | default_message_summary_length | 消息摘要默认长度 | INT | N | | 默认 50 |
 | resolve_content_by_default | 默认解析 ID 引用 | BOOLEAN | N | | 默认 true |
-| max_context_samples_per_source | 每个来源最多样本数 | INT | N | | 默认 3 |
 
 ## 6. 前端页面需求覆盖
 

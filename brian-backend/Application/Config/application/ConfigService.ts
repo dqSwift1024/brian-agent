@@ -456,7 +456,9 @@ export class ConfigService {
 
       const moduleName = reg.module;
       if (input.module && input.module !== moduleName) continue;
-      if (!moduleMap.has(moduleName)) {
+      // 以「层.模块」为键，避免不同层同名模块（如 ORCHESTRATION 与 APPLICATION 的 visualization）被合并
+      const moduleKey = `${layerName}.${moduleName}`;
+      if (!moduleMap.has(moduleKey)) {
         const mr = modulePrivMap.get(moduleName);
         const layerNode = layerMap.get(layerName);
         const layerReadable = layerNode ? (layerNode.readable as boolean) : true;
@@ -474,7 +476,7 @@ export class ConfigService {
           entity_types: (MODULE_ENTITY_TYPES[moduleName]) ?? [],
           categories: [] as Array<Record<string, unknown>>,
         };
-        moduleMap.set(moduleName, { module: modNode, layerName });
+        moduleMap.set(moduleKey, { module: modNode, layerName });
         if (layerNode) {
           (layerNode.modules as Array<Record<string, unknown>>).push(modNode);
         }
@@ -490,7 +492,7 @@ export class ConfigService {
       if (input.module && input.module !== moduleName) continue;
       if (input.category && input.category !== category) continue;
 
-      const modEntry = moduleMap.get(moduleName);
+      const modEntry = moduleMap.get(`${layerName}.${moduleName}`);
       if (!modEntry) continue;
       const modNode = modEntry.module;
       const layerNode = layerMap.get(layerName);

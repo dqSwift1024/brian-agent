@@ -34,6 +34,7 @@ interface NavSubSection {
   entityType?: string
   configModule?: string
   configCategories?: string[]
+  configLayer?: string
 }
 interface NavSection {
   key: string
@@ -112,7 +113,7 @@ const navSections: NavSection[] = [
       { key: 'orch-strategy-params', label: '策略参数', icon: GitBranch, type: 'params', configModule: 'strategy', configCategories: ['basic'] },
       { key: 'orch-strategy', label: '策略管理', icon: GitBranch, type: 'entity', entityType: 'orch-strategy' },
       { key: 'orch-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'execution', configCategories: ['basic'] },
-      { key: 'orch-visual', label: '可视化', icon: Monitor, type: 'params', configModule: 'visualization', configCategories: ['basic'] },
+      { key: 'orch-visual', label: 'Agent DAG 可视化', icon: Monitor, type: 'params', configModule: 'visualization', configCategories: ['basic'], configLayer: 'ORCHESTRATION' },
     ],
   },
   {
@@ -133,7 +134,7 @@ const navSections: NavSection[] = [
       { key: 'app-selflearning', label: '自学习', icon: GraduationCap, type: 'params', configModule: 'self_learning', configCategories: ['basic', 'weight', 'interval'] },
       { key: 'app-profile', label: '用户画像', icon: User, type: 'params', configModule: 'user_profile', configCategories: ['basic'] },
       { key: 'app-profile-direction', label: '画像维度', icon: Layers, type: 'entity', entityType: 'profile-direction' },
-      { key: 'app-visualization', label: '可视化', icon: BarChart3, type: 'params', configModule: 'visualization', configCategories: ['basic'] },
+      { key: 'app-visualization', label: '消息可视化', icon: BarChart3, type: 'params', configModule: 'visualization', configCategories: ['basic'], configLayer: 'APPLICATION' },
     ],
   },
   {
@@ -282,9 +283,10 @@ async function loadConfigTree() {
 
 const currentParams = computed(() => {
   if (!currentSub.value || currentSub.value.type !== 'params') return [] as ParamItem[]
-  const { configModule, configCategories } = currentSub.value
+  const { configModule, configCategories, configLayer } = currentSub.value
   const items: ParamItem[] = []
   for (const layer of configLayers.value) {
+    if (configLayer && layer.layer !== configLayer) continue
     for (const mod of layer.modules) {
       if (mod.module === configModule) {
         for (const cat of mod.categories) {
@@ -312,7 +314,9 @@ const currentParamsByCat = computed(() => {
   const groups: { cat: string; label: string; items: ParamItem[] }[] = []
   if (!currentSub.value) return groups
   const modKey = currentSub.value.configModule || ''
+  const layerFilter = currentSub.value.configLayer
   for (const layer of configLayers.value) {
+    if (layerFilter && layer.layer !== layerFilter) continue
     for (const mod of layer.modules) {
       if (mod.module !== modKey) continue
       for (const cat of mod.categories) {

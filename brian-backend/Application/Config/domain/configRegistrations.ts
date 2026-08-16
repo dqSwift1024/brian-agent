@@ -229,7 +229,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   orch('execution', 'basic', 'dag_timeout_ms', 'DAG 超时（ms）', 'INT', 300000, '整个 DAG 执行的最大超时时间'),
 
   // --- OrchestrationVisualization ---
-  orch('visualization', 'basic', 'max_nodes_in_graph', 'Agent DAG 图最大节点数', 'INT', 50, 'Agent 执行 DAG 图中最多展示的 Agent 节点数，超过则截断（防止 DAG 过大）'),
+  orch('visualization', 'basic', 'max_nodes_in_graph', 'Agent 执行 DAG 最大节点数', 'INT', 50, '编排层生成 Agent 执行 DAG 图时最多展示的 Agent 节点数，超过则截断（防止 DAG 过大）'),
 
   // --- JSONNode ---
   orch('jsonnode', 'basic', 'max_execution_depth', '最大执行深度', 'INT', 50),
@@ -305,9 +305,9 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   app('user_profile', 'basic', 'min_confidence_threshold', '最小置信度阈值', 'DOUBLE', 0.5),
 
   // --- Visualization ---
-  app('visualization', 'basic', 'max_nodes_per_graph', '消息图最大节点数', 'INT', 200, '消息引用关系图中最多展示的消息节点数，超过则截断'),
-  app('visualization', 'basic', 'default_message_summary_length', '消息摘要显示长度', 'INT', 50, '消息图中节点显示的消息摘要截取长度（字符数）'),
-  app('visualization', 'basic', 'resolve_content_by_default', '默认展开 Agent 组件详情', 'BOOLEAN', true, '查看 Agent DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容'),
+  app('visualization', 'basic', 'max_nodes_per_graph', '消息图最大节点数', 'INT', 200, '消息引用关系图 / 消息 DAG 中最多展示的消息节点数，超过则截断'),
+  app('visualization', 'basic', 'default_message_summary_length', '消息摘要显示长度', 'INT', 50, '消息图节点中消息摘要的截取长度（字符数）'),
+  app('visualization', 'basic', 'resolve_content_by_default', '默认解析 Agent 组件详情', 'BOOLEAN', true, '查看 Agent 执行 DAG 时是否默认将组件 ID（LLM/Soul/Skill/MCP）解析为完整内容'),
 
   // --- Config (self) ---
   app('config', 'basic', 'default_readable', '默认可读', 'BOOLEAN', true, '新注册配置项的默认可读性'),
