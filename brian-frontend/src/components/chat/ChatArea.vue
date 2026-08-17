@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import {
   MessageCircle,
   Loader2,
+  Pin,
+  PinOff,
+  ChevronDown,
+  CornerUpRight,
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
 import type { ChatMessage, Block, TextBlock } from '@/api/types'
@@ -15,6 +19,57 @@ const sessionStore = useSessionStore()
 const leftWidth = computed(() => `${sessionStore.splitRatio * 100}%`)
 const rightWidth = computed(() => `${(1 - sessionStore.splitRatio) * 100}%`)
 const isDragging = ref(false)
+const listRef = ref<HTMLDivElement | null>(null)
+const expandedCiting = ref<string | null>(null)
+const expandedCited = ref<string | null>(null)
+
+const nodeMap = computed(() => {
+  const m = new Map<string, { summary: string; pin: boolean; citingCount: number; citedCount: number; citingInfoIds: string[]; citedInfoIds: string[] }>()
+  for (const n of sessionStore.chatMapNodes) {
+    m.set(n.infoId, { summary: n.summary, pin: n.pin, citingCount: n.citingCount, citedCount: n.citedCount, citingInfoIds: n.citingInfoIds, citedInfoIds: n.citedInfoIds })
+  }
+  return m
+})
+
+function formatTime(ts: number) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const pad = (x: number) => String(x).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function nodeOf(msg: ChatMessage) {
+  return nodeMap.value.get(msg.id)
+}
+
+// ChatMap 点击节点 -> 滚动列表使该消息居中
+watch(() => sessionStore.focusInfoId, async (id) => {
+  if (!id) return
+  await nextTick()
+  const el = listRef.value?.querySelector(`[data-info-id="${id}"]`) as HTMLElement | null
+  if (!el || !listRef.value) return
+  const listRect = listRef.value.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  listRef.value.scrollTop += elRect.top - listRect.top - listRect.height / 2 + elRect.height / 2
+})
+
+function scrollListTo(id: string) {
+  sessionStore.triggerFocus(id)
+}
+
+function centerMapOn(id: string) {
+  sessionStore.triggerCenter(id)
+}
+
+function togglePin(id: string) {
+  sessionStore.togglePin(id)
+}
+
+function jumpTo(id: string) {
+  expandedCiting.value = null
+  expandedCited.value = null
+  scrollListTo(id)
+}
 
 type TimelineEntry =
   | { kind: 'message'; key: string; sort: number; message: ChatMessage }
@@ -161,8 +216,9 @@ async function handleSend(content: string, citingIds: string[]) {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
     sessionStore.setCancelController(null)
-    // 一轮对话结束后刷新 ChatMap，展示最新 work 的 Agent DAG
+    // 一轮对话结束后刷新 ChatMap，展示最新 work 的消息图谱，并撤销引用复选
     void sessionStore.loadDag(sessionId, 'default-user')
+    sessionStore.clearSelection()
   }
 }
 
@@ -273,7 +329,7 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
 
     <!-- Right: Conversation Panel -->
     <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden" :style="{ width: rightWidth }">
-      <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div ref="listRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         <div v-if="!sessionStore.currentSessionId && sessionStore.messages.length === 0" class="flex flex-col items-center justify-center h-full text-apple-gray-400">
           <MessageCircle :size="48" class="mb-4 text-apple-gray-300" />
           <p class="text-lg font-medium">Brian Agent</p>
@@ -285,14 +341,86 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
             v-if="entry.kind === 'message'"
             class="max-w-[85%]"
             :class="entry.message.role === 'user' ? 'ml-auto' : 'mr-auto'"
+            :data-info-id="entry.message.id"
           >
             <div
-              class="rounded-2xl px-4 py-3"
-              :class="entry.message.role === 'user'
-                ? 'bg-brian-blue text-white'
-                : 'block-card'"
+              class="rounded-2xl px-3 py-2.5 cursor-pointer"
+              :class="entry.message.role === 'user' ? 'bg-brian-blue text-white' : 'block-card'"
+              @click="centerMapOn(entry.message.id)"
             >
+              <div class="flex items-center justify-between mb-1 text-[10px]">
+                <label v-if="sessionStore.citingMode" class="flex items-center gap-1 cursor-pointer" @click.stop>
+                  <input
+                    type="checkbox"
+                    class="accent-white"
+                    :checked="sessionStore.selectedMsgIds.has(entry.message.id)"
+                    @change="sessionStore.toggleMsgSelection(entry.message.id)"
+                  />
+                </label>
+                <span v-else :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
+                  {{ formatTime(entry.message.timestamp) }}
+                </span>
+                <button
+                  class="p-0.5 rounded hover:text-warning-orange"
+                  :class="nodeOf(entry.message)?.pin ? 'text-warning-orange' : (entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400')"
+                  :title="nodeOf(entry.message)?.pin ? '取消钉住' : '钉住'"
+                  @click.stop="togglePin(entry.message.id)"
+                >
+                  <component :is="nodeOf(entry.message)?.pin ? Pin : PinOff" :size="12" />
+                </button>
+              </div>
+
               <p class="text-sm whitespace-pre-wrap">{{ entry.message.content }}</p>
+
+              <div class="flex items-center gap-1.5 mt-1.5">
+                <button
+                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px]"
+                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white' : 'bg-brian-blue/10 text-brian-blue'"
+                  @click.stop="expandedCited = expandedCited === entry.message.id ? null : entry.message.id"
+                >
+                  引用 {{ nodeOf(entry.message)?.citedCount ?? 0 }}
+                  <ChevronDown :size="10" :class="expandedCited === entry.message.id ? 'rotate-180' : ''" />
+                </button>
+                <button
+                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px]"
+                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white' : 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300'"
+                  @click.stop="expandedCiting = expandedCiting === entry.message.id ? null : entry.message.id"
+                >
+                  被引用 {{ nodeOf(entry.message)?.citingCount ?? 0 }}
+                  <ChevronDown :size="10" :class="expandedCiting === entry.message.id ? 'rotate-180' : ''" />
+                </button>
+                <span class="ml-auto text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">
+                  {{ entry.message.content.length }}字
+                </span>
+              </div>
+
+              <div v-if="expandedCited === entry.message.id" class="mt-1.5 space-y-0.5">
+                <p class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">引用以下消息：</p>
+                <button
+                  v-for="cid in nodeOf(entry.message)?.citedInfoIds ?? []"
+                  :key="cid"
+                  class="flex items-center gap-1 w-full text-left text-[10px] truncate hover:underline"
+                  @click.stop="jumpTo(cid)"
+                >
+                  <CornerUpRight :size="10" class="flex-shrink-0" />
+                  {{ nodeMap.get(cid)?.summary || cid.slice(0, 8) }}
+                </button>
+                <p v-if="!(nodeOf(entry.message)?.citedInfoIds?.length)" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">无</p>
+              </div>
+
+              <div v-if="expandedCiting === entry.message.id" class="mt-1.5 space-y-0.5">
+                <p class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">被以下消息引用：</p>
+                <button
+                  v-for="cid in nodeOf(entry.message)?.citingInfoIds ?? []"
+                  :key="cid"
+                  class="flex items-center gap-1 w-full text-left text-[10px] truncate hover:underline"
+                  @click.stop="jumpTo(cid)"
+                >
+                  <CornerUpRight :size="10" class="flex-shrink-0" />
+                  {{ nodeMap.get(cid)?.summary || cid.slice(0, 8) }}
+                </button>
+                <p v-if="!(nodeOf(entry.message)?.citingInfoIds?.length)" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">无</p>
+              </div>
             </div>
 
             <div v-if="entry.message.citingIds?.length" class="mt-1 flex flex-wrap gap-1">

@@ -153,6 +153,7 @@ import {
   GetSessionDetailInput, GetSessionDetailOutput,
   GetChatHistoryInput, GetChatHistoryOutput,
   SearchMessageInput, SearchMessageOutput,
+  PinMessageInput, PinMessageOutput,
   CancelWorkInput, CancelWorkOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
 } from './Application/Chat/domain/types';
@@ -1774,6 +1775,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
         await ctx.chatAccess.searchMessage(input, context, output);
         sendJson(res, 200, { messages: output.messages || [], total: output.total });
+
+      } else if (method === 'POST' && /\/api\/chat\/message\/[^/]+\/pin$/.test(pathname)) {
+        const infoId = pathname.split('/api/chat/message/')[1].split('/')[0];
+        const input = Object.assign(new PinMessageInput(), { info_id: infoId });
+        const output = new PinMessageOutput();
+        const context = new ChatContext();
+        await ctx.chatAccess.pinMessage(input, context, output);
+        sendJson(res, 200, { pin: output.pin });
 
       } else if (method === 'POST' && /\/api\/chat\/cancel\//.test(pathname)) {
         const eid = pathname.split('/api/chat/cancel/')[1];

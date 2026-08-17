@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
-import type { ChatMessage, ChatSession, DagNode, DagEdge, AgentChainNode, Block } from '@/api/types'
+import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block } from '@/api/types'
 import { chatApi, visualizationApi } from '@/api'
 
 export const useSessionStore = defineStore('session', () => {
@@ -8,15 +8,17 @@ export const useSessionStore = defineStore('session', () => {
   const messages = shallowRef<ChatMessage[]>([])
   const blocks = ref<Block[]>([])
   const chatList = ref<ChatSession[]>([])
-  const dagNodes = ref<DagNode[]>([])
-  const dagEdges = ref<DagEdge[]>([])
-  const dagWorkId = ref('')
+  const chatMapNodes = ref<ChatMapNode[]>([])
+  const chatMapEdges = ref<ChatMapEdge[]>([])
   const agentChain = ref<AgentChainNode[]>([])
   const splitRatio = ref(parseFloat(localStorage.getItem('chat-split-ratio') || '0.65'))
   const isStreaming = ref(false)
   const cancelToken = ref<AbortController | null>(null)
   const selectedMsgIds = ref<Set<string>>(new Set())
   const citingMode = ref(false)
+  // ChatMap 与对话列表双向定位：focusInfoId 由 ChatMap 触发滚动列表，centerInfoId 由列表触发平移 ChatMap
+  const focusInfoId = ref<string | null>(null)
+  const centerInfoId = ref<string | null>(null)
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -68,26 +70,68 @@ export const useSessionStore = defineStore('session', () => {
 
       const msgNodes = rawNodes
         .filter((n) => n.info_type === 'REQUEST' || n.info_type === 'RESPONSE')
-        .reverse()
+        .sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0))
 
       const idSet = new Set(msgNodes.map((n) => String(n.info_id ?? n.id ?? '')))
-      const nodes: DagNode[] = msgNodes.map((n, idx) => {
-        const isUser = n.info_type === 'REQUEST'
-        return {
-          id: String(n.info_id ?? n.id ?? ''),
-          label: String(n.info_summary ?? '').slice(0, 20),
-          x: isUser ? -170 : 170,
-          y: idx * 140 + 300,
-          status: isUser ? 'user' : 'assistant',
-        }
-      })
-      const edges: DagEdge[] = rawEdges
+      const edges: ChatMapEdge[] = rawEdges
         .filter((e) => idSet.has(String(e.from ?? '')) && idSet.has(String(e.to ?? '')))
-        .map((e) => ({ source: String(e.from ?? ''), target: String(e.to ?? '') }))
-      dagNodes.value = nodes
-      dagEdges.value = edges
-      dagWorkId.value = ''
+        .map((e) => ({
+          source: String(e.from ?? ''),
+          target: String(e.to ?? ''),
+          edgeType: (String(e.edge_type ?? '').toUpperCase().startsWith('QUESTION') ? 'QUESTION_ANSWER' : 'CITATION') as ChatMapEdge['edgeType'],
+        }))
+
+      // 布局：时间纵向（回复关系向下）、引用层级横向（引用关系从左到右）
+      const nodes: ChatMapNode[] = msgNodes.map((n, idx) => ({
+        id: String(n.info_id ?? n.id ?? ''),
+        infoId: String(n.info_id ?? n.id ?? ''),
+        infoType: String(n.info_type ?? ''),
+        role: String(n.info_creator_role ?? ''),
+        summary: String(n.info_summary ?? '').slice(0, 20),
+        info: String(n.info ?? ''),
+        infoLength: Number(n.info_length ?? 0),
+        created: Number(n.created ?? 0),
+        pin: Boolean(n.pin),
+        citingCount: Number(n.citing_count ?? 0),
+        citedCount: Number(n.cited_count ?? 0),
+        citingInfoIds: (n.citing_info_ids as string[]) ?? [],
+        citedInfoIds: (n.cited_info_ids as string[]) ?? [],
+        x: 0,
+        y: idx * 190 + 120,
+      }))
+
+      // 引用层级：被引用消息位于引用消息右侧
+      const level = new Map<string, number>()
+      for (const n of nodes) level.set(n.id, 0)
+      let changed = true
+      let guard = 0
+      while (changed && guard++ < nodes.length + 2) {
+        changed = false
+        for (const e of edges) {
+          if (e.edgeType !== 'CITATION') continue
+          const targetLevel = (level.get(e.target) ?? 0) + 1
+          if (targetLevel > (level.get(e.source) ?? 0)) {
+            level.set(e.source, targetLevel)
+            changed = true
+          }
+        }
+      }
+      for (const n of nodes) {
+        n.x = (level.get(n.id) ?? 0) * 240
+      }
+
+      chatMapNodes.value = nodes
+      chatMapEdges.value = edges
     } catch { /* ignore */ }
+  }
+
+  async function togglePin(infoId: string) {
+    try {
+      const res = await chatApi.pinMessage(infoId)
+      const node = chatMapNodes.value.find(n => n.infoId === infoId)
+      if (node) node.pin = res.pin
+      return res.pin
+    } catch { return false }
   }
 
   async function loadAgentChain(exchangeId: string) {
@@ -105,11 +149,12 @@ export const useSessionStore = defineStore('session', () => {
   function clearMessages() {
     messages.value = []
     blocks.value = []
-    dagNodes.value = []
-    dagEdges.value = []
-    dagWorkId.value = ''
+    chatMapNodes.value = []
+    chatMapEdges.value = []
     agentChain.value = []
     currentSessionId.value = ''
+    selectedMsgIds.value = new Set()
+    citingMode.value = false
     localStorage.removeItem('chat-current-session-id')
   }
 
@@ -164,6 +209,18 @@ export const useSessionStore = defineStore('session', () => {
     if (!citingMode.value) selectedMsgIds.value = new Set()
   }
 
+  function clearSelection() {
+    selectedMsgIds.value = new Set()
+  }
+
+  function triggerFocus(infoId: string) {
+    focusInfoId.value = infoId
+  }
+
+  function triggerCenter(infoId: string) {
+    centerInfoId.value = infoId
+  }
+
   function setStreaming(streaming: boolean) {
     isStreaming.value = streaming
   }
@@ -179,11 +236,13 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    currentSessionId, messages, blocks, chatList, dagNodes, dagEdges, dagWorkId,
+    currentSessionId, messages, blocks, chatList, chatMapNodes, chatMapEdges,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
+    focusInfoId, centerInfoId,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, toggleMsgSelection,
-    toggleCitingMode, setStreaming, setCancelController, cancelCurrentTask
+    toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
+    setStreaming, setCancelController, cancelCurrentTask
   }
 })

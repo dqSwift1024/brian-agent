@@ -48,6 +48,8 @@ export const chatApi = {
     request<void>(`/chat/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   search: (keyword: string) =>
     request<{ sessions: ChatSession[] }>(`/chat/search?keyword=${encodeURIComponent(keyword)}`).then(r => r.sessions),
+  pinMessage: (infoId: string) =>
+    request<{ pin: boolean }>(`/chat/message/${encodeURIComponent(infoId)}/pin`, { method: 'POST' }),
   agentChain: (exchangeId: string) =>
     request<{ nodes: AgentChainNode[] }>(`/chat/agent-chain/${encodeURIComponent(exchangeId)}`).then(r => r.nodes),
   cancelTask: (exchangeId: string) =>

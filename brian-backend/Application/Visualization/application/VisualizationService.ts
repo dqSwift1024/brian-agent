@@ -513,7 +513,7 @@ export class VisualizationService {
           { field: 'session_id', operator: Operator.EQ, value: input.session_id },
         ],
         order_by: [{ field: 'created', direction: 'DESC' as const }],
-        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length'],
+        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin'],
       });
     } catch (err) {
       this.logWarn('query info_raw failed', err);
@@ -546,9 +546,26 @@ export class VisualizationService {
         info_type: String(row.info_type ?? ''),
         info_creator_role: String(row.info_creator_role ?? ''),
         info_summary: this.truncate(String(row.info ?? ''), summaryLength),
+        info: String(row.info ?? ''),
+        info_length: Number(row.info_length ?? 0),
+        created: Number(row.created ?? 0),
+        pin: Number(row.pin ?? 0) === 1,
       });
 
       if (nodes.length >= maxNodes) break;
+    }
+
+    // 补充引用/被引用关系（计数与 info_id 列表）
+    {
+      const infoIds = nodes.map((n) => String(n.info_id ?? '')).filter(Boolean);
+      const citationMap = await this.buildCitationMap(infoIds, true);
+      for (const node of nodes) {
+        const citeData = citationMap.get(String(node.info_id ?? ''));
+        node.citing_count = citeData?.citingCount ?? 0;
+        node.cited_count = citeData?.citedCount ?? 0;
+        node.citing_info_ids = citeData?.citingInfoIds ?? [];
+        node.cited_info_ids = citeData?.citedInfoIds ?? [];
+      }
     }
 
     const edges: Array<Record<string, unknown>> = [];

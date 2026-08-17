@@ -156,6 +156,30 @@ export interface DagEdge {
   target: string
 }
 
+export interface ChatMapNode {
+  id: string
+  infoId: string
+  infoType: string
+  role: string
+  summary: string
+  info: string
+  infoLength: number
+  created: number
+  pin: boolean
+  citingCount: number
+  citedCount: number
+  citingInfoIds: string[]
+  citedInfoIds: string[]
+  x: number
+  y: number
+}
+
+export interface ChatMapEdge {
+  source: string
+  target: string
+  edgeType: 'QUESTION_ANSWER' | 'CITATION'
+}
+
 export interface MemoryItem {
   id: string
   type: 'semantic' | 'episodic' | 'procedural' | 'working'
