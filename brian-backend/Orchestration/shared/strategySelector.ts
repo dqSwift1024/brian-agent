@@ -62,7 +62,9 @@ export async function selectOrchestrationStrategy(
   try {
     const llmInput = Object.assign(new ExecLLMInput(), {
       id: '',
-      params: { prompt: promptText, temperature: 0.1, max_tokens: 256 },
+      prompt: promptText,
+      temperature: 0.1,
+      max_tokens: 256,
     });
     const llmOutput = new ExecLLMOutput();
     await llmAccess.execLLM(llmInput, new LLMContext(), llmOutput);

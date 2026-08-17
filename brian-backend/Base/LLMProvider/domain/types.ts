@@ -406,8 +406,16 @@ export class SoLLMOutput extends Output {
 export class ExecLLMInput extends Input {
   /** LLM ID（llm_available.id），为空则使用系统默认模型 */
   id!: string;
-  /** 透传参数（prompt、temperature 等） */
-  params!: Record<string, unknown>;
+  /** 用户消息内容（必填） */
+  prompt!: string;
+  /** 系统提示词（可选），前置为 system 消息 */
+  system?: string;
+  /** 采样温度（可选） */
+  temperature?: number;
+  /** 最大 Token 数（可选），未指定时使用模型默认 max_tokens */
+  max_tokens?: number;
+  /** 其他透传参数（可选），原样进入请求体 */
+  extra?: Record<string, unknown>;
 }
 
 /** execLLM 出参 */

@@ -904,12 +904,10 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const { ExecLLMInput, ExecLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
           const execInput = Object.assign(new ExecLLMInput(), {
             id,
-            params: {
-              prompt,
-              temperature: typeof body.temperature === 'number' ? body.temperature : 0.7,
-              // 显式限制输出 token，避免模型表里存的是上下文窗口（如 1048576）导致请求被提供商拒绝
-              max_tokens: typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : 2048,
-            },
+            prompt,
+            temperature: typeof body.temperature === 'number' ? body.temperature : 0.7,
+            // 显式限制输出 token，避免模型表里存的是上下文窗口（如 1048576）导致请求被提供商拒绝
+            max_tokens: typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : 2048,
           });
           const execOutput = new ExecLLMOutput();
           await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);

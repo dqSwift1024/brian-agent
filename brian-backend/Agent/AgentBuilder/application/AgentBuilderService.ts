@@ -533,7 +533,7 @@ export class AgentBuilderService {
         if (promptOut.prompt) {
           const llmOut = new ExecLLMOutput();
           await this.llmAccess.execLLM(
-            Object.assign(new ExecLLMInput(), { id: llmId, params: { prompt: promptOut.prompt } }),
+            Object.assign(new ExecLLMInput(), { id: llmId, prompt: promptOut.prompt }),
             new LLMContext(),
             llmOut,
           );

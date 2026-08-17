@@ -182,7 +182,9 @@ export class LLMCoreService {
     await this.llmAccess.execLLM(
       {
         id: rankerLLM.id,
-        params: { prompt: selectionPrompt, temperature: 0.1, max_tokens: 256 },
+        prompt: selectionPrompt,
+        temperature: 0.1,
+        max_tokens: 256,
       } as ExecLLMInput,
       new LLMContext(),
       execLLMOutput,

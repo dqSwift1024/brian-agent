@@ -1192,7 +1192,7 @@ describe('LLMProvider', () => {
     it('应该成功调用 LLM 并返回推理结果', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: 'Hello World' };
+      execInput.prompt = 'Hello World';
       const execOut = new ExecLLMOutput();
       const result = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
 
@@ -1204,7 +1204,7 @@ describe('LLMProvider', () => {
     it('调用成功后应该更新 llm_usage 统计', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: 'Test usage tracking' };
+      execInput.prompt = 'Test usage tracking';
       const execOut = new ExecLLMOutput();
       await llmAccess.execLLM(execInput, new LLMContext(), execOut);
 
@@ -1218,11 +1218,11 @@ describe('LLMProvider', () => {
     it('多次调用同一 LLM 当天 usage_count 应累加', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: 'Call 1' };
+      execInput.prompt = 'Call 1';
 
       await llmAccess.execLLM(execInput, new LLMContext(), new ExecLLMOutput());
       await llmAccess.execLLM(
-        Object.assign(new ExecLLMInput(), { id: llmId, params: { prompt: 'Call 2' } }),
+        Object.assign(new ExecLLMInput(), { id: llmId, prompt: 'Call 2' }),
         new LLMContext(),
         new ExecLLMOutput(),
       );
@@ -1237,7 +1237,7 @@ describe('LLMProvider', () => {
     it('缺少 id 应该抛出 ValidationError', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = '';
-      execInput.params = { prompt: 'test' };
+      execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
 
       await expect(
@@ -1248,7 +1248,7 @@ describe('LLMProvider', () => {
     it('缺少 prompt 应该抛出 ValidationError', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: '' };
+      execInput.prompt = '';
       const execOut = new ExecLLMOutput();
 
       await expect(
@@ -1259,7 +1259,7 @@ describe('LLMProvider', () => {
     it('不存在的 LLM ID 应该抛出 NotFoundError', async () => {
       const execInput = new ExecLLMInput();
       execInput.id = 'nonexistent';
-      execInput.params = { prompt: 'test' };
+      execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
 
       await expect(
@@ -1279,7 +1279,7 @@ describe('LLMProvider', () => {
 
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: 'test' };
+      execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
 
       await expect(
@@ -1299,7 +1299,7 @@ describe('LLMProvider', () => {
 
       const execInput = new ExecLLMInput();
       execInput.id = llmId;
-      execInput.params = { prompt: 'test' };
+      execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
 
       await expect(
@@ -1322,7 +1322,7 @@ describe('LLMProvider', () => {
 
       const execInput = new ExecLLMInput();
       execInput.id = lOut2.id;
-      execInput.params = { prompt: 'test' };
+      execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
       const result = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
 

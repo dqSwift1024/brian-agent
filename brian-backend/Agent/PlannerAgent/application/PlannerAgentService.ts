@@ -274,7 +274,8 @@ export class PlannerAgentService {
       await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), {
           id: llmId,
-          params: { prompt: promptOut.prompt, ...(system ? { system } : {}) },
+          prompt: promptOut.prompt,
+          ...(system ? { system } : {}),
         }),
         new LLMContext(),
         llmOut,

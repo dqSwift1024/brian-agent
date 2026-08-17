@@ -475,7 +475,7 @@ export class SkillCoreService {
     }
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
-      { id: llmId, params: { prompt } },
+      { id: llmId, prompt },
       new LLMContext(),
       llmOutput,
     );

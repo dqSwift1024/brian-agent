@@ -530,7 +530,7 @@ export class SoulCoreService {
     for (let attempt = 0; attempt < 3; attempt++) {
       const llmOutput = new ExecLLMOutput();
       const ok = await this.llmAccess.execLLM(
-        { id: llmId, params: { prompt: generationPrompt } },
+        { id: llmId, prompt: generationPrompt },
         new LLMContext(),
         llmOutput,
       );
@@ -616,12 +616,6 @@ export class SoulCoreService {
           execPromptOutput,
         );
         selectionPrompt = execPromptOutput.prompt;
-        // ===== 兜底：模板渲染为空时回退到内置默认 Prompt，避免 execLLM 收到空 prompt =====
-        if (!selectionPrompt) {
-          selectionPrompt = this.buildDefaultMatchPrompt(
-            agentId, contextId, interactId, availableSouls,
-          );
-        }
       } else {
         selectionPrompt = this.buildDefaultMatchPrompt(
           agentId, contextId, interactId, availableSouls,
@@ -639,21 +633,12 @@ export class SoulCoreService {
     }
 
     const execLLMOutput = new ExecLLMOutput();
-    // ===== 原始实现（保留参考）：误将 prompt 放到顶层，导致 params.prompt 为空 =====
-    // await this.llmAccess.execLLM(
-    //   {
-    //     id: llmId,
-    //     prompt: selectionPrompt,
-    //     params: { temperature: 0.1, max_tokens: 256 },
-    //   } as ExecLLMInput,
-    //   new LLMContext(),
-    //   execLLMOutput,
-    // );
-    // ===== 修改后：prompt 放入 params，符合 ExecLLMInput.params.prompt 契约 =====
     await this.llmAccess.execLLM(
       {
         id: llmId,
-        params: { prompt: selectionPrompt, temperature: 0.1, max_tokens: 256 },
+        prompt: selectionPrompt,
+        temperature: 0.1,
+        max_tokens: 256,
       } as ExecLLMInput,
       new LLMContext(),
       execLLMOutput,
@@ -755,7 +740,7 @@ export class SoulCoreService {
 
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
-      { id: llmId, params: { prompt, temperature: 0.1, max_tokens: 256 } },
+      { id: llmId, prompt, temperature: 0.1, max_tokens: 256 },
       new LLMContext(),
       llmOutput,
     );

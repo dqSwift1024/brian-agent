@@ -164,7 +164,8 @@ export class WriterAgentService {
       await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), {
           id: llmId,
-          params: { prompt, ...(system ? { system } : {}) },
+          prompt,
+          ...(system ? { system } : {}),
         }),
         new LLMContext(),
         llmOut,

@@ -285,16 +285,11 @@
 | 属性 | 类型 | 是否必填 | 说明 |
 | ------ | ----- | ----- | ----- |
 | id | STRING | N | LLM ID，为空则使用 is_default=1 的默认模型 |
-| params | Record\<string, unknown\> | Y | 透传参数，见下方 |
-
-**params 支持的字段**：
-
-| 字段 | 类型 | 必填 | 说明 |
-| ------ | ----- | ----- | ----- |
 | prompt | STRING | Y | 用户消息内容 |
 | system | STRING | N | 系统提示词，前置为 system 消息 |
 | temperature | NUMBER | N | 采样温度 |
-| {其他} | any | N | 原样透传到请求体 |
+| max_tokens | NUMBER | N | 最大 Token 数，未指定时使用模型默认 max_tokens |
+| extra | Record\<string, unknown\> | N | 其他透传参数，原样进入请求体 |
 
 **处理流程**：
 
@@ -505,7 +500,7 @@
 3. `listLLM` 从提供商 API 获取模型列表并保存到 `llm_cache` 表，`addLLM` 将模型添加到 `llm_available` 表使其可被调用；
 4. 新增提供商默认 enable = false，需手动启用后才可调用其模型；
 5. 资源级 LLM 提供商 / LLM 模型的启用/禁用通过 `updateLLMProvider` / `updateLLM` 修改 `enable` 字段实现；
-6. `execLLM` 的 `params` 采用 Record\<string, unknown\> 透传，支持 prompt（必填）、system、temperature 及其他参数透传；
+6. `execLLM` 采用显式类型字段（`prompt` 必填、`system`、`temperature`、`max_tokens` 可选）承接参数，`extra` 承接其他透传参数原样进入请求体；
 7. `execLLM` 的 ID 可为空，为空时自动使用 `is_default=1` 的默认模型；
 8. Condition、OrderBy、Page 为项目公共查询对象，定义于 `RelationDBProvider-PRD.md`；
 9. 节点/记录的系统字段（`id`、`created`、`updated`）由 Provider 维护，不可通过 Data 对象修改；

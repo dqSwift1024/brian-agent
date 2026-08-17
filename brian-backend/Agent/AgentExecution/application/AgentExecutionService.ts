@@ -419,7 +419,8 @@ export class AgentExecutionService {
     const ok = await this.llmAccess.execLLM(
       Object.assign(new ExecLLMInput(), {
         id: input.llm_id,
-        params: { prompt, ...(system ? { system } : {}) },
+        prompt,
+        ...(system ? { system } : {}),
       }),
       new LLMContext(),
       llmOut,
@@ -522,7 +523,8 @@ export class AgentExecutionService {
     await this.llmAccess.execLLM(
       Object.assign(new ExecLLMInput(), {
         id: input.llm_id,
-        params: { prompt, ...(system ? { system } : {}) },
+        prompt,
+        ...(system ? { system } : {}),
       }),
       new LLMContext(),
       llmOut,
@@ -559,7 +561,8 @@ export class AgentExecutionService {
     await this.llmAccess.execLLM(
       Object.assign(new ExecLLMInput(), {
         id: input.llm_id,
-        params: { prompt, ...(system ? { system } : {}) },
+        prompt,
+        ...(system ? { system } : {}),
       }),
       new LLMContext(),
       llmOut,

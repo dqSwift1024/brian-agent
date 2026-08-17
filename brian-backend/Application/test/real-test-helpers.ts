@@ -53,10 +53,23 @@ function addColumnIfNotExists(relationDb: RelationDBAccess, table: string, colum
   }
 }
 
+/** 为 agent_strategy 表写入默认策略种子，避免 buildAgent.matchStrategy 因表为空而失败 */
+function seedAgentStrategies(relationDb: RelationDBAccess): void {
+  const now = Date.now();
+  const ruleJson = JSON.stringify({ version: '1.0', steps: [{ step: 'Think', next: 'Answer' }, { step: 'Answer', next: null }] }).replace(/'/g, "''");
+  for (const label of ['Plan-and-Solve', 'CoT', 'ReAct']) {
+    const sid = `strategy-${label.toLowerCase()}`;
+    relationDb.executeRaw(
+      `INSERT OR IGNORE INTO "agent_strategy" ("id","created","updated","strategy_id","strategy_label","suitable_complexity_min","suitable_complexity_max","suitable_domains","execution_rule","enable") VALUES ('${sid}',${now},${now},'${sid}','${label}',0,100,'["*"]','${ruleJson}',1)`,
+    );
+  }
+}
+
 function mockExternalLLMMethods(llmAccess: LLMAccess) {
   vi.spyOn(llmAccess as any, 'execLLM' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
-    o.response = 'Mock LLM response for testing';
-    o.token_usage = { total_tokens: 100, prompt_tokens: 50, completion_tokens: 50 };
+    o.result = 'Mock LLM response for testing';
+    o.input_tokens = 50;
+    o.output_tokens = 50;
     return true;
   });
   vi.spyOn(llmAccess as any, 'testLLMProvider' as any).mockImplementation(async () => true);
@@ -244,6 +257,7 @@ export async function setupRealTestEnvironment(): Promise<RealTestContext> {
 
   const agentStrategy = new AgentStrategyAccess(relationDb, llmAccess, promptsAccess, logger);
   await agentStrategy.initialize();
+  seedAgentStrategies(relationDb);
 
   const agentContext = new AgentContextAccess(relationDb, infoCore, logger);
   await agentContext.initialize();

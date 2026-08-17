@@ -253,7 +253,7 @@ export class MCPCoreService {
 
     const execInput = new ExecLLMInput();
     execInput.id = '';
-    execInput.params = { prompt };
+    execInput.prompt = prompt;
     const execOutput = new ExecLLMOutput();
     await this.llmAccess.execLLM(
       execInput,

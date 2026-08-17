@@ -132,6 +132,17 @@ describe('ChatService', () => {
     );
   }
 
+  function mockReceiveWork(finalResponse: string = 'mock orchestration response') {
+    return vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(
+      async (_i: any, _c: any, o: any) => {
+        o.final_response = finalResponse;
+        o.work_id = 'mock-work-id';
+        o.interact_id = 'mock-interact-id';
+        return true;
+      },
+    );
+  }
+
   describe('openChatStream', () => {
     beforeEach(async () => {
       await ensureSession('test-session');
@@ -243,6 +254,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-007: text events emitted after orchestration returns final_response', async () => {
+      mockReceiveWork();
       const input = Object.assign(new OpenChatStreamInput(), {
         session_id: 'test-session', msg_content: 'hello',
       });
@@ -258,6 +270,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-008: done event at end with work_id, interact_id, final_response, elapsed_ms, token_usage', async () => {
+      mockReceiveWork();
       const input = Object.assign(new OpenChatStreamInput(), {
         session_id: 'test-session', msg_content: 'hello',
       });
@@ -300,6 +313,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-010: Full SSE event sequence verification', async () => {
+      mockReceiveWork();
       const input = Object.assign(new OpenChatStreamInput(), {
         session_id: 'test-session', msg_content: 'world',
       });
@@ -553,6 +567,7 @@ describe('ChatService', () => {
 
   describe('submitWork', () => {
     it('TC-CHAT-020: Basic submit with valid session_id and msg_content', async () => {
+      mockReceiveWork();
       const input = Object.assign(new SubmitWorkInput(), {
         session_id: 'test-session', msg_content: 'hello world',
       });
@@ -698,6 +713,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-034: infoCore.saveInfo throws does not crash (error logged)', async () => {
+      mockReceiveWork();
       const spy = vi.spyOn(ctx.infoCore, 'saveInfo');
       spy.mockRejectedValueOnce(new Error('save user info failed'));
 
@@ -715,6 +731,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-035: Concurrent submit two calls get different work_ids', async () => {
+      mockReceiveWork();
       const out1 = new SubmitWorkOutput();
       const out2 = new SubmitWorkOutput();
 
@@ -738,6 +755,7 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-031: citing_msg_ids with non-existent IDs ignored gracefully', async () => {
+      mockReceiveWork();
       const saveInfoSpy = vi.spyOn(ctx.infoCore, 'saveInfo');
 
       const input = Object.assign(new SubmitWorkInput(), {
@@ -1391,6 +1409,7 @@ describe('ChatService', () => {
     });
 
     it('SSE done event has non-negative elapsed_ms', async () => {
+      mockReceiveWork();
       const input = Object.assign(new OpenChatStreamInput(), {
         session_id: 'sse-elapsed', msg_content: 'hi',
       });
@@ -1404,6 +1423,7 @@ describe('ChatService', () => {
     });
 
     it('SSE done event has token_usage object', async () => {
+      mockReceiveWork();
       const input = Object.assign(new OpenChatStreamInput(), {
         session_id: 'sse-token', msg_content: 'hi',
       });

@@ -840,11 +840,12 @@ let models: Array<{
    * 4. 提取 result、input_tokens、output_tokens、duration_ms；
    * 5. 更新 llm_usage 表当天 usage_count。
    *
-   * params 支持的透传字段：
+   * 支持的入参字段：
    * - prompt: 用户消息内容（必填）
    * - system: 系统提示词（可选，前置为 system 消息）
    * - temperature: 采样温度（可选）
-   * - 其他参数原样传入请求体
+   * - max_tokens: 最大 Token 数（可选，未指定时使用模型默认 max_tokens）
+   * - extra: 其他参数原样传入请求体
    */
   async execLLM(
     input: ExecLLMInput,
@@ -862,10 +863,9 @@ let models: Array<{
       }
       input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
     }
-    const params = input.params ?? {};
-    const prompt = String(params.prompt ?? '');
+    const prompt = String(input.prompt ?? '');
     if (!prompt) {
-      throw new ValidationError('params.prompt 不能为空');
+      throw new ValidationError('prompt 不能为空');
     }
 
     const startTime = Date.now();
@@ -896,21 +896,25 @@ let models: Array<{
       model: llm.llm_title,
       messages: [{ role: 'user', content: prompt }],
     };
-    if (llm.max_tokens) {
-      body.max_tokens = llm.max_tokens;
-    }
-    if (params.temperature !== undefined) {
-      body.temperature = params.temperature;
-    }
-    // 透传其他参数（排除 prompt 和 system，后者用 messages 处理）
-    if (params.system) {
+    if (input.system) {
       (body.messages as Array<Record<string, unknown>>).unshift(
-        { role: 'system', content: params.system },
+        { role: 'system', content: input.system },
       );
     }
-    for (const [k, v] of Object.entries(params)) {
-      if (!['prompt', 'system', 'temperature', 'model', 'messages', 'api_key'].includes(k)) {
-        body[k] = v;
+    if (input.temperature !== undefined) {
+      body.temperature = input.temperature;
+    }
+    if (input.max_tokens !== undefined) {
+      body.max_tokens = input.max_tokens;
+    } else if (llm.max_tokens) {
+      body.max_tokens = llm.max_tokens;
+    }
+    // 透传其他参数（extra 中的参数原样进入请求体）
+    if (input.extra) {
+      for (const [k, v] of Object.entries(input.extra)) {
+        if (!['prompt', 'system', 'temperature', 'max_tokens', 'model', 'messages', 'api_key'].includes(k)) {
+          body[k] = v;
+        }
       }
     }
 
