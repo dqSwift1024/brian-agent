@@ -166,14 +166,33 @@ export class UserProfileService {
     const dimensions: Record<string, unknown> = {};
     const now = IdGenerator.now();
 
+    // 读取最低置信度阈值，与 getProfileByVersion 保持一致，过滤低置信度维度
+    const profileConfig = await this.getConfig();
+    const minConfidence = Number(profileConfig.min_confidence_threshold ?? 0.5);
+
     // 前一个已生成版本的维度数据，用于计算每个维度的稳定性（stable/drifting/emerging）
     const prevVersionDimensions = await this.loadPrevVersionDimensions(sessionId, latestRecord);
+
+    // 最新版本已生成的 LLM 分析维度（与 generateProfile / getProfileByVersion 同一数据源）
+    const storedDimensions = latestRecord
+      ? await this.loadStoredDimensions(String(latestRecord.id))
+      : {};
 
     for (const dir of enabledDirs) {
       const key = String(dir.direction_key);
       try {
-        const result = await this.aggregateDimension(key, sessionId, writerPreferences, latestRecord);
+        let result: { value: unknown; confidence: number; evidence: Array<Record<string, unknown>> };
+        if (storedDimensions[key]) {
+          // 优先使用已生成的 LLM 分析维度，保证与配置/版本详情一致
+          result = storedDimensions[key];
+        } else {
+          // 未生成画像或该维度未被分析时，实时聚合作为初略画像
+          result = await this.aggregateDimension(key, sessionId, writerPreferences, latestRecord);
+        }
+        if (result.confidence < minConfidence) continue;
         (result as Record<string, unknown>).stability = this.determineStability(key, result.value, prevVersionDimensions);
+        (result as Record<string, unknown>).direction_key = key;
+        (result as Record<string, unknown>).direction_name = String(dir.direction_name);
         dimensions[key] = result;
       } catch {
         // skip failed dimensions
@@ -438,6 +457,12 @@ export class UserProfileService {
     const config = await this.getConfig();
     const minConfidence = Number(config.min_confidence_threshold ?? 0.5);
 
+    const dirRows = await this.queryTable(USER_PROFILE_DIRECTION_TABLE, []);
+    const dirNameMap: Record<string, string> = {};
+    for (const d of dirRows) {
+      dirNameMap[String(d.direction_key)] = String(d.direction_name);
+    }
+
     const dimensions: Record<string, unknown> = {};
     for (const d of dimRows) {
       const key = String(d.direction_key);
@@ -451,6 +476,8 @@ export class UserProfileService {
         value,
         evidence,
         confidence,
+        direction_key: key,
+        direction_name: dirNameMap[key] || key,
       };
     }
 
@@ -648,6 +675,26 @@ export class UserProfileService {
       LIKE: 'LIKE', IS_NULL: 'IS NULL', IS_NOT_NULL: 'IS NOT NULL',
     };
     return map[op] ?? '=';
+  }
+
+  private async loadStoredDimensions(
+    profileRecordId: string,
+  ): Promise<Record<string, { value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }>> {
+    const map: Record<string, { value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }> = {};
+    try {
+      const dimRows = await this.queryTable(USER_PROFILE_DIMENSION_DATA_TABLE, [
+        { field: 'profile_record_id', operator: Operator.EQ, value: profileRecordId },
+      ]);
+      for (const d of dimRows) {
+        const key = String(d.direction_key);
+        let value: unknown = null;
+        let evidence: Array<Record<string, unknown>> = [];
+        try { value = JSON.parse(String(d.dimension_value ?? 'null')); } catch { value = d.dimension_value; }
+        try { evidence = JSON.parse(String(d.evidence ?? '[]')); } catch { evidence = d.evidence as Array<Record<string, unknown>>; }
+        map[key] = { value, confidence: Number(d.confidence), evidence };
+      }
+    } catch { /* ignore */ }
+    return map;
   }
 
   private async loadPrevVersionDimensions(

@@ -108,7 +108,7 @@ function setHeatmapRef(mode: string, el: Element | null) {
       }
     })
   }
-  ;(el as HTMLElement).dataset.mode = mode
+  (el as HTMLElement).dataset.mode = mode
   heatmapObserver.observe(el)
 }
 

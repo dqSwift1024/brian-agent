@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   Clock, Brain, Database, Network, GitBranch,
   Search, Trash2, Plus, ChevronRight, ArrowLeft,
@@ -8,24 +10,42 @@ import {
   UserRound, History, RefreshCw, Sparkles, Loader2,
 } from '@lucide/vue'
 import { chatApi, memoryApi, libraryApi, userProfileApi, visualizationApi } from '@/api'
-import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, UserProfileData, ProfileHistoryItem, ProfileVersionData, MessageGraphNode, MessageGraphEdge } from '@/api/types'
+import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData, MessageGraphNode, MessageGraphEdge } from '@/api/types'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
+import LibraryTreeItem from '@/components/LibraryTreeItem.vue'
+import { useI18nStore } from '@/stores/i18n'
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+function renderMarkdown(content: string): string {
+  const html = marked.parse(content) as string
+  return DOMPurify.sanitize(html)
+}
 
 const router = useRouter()
 
 // Tabs
-const activeTab = ref<'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile' | 'messageGraph'>('history')
-const tabs = [
-  { key: 'history' as const, label: '历史', icon: Clock },
-  { key: 'memory' as const, label: '记忆', icon: Brain },
-  { key: 'library' as const, label: '资料库', icon: Database },
-  { key: 'tagGraph' as const, label: 'Tag图', icon: Network },
-  { key: 'keywordGraph' as const, label: '关键词图', icon: GitBranch },
-  { key: 'profile' as const, label: '画像', icon: UserRound },
-  { key: 'messageGraph' as const, label: '消息图', icon: GitBranch },
-]
+const i18nStore = useI18nStore()
+type InfoTabKey = 'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile' | 'messageGraph'
+const infoTabKeys: InfoTabKey[] = ['history', 'memory', 'library', 'tagGraph', 'keywordGraph', 'profile', 'messageGraph']
+const storedInfoTab = localStorage.getItem('brian-info-active-tab')
+const activeTab = ref<InfoTabKey>(infoTabKeys.includes(storedInfoTab as InfoTabKey) ? (storedInfoTab as InfoTabKey) : 'history')
+const tabs = computed(() => [
+  { key: 'history' as const, label: i18nStore.t('info.history'), icon: Clock },
+  { key: 'memory' as const, label: i18nStore.t('info.memory'), icon: Brain },
+  { key: 'library' as const, label: i18nStore.t('info.library'), icon: Database },
+  { key: 'tagGraph' as const, label: i18nStore.t('info.tagGraph'), icon: Network },
+  { key: 'keywordGraph' as const, label: i18nStore.t('info.keywordGraph'), icon: GitBranch },
+  { key: 'profile' as const, label: i18nStore.t('info.profile'), icon: UserRound },
+  { key: 'messageGraph' as const, label: i18nStore.t('info.messageGraph'), icon: GitBranch },
+])
 
 // History tab
 const historySearch = ref('')
@@ -275,6 +295,345 @@ async function handleDeleteLibrary(id: string) {
   libraries.value = libraries.value.filter(l => l.id !== id)
 }
 
+async function handleToggleLibrary(lib: LibraryPath) {
+  try {
+    const result = await libraryApi.setEnabled(lib.id, !lib.enableSelfLearning)
+    lib.enableSelfLearning = result.enabled
+    await loadLibraries()
+  } catch { /* ignore */ }
+}
+
+// Library detail
+const libraryFiles = ref<LibraryFileEntry[]>([])
+const libraryTree = ref<LibraryTreeNode[]>([])
+const currentDirectory = ref('')
+const fileKeyword = ref('')
+const fileHasMore = ref(false)
+const fileNextCursor = ref<string | null>(null)
+const fileLoading = ref(false)
+const fileLoadingMore = ref(false)
+const selectedFile = ref<{ fileId: string; name: string; content: string } | null>(null)
+const selectedFileLoading = ref(false)
+
+const libraryBreadcrumb = computed(() => {
+  const parts = currentDirectory.value ? currentDirectory.value.split('/').filter(Boolean) : []
+  const items = [{ label: '根目录', path: '' }]
+  for (let i = 0; i < parts.length; i++) {
+    items.push({ label: parts[i], path: parts.slice(0, i + 1).join('/') })
+  }
+  return items
+})
+
+function openLibraryDetail(lib: LibraryPath) {
+  libraryDetail.value = lib
+  currentDirectory.value = ''
+  fileKeyword.value = ''
+  selectedFile.value = null
+  annotations.value = []
+  annotationLines.value = []
+  loadLibraryFiles(true)
+  loadLibraryTree()
+}
+
+async function loadLibraryFiles(reset = true) {
+  if (!libraryDetail.value) return
+  if (reset) fileLoading.value = true
+  else fileLoadingMore.value = true
+  try {
+    const data = await libraryApi.files(libraryDetail.value.id, {
+      directory: currentDirectory.value,
+      keyword: fileKeyword.value.trim() || undefined,
+      cursor: reset ? undefined : fileNextCursor.value || undefined,
+      limit: 50,
+    })
+    if (reset) libraryFiles.value = data.files
+    else libraryFiles.value = [...libraryFiles.value, ...data.files]
+    fileHasMore.value = data.has_more
+    fileNextCursor.value = data.next_cursor
+  } catch { /* ignore */ }
+  finally {
+    if (reset) fileLoading.value = false
+    else fileLoadingMore.value = false
+  }
+}
+
+async function loadMoreLibraryFiles() {
+  if (!fileHasMore.value || fileLoadingMore.value || fileLoading.value) return
+  await loadLibraryFiles(false)
+}
+
+async function loadLibraryTree() {
+  if (!libraryDetail.value) return
+  try { libraryTree.value = await libraryApi.tree(libraryDetail.value.id) }
+  catch { libraryTree.value = [] }
+}
+
+function enterDirectory(dirPath: string) {
+  currentDirectory.value = dirPath
+  selectedFile.value = null
+  loadLibraryFiles(true)
+}
+
+function goUpDirectory() {
+  if (!currentDirectory.value) return
+  const idx = currentDirectory.value.lastIndexOf('/')
+  currentDirectory.value = idx > 0 ? currentDirectory.value.slice(0, idx) : ''
+  selectedFile.value = null
+  loadLibraryFiles(true)
+}
+
+async function openFile(file: LibraryFileEntry) {
+  if (file.isDirectory) { enterDirectory(file.relativePath); return }
+  selectedFileLoading.value = true
+  annotations.value = []
+  annotationLines.value = []
+  try {
+    const data = await libraryApi.fileContent(file.id)
+    selectedFile.value = { fileId: file.id, name: data.fileName, content: data.content }
+  } catch { selectedFile.value = { fileId: file.id, name: file.name, content: '文件内容读取失败' } }
+  selectedFileLoading.value = false
+  await nextTick()
+  await loadAnnotations(file.id)
+}
+
+async function loadAnnotations(fileId: string) {
+  try {
+    const list = await libraryApi.fileAnnotations(fileId)
+    for (const a of list) {
+      annotations.value.push({
+        id: a.id,
+        question: a.question,
+        result: a.result,
+        selectionText: a.selection_text,
+      })
+    }
+    await nextTick()
+    for (const a of list) {
+      restoreMark(a.selection_text, a.id)
+    }
+    recomputeLines()
+  } catch { /* ignore */ }
+}
+
+function restoreMark(text: string, id: string) {
+  const container = contentAreaRef.value
+  if (!container || !text) return
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    const nodeText = node.textContent || ''
+    const idx = nodeText.indexOf(text)
+    if (idx >= 0) {
+      try {
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + text.length)
+        const mark = document.createElement('mark')
+        mark.setAttribute('data-anchor-id', id)
+        mark.className = 'doc-annotation-mark'
+        range.surroundContents(mark)
+      } catch { /* ignore */ }
+      return
+    }
+  }
+}
+
+// ========== 文档展示区：注释（咨询） ==========
+interface DocAnnotation {
+  id: string
+  question: string
+  result: string
+  selectionText: string
+}
+const annotations = ref<DocAnnotation[]>([])
+const activeAnnotationId = ref<string | null>(null)
+const askDialog = ref<{ selectionText: string; contextBefore: string; contextAfter: string; question: string } | null>(null)
+const asking = ref(false)
+const contextMenu = ref<{ x: number; y: number } | null>(null)
+const contentAreaRef = ref<HTMLElement | null>(null)
+
+interface AnnotationLine { id: string; x1: number; y1: number; x2: number; y2: number }
+const annotationLines = ref<AnnotationLine[]>([])
+
+interface ArticleSection { id: string; level: number; title: string }
+const articleSections = computed<ArticleSection[]>(() => {
+  const content = selectedFile.value?.content || ''
+  const sections: ArticleSection[] = []
+  for (const line of content.split('\n')) {
+    const m = line.match(/^(#{1,4})\s+(.+)$/)
+    if (m) {
+      sections.push({ id: `sec-${sections.length}`, level: m[1].length, title: m[2].trim() })
+    }
+  }
+  return sections
+})
+
+let pendingSelection: { startContainer: Node; startOffset: number; endContainer: Node; endOffset: number } | null = null
+let pendingAskContext: { text: string; contextBefore: string; contextAfter: string; selectionStart: number; selectionEnd: number } | null = null
+
+function handleFileContextMenu(event: MouseEvent) {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const text = selection.toString().trim()
+  if (!text) return
+  const range = selection.getRangeAt(0)
+  pendingSelection = {
+    startContainer: range.startContainer,
+    startOffset: range.startOffset,
+    endContainer: range.endContainer,
+    endOffset: range.endOffset,
+  }
+  const content = selectedFile.value?.content || ''
+  const idx = content.indexOf(text)
+  const contextBefore = idx > 0 ? content.slice(Math.max(0, idx - 500), idx) : ''
+  const contextAfter = idx >= 0 ? content.slice(idx + text.length, idx + text.length + 500) : ''
+  pendingAskContext = {
+    text,
+    contextBefore,
+    contextAfter,
+    selectionStart: idx >= 0 ? idx : 0,
+    selectionEnd: idx >= 0 ? idx + text.length : text.length,
+  }
+  contextMenu.value = { x: event.clientX, y: event.clientY }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function openAskDialog() {
+  if (!contextMenu.value || !pendingAskContext) return
+  askDialog.value = {
+    selectionText: pendingAskContext.text,
+    contextBefore: pendingAskContext.contextBefore,
+    contextAfter: pendingAskContext.contextAfter,
+    question: '',
+  }
+  contextMenu.value = null
+}
+
+async function submitAsk() {
+  if (!askDialog.value) return
+  const dlg = askDialog.value
+  asking.value = true
+  try {
+    const data = await libraryApi.queryDocument({
+      selection: dlg.selectionText,
+      context_before: dlg.contextBefore,
+      context_after: dlg.contextAfter,
+      question: dlg.question.trim() || '请解释这段内容',
+    })
+    const id = `ann-${Date.now()}`
+    const question = dlg.question.trim() || '请解释这段内容'
+    annotations.value.push({
+      id,
+      question,
+      result: data.result,
+      selectionText: dlg.selectionText,
+    })
+    activeAnnotationId.value = id
+    markSelection(id)
+    askDialog.value = null
+    await nextTick()
+    recomputeLines()
+    // 持久化咨询卡片与关联关系
+    if (selectedFile.value && pendingAskContext) {
+      try {
+        await libraryApi.saveAnnotation({
+          library_id: libraryDetail.value?.id,
+          file_id: selectedFile.value.fileId,
+          selection_text: dlg.selectionText,
+          selection_start: pendingAskContext.selectionStart,
+          selection_end: pendingAskContext.selectionEnd,
+          question,
+          result: data.result,
+          llm_id: data.llm_id,
+        })
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+  finally { asking.value = false }
+}
+
+function handleCardClick(id: string) {
+  activeAnnotationId.value = activeAnnotationId.value === id ? null : id
+}
+
+function scrollToSection(section: ArticleSection) {
+  const container = contentAreaRef.value
+  if (!container) return
+  const headings = container.querySelectorAll('h1, h2, h3, h4')
+  for (const h of headings) {
+    if ((h.textContent || '').trim() === section.title) {
+      h.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      break
+    }
+  }
+}
+
+function markSelection(id: string) {
+  if (!pendingSelection) return
+  try {
+    const range = document.createRange()
+    range.setStart(pendingSelection.startContainer, pendingSelection.startOffset)
+    range.setEnd(pendingSelection.endContainer, pendingSelection.endOffset)
+    const mark = document.createElement('mark')
+    mark.setAttribute('data-anchor-id', id)
+    mark.className = 'doc-annotation-mark'
+    range.surroundContents(mark)
+  } catch { /* 跨节点选中无法包裹，跳过下划线 */ }
+}
+
+function recomputeLines() {
+  const container = contentAreaRef.value
+  if (!container) { annotationLines.value = []; return }
+  const cRect = container.getBoundingClientRect()
+  const lines: AnnotationLine[] = []
+  for (const ann of annotations.value) {
+    const anchor = container.querySelector(`[data-anchor-id="${ann.id}"]`) as HTMLElement | null
+    const card = container.querySelector(`[data-card-id="${ann.id}"]`) as HTMLElement | null
+    if (!anchor || !card) continue
+    const aRect = anchor.getBoundingClientRect()
+    const kRect = card.getBoundingClientRect()
+    const ax = aRect.left - cRect.left + aRect.width / 2
+    const ay = aRect.top - cRect.top + aRect.height / 2
+    const kx = kRect.left - cRect.left
+    const ky = kRect.top - cRect.top + kRect.height / 2
+    lines.push({ id: ann.id, x1: kx, y1: ky, x2: ax, y2: ay })
+  }
+  annotationLines.value = lines
+}
+
+function closeFileModal() {
+  selectedFile.value = null
+  annotations.value = []
+  annotationLines.value = []
+  activeAnnotationId.value = null
+  askDialog.value = null
+  contextMenu.value = null
+  pendingSelection = null
+  pendingAskContext = null
+}
+
+const libraryFileSentinel = ref<HTMLElement | null>(null)
+let libraryFileObserver: IntersectionObserver | null = null
+watch(libraryFileSentinel, (el) => {
+  libraryFileObserver?.disconnect()
+  libraryFileObserver = null
+  if (el) {
+    libraryFileObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) loadMoreLibraryFiles()
+    }, { rootMargin: '200px' })
+    libraryFileObserver.observe(el)
+  }
+})
+
+let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
+watch(fileKeyword, () => {
+  if (fileSearchTimer) clearTimeout(fileSearchTimer)
+  fileSearchTimer = setTimeout(() => { loadLibraryFiles(true) }, 300)
+})
+
 // Profile tab
 const profile = ref<UserProfileData | null>(null)
 const profileHistory = ref<ProfileHistoryItem[]>([])
@@ -320,6 +679,19 @@ function dimensionDisplayValue(v: unknown): string {
       .join(' · ')
   }
   return String(v)
+}
+
+function formatEvidence(ev: unknown): string {
+  if (typeof ev === 'string') return ev
+  if (ev && typeof ev === 'object') {
+    const o = ev as Record<string, unknown>
+    if (o.source || o.detail) {
+      return o.source ? `${o.source}${o.detail ? `: ${o.detail}` : ''}` : String(o.detail)
+    }
+    const entries = Object.entries(o)
+    if (entries.length > 0) return entries.map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')
+  }
+  return String(ev ?? '')
 }
 
 function stabilityLabel(s?: string): string {
@@ -380,22 +752,149 @@ const messageGraphLayout = computed(() => {
   return { nodes, edges }
 })
 
-// Tag graph tab
-interface LayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
-interface LayoutEdge { source: string; target: string; weight: number; x1: number; y1: number; x2: number; y2: number; strokeWidth: number; highlighted?: boolean }
+// Tag graph tab（Obsidian 风格力导向图）
+interface TagLayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
 
 const graphNodes = ref<GraphNode[]>([])
 const graphEdges = ref<GraphEdge[]>([])
 const loadingGraph = ref(false)
 const selectedTag = ref<string | null>(null)
 const selectedTagMemories = ref<MemoryItem[]>([])
-const hoveredEdge = ref<LayoutEdge | null>(null)
+const tagLayoutNodes = ref<TagLayoutNode[]>([])
+const hoveredTagId = ref<string | null>(null)
+const tagGraphScale = ref(1)
+const tagGraphTx = ref(0)
+const tagGraphTy = ref(0)
+const draggingTagId = ref<string | null>(null)
+const panning = ref(false)
+const panStart = ref<{ x: number; y: number } | null>(null)
+const tagSvgRef = ref<SVGSVGElement | null>(null)
 const keywordGraphNodes = ref<GraphNode[]>([])
 const keywordGraphEdges = ref<GraphEdge[]>([])
 const loadingKeywordGraph = ref(false)
-const hoveredKeyword = ref<GraphNode | null>(null)
 const selectedKeyword = ref<string | null>(null)
 const selectedKeywordMemories = ref<MemoryItem[]>([])
+const keywordLayoutNodes = ref<TagLayoutNode[]>([])
+const keywordHoveredId = ref<string | null>(null)
+const keywordScale = ref(1)
+const keywordTx = ref(0)
+const keywordTy = ref(0)
+const keywordDraggingId = ref<string | null>(null)
+const keywordPanning = ref(false)
+const keywordPanStart = ref<{ x: number; y: number } | null>(null)
+const keywordSvgRef = ref<SVGSVGElement | null>(null)
+
+function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): TagLayoutNode[] {
+  const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
+  const degree = new Map<string, number>()
+  for (const n of nodes) {
+    positions.set(n.id, { x: width / 2 + (Math.random() - 0.5) * width * 0.5, y: height / 2 + (Math.random() - 0.5) * height * 0.5, vx: 0, vy: 0 })
+    degree.set(n.id, 0)
+  }
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) || 0) + 1)
+    degree.set(e.target, (degree.get(e.target) || 0) + 1)
+  }
+
+  const iterations = 250
+  const repulsion = 9000
+  const springLength = 140
+  const springStrength = 0.035
+  const centerStrength = 0.02
+  const damping = 0.85
+  const maxDist = 420
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < nodes.length; i++) {
+      const a = positions.get(nodes[i].id)!
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = positions.get(nodes[j].id)!
+        const dx = a.x - b.x
+        const dy = a.y - b.y
+        const distSq = dx * dx + dy * dy
+        if (distSq > maxDist * maxDist) continue
+        const dist = Math.sqrt(distSq) || 1
+        const force = repulsion / distSq
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        a.vx += fx; a.vy += fy
+        b.vx -= fx; b.vy -= fy
+      }
+    }
+    for (const e of edges) {
+      const a = positions.get(e.source)
+      const b = positions.get(e.target)
+      if (!a || !b) continue
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1
+      const force = (dist - springLength) * springStrength * Math.min(e.weight, 3)
+      const fx = (dx / dist) * force
+      const fy = (dy / dist) * force
+      a.vx += fx; a.vy += fy
+      b.vx -= fx; b.vy -= fy
+    }
+    for (const n of nodes) {
+      const p = positions.get(n.id)!
+      p.vx += (width / 2 - p.x) * centerStrength
+      p.vy += (height / 2 - p.y) * centerStrength
+    }
+    for (const n of nodes) {
+      const p = positions.get(n.id)!
+      p.x += p.vx
+      p.y += p.vy
+      p.vx *= damping
+      p.vy *= damping
+    }
+  }
+
+  const maxDeg = Math.max(1, ...degree.values())
+  const maxWeight = Math.max(1, ...nodes.map((n) => n.weight || 0))
+  return nodes.map((n) => {
+    const p = positions.get(n.id)!
+    const d = degree.get(n.id) || 0
+    const wRatio = Math.min((n.weight || 0) / maxWeight, 1)
+    const hue = 210 - 210 * wRatio
+    return {
+      ...n,
+      x: p.x,
+      y: p.y,
+      r: 7 + (Math.min(d / maxDeg, 1)) * 10,
+      color: `hsl(${hue}, 75%, 52%)`,
+    }
+  })
+}
+
+const tagNeighbors = computed(() => {
+  const map = new Map<string, Set<string>>()
+  for (const e of graphEdges.value) {
+    if (!map.has(e.source)) map.set(e.source, new Set())
+    if (!map.has(e.target)) map.set(e.target, new Set())
+    map.get(e.source)!.add(e.target)
+    map.get(e.target)!.add(e.source)
+  }
+  return map
+})
+
+const tagNodePosMap = computed(() => {
+  const map = new Map<string, TagLayoutNode>()
+  for (const n of tagLayoutNodes.value) map.set(n.id, n)
+  return map
+})
+
+function isTagNodeDimmed(nodeId: string): boolean {
+  if (!hoveredTagId.value && !selectedTag.value) return false
+  const focusId = hoveredTagId.value || selectedTag.value
+  if (nodeId === focusId) return false
+  const neighbors = tagNeighbors.value.get(focusId!)
+  return !neighbors?.has(nodeId)
+}
+
+function isTagEdgeHighlighted(edge: GraphEdge): boolean {
+  const focusId = hoveredTagId.value || selectedTag.value
+  if (!focusId) return false
+  return edge.source === focusId || edge.target === focusId
+}
 
 async function loadTagGraph() {
   loadingGraph.value = true
@@ -403,8 +902,55 @@ async function loadTagGraph() {
     const data = await memoryApi.tagGraph()
     graphNodes.value = data.nodes || []
     graphEdges.value = data.edges || []
+    tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700)
   } catch { /* ignore */ }
   finally { loadingGraph.value = false }
+}
+
+function svgToView(event: MouseEvent): { x: number; y: number } {
+  const svg = tagSvgRef.value
+  const rect = svg ? svg.getBoundingClientRect() : null
+  if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 }
+  const scale = Math.min(rect.width / 700, rect.height / 700)
+  const offsetX = (rect.width - 700 * scale) / 2
+  const offsetY = (rect.height - 700 * scale) / 2
+  const viewX = (event.clientX - rect.left - offsetX) / scale
+  const viewY = (event.clientY - rect.top - offsetY) / scale
+  return { x: (viewX - tagGraphTx.value) / tagGraphScale.value, y: (viewY - tagGraphTy.value) / tagGraphScale.value }
+}
+
+function onTagGraphWheel(event: WheelEvent) {
+  const delta = event.deltaY > 0 ? 0.9 : 1.1
+  tagGraphScale.value = Math.min(3, Math.max(0.4, tagGraphScale.value * delta))
+}
+
+function onTagGraphMouseDown(event: MouseEvent) {
+  panning.value = true
+  panStart.value = { x: event.clientX, y: event.clientY }
+}
+
+function onTagGraphMouseMove(event: MouseEvent) {
+  if (panning.value && panStart.value) {
+    tagGraphTx.value += event.clientX - panStart.value.x
+    tagGraphTy.value += event.clientY - panStart.value.y
+    panStart.value = { x: event.clientX, y: event.clientY }
+  }
+  if (draggingTagId.value) {
+    const p = svgToView(event)
+    const node = tagLayoutNodes.value.find(n => n.id === draggingTagId.value)
+    if (node) { node.x = p.x; node.y = p.y }
+  }
+}
+
+function onTagGraphMouseUp() {
+  panning.value = false
+  panStart.value = null
+  draggingTagId.value = null
+}
+
+function onTagNodeMouseDown(event: MouseEvent, nodeId: string) {
+  event.stopPropagation()
+  draggingTagId.value = nodeId
 }
 
 async function selectTagNode(tagId: string) {
@@ -432,81 +978,93 @@ async function selectKeywordNode(nodeId: string) {
   }
 }
 
+const keywordNeighbors = computed(() => {
+  const map = new Map<string, Set<string>>()
+  for (const e of keywordGraphEdges.value) {
+    if (!map.has(e.source)) map.set(e.source, new Set())
+    if (!map.has(e.target)) map.set(e.target, new Set())
+    map.get(e.source)!.add(e.target)
+    map.get(e.target)!.add(e.source)
+  }
+  return map
+})
+
+const keywordNodePosMap = computed(() => {
+  const map = new Map<string, TagLayoutNode>()
+  for (const n of keywordLayoutNodes.value) map.set(n.id, n)
+  return map
+})
+
+function isKeywordNodeDimmed(nodeId: string): boolean {
+  if (!keywordHoveredId.value && !selectedKeyword.value) return false
+  const focusId = keywordHoveredId.value || selectedKeyword.value
+  if (nodeId === focusId) return false
+  const neighbors = keywordNeighbors.value.get(focusId!)
+  return !neighbors?.has(nodeId)
+}
+
+function isKeywordEdgeHighlighted(edge: GraphEdge): boolean {
+  const focusId = keywordHoveredId.value || selectedKeyword.value
+  if (!focusId) return false
+  return edge.source === focusId || edge.target === focusId
+}
+
 async function loadKeywordGraph() {
   loadingKeywordGraph.value = true
   try {
     const data = await memoryApi.keywordGraph()
     keywordGraphNodes.value = data.nodes || []
     keywordGraphEdges.value = data.edges || []
-  } catch { keywordGraphNodes.value = []; keywordGraphEdges.value = [] }
+    keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700)
+  } catch { keywordGraphNodes.value = []; keywordGraphEdges.value = []; keywordLayoutNodes.value = [] }
   finally { loadingKeywordGraph.value = false }
 }
 
-const tagGraphLayout = computed(() => {
-  const n = graphNodes.value.length
-  if (n === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] }
-  const cx = 250, cy = 250, radius = 180
-  const weights = graphNodes.value.map(nd => nd.weight)
-  const maxW = Math.max(...weights, 1)
-  const minW = Math.min(...weights, 1)
-  const minR = 14, maxR = minR * 3
+function keywordSvgToView(event: MouseEvent): { x: number; y: number } {
+  const svg = keywordSvgRef.value
+  const rect = svg ? svg.getBoundingClientRect() : null
+  if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 }
+  const scale = Math.min(rect.width / 700, rect.height / 700)
+  const offsetX = (rect.width - 700 * scale) / 2
+  const offsetY = (rect.height - 700 * scale) / 2
+  const viewX = (event.clientX - rect.left - offsetX) / scale
+  const viewY = (event.clientY - rect.top - offsetY) / scale
+  return { x: (viewX - keywordTx.value) / keywordScale.value, y: (viewY - keywordTy.value) / keywordScale.value }
+}
 
-  return {
-    nodes: graphNodes.value.map((node, i) => {
-      const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-      const ratio = maxW > minW ? (node.weight - minW) / (maxW - minW) : 0.5
-      const r = minR + ratio * (maxR - minR)
-      return {
-        ...node, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), r,
-        color: selectedTag.value === node.id ? '#0071e3' : node.degree > 3 ? '#5856d6' : '#8e8e93',
-      }
-    }),
-    edges: graphEdges.value.map(e => {
-      const fi = graphNodes.value.findIndex(nd => nd.id === e.source)
-      const ti = graphNodes.value.findIndex(nd => nd.id === e.target)
-      if (fi === -1 || ti === -1) return null
-      const aF = (fi / n) * Math.PI * 2 - Math.PI / 2
-      const aT = (ti / n) * Math.PI * 2 - Math.PI / 2
-      return {
-        ...e, x1: cx + radius * Math.cos(aF), y1: cy + radius * Math.sin(aF),
-        x2: cx + radius * Math.cos(aT), y2: cy + radius * Math.sin(aT),
-        strokeWidth: 1 + e.weight,
-        highlighted: !!selectedTag.value && (e.source === selectedTag.value || e.target === selectedTag.value),
-      }
-    }).filter(Boolean) as LayoutEdge[],
+function onKeywordGraphWheel(event: WheelEvent) {
+  const delta = event.deltaY > 0 ? 0.9 : 1.1
+  keywordScale.value = Math.min(3, Math.max(0.4, keywordScale.value * delta))
+}
+
+function onKeywordGraphMouseDown(event: MouseEvent) {
+  keywordPanning.value = true
+  keywordPanStart.value = { x: event.clientX, y: event.clientY }
+}
+
+function onKeywordGraphMouseMove(event: MouseEvent) {
+  if (keywordPanning.value && keywordPanStart.value) {
+    keywordTx.value += event.clientX - keywordPanStart.value.x
+    keywordTy.value += event.clientY - keywordPanStart.value.y
+    keywordPanStart.value = { x: event.clientX, y: event.clientY }
   }
-})
-
-const keywordLayout = computed(() => {
-  const top = [...keywordGraphNodes.value].sort((a, b) => b.weight - a.weight).slice(0, 12)
-  const topIds = new Set(top.map(n => n.id))
-  const topEdges = keywordGraphEdges.value.filter(e => topIds.has(e.source) && topIds.has(e.target))
-  const n = top.length
-  if (n === 0) return { nodes: [] as LayoutNode[], edges: [] as LayoutEdge[] }
-  const cx = 250, cy = 250, radius = 160
-  const maxW = Math.max(...top.map(nd => nd.weight), 1)
-  const minR = 16, maxR = minR * 3
-  const colors = ['#0071e3', '#5856d6', '#ff9500', '#34c759', '#ff3b30', '#af52de', '#5ac8fa', '#ffcc00']
-
-  return {
-    nodes: top.map((node, i) => {
-      const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-      const ratio = maxW > 0 ? node.weight / maxW : 0.5
-      return {
-        ...node, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle),
-        r: minR + ratio * (maxR - minR), color: colors[i % colors.length],
-      }
-    }),
-    edges: topEdges.map(e => {
-      const fi = top.findIndex(nd => nd.id === e.source)
-      const ti = top.findIndex(nd => nd.id === e.target)
-      if (fi === -1 || ti === -1) return null
-      const aF = (fi / n) * Math.PI * 2 - Math.PI / 2
-      const aT = (ti / n) * Math.PI * 2 - Math.PI / 2
-      return { ...e, x1: cx + radius * Math.cos(aF), y1: cy + radius * Math.sin(aF), x2: cx + radius * Math.cos(aT), y2: cy + radius * Math.sin(aT), strokeWidth: 2 + e.weight, highlighted: undefined }
-    }).filter(Boolean) as LayoutEdge[],
+  if (keywordDraggingId.value) {
+    const p = keywordSvgToView(event)
+    const node = keywordLayoutNodes.value.find(n => n.id === keywordDraggingId.value)
+    if (node) { node.x = p.x; node.y = p.y }
   }
-})
+}
+
+function onKeywordGraphMouseUp() {
+  keywordPanning.value = false
+  keywordPanStart.value = null
+  keywordDraggingId.value = null
+}
+
+function onKeywordNodeMouseDown(event: MouseEvent, nodeId: string) {
+  event.stopPropagation()
+  keywordDraggingId.value = nodeId
+}
 
 onMounted(() => {
   loadHistory()
@@ -515,15 +1073,20 @@ onMounted(() => {
   loadTagGraph()
   loadKeywordGraph()
   window.addEventListener('scroll', onMemoryScroll, { passive: true })
+  document.addEventListener('click', closeContextMenu)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onMemoryScroll)
+  document.removeEventListener('click', closeContextMenu)
   memoryObserver?.disconnect()
   memoryObserver = null
+  libraryFileObserver?.disconnect()
+  libraryFileObserver = null
 })
 
 watch(activeTab, (val) => {
+  localStorage.setItem('brian-info-active-tab', val)
   if (val === 'profile') loadProfile()
   if (val === 'messageGraph' && messageGraphSessionId.value) loadMessageGraph()
 })
@@ -552,17 +1115,17 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
     </div>
     <div class="px-6 pb-6 min-h-screen relative z-10">
       <!-- Tab navigation -->
-      <div class="flex items-center gap-1 mb-6 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
+      <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
         <button
           v-for="tab in tabs"
           :key="tab.key"
           :class="[
-            'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
             activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
           ]"
           @click="activeTab = tab.key"
         >
-          <component :is="tab.icon" :size="16" />
+          <component :is="tab.icon" :size="15" />
           {{ tab.label }}
         </button>
       </div>
@@ -710,33 +1273,37 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
         <div v-if="!libraryDetail">
           <h3 class="text-lg font-semibold mb-4">资料库</h3>
           <div v-if="loadingLibs" class="text-center py-8 text-apple-gray-400">加载中...</div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            <button class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-apple-gray-300 dark:border-apple-gray-600 rounded-xl text-apple-gray-400 hover:border-brian-blue hover:text-brian-blue transition-colors min-h-[140px]" @click="showAddLib = true">
-              <Plus :size="32" class="mb-2" />
-              <span class="text-sm font-medium">添加资料库</span>
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            <button class="flex flex-col items-center justify-center border-2 border-dashed border-apple-gray-300 dark:border-apple-gray-600 rounded-lg text-apple-gray-400 hover:border-brian-blue hover:text-brian-blue transition-colors aspect-[3/2]" @click="showAddLib = true">
+              <Plus :size="24" class="mb-1.5" />
+              <span class="text-xs font-medium">添加资料库</span>
             </button>
             <div
               v-for="lib in libraries"
               :key="lib.id"
-              class="relative p-4 block-card rounded-xl cursor-pointer hover:border-brian-blue/30"
-              @click="libraryDetail = lib"
+              class="relative p-4 rounded-lg border border-apple-gray-100 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800/50 hover:border-brian-blue/40 hover:shadow-sm transition-all aspect-[3/2] flex flex-col cursor-pointer"
+              @click="openLibraryDetail(lib)"
             >
-              <div class="flex items-start gap-3 mb-2">
-                <div class="p-2 bg-brian-blue/10 rounded-lg flex-shrink-0">
-                  <Folder :size="20" class="text-brian-blue" />
+              <div class="flex items-center gap-2 mb-2">
+                <div class="p-1.5 bg-brian-blue/10 rounded-lg flex-shrink-0">
+                  <Folder :size="16" class="text-brian-blue" />
                 </div>
-                <div class="flex-1 min-w-0">
-                  <h4 class="text-sm font-semibold truncate">{{ lib.name }}</h4>
-                  <p class="text-xs text-apple-gray-400 truncate mt-0.5">{{ lib.path }}</p>
-                </div>
+                <h4 class="text-sm font-semibold truncate flex-1 min-w-0">{{ lib.name }}</h4>
+                <button class="p-1 rounded-lg text-apple-gray-300 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" @click.stop="handleDeleteLibrary(lib.id)">
+                  <Trash2 :size="13" />
+                </button>
               </div>
-              <p class="text-xs text-apple-gray-500 line-clamp-2 min-h-[32px]">{{ lib.description || '暂无描述' }}</p>
-              <div class="flex items-center justify-between mt-3 pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700">
-                <span class="text-xs text-apple-gray-400">{{ lib.category }}</span>
+              <p class="text-[11px] text-apple-gray-400 truncate font-mono">{{ lib.path }}</p>
+              <p class="text-xs text-apple-gray-500 line-clamp-2 mt-1.5 flex-1 min-h-0">{{ lib.description || '暂无描述' }}</p>
+              <div class="flex items-center justify-between mt-auto pt-2 border-t border-apple-gray-100 dark:border-apple-gray-700">
+                <span class="text-[11px] text-apple-gray-400">{{ lib.learnedFiles || 0 }}/{{ lib.totalFiles || 0 }} 文件</span>
+                <button class="flex items-center gap-1.5" @click.stop="handleToggleLibrary(lib)">
+                  <span class="relative w-8 h-4 rounded-full transition-colors" :class="lib.enableSelfLearning ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'">
+                    <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform" :class="lib.enableSelfLearning ? 'translate-x-4' : ''" />
+                  </span>
+                  <span class="text-[11px]" :class="lib.enableSelfLearning ? 'text-brian-blue' : 'text-apple-gray-400'">{{ lib.enableSelfLearning ? '启用' : '禁用' }}</span>
+                </button>
               </div>
-              <button class="absolute top-3 right-3 p-1.5 rounded-lg text-apple-gray-300 hover:text-error-red hover:bg-error-red/10" @click.stop="handleDeleteLibrary(lib.id)">
-                <Trash2 :size="14" />
-              </button>
             </div>
           </div>
 
@@ -777,52 +1344,225 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
 
         <!-- Library detail -->
         <div v-else>
-          <div class="flex items-center gap-2 mb-4">
-            <button class="flex items-center gap-1 text-sm text-apple-gray-500 hover:text-brian-blue" @click="libraryDetail = null">
-              <ArrowLeft :size="16" /> 资料库
-            </button>
-            <ChevronRight :size="14" class="text-apple-gray-400" />
-            <span class="text-sm font-medium">{{ libraryDetail.name }}</span>
-          </div>
-          <div class="block-card rounded-xl p-6">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="p-3 bg-brian-blue/10 rounded-lg"><Folder :size="24" class="text-brian-blue" /></div>
-              <div><h4 class="text-lg font-semibold">{{ libraryDetail.name }}</h4><p class="text-sm text-apple-gray-400">{{ libraryDetail.path }}</p></div>
+          <!-- 文档展示区 -->
+          <div v-if="selectedFile || selectedFileLoading">
+            <div class="flex items-center gap-2 mb-4">
+              <button class="flex items-center gap-1 text-sm text-apple-gray-500 hover:text-brian-blue" @click="closeFileModal">
+                <ArrowLeft :size="16" /> {{ libraryDetail.name }}
+              </button>
+              <ChevronRight :size="14" class="text-apple-gray-400" />
+              <span class="text-sm font-medium flex items-center gap-1.5"><FileText :size="14" class="text-brian-blue" /> {{ selectedFile?.name || '加载中...' }}</span>
             </div>
-            <div class="text-center py-12 text-apple-gray-400">
-              <FileText :size="32" class="mx-auto mb-2 text-apple-gray-300" />
-              <p class="text-sm">该资料库暂无可浏览的文件</p>
+
+            <div ref="contentAreaRef" class="relative flex gap-6" :style="{ minHeight: '70vh' }">
+              <svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 0; overflow: visible;">
+                <path
+                  v-for="line in annotationLines"
+                  :key="line.id"
+                  :d="`M ${line.x1} ${line.y1} L ${(line.x1 + line.x2) / 2} ${line.y1} L ${(line.x1 + line.x2) / 2} ${line.y2} L ${line.x2} ${line.y2}`"
+                  :stroke="activeAnnotationId === line.id ? '#ff9500' : '#0071e3'"
+                  :stroke-width="activeAnnotationId === line.id ? 2 : 1.5"
+                  fill="none" stroke-dasharray="4,3"
+                />
+              </svg>
+
+              <div class="w-64 flex-shrink-0 relative z-10">
+                <div class="text-xs font-semibold text-apple-gray-500 mb-2">章节</div>
+                <div class="space-y-1">
+                  <button
+                    v-for="sec in articleSections"
+                    :key="sec.id"
+                    class="w-full text-left text-xs text-apple-gray-600 dark:text-apple-gray-400 hover:text-brian-blue transition-colors truncate"
+                    :style="{ paddingLeft: `${(sec.level - 1) * 12}px` }"
+                    @click="scrollToSection(sec)"
+                  >
+                    {{ sec.title }}
+                  </button>
+                  <div v-if="articleSections.length === 0" class="text-xs text-apple-gray-400">暂无章节</div>
+                </div>
+              </div>
+
+              <div class="flex-1 min-w-0 relative z-10">
+                <div v-if="selectedFileLoading" class="text-center py-12 text-apple-gray-400">加载中...</div>
+                <div v-else class="markdown-body select-text" @contextmenu.prevent="handleFileContextMenu" v-html="renderMarkdown(selectedFile!.content)"></div>
+              </div>
+
+              <div class="w-64 flex-shrink-0 relative z-10 space-y-3">
+                <div
+                  v-for="ann in annotations"
+                  :key="ann.id"
+                  :data-card-id="ann.id"
+                  class="p-3 rounded-lg border cursor-pointer transition-all"
+                  :class="activeAnnotationId === ann.id ? 'border-warning-orange/50 bg-warning-orange/10' : 'border-brian-blue/20 bg-brian-blue/5'"
+                  @click="handleCardClick(ann.id)"
+                >
+                  <div class="text-xs font-medium mb-1" :class="activeAnnotationId === ann.id ? 'text-warning-orange' : 'text-brian-blue'">咨询</div>
+                  <p class="text-xs text-apple-gray-500 mb-1 line-clamp-2">{{ ann.question }}</p>
+                  <p class="text-sm whitespace-pre-wrap text-apple-gray-700 dark:text-apple-gray-300">{{ ann.result }}</p>
+                </div>
+                <div v-if="annotations.length === 0" class="text-xs text-apple-gray-400">选中内容后右键可咨询</div>
+              </div>
             </div>
           </div>
+
+          <!-- 目录浏览 -->
+          <template v-else>
+            <div class="flex items-center gap-2 mb-4">
+              <button class="flex items-center gap-1 text-sm text-apple-gray-500 hover:text-brian-blue" @click="libraryDetail = null">
+                <ArrowLeft :size="16" /> 资料库
+              </button>
+              <ChevronRight :size="14" class="text-apple-gray-400" />
+              <span class="text-sm font-medium">{{ libraryDetail.name }}</span>
+              <button class="ml-auto flex items-center gap-1.5" @click="handleToggleLibrary(libraryDetail)">
+                <span class="relative w-8 h-4 rounded-full transition-colors" :class="libraryDetail.enableSelfLearning ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'">
+                  <span class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform" :class="libraryDetail.enableSelfLearning ? 'translate-x-4' : ''" />
+                </span>
+                <span class="text-xs" :class="libraryDetail.enableSelfLearning ? 'text-brian-blue' : 'text-apple-gray-400'">{{ libraryDetail.enableSelfLearning ? '启用' : '禁用' }}</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-3 mb-4 flex-wrap">
+              <div class="flex items-center gap-1 text-sm flex-wrap">
+                <template v-for="(crumb, i) in libraryBreadcrumb" :key="crumb.path">
+                  <ChevronRight v-if="i > 0" :size="14" class="text-apple-gray-300 flex-shrink-0" />
+                  <button class="hover:text-brian-blue transition-colors" :class="i === libraryBreadcrumb.length - 1 ? 'text-apple-gray-900 dark:text-apple-gray-50 font-medium' : 'text-apple-gray-500'" @click="enterDirectory(crumb.path)">{{ crumb.label }}</button>
+                </template>
+              </div>
+              <button v-if="currentDirectory" class="flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 text-apple-gray-500 hover:text-brian-blue transition-colors" @click="goUpDirectory">
+                <ArrowLeft :size="12" /> 上级
+              </button>
+              <div class="relative flex-1 max-w-xs ml-auto">
+                <Search :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+                <input v-model="fileKeyword" placeholder="搜索文件..." class="w-full pl-9 pr-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              </div>
+            </div>
+
+            <div class="flex gap-4">
+              <div class="w-56 flex-shrink-0 block-card rounded-xl p-3 max-h-[70vh] overflow-y-auto">
+                <div class="text-xs font-semibold text-apple-gray-500 mb-2 px-2">目录</div>
+                <LibraryTreeItem
+                  v-for="node in libraryTree"
+                  :key="node.file_id"
+                  :node="node"
+                  :depth="0"
+                  @enter="(p: string) => enterDirectory(p)"
+                />
+                <div v-if="libraryTree.length === 0" class="text-xs text-apple-gray-400 px-2 py-2">暂无目录</div>
+              </div>
+
+              <div class="flex-1 min-w-0">
+                <div v-if="fileLoading" class="text-center py-12 text-apple-gray-400">加载中...</div>
+                <div v-else-if="libraryFiles.length === 0" class="text-center py-12 text-apple-gray-400 text-sm">该目录下暂无文件</div>
+                <div v-else class="space-y-1.5">
+                  <div
+                    v-for="file in libraryFiles"
+                    :key="file.id"
+                    class="flex items-center gap-3 p-3 rounded-lg border border-apple-gray-100 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800/50 hover:border-brian-blue/40 transition-all cursor-pointer"
+                    @click="openFile(file)"
+                  >
+                    <Folder v-if="file.isDirectory" :size="18" class="text-brian-blue flex-shrink-0" />
+                    <FileText v-else :size="18" class="text-apple-gray-400 flex-shrink-0" />
+                    <span class="text-sm truncate flex-1 min-w-0">{{ file.name }}</span>
+                    <span v-if="!file.isDirectory" class="text-[11px] text-apple-gray-400 flex-shrink-0">{{ formatFileSize(file.size) }}</span>
+                    <ChevronRight v-if="file.isDirectory" :size="14" class="text-apple-gray-300 flex-shrink-0" />
+                  </div>
+                  <div ref="libraryFileSentinel" v-if="fileHasMore || fileLoadingMore" class="text-center py-3 text-xs text-apple-gray-400">
+                    {{ fileLoadingMore ? '加载中...' : '继续滚动加载更多' }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 询问弹窗 -->
+          <Teleport to="body">
+            <div v-if="askDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" @click.self="askDialog = null">
+              <div class="w-full max-w-lg rounded-2xl bg-white dark:bg-apple-gray-800 shadow-xl p-6">
+                <h3 class="text-lg font-semibold mb-2 flex items-center gap-1.5"><Sparkles :size="16" class="text-brian-blue" /> 询问大模型</h3>
+                <p class="text-xs text-apple-gray-400 mb-4">选中内容：<span class="text-apple-gray-600 dark:text-apple-gray-300">{{ askDialog.selectionText.slice(0, 80) }}{{ askDialog.selectionText.length > 80 ? '…' : '' }}</span></p>
+                <textarea v-model="askDialog.question" rows="3" class="w-full px-3 py-2 rounded-lg bg-apple-gray-100 dark:bg-apple-gray-900 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" placeholder="输入你想咨询的问题，例如：这段内容是什么意思？"></textarea>
+                <div class="flex justify-end gap-2 mt-4">
+                  <button class="btn-secondary" @click="askDialog = null">取消</button>
+                  <button class="btn-primary flex items-center gap-1.5" :disabled="asking" @click="submitAsk">
+                    <Loader2 v-if="asking" :size="14" class="animate-spin" /> 咨询
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Teleport>
+
+          <!-- 文档选中右键菜单 -->
+          <Teleport to="body">
+            <div v-if="contextMenu" class="fixed z-[60] bg-white dark:bg-apple-gray-800 rounded-lg shadow-lg border border-apple-gray-200 dark:border-apple-gray-700 py-1 min-w-[160px]" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
+              <button class="w-full text-left px-3 py-2 text-sm text-apple-gray-700 dark:text-apple-gray-200 hover:bg-brian-blue/10 flex items-center gap-2" @click="openAskDialog">
+                <Sparkles :size="14" class="text-brian-blue" /> 询问大模型
+              </button>
+            </div>
+          </Teleport>
         </div>
       </div>
 
       <!-- Tag graph tab -->
-      <div v-if="activeTab === 'tagGraph'" class="space-y-4">
-        <div class="flex items-center justify-between">
+      <div v-if="activeTab === 'tagGraph'" class="flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+        <div class="flex items-center justify-between flex-shrink-0 mb-2">
           <h3 class="text-lg font-semibold">Tag 关系图</h3>
-          <div class="flex items-center gap-3 text-xs text-apple-gray-400">
-            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-indigo-500" /> 高关联</span>
-            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-400" /> 普通</span>
+          <div class="flex items-center gap-4 text-xs text-apple-gray-400">
+            <span>拖拽平移 · 滚轮缩放 · 悬停高亮关联</span>
+            <span class="flex items-center gap-1.5">
+              <span class="text-[10px]">低频</span>
+              <span class="w-24 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(150,75%,52%), hsl(60,75%,52%), hsl(0,75%,52%));"></span>
+              <span class="text-[10px]">高频</span>
+            </span>
+            <span class="text-[10px]">面积 = 连接度</span>
           </div>
         </div>
-        <div class="flex gap-4">
-          <div class="flex-1 block-card rounded-xl p-4">
-            <svg viewBox="0 0 500 500" class="w-full" style="aspect-ratio: 1; max-height: 600px;">
-              <line
-                v-for="(edge, i) in tagGraphLayout.edges" :key="'e-' + i"
-                :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
-                :stroke-width="edge.strokeWidth"
-                :stroke="edge.highlighted ? '#0071e3' : '#d1d1d6'"
-                :opacity="selectedTag && !edge.highlighted ? 0.2 : 0.6"
-                class="cursor-pointer transition-all"
-                @mouseenter="hoveredEdge = edge"
-                @mouseleave="hoveredEdge = null"
-              />
-              <text v-if="hoveredEdge" :x="(hoveredEdge.x1 + hoveredEdge.x2) / 2" :y="(hoveredEdge.y1 + hoveredEdge.y2) / 2 - 5" text-anchor="middle" class="text-xs font-medium pointer-events-none" fill="#0071e3">权重: {{ hoveredEdge.weight.toFixed(2) }}</text>
-              <g v-for="node in tagGraphLayout.nodes" :key="node.id" class="cursor-pointer" @click="selectTagNode(node.id)">
-                <circle :cx="node.x" :cy="node.y" :r="node.r" :fill="node.color" :opacity="selectedTag && selectedTag !== node.id ? 0.3 : 0.85" class="transition-all" />
-                <text :x="node.x" :y="node.y + 4" text-anchor="middle" class="text-xs font-medium pointer-events-none" fill="white">{{ node.name }}</text>
+        <div class="flex gap-4 flex-1 min-h-0">
+          <div class="flex-1 overflow-hidden" :class="panning || draggingTagId ? 'cursor-grabbing' : 'cursor-grab'">
+            <svg
+              ref="tagSvgRef"
+              viewBox="0 0 700 700"
+              width="100%"
+              height="100%"
+              preserveAspectRatio="xMidYMid meet"
+              style="touch-action: none;"
+              @wheel.prevent="onTagGraphWheel"
+              @mousedown="onTagGraphMouseDown"
+              @mousemove="onTagGraphMouseMove"
+              @mouseup="onTagGraphMouseUp"
+              @mouseleave="onTagGraphMouseUp"
+            >
+              <g :transform="`translate(${tagGraphTx},${tagGraphTy}) scale(${tagGraphScale})`">
+                <line
+                  v-for="(edge, i) in graphEdges" :key="'e-' + i"
+                  :x1="tagNodePosMap.get(edge.source)?.x ?? 0" :y1="tagNodePosMap.get(edge.source)?.y ?? 0"
+                  :x2="tagNodePosMap.get(edge.target)?.x ?? 0" :y2="tagNodePosMap.get(edge.target)?.y ?? 0"
+                  :stroke="isTagEdgeHighlighted(edge) ? '#0071e3' : '#d1d1d6'"
+                  :stroke-width="isTagEdgeHighlighted(edge) ? 2 : 1"
+                  :opacity="isTagEdgeHighlighted(edge) ? 0.9 : Math.min(0.15 + edge.weight * 0.1, 0.55)"
+                />
+                <g
+                  v-for="node in tagLayoutNodes" :key="node.id"
+                  class="cursor-pointer"
+                  @click="selectTagNode(node.id)"
+                  @mouseenter="hoveredTagId = node.id"
+                  @mouseleave="hoveredTagId = null"
+                  @mousedown.stop="onTagNodeMouseDown($event, node.id)"
+                >
+                  <circle
+                    :cx="node.x" :cy="node.y" :r="node.r"
+                    :fill="selectedTag === node.id || hoveredTagId === node.id ? '#0071e3' : node.color"
+                    :opacity="isTagNodeDimmed(node.id) ? 0.12 : 0.9"
+                    class="transition-opacity"
+                  />
+                  <text :x="node.x" :y="node.y + node.r + 12" text-anchor="middle" class="text-[11px] font-medium pointer-events-none" fill="#6e6e73">{{ node.name }}</text>
+                </g>
+                <g v-if="hoveredTagId" pointer-events="none">
+                  <template v-for="node in tagLayoutNodes.filter(n => n.id === hoveredTagId)" :key="'tooltip-' + node.id">
+                    <rect :x="node.x - 70" :y="node.y - node.r - 46" width="140" height="38" rx="6" fill="rgba(0,0,0,0.78)" />
+                    <text :x="node.x" :y="node.y - node.r - 28" text-anchor="middle" class="text-[11px] font-medium" fill="#ffffff">{{ node.name }}</text>
+                    <text :x="node.x" :y="node.y - node.r - 15" text-anchor="middle" class="text-[10px]" fill="#d1d1d6">关联 {{ node.degree }} · 激活 {{ node.weight }}</text>
+                  </template>
+                </g>
               </g>
             </svg>
           </div>
@@ -843,22 +1583,72 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
       </div>
 
       <!-- Keyword graph tab -->
-      <div v-if="activeTab === 'keywordGraph'" class="space-y-4">
-        <h3 class="text-lg font-semibold">关键词关联图</h3>
-        <div v-if="loadingKeywordGraph" class="text-center py-16 text-apple-gray-400">加载中...</div>
-        <div v-else-if="keywordGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm">暂无关键词数据</div>
-        <div v-else class="flex gap-4">
-          <div class="flex-1 block-card rounded-xl p-4">
-            <svg viewBox="0 0 500 500" class="w-full" style="aspect-ratio: 1; max-height: 600px;">
-              <line v-for="(edge, i) in keywordLayout.edges" :key="'ke-' + i" :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2" :stroke-width="edge.strokeWidth" stroke="#d1d1d6" opacity="0.3" />
-              <g v-for="node in keywordLayout.nodes" :key="'kn-' + node.id" class="cursor-pointer" @click="selectKeywordNode(node.id)" @mouseenter="hoveredKeyword = node" @mouseleave="hoveredKeyword = null">
-                <circle :cx="node.x" :cy="node.y" :r="node.r" :fill="node.color" :opacity="selectedKeyword && selectedKeyword !== node.id ? 0.3 : (hoveredKeyword === node ? 1 : 0.85)" class="transition-all" :stroke="hoveredKeyword === node || selectedKeyword === node.id ? '#0071e3' : 'none'" :stroke-width="2" />
-                <text :x="node.x" :y="node.y + 5" text-anchor="middle" class="text-sm font-semibold pointer-events-none" fill="white">{{ node.name }}</text>
-                <text v-if="hoveredKeyword === node" :x="node.x" :y="node.y + node.r + 14" text-anchor="middle" class="text-xs pointer-events-none" fill="#0071e3">激活: {{ node.weight }}</text>
+      <div v-if="activeTab === 'keywordGraph'" class="flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+        <div class="flex items-center justify-between flex-shrink-0 mb-2">
+          <h3 class="text-lg font-semibold">关键词关联图</h3>
+          <div class="flex items-center gap-4 text-xs text-apple-gray-400">
+            <span>拖拽平移 · 滚轮缩放 · 悬停高亮关联</span>
+            <span class="flex items-center gap-1.5">
+              <span class="text-[10px]">低频</span>
+              <span class="w-24 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(150,75%,52%), hsl(60,75%,52%), hsl(0,75%,52%));"></span>
+              <span class="text-[10px]">高频</span>
+            </span>
+            <span class="text-[10px]">面积 = 连接度</span>
+          </div>
+        </div>
+        <div v-if="loadingKeywordGraph" class="text-center py-16 text-apple-gray-400 flex-1">加载中...</div>
+        <div v-else-if="keywordGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm flex-1">暂无关键词数据</div>
+        <div v-else class="flex gap-4 flex-1 min-h-0">
+          <div class="flex-1 overflow-hidden" :class="keywordPanning || keywordDraggingId ? 'cursor-grabbing' : 'cursor-grab'">
+            <svg
+              ref="keywordSvgRef"
+              viewBox="0 0 700 700"
+              width="100%"
+              height="100%"
+              preserveAspectRatio="xMidYMid meet"
+              style="touch-action: none;"
+              @wheel.prevent="onKeywordGraphWheel"
+              @mousedown="onKeywordGraphMouseDown"
+              @mousemove="onKeywordGraphMouseMove"
+              @mouseup="onKeywordGraphMouseUp"
+              @mouseleave="onKeywordGraphMouseUp"
+            >
+              <g :transform="`translate(${keywordTx},${keywordTy}) scale(${keywordScale})`">
+                <line
+                  v-for="(edge, i) in keywordGraphEdges" :key="'ke-' + i"
+                  :x1="keywordNodePosMap.get(edge.source)?.x ?? 0" :y1="keywordNodePosMap.get(edge.source)?.y ?? 0"
+                  :x2="keywordNodePosMap.get(edge.target)?.x ?? 0" :y2="keywordNodePosMap.get(edge.target)?.y ?? 0"
+                  :stroke="isKeywordEdgeHighlighted(edge) ? '#0071e3' : '#d1d1d6'"
+                  :stroke-width="isKeywordEdgeHighlighted(edge) ? 2 : 1"
+                  :opacity="isKeywordEdgeHighlighted(edge) ? 0.9 : Math.min(0.15 + edge.weight * 0.1, 0.55)"
+                />
+                <g
+                  v-for="node in keywordLayoutNodes" :key="node.id"
+                  class="cursor-pointer"
+                  @click="selectKeywordNode(node.id)"
+                  @mouseenter="keywordHoveredId = node.id"
+                  @mouseleave="keywordHoveredId = null"
+                  @mousedown.stop="onKeywordNodeMouseDown($event, node.id)"
+                >
+                  <circle
+                    :cx="node.x" :cy="node.y" :r="node.r"
+                    :fill="selectedKeyword === node.id || keywordHoveredId === node.id ? '#0071e3' : node.color"
+                    :opacity="isKeywordNodeDimmed(node.id) ? 0.12 : 0.9"
+                    class="transition-opacity"
+                  />
+                  <text :x="node.x" :y="node.y + node.r + 12" text-anchor="middle" class="text-[11px] font-medium pointer-events-none" fill="#6e6e73">{{ node.name }}</text>
+                </g>
+                <g v-if="keywordHoveredId" pointer-events="none">
+                  <template v-for="node in keywordLayoutNodes.filter(n => n.id === keywordHoveredId)" :key="'kt-' + node.id">
+                    <rect :x="node.x - 70" :y="node.y - node.r - 46" width="140" height="38" rx="6" fill="rgba(0,0,0,0.78)" />
+                    <text :x="node.x" :y="node.y - node.r - 28" text-anchor="middle" class="text-[11px] font-medium" fill="#ffffff">{{ node.name }}</text>
+                    <text :x="node.x" :y="node.y - node.r - 15" text-anchor="middle" class="text-[10px]" fill="#d1d1d6">关联 {{ node.degree }} · 激活 {{ node.weight }}</text>
+                  </template>
+                </g>
               </g>
             </svg>
           </div>
-          <div v-if="selectedKeyword" class="w-80 flex-shrink-0 block-card rounded-xl p-4 max-h-[600px] overflow-y-auto">
+          <div v-if="selectedKeyword" class="w-80 flex-shrink-0 block-card rounded-xl p-4 overflow-y-auto">
             <div class="flex items-center justify-between mb-3">
               <h4 class="text-sm font-semibold">关键词: {{ keywordGraphNodes.find(n => n.id === selectedKeyword)?.name }}</h4>
               <button class="p-1 text-apple-gray-400 hover:text-apple-gray-600" @click="selectedKeyword = null; selectedKeywordMemories = []"><X :size="14" /></button>
@@ -925,7 +1715,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
               <div v-else class="space-y-3">
                 <div v-for="(dim, key) in profile.dimensions" :key="key" class="p-4 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50 border border-apple-gray-100 dark:border-apple-gray-700">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium">{{ key }}</span>
+                    <span class="text-sm font-medium">{{ dim.direction_name || key }}</span>
                     <div class="flex items-center gap-2">
                       <span v-if="dim.stability" :class="['px-2 py-0.5 rounded text-xs font-medium', stabilityClass(dim.stability)]">{{ stabilityLabel(dim.stability) }}</span>
                       <span class="text-xs text-apple-gray-400">置信度: {{ Math.round((dim.confidence || 0) * 100) }}%</span>
@@ -934,7 +1724,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
                   <p class="text-sm text-apple-gray-700 dark:text-apple-gray-300">{{ dimensionDisplayValue(dim.value) }}</p>
                   <div v-if="dim.evidence && dim.evidence.length" class="mt-2 space-y-1">
                     <p v-for="(ev, i) in dim.evidence" :key="i" class="text-xs text-apple-gray-400">
-                      · {{ ev.source || '证据' }}<template v-if="ev.detail">: {{ ev.detail }}</template>
+                      · {{ formatEvidence(ev) }}
                     </p>
                   </div>
                 </div>
@@ -979,7 +1769,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
                 <p class="text-sm">{{ selectedVersion.profile_summary || '暂无总结' }}</p>
                 <div v-if="Object.keys(selectedVersion.dimensions).length" class="space-y-2">
                   <div v-for="(dim, key) in selectedVersion.dimensions" :key="key" class="p-2.5 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50">
-                    <span class="text-xs font-medium block">{{ key }}</span>
+                    <span class="text-xs font-medium block">{{ dim.direction_name || key }}</span>
                     <span class="text-xs text-apple-gray-500 block mt-0.5">{{ dimensionDisplayValue(dim.value) }}</span>
                   </div>
                 </div>
@@ -1034,3 +1824,67 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.doc-annotation-mark {
+  background: transparent;
+  border-bottom: 2px dashed #0071e3;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.markdown-body {
+  line-height: 1.75;
+  color: inherit;
+  word-break: break-word;
+}
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  font-weight: 600;
+  margin: 1.2em 0 0.6em;
+}
+.markdown-body :deep(h1) { font-size: 1.6em; }
+.markdown-body :deep(h2) { font-size: 1.35em; }
+.markdown-body :deep(h3) { font-size: 1.15em; }
+.markdown-body :deep(p) { margin: 0.6em 0; }
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) { padding-left: 1.5em; margin: 0.6em 0; }
+.markdown-body :deep(li) { margin: 0.25em 0; }
+.markdown-body :deep(code) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.markdown-body :deep(pre) {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.markdown-body :deep(pre code) { background: transparent; padding: 0; }
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid #d1d1d6;
+  padding-left: 1em;
+  margin: 0.8em 0;
+  color: #6e6e73;
+}
+.markdown-body :deep(table) {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  width: 100%;
+}
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid #d1d1d6;
+  padding: 0.4em 0.8em;
+  text-align: left;
+}
+.markdown-body :deep(a) { color: #0071e3; text-decoration: underline; }
+.markdown-body :deep(hr) { border: none; border-top: 1px solid #d1d1d6; margin: 1.2em 0; }
+</style>

@@ -202,6 +202,32 @@ export interface LibraryPath {
   enableSelfLearning?: boolean
 }
 
+export interface LibraryFileEntry {
+  id: string
+  name: string
+  path: string
+  relativePath: string
+  parentPath: string
+  isDirectory: boolean
+  size: number
+  status: string
+  learnedAt: number
+}
+
+export interface LibraryFilePage {
+  files: LibraryFileEntry[]
+  has_more: boolean
+  next_cursor: string | null
+}
+
+export interface LibraryTreeNode {
+  file_id: string
+  name: string
+  relative_path: string
+  is_directory: boolean
+  children: LibraryTreeNode[]
+}
+
 export interface GraphNode {
   id: string
   name: string
@@ -360,6 +386,8 @@ export interface ProfileDimension {
   confidence: number
   evidence: Array<Record<string, unknown>>
   stability?: 'stable' | 'drifting' | 'emerging'
+  direction_key?: string
+  direction_name?: string
 }
 
 export interface ProfileEvolutionItem {

@@ -170,12 +170,15 @@
 | 属性 | 类型 | 是否必填 | 说明 |
 | ------ | ----- | ----- | ----- |
 | llm_provider_id | STRING | Y | LLM 提供商 ID |
+| force | BOOLEAN | N | 是否强制从远程 API 重新获取（为 true 时跳过缓存，主动拉取并刷新缓存） |
 
 **处理流程**：
 
 1. 根据 ID 获取 LLM 提供商信息；
-2. 调用提供商 API 获取模型列表；
-3. 将模型信息（含 `llm_param` JSON 参数）通过 RelationDBProvider 写入 `llm_cache` 表（upsert 语义）；
+2. 缓存检查：仅在未指定 `force=true` 且 `models_fetched_at` 未过期时直接返回 `llm_cache` 本地缓存列表；
+3. 调用提供商 API（依据配置的 `models_path` 路径及 API Key）动态获取模型列表，通用兼容标准响应结构（如 `data` / `models` 数组，动态解析 `id`/`name`、`displayName`/`description`、`inputTokenLimit`/`max_tokens` 等）；
+4. 将模型信息（含 `llm_param` JSON 参数）通过 RelationDBProvider 写入 `llm_cache` 表（upsert 语义）；
+5. 仅在远程请求成功后更新 `models_fetched_at` 缓存时间戳（请求失败或网络异常时不更新缓存时间戳）；
 
 **返回**：Boolean，表示获取是否完成；模型列表通过 output 参数返回
 

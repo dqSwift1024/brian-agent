@@ -296,6 +296,8 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   app('self_learning', 'interval', 'orphan_tag_check_cron', '孤立标签检查 Cron', 'STRING', '0 0 3 * * *', '孤立标签检查任务的定时时间（默认每天凌晨 3:00），由 CronProvider 统一调度'),
   app('self_learning', 'basic', 'document_split_threshold', '文档分割阈值（字符数）', 'INT', 5000, '文档内容长度超过此值时触发 ChunkProvider 分块'),
   app('self_learning', 'basic', 'chunk_overlap_ratio', '分块重叠比例', 'DOUBLE', 0.2, 'ChunkProvider 分块时相邻块的文本重叠比例，取值 0-1'),
+  app('self_learning', 'basic', 'document_query_prompt_template_id', '文档阅读 Prompt', 'STRING', '', '资料库文档内容选中解释所用的提示词模板（留空使用内置默认提示词）'),
+  app('self_learning', 'basic', 'document_query_llm_id', '文档阅读 LLM', 'STRING', '', '资料库文档内容选中解释所用的模型（留空自动匹配）'),
 
   // --- UserProfile ---
   app('user_profile', 'basic', 'auto_generate_interval_ms', '自动生成间隔（ms）', 'INT', 86400000, '自动生成画像的调度间隔'),

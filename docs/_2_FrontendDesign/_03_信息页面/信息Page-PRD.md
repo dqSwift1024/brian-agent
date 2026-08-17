@@ -236,3 +236,58 @@
 
 **可能存在的问题**：
 - 无。资料库路径处理（`path.resolve` / `path.join` / `fs.*`）为 Node.js 跨平台 API，支持 Windows / Linux / macOS；HTTP 路由的 `split('/')` 为 URL 解析，与操作系统无关。
+
+### [2026-08-17] 资料库 Tab：启用开关 + 文件树浏览 + 游标分页
+
+**变更原因**：资料库 Tab 原先仅有添加/删除，卡片无启用状态，详情页为占位；不支持浏览目录文件、层级结构与文件内容。
+
+**修改的方法**：
+- 后端 `SelfLearningSchemaInitializer` — `self_learning_file` 表新增 `relative_path` / `parent_path` / `is_directory` 字段。
+- 后端 `SelfLearningService`：
+  - `addLibrary` 改为递归扫描，记录目录（`is_directory=1`）与所有文件（含层级 `relative_path` / `parent_path`），`id` / `file_id` 均由 `IdGenerator.generate()`（Base/ToolProvider，UUID v4）生成。
+  - 新增 `setLibraryEnabled`：切换 `enable_self_learning`，启用时重新扫描目录刷新文件数据。
+  - `getLibraryFiles` 支持 `directory`（目录过滤）、`keyword`（文件名搜索）、游标分页（`cursor=created:file_id` + `limit`）。
+  - 新增 `getLibraryTree`：按 `parent_path` 构建目录树。
+- 后端 `dev-server.ts` — 新增 `PUT /api/library/paths/:id/enabled`、`GET /api/library/paths/:id/files`、`GET /api/library/paths/:id/tree`、`GET /api/library/files/:fileId/content` 路由。
+- 前端 `api/index.ts` / `types.ts` — `libraryApi` 新增 `setEnabled` / `files` / `tree` / `fileContent`。
+- 前端 `InfoView.vue` + 新增 `components/LibraryTreeItem.vue` — 资料库卡片增加启用/禁用开关；详情页支持面包屑路径、目录树跳转、文件名搜索、文件列表无限滚动（IntersectionObserver + sentinel）、文件内容查看。
+
+**影响的端点**：
+- `GET/POST/DELETE /api/library/paths`（既有）+ 新增 `PUT .../enabled`、`GET .../files`、`GET .../tree`、`GET /api/library/files/:fileId/content`。
+
+**可能存在的问题**：
+- 递归扫描对超大型目录逐条 `insert`，性能一般，可后续优化为批量插入。
+- `self_learning_library` 的 `total_files` 统计含目录记录，语义上应区分文件与目录计数。
+
+### [2026-08-17] 资料库 Tab：文档弹窗 + 选中解释 + 文档阅读配置
+
+**变更原因**：文档内容原先内嵌展示；不支持选中内容调用 LLM 解释，也缺少文档阅读所用的 Prompt/LLM 配置。
+
+**修改的方法**：
+- 后端 `SelfLearningSchemaInitializer` — `self_learning_config` 表新增 `document_query_prompt_template_id` / `document_query_llm_id` 字段。
+- 后端 `SelfLearningService` — 新增 `queryDocument`：读取配置的 Prompt 模板（`promptsAccess.execPrompt`）与 LLM（配置或 `llmCore.matchLLM` 自动匹配），调用 `llmAccess.execLLM` 对选中内容解释；构造函数新增 `llmAccess` / `promptsAccess` 依赖。
+- 后端 `Config` — `configRegistrations.ts` 新增「文档阅读 Prompt / 文档阅读 LLM」配置项；`ConfigService` 的 `self_learning` 读写映射补全这两个字段。
+- 后端 `dev-server.ts` — `SelfLearningAccess` 装配传入 `llmAccess` / `promptsAccess`；新增 `POST /api/library/query` 路由。
+- 前端 `InfoView.vue` — 文件内容改为弹窗展示（内容两侧 `px-8` 留白）；文档内容支持选中，右键弹出「解释选中内容」菜单，调用 `POST /api/library/query` 并在弹窗内展示解释结果。
+
+**影响的端点**：
+- 新增 `POST /api/library/query`（body: `{ content }` → `{ result, llm_id }`）。
+
+**可能存在的问题**：
+- `queryDocument` 的 LLM 自动匹配依赖 `llm_core` 匹配规则，未配置模型时返回提示而非报错。
+
+### [2026-08-17] 资料库 Tab：文档页面展示区 + 咨询卡片持久化
+
+**变更原因**：文档内容由弹窗改为页面展示区；咨询卡片与选中内容的关联关系需要持久化，重新打开文件时能恢复。
+
+**修改的方法**：
+- 后端 `SelfLearningSchemaInitializer` — 新增 `document_annotation` 表（`file_id` / `selection_text` / `selection_start` / `selection_end` / `question` / `result` / `llm_id`），保存咨询卡片与原始内容的关联。
+- 后端 `SelfLearningService` — 新增 `saveAnnotation`（保存咨询卡片）、`getFileAnnotations`（按 `file_id` 查询）。
+- 后端 `dev-server.ts` — 新增 `POST /api/library/annotations`、`GET /api/library/files/:fileId/annotations`。
+- 前端 `InfoView.vue` — 文档展示区改为三栏（左章节 / 内容 markdown / 右咨询卡片）；`submitAsk` 咨询后调用 `saveAnnotation` 持久化；`openFile` 加载该文件历史注释并恢复卡片与下划线；连线改为横平竖直正交线，连接卡片左边缘中间点；点击卡片高亮其连线。
+
+**影响的端点**：
+- 新增 `POST /api/library/annotations`、`GET /api/library/files/:fileId/annotations`。
+
+**可能存在的问题**：
+- 恢复下划线依赖 `selection_text` 在渲染后 DOM 的文本节点中匹配，跨节点选中无法恢复下划线（卡片仍正常恢复）。

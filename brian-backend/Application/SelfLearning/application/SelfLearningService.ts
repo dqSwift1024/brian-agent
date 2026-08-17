@@ -8,12 +8,17 @@ import {
   InsertDBInput, InsertDBOutput,
   CountDBInput, CountDBOutput,
   TransactionDBInput, TransactionDBOutput,
-  Operator, DataObject, DBContext, IdGenerator,
+  Operator, DataObject, DBContext, IdGenerator, NotFoundError, ValidationError,
+  ExecLLMInput, ExecLLMOutput, LLMContext,
+  ExecPromptInput, ExecPromptOutput, PromptContext,
   type Logger, type Condition,
 } from '@brian-agent/base';
-import type { GraphDBAccess, ChunkAccess } from '@brian-agent/base';
+import type { GraphDBAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import type {
   InfoCoreAccess, MQCoreAccess, LLMCoreAccess,
+} from '@brian-agent/core';
+import {
+  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
 } from '@brian-agent/core';
 import type {
   EvolutorAgentAccess, WriterAgentAccess,
@@ -48,8 +53,14 @@ import {
   AddLibraryInput, AddLibraryOutput,
   DeleteLibraryInput, DeleteLibraryOutput,
   SearchLibraryInput, SearchLibraryOutput,
+  SetLibraryEnabledInput, SetLibraryEnabledOutput,
   GetLibraryFilesInput, GetLibraryFilesOutput,
+  GetLibraryTreeInput, GetLibraryTreeOutput,
+  type LibraryTreeNode,
   GetFileContentInput, GetFileContentOutput,
+  QueryDocumentInput, QueryDocumentOutput,
+  SaveAnnotationInput, SaveAnnotationOutput,
+  GetFileAnnotationsInput, GetFileAnnotationsOutput,
   StartLearningInput, StartLearningOutput,
   StopLearningInput, StopLearningOutput,
   GetTagGraphInput, GetTagGraphOutput,
@@ -80,6 +91,8 @@ export class SelfLearningService {
     private readonly graphDBAccess: GraphDBAccess,
     private readonly chunkAccess: ChunkAccess,
     private readonly mqAccess: any,
+    private readonly llmAccess: LLMAccess,
+    private readonly promptsAccess: PromptsAccess,
     private readonly logger?: Logger,
   ) {}
 
@@ -100,9 +113,6 @@ export class SelfLearningService {
       throw new Error(`Path is not a directory: ${libraryPath}`);
     }
 
-    const entries = fs.readdirSync(libraryPath);
-    const mdFiles = entries.filter((f) => f.endsWith('.md'));
-
     const now = IdGenerator.now();
     const libraryId = IdGenerator.generate();
     const libraryName = input.library_name || path.basename(libraryPath);
@@ -118,31 +128,89 @@ export class SelfLearningService {
       { field: 'learning_rate', value: input.learning_rate ?? 5 },
     ]);
 
-    for (const fileName of mdFiles) {
-      const filePath = path.join(libraryPath, fileName);
-      let fileSize = 0;
-      try {
-        fileSize = fs.statSync(filePath).size;
-      } catch {
-        fileSize = 0;
-      }
-      await this.relationDb.insert('self_learning_file', [
-        { field: 'id', value: IdGenerator.generate() },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'library_id', value: libraryId },
-        { field: 'file_id', value: IdGenerator.generate() },
-        { field: 'file_name', value: fileName },
-        { field: 'file_path', value: filePath },
-        { field: 'file_size', value: fileSize },
-        { field: 'status', value: 'PENDING' },
-      ]);
-    }
+    const { fileCount } = await this.scanLibraryDirectory(libraryId, libraryPath, now);
 
     output.library_id = libraryId;
-    output.file_count = mdFiles.length;
-    this.logger?.debug?.('addLibrary done', { libraryId, fileCount: mdFiles.length });
+    output.file_count = fileCount;
+    this.logger?.debug?.('addLibrary done', { libraryId, fileCount });
     return true;
+  }
+
+  /**
+   * 递归扫描资料库目录，将子目录与文件（含层级结构）写入 self_learning_file 表。
+   *
+   * 目录记录：is_directory=1，file_size=0，status='PENDING'（不参与文档学习）。
+   * 文件记录：is_directory=0，status='PENDING'，relative_path/parent_path 记录层级。
+   *
+   * @returns 扫描到的文件数与目录数
+   */
+  private async scanLibraryDirectory(
+    libraryId: string,
+    rootPath: string,
+    now: number,
+  ): Promise<{ fileCount: number; dirCount: number }> {
+    let fileCount = 0;
+    let dirCount = 0;
+
+    const walk = async (dirAbsPath: string, parentRelPath: string): Promise<void> => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dirAbsPath, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        const absPath = path.join(dirAbsPath, entry.name);
+        const relPath = parentRelPath ? `${parentRelPath}${path.sep}${entry.name}` : entry.name;
+
+        let isDir = false;
+        let isFile = false;
+        if (entry.isDirectory()) {
+          isDir = true;
+        } else if (entry.isFile()) {
+          isFile = true;
+        } else if (entry.isSymbolicLink()) {
+          try {
+            isDir = fs.statSync(absPath).isDirectory();
+            isFile = !isDir && fs.statSync(absPath).isFile();
+          } catch {
+            continue;
+          }
+        }
+        if (!isDir && !isFile) continue;
+
+        let fileSize = 0;
+        if (isFile) {
+          try { fileSize = fs.statSync(absPath).size; } catch { fileSize = 0; }
+        }
+
+        await this.relationDb.insert('self_learning_file', [
+          { field: 'id', value: IdGenerator.generate() },
+          { field: 'created', value: now },
+          { field: 'updated', value: now },
+          { field: 'library_id', value: libraryId },
+          { field: 'file_id', value: IdGenerator.generate() },
+          { field: 'file_name', value: entry.name },
+          { field: 'file_path', value: absPath },
+          { field: 'relative_path', value: relPath },
+          { field: 'parent_path', value: parentRelPath },
+          { field: 'is_directory', value: isDir ? 1 : 0 },
+          { field: 'file_size', value: fileSize },
+          { field: 'status', value: 'PENDING' },
+        ]);
+
+        if (isDir) {
+          dirCount++;
+          await walk(absPath, relPath);
+        } else {
+          fileCount++;
+        }
+      }
+    };
+
+    await walk(rootPath, '');
+    return { fileCount, dirCount };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -174,6 +242,50 @@ export class SelfLearningService {
     });
     await this.relationDb.transactionDB(txInput, new DBContext(), Object.assign(new TransactionDBOutput(), {}));
     this.logger?.debug?.('deleteLibrary done', { libraryId: input.library_id });
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // setLibraryEnabled
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async setLibraryEnabled(
+    input: SetLibraryEnabledInput,
+    _context: SelfLearningContext,
+    output: SetLibraryEnabledOutput,
+  ): Promise<boolean> {
+    const libRow = await this.relationDb.selectOne('self_learning_library', [
+      { field: 'library_id', operator: Operator.EQ, value: input.library_id },
+    ]);
+    if (!libRow) {
+      throw new NotFoundError('资料库', input.library_id);
+    }
+
+    const now = IdGenerator.now();
+    await this.relationDb.update(
+      'self_learning_library',
+      [
+        { field: 'enable_self_learning', value: input.enabled ? 1 : 0 },
+        { field: 'updated', value: now },
+      ],
+      [{ field: 'library_id', operator: Operator.EQ, value: input.library_id }],
+    );
+
+    // 启用时重新扫描目录，刷新文件与层级结构数据
+    if (input.enabled) {
+      await this.relationDb.delete('self_learning_file', [
+        { field: 'library_id', operator: Operator.EQ, value: input.library_id },
+      ]);
+      const result = await this.scanLibraryDirectory(
+        input.library_id,
+        String(libRow.library_path ?? ''),
+        now,
+      );
+      output.file_count = result.fileCount;
+      output.directory_count = result.dirCount;
+    }
+
+    output.enabled = input.enabled;
     return true;
   }
 
@@ -244,36 +356,115 @@ export class SelfLearningService {
     _context: SelfLearningContext,
     output: GetLibraryFilesOutput,
   ): Promise<boolean> {
-    const conditions: Condition[] = [
-      { field: 'library_id', operator: Operator.EQ, value: input.library_id },
-    ];
+    const baseConds: string[] = ['"library_id" = ?'];
+    const baseArgs: unknown[] = [input.library_id];
     if (input.status) {
-      conditions.push({ field: 'status', operator: Operator.EQ, value: input.status });
+      baseConds.push('"status" = ?');
+      baseArgs.push(input.status);
+    }
+    if (input.keyword) {
+      baseConds.push('"file_name" LIKE ?');
+      baseArgs.push(`%${input.keyword}%`);
+    }
+    // directory 显式传入时才按目录过滤（旧调用不传 directory 时返回该库全部文件）
+    if (input.directory !== undefined) {
+      baseConds.push('"parent_path" = ?');
+      baseArgs.push(input.directory);
     }
 
-    const pageCurrent = input.page_current ?? 1;
-    const pageSize = input.page_size ?? 20;
+    // total：符合条件的总数（不含分页条件）
+    const countRows = this.relationDb.queryRaw<{ c: number }>(
+      `SELECT COUNT(*) AS "c" FROM "self_learning_file" WHERE ${baseConds.join(' AND ')}`,
+      baseArgs,
+    );
+    output.total = Number(countRows[0]?.c ?? 0);
 
-    const countInput = Object.assign(new CountDBInput(), {
-      table: 'self_learning_file',
-      conditions,
-    });
-    const countOutput = Object.assign(new CountDBOutput(), {});
-    await this.relationDb.countDB(countInput, new DBContext(), countOutput);
+    const conds = [...baseConds];
+    const args = [...baseArgs];
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 500);
 
-    const selInput = Object.assign(new SelectDBInput(), {
-      query_param: {
-        table: 'self_learning_file',
-        conditions,
-        page: { current: pageCurrent, size: pageSize },
-        order_by: [{ field: 'created', direction: 'ASC' }],
-      },
-    });
-    const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    if (input.page_current !== undefined && input.page_size !== undefined) {
+      // 旧 offset 分页（兼容既有调用与测试）
+      const pageSize = input.page_size;
+      const offset = (input.page_current - 1) * pageSize;
+      const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
+      output.files = this.relationDb.queryRaw<Record<string, unknown>>(sql, args);
+      output.has_more = false;
+      output.next_cursor = null;
+      return true;
+    }
 
-    output.files = selOutput.rows;
-    output.total = countOutput.count;
+    // 游标分页（id + page_size）：created ASC, file_id ASC，游标格式 created:file_id
+    if (input.cursor) {
+      const idx = input.cursor.indexOf(':');
+      const cCreated = idx > 0 ? Number(input.cursor.slice(0, idx)) : NaN;
+      const cId = idx > 0 ? input.cursor.slice(idx + 1) : '';
+      if (!isNaN(cCreated)) {
+        conds.push('("created" > ? OR ("created" = ? AND "file_id" > ?))');
+        args.push(cCreated, cCreated, cId);
+      }
+    }
+    const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
+    const rows = this.relationDb.queryRaw<Record<string, unknown>>(sql, args);
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const last = pageRows[pageRows.length - 1];
+    output.files = pageRows;
+    output.has_more = hasMore;
+    output.next_cursor = hasMore && last ? `${last.created}:${last.file_id}` : null;
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // getLibraryTree
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getLibraryTree(
+    input: GetLibraryTreeInput,
+    _context: SelfLearningContext,
+    output: GetLibraryTreeOutput,
+  ): Promise<boolean> {
+    const rows = this.relationDb.queryRaw<Record<string, unknown>>(
+      `SELECT "file_id", "file_name", "relative_path", "parent_path", "is_directory" FROM "self_learning_file" WHERE "library_id" = ? ORDER BY "is_directory" DESC, "file_name" ASC`,
+      [input.library_id],
+    );
+
+    const nodeMap = new Map<string, LibraryTreeNode>();
+    for (const row of rows) {
+      const relPath = String(row.relative_path ?? '');
+      nodeMap.set(relPath, {
+        file_id: String(row.file_id ?? ''),
+        name: String(row.file_name ?? ''),
+        relative_path: relPath,
+        is_directory: Number(row.is_directory) === 1,
+        children: [],
+      });
+    }
+
+    const roots: LibraryTreeNode[] = [];
+    for (const node of nodeMap.values()) {
+      const parentRel = node.relative_path.includes('/')
+        ? node.relative_path.slice(0, node.relative_path.lastIndexOf('/'))
+        : '';
+      const parent = parentRel ? nodeMap.get(parentRel) : undefined;
+      if (parent && parent.is_directory) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    const sortChildren = (nodes: LibraryTreeNode[]) => {
+      nodes.sort((a, b) => {
+        if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      for (const n of nodes) sortChildren(n.children);
+    };
+    sortChildren(roots);
+
+    output.tree = roots;
     return true;
   }
 
@@ -309,6 +500,164 @@ export class SelfLearningService {
     output.file_name = (file.file_name as string) || '';
     output.content = content;
     output.learned_at = file.learned_at as number | undefined;
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // queryDocument（文档内容选中解释）
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async queryDocument(
+    input: QueryDocumentInput,
+    _context: SelfLearningContext,
+    output: QueryDocumentOutput,
+  ): Promise<boolean> {
+    const selection = (input.selection || input.content || '').trim();
+    if (!selection) {
+      throw new ValidationError('selection is required');
+    }
+    const question = (input.question || '').trim();
+    const contextBefore = input.context_before || '';
+    const contextAfter = input.context_after || '';
+
+    const config = await this.getConfig();
+    const templateId = String(config.document_query_prompt_template_id ?? '');
+    const configuredLlmId = String(config.document_query_llm_id ?? '');
+
+    // 1. 渲染 Prompt（配置的模板，或内置默认）
+    let prompt: string;
+    if (templateId) {
+      try {
+        const promptOut = new ExecPromptOutput();
+        await this.promptsAccess.execPrompt(
+          Object.assign(new ExecPromptInput(), {
+            id: templateId,
+            variables: {
+              selection,
+              context_before: contextBefore,
+              context_after: contextAfter,
+              question,
+              content: selection,
+            },
+          }),
+          new PromptContext(),
+          promptOut,
+        );
+        prompt = promptOut.prompt || this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
+      } catch {
+        prompt = this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
+      }
+    } else {
+      prompt = this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
+    }
+
+    // 2. 匹配 LLM（配置的模型，或自动匹配）
+    let llmId = configuredLlmId;
+    if (!llmId) {
+      try {
+        const matchOut = new MatchLLMOutput();
+        await this.llmCore.matchLLM(
+          Object.assign(new MatchLLMInput(), {
+            agent_id: 'document_query',
+            context_id: 'document_query',
+            interact_id: IdGenerator.generate(),
+          }),
+          new LLMCoreContext(),
+          matchOut,
+        );
+        llmId = matchOut.llm_id || '';
+      } catch {
+        llmId = '';
+      }
+    }
+    if (!llmId) {
+      output.result = '未配置文档阅读模型：请在「配置中心 > 应用配置 > 自学习 > 文档阅读 LLM」中选择模型';
+      return true;
+    }
+    output.llm_id = llmId;
+
+    // 3. 调用 LLM
+    try {
+      const llmOut = new ExecLLMOutput();
+      await this.llmAccess.execLLM(
+        Object.assign(new ExecLLMInput(), {
+          id: llmId,
+          prompt,
+          temperature: 0.3,
+          max_tokens: 1024,
+        }),
+        new LLMContext(),
+        llmOut,
+      );
+      output.result = llmOut.result || '';
+    } catch (err: unknown) {
+      output.result = `解释失败：${err instanceof Error ? err.message : String(err)}`;
+    }
+    return true;
+  }
+
+  private buildDefaultDocumentQueryPrompt(
+    selection: string,
+    contextBefore: string,
+    contextAfter: string,
+    question: string,
+  ): string {
+    const parts: string[] = ['请基于下面文档的上下文，回答用户关于选中内容的问题。请用中文回答。'];
+    if (contextBefore) {
+      parts.push(`【选中内容的前文】\n${contextBefore}`);
+    }
+    parts.push(`【选中的内容】\n${selection}`);
+    if (contextAfter) {
+      parts.push(`【选中内容的后文】\n${contextAfter}`);
+    }
+    if (question) {
+      parts.push(`【用户问题】\n${question}`);
+    }
+    return parts.join('\n\n');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // saveAnnotation（保存文档咨询卡片）
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async saveAnnotation(
+    input: SaveAnnotationInput,
+    _context: SelfLearningContext,
+    output: SaveAnnotationOutput,
+  ): Promise<boolean> {
+    const now = IdGenerator.now();
+    const id = IdGenerator.generate();
+    await this.relationDb.insert('document_annotation', [
+      { field: 'id', value: id },
+      { field: 'created', value: now },
+      { field: 'updated', value: now },
+      { field: 'library_id', value: input.library_id || '' },
+      { field: 'file_id', value: input.file_id },
+      { field: 'selection_text', value: input.selection_text },
+      { field: 'selection_start', value: input.selection_start },
+      { field: 'selection_end', value: input.selection_end },
+      { field: 'question', value: input.question },
+      { field: 'result', value: input.result },
+      { field: 'llm_id', value: input.llm_id || '' },
+    ]);
+    output.id = id;
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // getFileAnnotations（查询文件的咨询卡片）
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getFileAnnotations(
+    input: GetFileAnnotationsInput,
+    _context: SelfLearningContext,
+    output: GetFileAnnotationsOutput,
+  ): Promise<boolean> {
+    const rows = this.relationDb.queryRaw<Record<string, unknown>>(
+      `SELECT "id", "file_id", "selection_text", "selection_start", "selection_end", "question", "result", "llm_id", "created" FROM "document_annotation" WHERE "file_id" = ? ORDER BY "created" ASC`,
+      [input.file_id],
+    );
+    output.annotations = rows;
     return true;
   }
 
@@ -1510,6 +1859,7 @@ export class SelfLearningService {
       'tag_maintenance_weight', 'learning_interval_ms', 'default_learning_rate',
       'tag_connection_check_interval_ms', 'tag_aging_cron',
       'orphan_tag_check_cron', 'document_split_threshold', 'chunk_overlap_ratio',
+      'document_query_prompt_template_id', 'document_query_llm_id',
     ];
 
     const booleanFields = new Set<string>(['document_auto_enable', 'conversation_auto_enable', 'tag_auto_enable']);

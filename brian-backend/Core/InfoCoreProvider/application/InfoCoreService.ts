@@ -993,13 +993,17 @@ export class InfoCoreService {
       conditions: [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }],
     });
 
+    // 节点统一以 info_id 作为 id（与边的 from/to 同命名空间）
     const nodes = infoRows.map((r) => ({
-      id: r['id'] as string,
+      id: r['info_id'] as string,
       label: (r['info'] as string).slice(0, 80),
       info_id: r['info_id'] as string,
+      info_type: r['info_type'] as string,
+      info_creator_role: r['info_creator_role'] as string,
     }));
 
-    const edges = graphEdges
+    // 引用边（info_graph：用户引用其他消息）
+    const citationEdges = graphEdges
       .filter((e) => infoIds.has(e['citing_info_id'] as string) && infoIds.has(e['cited_info_id'] as string))
       .map((e) => ({
         id: e['id'] as string,
@@ -1007,9 +1011,36 @@ export class InfoCoreService {
         to: e['cited_info_id'] as string,
         citing_info_id: e['citing_info_id'] as string,
         cited_info_id: e['cited_info_id'] as string,
+        edge_type: 'CITATION',
       }));
 
-    output.graph = { nodes, edges };
+    // 问答边（同 interact_id 的 REQUEST → RESPONSE）
+    const byInteract = new Map<string, { request?: string; response?: string }>();
+    for (const r of infoRows) {
+      const interactId = r['interact_id'] as string;
+      const infoId = r['info_id'] as string;
+      const infoType = (r['info_type'] as string) || '';
+      if (!interactId) continue;
+      if (!byInteract.has(interactId)) byInteract.set(interactId, {});
+      const g = byInteract.get(interactId)!;
+      if (infoType === 'REQUEST') g.request = infoId;
+      else if (infoType === 'RESPONSE') g.response = infoId;
+    }
+    const replyEdges: Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string; edge_type: string }> = [];
+    for (const [interactId, g] of byInteract) {
+      if (g.request && g.response) {
+        replyEdges.push({
+          id: `reply-${interactId}`,
+          from: g.request,
+          to: g.response,
+          citing_info_id: g.request,
+          cited_info_id: g.response,
+          edge_type: 'REPLY',
+        });
+      }
+    }
+
+    output.graph = { nodes, edges: [...replyEdges, ...citationEdges] };
     return true;
   }
 

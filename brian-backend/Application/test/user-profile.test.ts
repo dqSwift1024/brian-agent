@@ -41,6 +41,14 @@ describe('UserProfileService', () => {
     service = new UserProfileService(
       db, writerAgent, evolutorAgent, infoCore, llmCore, llmAccess, promptsAccess,
     );
+
+    // 默认最小置信度阈值为 0.5，会过滤掉实时聚合的低置信度维度；
+    // 测试环境无真实对话数据，将阈值设为 0 以确保所有维度均返回。
+    await service.configUserProfile(
+      Object.assign(new ConfigUserProfileInput(), { min_confidence_threshold: 0 }),
+      ctx(),
+      new ConfigUserProfileOutput(),
+    );
   });
 
   afterEach(() => {

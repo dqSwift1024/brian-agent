@@ -1,4 +1,4 @@
-import type { RelationDBAccess, GraphDBAccess, Logger, MQAccess, ChunkAccess } from '@brian-agent/base';
+import type { RelationDBAccess, GraphDBAccess, Logger, MQAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { EvolutorAgentAccess, WriterAgentAccess } from '@brian-agent/agent';
@@ -10,8 +10,13 @@ import {
   AddLibraryInput, AddLibraryOutput,
   DeleteLibraryInput, DeleteLibraryOutput,
   SearchLibraryInput, SearchLibraryOutput,
+  SetLibraryEnabledInput, SetLibraryEnabledOutput,
   GetLibraryFilesInput, GetLibraryFilesOutput,
+  GetLibraryTreeInput, GetLibraryTreeOutput,
   GetFileContentInput, GetFileContentOutput,
+  QueryDocumentInput, QueryDocumentOutput,
+  SaveAnnotationInput, SaveAnnotationOutput,
+  GetFileAnnotationsInput, GetFileAnnotationsOutput,
   StartLearningInput, StartLearningOutput,
   StopLearningInput, StopLearningOutput,
   GetTagGraphInput, GetTagGraphOutput,
@@ -37,13 +42,15 @@ export class SelfLearningAccess {
     graphDBAccess: GraphDBAccess,
     mqAccess: MQAccess,
     chunkAccess: ChunkAccess,
+    llmAccess: LLMAccess,
+    promptsAccess: PromptsAccess,
     logger?: Logger,
   ) {
     this.initPromise = new SelfLearningSchemaInitializer(relationDb).init();
     const raw = new SelfLearningService(
       relationDb, infoCore, mqCore, llmCore,
       evolutorAgent, writerAgent, orchestrationEntry,
-      graphDBAccess, chunkAccess, mqAccess, logger,
+      graphDBAccess, chunkAccess, mqAccess, llmAccess, promptsAccess, logger,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }
@@ -73,6 +80,13 @@ export class SelfLearningAccess {
     return this.service.searchLibrary(i, c, o);
   }
 
+  async setLibraryEnabled(
+    i: SetLibraryEnabledInput, c: SelfLearningContext, o: SetLibraryEnabledOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.setLibraryEnabled(i, c, o);
+  }
+
   async getLibraryFiles(
     i: GetLibraryFilesInput, c: SelfLearningContext, o: GetLibraryFilesOutput,
   ): Promise<boolean> {
@@ -80,11 +94,39 @@ export class SelfLearningAccess {
     return this.service.getLibraryFiles(i, c, o);
   }
 
+  async getLibraryTree(
+    i: GetLibraryTreeInput, c: SelfLearningContext, o: GetLibraryTreeOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.getLibraryTree(i, c, o);
+  }
+
   async getFileContent(
     i: GetFileContentInput, c: SelfLearningContext, o: GetFileContentOutput,
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.getFileContent(i, c, o);
+  }
+
+  async queryDocument(
+    i: QueryDocumentInput, c: SelfLearningContext, o: QueryDocumentOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.queryDocument(i, c, o);
+  }
+
+  async saveAnnotation(
+    i: SaveAnnotationInput, c: SelfLearningContext, o: SaveAnnotationOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.saveAnnotation(i, c, o);
+  }
+
+  async getFileAnnotations(
+    i: GetFileAnnotationsInput, c: SelfLearningContext, o: GetFileAnnotationsOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.getFileAnnotations(i, c, o);
   }
 
   async startLearning(

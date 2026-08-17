@@ -12,15 +12,15 @@ const themeStore = useThemeStore()
 const i18nStore = useI18nStore()
 const authStore = useAuthStore()
 
-const navItems = [
+const navItems = computed(() => [
   { icon: MessageCircle, route: '/', name: i18nStore.t('nav.chat') },
   { icon: Brain, route: '/info', name: i18nStore.t('nav.info') },
   { icon: BookOpen, route: '/learning', name: i18nStore.t('nav.learning') },
   { icon: BarChart3, route: '/monitor', name: i18nStore.t('nav.monitor') },
-  { icon: Clock, route: '/cron', name: '定时任务' },
+  { icon: Clock, route: '/cron', name: i18nStore.t('nav.cron') },
   { icon: Settings, route: '/config', name: i18nStore.t('nav.config') },
   { icon: Wrench, route: '/tool', name: i18nStore.t('nav.tool') },
-]
+])
 
 const currentRoute = computed(() => route.path)
 

@@ -509,11 +509,161 @@ export class LLMService {
     return true;
   }
 
+  // ===== 原始方法（保留作为参考）=====
+  // async listLLM(
+  //   input: ListLLMInput,
+  //   _context: LLMContext,
+  //   output: ListLLMOutput,
+  // ): Promise<boolean> {
+  //   this.ensureEnabled();
+  //   if (!input.llm_provider_id) {
+  //     throw new ValidationError('llm_provider_id 不能为空');
+  //   }
+  //
+  //   const row = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: input.llm_provider_id },
+  //   ]);
+  //   if (!row) {
+  //     throw new NotFoundError('LLMProvider', input.llm_provider_id);
+  //   }
+  //   const provider = row as unknown as LLMProviderRecord;
+  //
+  //   // 缓存命中：跳过远程请求，直接返回本地模型列表
+  //   const cacheAge = !input.force && provider.models_fetched_at
+  //     ? IdGenerator.now() - provider.models_fetched_at
+  //     : Infinity;
+  //   if (cacheAge < MODELS_CACHE_TTL_MS) {
+  //     const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
+  //       conditions: [
+  //         { field: 'llm_provider_id', operator: Operator.EQ, value: input.llm_provider_id },
+  //       ],
+  //       order_by: [{ field: 'llm_title', direction: Direction.ASC }],
+  //     });
+  //     output.list = rows as unknown as LLMCacheRecord[];
+  //     output.cached = true;
+  //     return true;
+  //   }
+  //
+  //   const modelsPath = provider.models_path || MODELS_PATH;
+  //   const url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
+  //
+  //   let models: Array<{
+  //     id?: string;
+  //     owned_by?: string;
+  //     created?: number;
+  //   }> = [];
+  //   const headers: Record<string, string> = {};
+  //   if (provider.api_key) {
+  //     headers['Authorization'] = `Bearer ${provider.api_key}`;
+  //   }
+  //   try {
+  //     const res = await this.fetchWithTimeout(
+  //       url,
+  //       { method: 'GET', headers },
+  //       LIST_TIMEOUT_MS,
+  //     );
+  //     if (!res.ok) {
+  //       output.error = `获取模型列表失败: HTTP ${res.status}`;
+  //       output.error_code = 'REMOTE_ERROR';
+  //       await this.updateModelsCacheTimestamp(input.llm_provider_id);
+  //       return false;
+  //     }
+  //     const json = (await res.json()) as {
+  //       data?: Array<Record<string, unknown>>;
+  //     };
+  //     models = json.data ?? [];
+  //   } catch (err) {
+  //     output.error = err instanceof Error ? err.message : String(err);
+  //     output.error_code = 'CONNECT_ERROR';
+  //     await this.updateModelsCacheTimestamp(input.llm_provider_id);
+  //     return false;
+  //   }
+  //
+  //   // upsert 到 llm_model 表（按 llm_provider_id + llm_title 判重）
+  //   const now = IdGenerator.now();
+  //   for (const m of models) {
+  //     const modelId = String(m.id ?? '');
+  //     if (!modelId) continue;
+  //     const rawM = m as Record<string, unknown>;
+  //     const brief = rawM.owned_by ? `owned_by: ${String(rawM.owned_by)}` : null;
+  //     const tl = rawM.token_limits as Record<string, unknown> | undefined;
+  //     const topProvider = rawM.top_provider as Record<string, unknown> | undefined;
+  //     const maxTokens = Number(rawM.context_length || tl?.context_window
+  //       || rawM.max_tokens || rawM.max_completion_tokens
+  //       || (topProvider?.max_completion_tokens) || 0);
+  //     const existing = await this.relationDb.selectOne(LLM_CACHE_TABLE, [
+  //       {
+  //         field: 'llm_provider_id',
+  //         operator: Operator.EQ,
+  //         value: input.llm_provider_id,
+  //       },
+  //       { field: 'llm_title', operator: Operator.EQ, value: modelId },
+  //     ]);
+  //
+  //     if (existing) {
+  //       await this.relationDb.update(
+  //         LLM_CACHE_TABLE,
+  //         [
+  //           { field: 'llm_brief', value: brief },
+  //           { field: 'llm_param', value: JSON.stringify(m) },
+  //           { field: 'max_tokens', value: maxTokens },
+  //           { field: 'llm_param', value: JSON.stringify(m) },
+  //           { field: 'updated', value: now },
+  //         ],
+  //         [
+  //           {
+  //             field: 'llm_provider_id',
+  //             operator: Operator.EQ,
+  //             value: input.llm_provider_id,
+  //           },
+  //           { field: 'llm_title', operator: Operator.EQ, value: modelId },
+  //         ],
+  //       );
+  //     } else {
+  //       const id = IdGenerator.generate();
+  //       try {
+  //         await this.relationDb.insert(LLM_CACHE_TABLE, [
+  //           { field: 'id', value: id },
+  //           { field: 'created', value: now },
+  //           { field: 'updated', value: now },
+  //           { field: 'llm_provider_id', value: input.llm_provider_id },
+  //           { field: 'llm_title', value: modelId },
+  //           { field: 'llm_brief', value: brief },
+  //           { field: 'llm_param', value: JSON.stringify(m) },
+  //           { field: 'max_tokens', value: maxTokens },
+  //           { field: 'llm_param', value: JSON.stringify(m) },
+  //         ]);
+  //       } catch {
+  //         // skip duplicate insert
+  //       }
+  //     }
+  //   }
+  //
+  //   // 更新模型列表缓存时间
+  //   await this.updateModelsCacheTimestamp(input.llm_provider_id);
+  //
+  //   // 返回该提供商下所有模型
+  //   const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
+  //     conditions: [
+  //       {
+  //         field: 'llm_provider_id',
+  //         operator: Operator.EQ,
+  //         value: input.llm_provider_id,
+  //       },
+  //     ],
+  //     order_by: [{ field: 'llm_title', direction: Direction.ASC }],
+  //   });
+  //   output.list = rows as unknown as LLMCacheRecord[];
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   /**
    * 获取 LLM 模型列表（listLLM）。
    *
-   * PRD 3.1.6 条：从 LLM 提供商 API 获取可用的模型列表并保存到本地。
-   * 采用 OpenAI 兼容协议 GET /v1/models，将模型信息 upsert 到 llm_model 表。
+   * PRD 3.1.6 条：从 LLM 提供商 API 获取可用的模型列表并缓存到本地。
+   * 支持 OpenAI 兼容格式 (json.data) 与 Google / 统一格式 (json.models) 的动态解析。
+   * 仅在请求成功时更新缓存时间戳。
    */
   async listLLM(
     input: ListLLMInput,
@@ -533,7 +683,7 @@ export class LLMService {
     }
     const provider = row as unknown as LLMProviderRecord;
 
-    // 缓存命中：跳过远程请求，直接返回本地模型列表
+    // 缓存命中：仅在未指定 force 且缓存未过期时直接返回本地模型列表
     const cacheAge = !input.force && provider.models_fetched_at
       ? IdGenerator.now() - provider.models_fetched_at
       : Infinity;
@@ -552,50 +702,74 @@ export class LLMService {
     const modelsPath = provider.models_path || MODELS_PATH;
     const url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
 
-let models: Array<{
-        id?: string;
-        owned_by?: string;
-        created?: number;
-      }> = [];
-      const headers: Record<string, string> = {};
-      if (provider.api_key) {
-        headers['Authorization'] = `Bearer ${provider.api_key}`;
-      }
-      try {
-        const res = await this.fetchWithTimeout(
-          url,
-          { method: 'GET', headers },
-          LIST_TIMEOUT_MS,
-        );
-        if (!res.ok) {
-          output.error = `获取模型列表失败: HTTP ${res.status}`;
-          output.error_code = 'REMOTE_ERROR';
-          await this.updateModelsCacheTimestamp(input.llm_provider_id);
-          return false;
+    let models: Array<Record<string, unknown>> = [];
+    const headers: Record<string, string> = {};
+    if (provider.api_key) {
+      headers['Authorization'] = `Bearer ${provider.api_key}`;
+      headers['x-goog-api-key'] = provider.api_key;
+      headers['x-api-key'] = provider.api_key;
+    }
+    try {
+      const res = await this.fetchWithTimeout(
+        url,
+        { method: 'GET', headers },
+        LIST_TIMEOUT_MS,
+      );
+      if (!res.ok) {
+        let errDetail = `HTTP ${res.status}`;
+        try {
+          const errJson = (await res.json()) as { error?: { message?: string } };
+          if (errJson.error?.message) errDetail += ` - ${errJson.error.message}`;
+        } catch {
+          /* ignore */
         }
-        const json = (await res.json()) as {
-          data?: Array<Record<string, unknown>>;
-        };
-        models = json.data ?? [];
-      } catch (err) {
-        output.error = err instanceof Error ? err.message : String(err);
-        output.error_code = 'CONNECT_ERROR';
-        await this.updateModelsCacheTimestamp(input.llm_provider_id);
+        output.error = `获取模型列表失败: ${errDetail}`;
+        output.error_code = 'REMOTE_ERROR';
+        // 请求失败时不写入/更新缓存时间戳
         return false;
       }
+      const json = (await res.json()) as {
+        data?: Array<Record<string, unknown>>;
+        models?: Array<Record<string, unknown>>;
+      };
+      if (Array.isArray(json.data)) {
+        models = json.data;
+      } else if (Array.isArray(json.models)) {
+        models = json.models;
+      } else if (Array.isArray(json)) {
+        models = json as unknown as Array<Record<string, unknown>>;
+      } else {
+        models = [];
+      }
+    } catch (err) {
+      output.error = err instanceof Error ? err.message : String(err);
+      output.error_code = 'CONNECT_ERROR';
+      // 异常时不写入/更新缓存时间戳
+      return false;
+    }
 
-    // upsert 到 llm_model 表（按 llm_provider_id + llm_title 判重）
+    // upsert 到 llm_cache 表（按 llm_provider_id + llm_title 判重）
     const now = IdGenerator.now();
     for (const m of models) {
-      const modelId = String(m.id ?? '');
-      if (!modelId) continue;
+      const rawName = String(m.name || m.id || '');
+      if (!rawName) continue;
+      const modelId = rawName.replace(/^models\//, '');
       const rawM = m as Record<string, unknown>;
-      const brief = rawM.owned_by ? `owned_by: ${String(rawM.owned_by)}` : null;
+      let brief: string | null = null;
+      if (rawM.displayName) {
+        brief = rawM.description ? `${rawM.displayName} - ${rawM.description}` : String(rawM.displayName);
+      } else if (rawM.owned_by) {
+        brief = `owned_by: ${String(rawM.owned_by)}`;
+      } else if (rawM.description) {
+        brief = String(rawM.description);
+      }
       const tl = rawM.token_limits as Record<string, unknown> | undefined;
       const topProvider = rawM.top_provider as Record<string, unknown> | undefined;
-      const maxTokens = Number(rawM.context_length || tl?.context_window
+      const maxTokens = Number(
+        rawM.inputTokenLimit || rawM.context_length || tl?.context_window
         || rawM.max_tokens || rawM.max_completion_tokens
-        || (topProvider?.max_completion_tokens) || 0);
+        || (topProvider?.max_completion_tokens) || 0,
+      );
       const existing = await this.relationDb.selectOne(LLM_CACHE_TABLE, [
         {
           field: 'llm_provider_id',
@@ -612,7 +786,6 @@ let models: Array<{
             { field: 'llm_brief', value: brief },
             { field: 'llm_param', value: JSON.stringify(m) },
             { field: 'max_tokens', value: maxTokens },
-            { field: 'llm_param', value: JSON.stringify(m) },
             { field: 'updated', value: now },
           ],
           [
@@ -636,7 +809,6 @@ let models: Array<{
             { field: 'llm_brief', value: brief },
             { field: 'llm_param', value: JSON.stringify(m) },
             { field: 'max_tokens', value: maxTokens },
-            { field: 'llm_param', value: JSON.stringify(m) },
           ]);
         } catch {
           // skip duplicate insert
@@ -644,7 +816,7 @@ let models: Array<{
       }
     }
 
-    // 更新模型列表缓存时间
+    // 仅在成功获取并保存模型后更新模型列表缓存时间
     await this.updateModelsCacheTimestamp(input.llm_provider_id);
 
     // 返回该提供商下所有模型
@@ -659,6 +831,7 @@ let models: Array<{
       order_by: [{ field: 'llm_title', direction: Direction.ASC }],
     });
     output.list = rows as unknown as LLMCacheRecord[];
+    output.cached = false;
     return true;
   }
 

@@ -82,7 +82,7 @@ describe('SelfLearningService', () => {
     service = new SelfLearningService(
       db, infoCore, mqCore, llmCore,
       evolutorAgent, writerAgent, orchestrationEntry,
-      graphDb, chunkAccess, mq, logger,
+      graphDb, chunkAccess, mq, ctx.llmAccess, ctx.promptsAccess, logger,
     );
   });
 
@@ -265,7 +265,7 @@ describe('SelfLearningService', () => {
       expect(output.file_count).toBe(10);
     });
 
-    it('TC-SL-009: Non-.md files ignored, only .md counted', async () => {
+    it('TC-SL-009: All files scanned (including non-.md)', async () => {
       const dir = makeTempDir();
       writeMdFile(dir, 'doc.md', '# Test');
       fs.writeFileSync(path.join(dir, 'readme.txt'), 'not md');
@@ -276,10 +276,10 @@ describe('SelfLearningService', () => {
 
       await service.addLibrary(input, makeCtx(), output);
 
-      expect(output.file_count).toBe(1);
+      expect(output.file_count).toBe(3);
     });
 
-    it('TC-SL-010: Directory with no .md files → file_count=0', async () => {
+    it('TC-SL-010: Directory with single non-.md file → file_count=1', async () => {
       const dir = makeTempDir();
       fs.writeFileSync(path.join(dir, 'notes.txt'), 'text');
 
@@ -288,7 +288,7 @@ describe('SelfLearningService', () => {
 
       await service.addLibrary(input, makeCtx(), output);
 
-      expect(output.file_count).toBe(0);
+      expect(output.file_count).toBe(1);
       expect(typeof output.library_id).toBe('string');
     });
 
@@ -324,7 +324,7 @@ describe('SelfLearningService', () => {
       expect(typeof output.library_id).toBe('string');
     });
 
-    it('TC-SL-014: Library with subdirectories containing .md → only top-level scanned', async () => {
+    it('TC-SL-014: Library with subdirectories → recursive scan includes nested files', async () => {
       const dir = makeTempDir();
       writeMdFile(dir, 'root.md', '# Root');
       const sub = path.join(dir, 'sub');
@@ -336,7 +336,7 @@ describe('SelfLearningService', () => {
 
       await service.addLibrary(input, makeCtx(), output);
 
-      expect(output.file_count).toBe(1);
+      expect(output.file_count).toBe(2);
     });
   });
 

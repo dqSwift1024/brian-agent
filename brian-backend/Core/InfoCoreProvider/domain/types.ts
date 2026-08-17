@@ -314,8 +314,8 @@ export class GraphInfoInput extends Input {
 /** graphInfo 出参 */
 export class GraphInfoOutput extends Output {
   graph: {
-    nodes: Array<{ id: string; label: string; info_id: string }>;
-    edges: Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string }>;
+    nodes: Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string }>;
+    edges: Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string; edge_type?: string }>;
   } = { nodes: [], edges: [] };
 }
 

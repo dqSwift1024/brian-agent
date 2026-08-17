@@ -66,7 +66,13 @@ import {
   AddLibraryInput, AddLibraryOutput,
   DeleteLibraryInput, DeleteLibraryOutput,
   SearchLibraryInput, SearchLibraryOutput,
+  SetLibraryEnabledInput, SetLibraryEnabledOutput,
   GetLibraryFilesInput, GetLibraryFilesOutput,
+  GetLibraryTreeInput, GetLibraryTreeOutput,
+  GetFileContentInput, GetFileContentOutput,
+  QueryDocumentInput, QueryDocumentOutput,
+  SaveAnnotationInput, SaveAnnotationOutput,
+  GetFileAnnotationsInput, GetFileAnnotationsOutput,
   StartLearningInput, StartLearningOutput,
   StopLearningInput, StopLearningOutput,
   GetLearningProgressInput, GetLearningProgressOutput,
@@ -423,7 +429,7 @@ async function buildContext() {
   const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
 
   const chunkAccess = new ChunkAccess(logger);
-  const selfLearningAccess = new SelfLearningAccess(relationDb, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, graphDBAccess, mqAccess, chunkAccess, logger);
+  const selfLearningAccess = new SelfLearningAccess(relationDb, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, graphDBAccess, mqAccess, chunkAccess, llmAccess, promptsAccess, logger);
 
   // 系统启动时自动开启随机触发学习（自动学习后台常驻：空闲时按 random_factor 随机触发）
   await selfLearningAccess.startLearning(
@@ -996,7 +1002,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'POST' && /\/api\/config\/provider\/[^/]+\/fetch-models$/.test(pathname)) {
         const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
-        const fetchInput = Object.assign(new ListLLMInput(), { llm_provider_id: id });
+        const fetchInput = Object.assign(new ListLLMInput(), { llm_provider_id: id, force: true });
         const fetchOutput = new ListLLMOutput();
         const fetchCtx = new LLMContext();
         const ok = await ctx.configAccess.listLLM(fetchInput, fetchCtx, fetchOutput);
@@ -2426,6 +2432,125 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           } catch { exists = false; }
         }
         sendJson(res, 200, { exists, isReadable, isWritable });
+
+      } else if (method === 'PUT' && /\/api\/library\/paths\/[^/]+\/enabled$/.test(pathname)) {
+        const id = pathname.split('/api/library/paths/')[1].split('/')[0];
+        const enabled = !!((body as Record<string, unknown>).enabled);
+        const out = new SetLibraryEnabledOutput();
+        await ctx.selfLearningAccess.setLibraryEnabled(
+          Object.assign(new SetLibraryEnabledInput(), { library_id: id, enabled }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, { id, enabled: out.enabled, fileCount: out.file_count, directoryCount: out.directory_count });
+
+      } else if (method === 'GET' && /\/api\/library\/paths\/[^/]+\/files$/.test(pathname)) {
+        const id = pathname.split('/api/library/paths/')[1].split('/')[0];
+        const out = new GetLibraryFilesOutput();
+        await ctx.selfLearningAccess.getLibraryFiles(
+          Object.assign(new GetLibraryFilesInput(), {
+            library_id: id,
+            directory: params.get('directory') !== null ? params.get('directory')! : undefined,
+            keyword: params.get('keyword') || undefined,
+            cursor: params.get('cursor') || undefined,
+            limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined,
+          }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, {
+          files: (out.files || []).map((f) => ({
+            id: String(f.file_id || ''),
+            name: String(f.file_name || ''),
+            path: String(f.file_path || ''),
+            relativePath: String(f.relative_path || ''),
+            parentPath: String(f.parent_path || ''),
+            isDirectory: Number(f.is_directory) === 1,
+            size: Number(f.file_size) || 0,
+            status: String(f.status || ''),
+            learnedAt: Number(f.learned_at) || 0,
+          })),
+          has_more: out.has_more,
+          next_cursor: out.next_cursor,
+        });
+
+      } else if (method === 'GET' && /\/api\/library\/paths\/[^/]+\/tree$/.test(pathname)) {
+        const id = pathname.split('/api/library/paths/')[1].split('/')[0];
+        const out = new GetLibraryTreeOutput();
+        await ctx.selfLearningAccess.getLibraryTree(
+          Object.assign(new GetLibraryTreeInput(), { library_id: id }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, { tree: out.tree });
+
+      } else if (method === 'GET' && /\/api\/library\/files\/[^/]+\/content$/.test(pathname)) {
+        const fileId = pathname.split('/api/library/files/')[1].split('/')[0];
+        const out = new GetFileContentOutput();
+        const ok = await ctx.selfLearningAccess.getFileContent(
+          Object.assign(new GetFileContentInput(), { file_id: fileId }),
+          new SelfLearningContext(),
+          out,
+        );
+        if (!ok) { sendJson(res, 404, { error: '文件不存在或不可读' }); return; }
+        sendJson(res, 200, { fileName: out.file_name, content: out.content, learnedAt: out.learned_at || 0 });
+
+      } else if (method === 'POST' && pathname === '/api/library/query') {
+        const b = (body as Record<string, unknown>);
+        const out = new QueryDocumentOutput();
+        await ctx.selfLearningAccess.queryDocument(
+          Object.assign(new QueryDocumentInput(), {
+            selection: b.selection ? String(b.selection) : undefined,
+            content: b.content ? String(b.content) : undefined,
+            context_before: b.context_before ? String(b.context_before) : undefined,
+            context_after: b.context_after ? String(b.context_after) : undefined,
+            question: b.question ? String(b.question) : undefined,
+          }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, { result: out.result, llm_id: out.llm_id });
+
+      } else if (method === 'POST' && pathname === '/api/library/annotations') {
+        const b = (body as Record<string, unknown>);
+        const out = new SaveAnnotationOutput();
+        await ctx.selfLearningAccess.saveAnnotation(
+          Object.assign(new SaveAnnotationInput(), {
+            library_id: b.library_id ? String(b.library_id) : undefined,
+            file_id: String(b.file_id || ''),
+            selection_text: String(b.selection_text || ''),
+            selection_start: Number(b.selection_start) || 0,
+            selection_end: Number(b.selection_end) || 0,
+            question: String(b.question || ''),
+            result: String(b.result || ''),
+            llm_id: b.llm_id ? String(b.llm_id) : undefined,
+          }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, { id: out.id });
+
+      } else if (method === 'GET' && /\/api\/library\/files\/[^/]+\/annotations$/.test(pathname)) {
+        const fileId = pathname.split('/api/library/files/')[1].split('/')[0];
+        const out = new GetFileAnnotationsOutput();
+        await ctx.selfLearningAccess.getFileAnnotations(
+          Object.assign(new GetFileAnnotationsInput(), { file_id: fileId }),
+          new SelfLearningContext(),
+          out,
+        );
+        sendJson(res, 200, {
+          annotations: (out.annotations || []).map((a) => ({
+            id: String(a.id || ''),
+            file_id: String(a.file_id || ''),
+            selection_text: String(a.selection_text || ''),
+            selection_start: Number(a.selection_start) || 0,
+            selection_end: Number(a.selection_end) || 0,
+            question: String(a.question || ''),
+            result: String(a.result || ''),
+            llm_id: String(a.llm_id || ''),
+            created: Number(a.created) || 0,
+          })),
+        });
 
       // ===== Feedback Routes =====
       } else if (method === 'POST' && pathname === '/api/feedback') { sendJson(res, 200, { success: true });

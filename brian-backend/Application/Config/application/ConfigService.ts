@@ -1417,6 +1417,9 @@ export class ConfigService {
       else if (prefix.startsWith('self_learning.tag_aging_cron')) input.tag_aging_cron = value as string;
       else if (prefix.startsWith('self_learning.orphan_tag_check_cron')) input.orphan_tag_check_cron = value as string;
       else if (prefix.startsWith('self_learning.document_split_threshold')) input.document_split_threshold = Number(value);
+      else if (prefix.startsWith('self_learning.chunk_overlap_ratio')) input.chunk_overlap_ratio = Number(value);
+      else if (prefix.startsWith('self_learning.document_query_prompt_template_id')) input.document_query_prompt_template_id = value as string;
+      else if (prefix.startsWith('self_learning.document_query_llm_id')) input.document_query_llm_id = value as string;
       const output: any = {};
       await this.selfLearningAccess.configSelfLearning(input, {} as any, output);
       return;

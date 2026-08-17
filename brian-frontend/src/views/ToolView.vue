@@ -135,17 +135,17 @@ async function runRegex() {
       </div>
     </div>
     <div class="px-6 pb-6 min-h-screen relative z-10">
-      <div class="flex items-center gap-1 mb-6 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
+      <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
         <button
           v-for="tab in tabs"
           :key="tab.key"
           :class="[
-            'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
             activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
           ]"
           @click="activeTab = tab.key"
         >
-          <component :is="tab.icon" :size="16" />
+          <component :is="tab.icon" :size="15" />
           {{ tab.label }}
         </button>
       </div>

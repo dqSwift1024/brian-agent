@@ -404,11 +404,10 @@ describe('VisualizationService', () => {
       expect(edges.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('TC-VIS-024: REPLY edges (same work_id)', async () => {
+    it('TC-VIS-024: REPLY edges (same interact_id, REQUEST→RESPONSE)', async () => {
       const sessId = 'sess-reply';
-      insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-s', info_id: 'info-1', info: 'R1' });
-      insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-s', info_id: 'info-2', info: 'R2' });
-      insInfoGraph(ctxEnv.db, 'info-1', 'info-2', sessId);
+      insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-s', interact_id: 'inter-s', info_id: 'info-1', info_type: 'REQUEST', info: 'R1' });
+      insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-s', interact_id: 'inter-s', info_id: 'info-2', info_type: 'RESPONSE', info: 'R2' });
 
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;

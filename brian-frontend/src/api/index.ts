@@ -2,7 +2,7 @@ import type {
   ChatSession, ChatMessage, AgentChainNode,
   DagNode, DagEdge, MemoryItem, GraphNode, GraphEdge,
   ModelProvider, ModelInfo, LearningStats, LearningProgress,
-  SystemHealth, UserProfile, LibraryPath,
+  SystemHealth, UserProfile, LibraryPath, LibraryFilePage, LibraryTreeNode,
   ConfigTreeLayer,
   UserProfileData, ProfileVersionData, ProfileHistoryItem,
   VisualizedMessage, MessageGraphNode, MessageGraphEdge, AgentDAG, AgentTrace,
@@ -279,6 +279,29 @@ export const libraryApi = {
     request<LibraryPath>('/library/paths', { method: 'POST', body: JSON.stringify(data) }),
   deletePath: (id: string) =>
     request<void>(`/library/paths/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setEnabled: (id: string, enabled: boolean) =>
+    request<{ enabled: boolean; fileCount: number; directoryCount: number }>(`/library/paths/${encodeURIComponent(id)}/enabled`, {
+      method: 'PUT', body: JSON.stringify({ enabled })
+    }),
+  files: (id: string, opts?: { directory?: string; keyword?: string; cursor?: string; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (opts?.directory !== undefined) q.set('directory', opts.directory)
+    if (opts?.keyword) q.set('keyword', opts.keyword)
+    if (opts?.cursor) q.set('cursor', opts.cursor)
+    q.set('limit', String(opts?.limit ?? 50))
+    return request<LibraryFilePage>(`/library/paths/${encodeURIComponent(id)}/files?${q.toString()}`)
+  },
+  tree: (id: string) => request<{ tree: LibraryTreeNode[] }>(`/library/paths/${encodeURIComponent(id)}/tree`).then(r => r.tree),
+  fileContent: (fileId: string) =>
+    request<{ fileName: string; content: string; learnedAt: number }>(`/library/files/${encodeURIComponent(fileId)}/content`),
+  queryDocument: (opts: { selection: string; context_before?: string; context_after?: string; question?: string }) =>
+    request<{ result: string; llm_id: string }>('/library/query', {
+      method: 'POST', body: JSON.stringify(opts)
+    }),
+  saveAnnotation: (opts: { library_id?: string; file_id: string; selection_text: string; selection_start: number; selection_end: number; question: string; result: string; llm_id?: string }) =>
+    request<{ id: string }>('/library/annotations', { method: 'POST', body: JSON.stringify(opts) }),
+  fileAnnotations: (fileId: string) =>
+    request<{ annotations: Array<{ id: string; file_id: string; selection_text: string; selection_start: number; selection_end: number; question: string; result: string; llm_id: string; created: number }> }>(`/library/files/${encodeURIComponent(fileId)}/annotations`).then(r => r.annotations),
   checkPath: (path: string) =>
     request<{ exists: boolean; isReadable: boolean; isWritable: boolean }>('/library/check-path', {
       method: 'POST', body: JSON.stringify({ path })

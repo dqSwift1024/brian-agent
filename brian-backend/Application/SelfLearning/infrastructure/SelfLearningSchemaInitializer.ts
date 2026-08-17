@@ -45,6 +45,9 @@ export class SelfLearningSchemaInitializer {
         file_id TEXT UNIQUE NOT NULL,
         file_name TEXT,
         file_path TEXT,
+        relative_path TEXT DEFAULT '',
+        parent_path TEXT DEFAULT '',
+        is_directory INTEGER DEFAULT 0,
         file_size INTEGER,
         status TEXT DEFAULT 'PENDING',
         error_message TEXT,
@@ -59,6 +62,24 @@ export class SelfLearningSchemaInitializer {
     );
     this.relationDb.executeRaw(
       'CREATE INDEX IF NOT EXISTS idx_sl_file_status ON self_learning_file(status)',
+    );
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_file ADD COLUMN "relative_path" TEXT DEFAULT ''`,
+      );
+    } catch { /* 已存在 relative_path 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_file ADD COLUMN "parent_path" TEXT DEFAULT ''`,
+      );
+    } catch { /* 已存在 parent_path 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_file ADD COLUMN "is_directory" INTEGER DEFAULT 0`,
+      );
+    } catch { /* 已存在 is_directory 列时忽略 */ }
+    this.relationDb.executeRaw(
+      'CREATE INDEX IF NOT EXISTS idx_sl_file_parent_path ON self_learning_file(parent_path)',
     );
 
     this.relationDb.executeRaw(`
@@ -139,6 +160,25 @@ export class SelfLearningSchemaInitializer {
     );
 
     this.relationDb.executeRaw(`
+      CREATE TABLE IF NOT EXISTS document_annotation (
+        id TEXT PRIMARY KEY NOT NULL,
+        created INTEGER NOT NULL,
+        updated INTEGER NOT NULL,
+        library_id TEXT DEFAULT '',
+        file_id TEXT NOT NULL,
+        selection_text TEXT NOT NULL,
+        selection_start INTEGER NOT NULL,
+        selection_end INTEGER NOT NULL,
+        question TEXT NOT NULL,
+        result TEXT NOT NULL,
+        llm_id TEXT DEFAULT ''
+      )
+    `);
+    this.relationDb.executeRaw(
+      'CREATE INDEX IF NOT EXISTS idx_doc_annotation_file_id ON document_annotation(file_id)',
+    );
+
+    this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS self_learning_config (
         id TEXT PRIMARY KEY NOT NULL,
         created INTEGER NOT NULL,
@@ -160,7 +200,9 @@ export class SelfLearningSchemaInitializer {
         tag_aging_cron TEXT DEFAULT '0 0 2 * * *',
         orphan_tag_check_cron TEXT DEFAULT '0 0 3 * * *',
         document_split_threshold INTEGER DEFAULT 5000,
-        chunk_overlap_ratio REAL DEFAULT 0.2
+        chunk_overlap_ratio REAL DEFAULT 0.2,
+        document_query_prompt_template_id TEXT DEFAULT '',
+        document_query_llm_id TEXT DEFAULT ''
       )
     `);
     try {
@@ -198,6 +240,16 @@ export class SelfLearningSchemaInitializer {
         `ALTER TABLE self_learning_config ADD COLUMN "tag_random_factor" INTEGER DEFAULT 10`,
       );
     } catch { /* 已存在 tag_random_factor 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "document_query_prompt_template_id" TEXT DEFAULT ''`,
+      );
+    } catch { /* 已存在 document_query_prompt_template_id 列时忽略 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE self_learning_config ADD COLUMN "document_query_llm_id" TEXT DEFAULT ''`,
+      );
+    } catch { /* 已存在 document_query_llm_id 列时忽略 */ }
 
     const configCount = await this.relationDb.count('self_learning_config');
     if (configCount === 0) {

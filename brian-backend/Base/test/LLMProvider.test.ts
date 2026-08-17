@@ -125,7 +125,7 @@ function startTestServer(): Promise<{ server: http.Server; baseUrl: string }> {
       }
 
       // GET /v1/models - 模型列表 (listLLM)
-      if (req.method === 'GET' && url.pathname === '/v1/models') {
+      if (req.method === 'GET' && (url.pathname === '/v1/models' || url.pathname === '/models')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -134,6 +134,32 @@ function startTestServer(): Promise<{ server: http.Server; baseUrl: string }> {
               { id: 'gpt-4o', object: 'model', created: 1720000000, owned_by: 'openai' },
               { id: 'gpt-4o-mini', object: 'model', created: 1720000001, owned_by: 'openai' },
               { id: 'gpt-3.5-turbo', object: 'model', created: 1700000000, owned_by: 'openai' },
+            ],
+          }),
+        );
+        return;
+      }
+
+      // GET /v1beta/models - Google 原生模型列表
+      if (req.method === 'GET' && url.pathname === '/v1beta/models') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            models: [
+              {
+                name: 'models/gemini-1.5-pro',
+                displayName: 'Gemini 1.5 Pro',
+                description: 'Complex reasoning model',
+                inputTokenLimit: 2097152,
+                outputTokenLimit: 8192,
+              },
+              {
+                name: 'models/gemini-1.5-flash',
+                displayName: 'Gemini 1.5 Flash',
+                description: 'Fast versatile model',
+                inputTokenLimit: 1048576,
+                outputTokenLimit: 8192,
+              },
             ],
           }),
         );
@@ -806,7 +832,7 @@ describe('LLMProvider', () => {
       expect(listOut2.list.length).toBe(3);
     });
 
-    it('不可达的提供商 URL 应返回 error 信息', async () => {
+    it('不可达的提供商 URL 应返回 error 信息，且不应更新 models_fetched_at 缓存时间', async () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999' });
       const addOut = new AddLLMProviderOutput();
@@ -820,6 +846,53 @@ describe('LLMProvider', () => {
       expect(result).toBe(false);
       expect(listOut.error).toBeTruthy();
       expect(listOut.error_code).toBe('CONNECT_ERROR');
+
+      const soOut = new SoLLMProviderOutput();
+      await llmAccess.soLLMProvider(
+        Object.assign(new SoLLMProviderInput(), { conditions: [{ field: 'id', operator: Operator.EQ, value: addOut.id }] }),
+        new LLMContext(),
+        soOut,
+      );
+      expect(soOut.list[0].models_fetched_at).toBeFalsy();
+    });
+
+    it('指定 force=true 时应强制调用远程 API 并更新本地模型缓存', async () => {
+      const listInput = new ListLLMInput();
+      listInput.llm_provider_id = providerId;
+      listInput.force = true;
+      const listOut = new ListLLMOutput();
+      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+
+      expect(result).toBe(true);
+      expect(listOut.cached).toBe(false);
+      expect(listOut.list.length).toBe(3);
+    });
+
+    it('应该支持从 Google 格式响应解析模型列表并提取 max_tokens 与 brief', async () => {
+      const addInput = new AddLLMProviderInput();
+      addInput.data = makeProviderData({
+        llm_provider_url: `${httpBaseUrl}/v1beta`,
+        models_path: 'models',
+      });
+      const addOut = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+
+      const listInput = new ListLLMInput();
+      listInput.llm_provider_id = addOut.id;
+      listInput.force = true;
+      const listOut = new ListLLMOutput();
+      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+
+      expect(result).toBe(true);
+      expect(listOut.list.length).toBe(2);
+      const pro = listOut.list.find((m) => m.llm_title === 'gemini-1.5-pro');
+      const flash = listOut.list.find((m) => m.llm_title === 'gemini-1.5-flash');
+      expect(pro).toBeDefined();
+      expect(pro!.max_tokens).toBe(2097152);
+      expect(pro!.llm_brief).toContain('Gemini 1.5 Pro');
+      expect(flash).toBeDefined();
+      expect(flash!.max_tokens).toBe(1048576);
+      expect(flash!.llm_brief).toContain('Gemini 1.5 Flash');
     });
   });
 

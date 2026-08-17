@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { RefreshCw, Play, Pause, CalendarClock, Loader2, ChevronRight, CheckCircle2, XCircle, Clock, AlertCircle } from '@lucide/vue'
+import { RefreshCw, Play, CalendarClock, Loader2, CheckCircle2, XCircle, Clock, AlertCircle, X } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
@@ -13,7 +13,8 @@ const loading = ref(false)
 const error = ref('')
 
 const runsMap = ref<Record<string, CronTaskRun[]>>({})
-const expandedTask = ref<string | null>(null)
+const runsVisible = ref(false)
+const runsTask = ref<CronTask | null>(null)
 
 const editModalVisible = ref(false)
 const editingTask = ref<CronTask | null>(null)
@@ -82,13 +83,15 @@ async function loadRuns(name: string) {
   } catch { /* ignore */ }
 }
 
-async function toggleExpand(task: CronTask) {
-  if (expandedTask.value === task.name) {
-    expandedTask.value = null
-  } else {
-    expandedTask.value = task.name
-    await loadRuns(task.name)
-  }
+async function openRuns(task: CronTask) {
+  runsTask.value = task
+  runsVisible.value = true
+  await loadRuns(task.name)
+}
+
+function closeRuns() {
+  runsVisible.value = false
+  runsTask.value = null
 }
 
 function formatTime(ts: number): string {
@@ -138,77 +141,78 @@ onMounted(loadTasks)
         <p class="text-sm">暂无定时任务</p>
       </div>
 
-      <div v-else class="mt-4 space-y-3 max-w-4xl">
+      <div v-else class="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 p-3">
         <div
           v-for="task in tasks"
           :key="task.name"
-          class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 overflow-hidden"
+          class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 hover:shadow-md hover:border-brian-blue/30 transition-shadow p-4 aspect-[3/2] flex flex-col cursor-pointer"
+          @click="openRuns(task)"
         >
-          <div class="px-4 py-3 flex items-center gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">{{ task.name }}</span>
-                <span
-                  class="text-[10px] px-1.5 py-0.5 rounded-full"
-                  :class="task.enabled === 1 ? 'bg-success-green/10 text-success-green' : 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400'"
-                >{{ task.enabled === 1 ? '启用' : '禁用' }}</span>
+          <div class="mb-2">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-brian-blue/10 text-brian-blue"><CalendarClock :size="18" /></div>
+              <div class="min-w-0 flex-1">
+                <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50 truncate text-sm">{{ task.name }}</h3>
               </div>
-              <p v-if="task.description" class="text-xs text-apple-gray-400 mt-0.5">{{ task.description }}</p>
+              <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="task.enabled === 1 ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" :title="task.enabled === 1 ? '启用' : '禁用'" />
             </div>
+            <p class="text-[11px] text-apple-gray-400 line-clamp-2">{{ task.description || '暂无描述' }}</p>
+          </div>
 
-            <div class="flex items-center gap-1.5">
+          <div class="space-y-1 text-[11px] flex-1 min-h-0">
+            <p class="font-mono text-brian-blue truncate" :title="task.cron">{{ task.cron }}</p>
+            <p class="text-apple-gray-400 truncate">上次: {{ formatTime(task.last_run) }}</p>
+            <p class="text-apple-gray-400 truncate">下次: {{ formatTime(task.next_run) }}</p>
+          </div>
+
+          <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
+            <div class="flex items-center gap-1">
               <button
-                class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors"
-                :title="task.enabled === 1 ? '禁用' : '启用'"
-                @click="toggleEnabled(task)"
+                class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
+                :class="task.enabled === 1 ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
+                title="启用/停用"
+                @click.stop="toggleEnabled(task)"
               >
-                <Pause v-if="task.enabled === 1" :size="15" />
-                <Play v-else :size="15" />
+                <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="task.enabled === 1 ? 'translate-x-4' : ''" />
               </button>
               <button
-                class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-brian-blue/30 text-brian-blue hover:bg-brian-blue/5 transition-colors disabled:opacity-50"
+                class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-brian-blue hover:bg-brian-blue/10 transition-colors"
                 :disabled="triggering[task.name]"
-                title="单次触发"
-                @click="triggerTask(task)"
+                @click.stop="triggerTask(task)"
               >
-                <Loader2 v-if="triggering[task.name]" :size="13" class="animate-spin" />
-                <Play v-else :size="13" />
+                <Loader2 v-if="triggering[task.name]" :size="11" class="animate-spin" />
+                <Play v-else :size="11" />
                 触发
               </button>
               <button
-                class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors"
-                :title="expandedTask === task.name ? '收起' : '查看执行情况'"
-                @click="toggleExpand(task)"
+                class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors"
+                @click.stop="openRuns(task)"
               >
-                <ChevronRight :size="15" :class="expandedTask === task.name ? 'rotate-90 transition-transform' : 'transition-transform'" />
+                执行情况
+              </button>
+              <button
+                class="p-1 rounded text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10 transition-colors"
+                title="编辑定时时间"
+                @click.stop="openEdit(task)"
+              >
+                <Clock :size="12" />
               </button>
             </div>
           </div>
+        </div>
+      </div>
 
-          <!-- 定时时间行 -->
-          <div class="px-4 pb-3 flex items-center gap-3 text-xs">
-            <button
-              class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800/50 border border-apple-gray-100 dark:border-apple-gray-700 font-mono text-apple-gray-700 dark:text-apple-gray-300 hover:border-brian-blue/40 transition-colors"
-              title="点击编辑定时时间"
-              @click="openEdit(task)"
-            >
-              <Clock :size="12" class="text-brian-blue" />
-              {{ task.cron }}
-            </button>
-            <span class="text-apple-gray-400">上次执行：{{ formatTime(task.last_run) }}</span>
-            <span class="text-apple-gray-400">下次执行：{{ formatTime(task.next_run) }}</span>
-          </div>
-
-          <!-- 执行情况 -->
-          <div v-if="expandedTask === task.name" class="border-t border-apple-gray-100 dark:border-apple-gray-700 px-4 py-3 bg-apple-gray-50/50 dark:bg-apple-gray-900/20">
-            <h4 class="text-xs font-semibold text-apple-gray-500 dark:text-apple-gray-400 mb-2">执行情况</h4>
-            <div v-if="!runsMap[task.name] || runsMap[task.name].length === 0" class="text-xs text-apple-gray-400 py-3 text-center">暂无执行记录</div>
-            <div v-else class="space-y-1.5 max-h-64 overflow-y-auto">
-              <div
-                v-for="run in runsMap[task.name]"
-                :key="run.id"
-                class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-100 dark:border-apple-gray-700"
-              >
+      <!-- 执行情况弹窗 -->
+      <Teleport to="body">
+        <div v-if="runsVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" @click.self="closeRuns">
+          <div class="w-full max-w-lg rounded-2xl bg-white dark:bg-apple-gray-800 shadow-xl p-6 max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 class="text-lg font-semibold">执行情况 · {{ runsTask?.name }}</h3>
+              <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="closeRuns"><X :size="16" /></button>
+            </div>
+            <div v-if="!runsTask || !runsMap[runsTask.name] || runsMap[runsTask.name].length === 0" class="text-xs text-apple-gray-400 py-8 text-center">暂无执行记录</div>
+            <div v-else class="space-y-1.5 overflow-y-auto flex-1">
+              <div v-for="run in runsMap[runsTask.name]" :key="run.id" class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-apple-gray-50 dark:bg-apple-gray-900/50 border border-apple-gray-100 dark:border-apple-gray-700">
                 <CheckCircle2 v-if="run.status === 'SUCCESS'" :size="14" class="text-success-green shrink-0 mt-0.5" />
                 <XCircle v-else :size="14" class="text-error-red shrink-0 mt-0.5" />
                 <div class="flex-1 min-w-0">
@@ -216,10 +220,7 @@ onMounted(loadTasks)
                     <span>{{ formatTime(run.started_at) }}</span>
                     <span class="text-apple-gray-300">·</span>
                     <span>{{ formatDuration(run) }}</span>
-                    <span
-                      class="px-1.5 py-0.5 rounded-full text-[10px]"
-                      :class="run.status === 'SUCCESS' ? 'bg-success-green/10 text-success-green' : 'bg-error-red/10 text-error-red'"
-                    >{{ run.result || run.status }}</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px]" :class="run.status === 'SUCCESS' ? 'bg-success-green/10 text-success-green' : 'bg-error-red/10 text-error-red'">{{ run.result || run.status }}</span>
                   </div>
                   <p v-if="run.error" class="text-[11px] text-error-red mt-1 whitespace-pre-wrap break-words">{{ run.error }}</p>
                 </div>
@@ -227,7 +228,7 @@ onMounted(loadTasks)
             </div>
           </div>
         </div>
-      </div>
+      </Teleport>
     </div>
 
     <CronConfigModal
