@@ -223,7 +223,7 @@ export class ChatService {
       onEvent?.(evt);
     };
 
-    emit('connected', { session_id: input.session_id });
+    emit('connected', { session_id: input.session_id, trace_id: input.trace_id ?? '' });
 
     const workId = IdGenerator.generate();
     const interactId = IdGenerator.generate();
@@ -271,6 +271,7 @@ export class ChatService {
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: input.session_id,
       user_query: input.msg_content,
+      trace_id: input.trace_id,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
     });
@@ -283,16 +284,26 @@ export class ChatService {
 
     const startedAt = Date.now();
     let tokenUsage: Record<string, unknown> = {};
+    let workOk = false;
     try {
-      await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
+      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.logger?.error?.('openChatStream: orchestration failed', {
         session_id: input.session_id,
         work_id: workId,
+        trace_id: input.trace_id ?? '',
         error: errorMsg,
       });
-      emit('error', { work_id: workId, error_message: errorMsg, error_code: 'ORCHESTRATION_FAILED' });
+      emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: 'ORCHESTRATION_FAILED' });
+      output.events = events;
+      return true;
+    }
+
+    if (!workOk || rwOutput.error) {
+      const errorMsg = rwOutput.error || '处理失败';
+      const errorCode = rwOutput.error_code || 'ORCHESTRATION_FAILED';
+      emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: errorCode });
       output.events = events;
       return true;
     }
@@ -329,7 +340,7 @@ export class ChatService {
       });
     }
 
-    emit('done', { work_id: workId, interact_id: interactId, final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
+    emit('done', { work_id: workId, interact_id: interactId, trace_id: input.trace_id ?? '', final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
 
     output.events = events;
     return true;

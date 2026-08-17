@@ -74,6 +74,11 @@ async function handleSend(content: string, citingIds: string[]) {
   }
   sessionStore.addMessage(userMsg)
 
+  const traceId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `trace-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  currentTraceId = traceId
+
   const botMsgId = `msg-${Date.now()}-bot`
   const thinkingBlock: Block = {
     id: `block-think-${Date.now()}`,
@@ -96,6 +101,7 @@ async function handleSend(content: string, citingIds: string[]) {
         session_id: sessionId,
         msg_content: content,
         citing_msg_ids: citingIds,
+        trace_id: traceId,
       }),
       signal: abortCtrl.signal,
     })
@@ -138,6 +144,7 @@ async function handleSend(content: string, citingIds: string[]) {
 }
 
 let textBlockId: string | null = null
+let currentTraceId = ''
 
 function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgId: string, thinkingBlockId: string) {
   switch (event) {
@@ -199,6 +206,7 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
         msgId: botMsgId,
         role: 'assistant',
         type: 'Feedback',
+        traceId: String(data.trace_id || currentTraceId || ''),
         meta: { status: 'done', createdAt: Date.now(), updatedAt: Date.now() },
       } as Block
       sessionStore.addBlock(feedbackBlock)
@@ -215,6 +223,7 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
         message: String(data.error_message || '未知错误'),
         errorCode: String(data.error_code || ''),
         retryAvailable: false,
+        traceId: String(data.trace_id || currentTraceId || ''),
         meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
       } as Block
       sessionStore.addBlock(errBlock)

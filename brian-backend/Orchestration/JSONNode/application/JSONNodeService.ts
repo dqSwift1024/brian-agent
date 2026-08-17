@@ -586,6 +586,7 @@ export class JSONNodeService {
       agent_id: agentId,
       task_content: (sharedData.user_query as string) ?? '',
       work_context: workContext,
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     const execOutput = new ExecSingleAgentOutput();
     await this.orchestrationExecution.execSingleAgent(
@@ -715,6 +716,7 @@ export class JSONNodeService {
       agent_dag: agentDag,
       work_context: sharedData.work_context ? JSON.stringify(sharedData.work_context) : undefined,
       max_concurrent: maxConcurrent,
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     const execOutput = new ExecDAGOutput();
     await this.orchestrationExecution.execDAG(

@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import { AlertCircle, RefreshCw } from '@lucide/vue'
+import { ref } from 'vue'
+import { AlertCircle, RefreshCw, Copy, Check } from '@lucide/vue'
 import type { ErrorBlock } from '@/api/types'
 
-defineProps<{ block: ErrorBlock }>()
+const props = defineProps<{ block: ErrorBlock }>()
+const copied = ref(false)
+
+async function copyTraceId() {
+  if (!props.block.traceId) return
+  try {
+    await navigator.clipboard.writeText(props.block.traceId)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
@@ -13,6 +24,15 @@ defineProps<{ block: ErrorBlock }>()
         <div class="flex-1 min-w-0">
           <p class="text-sm text-error-red font-medium">{{ block.message }}</p>
           <p class="text-xs text-apple-gray-400 mt-1">错误码: {{ block.errorCode }}</p>
+          <button
+            v-if="block.traceId"
+            class="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 transition-colors"
+            :title="block.traceId"
+            @click="copyTraceId"
+          >
+            <component :is="copied ? Check : Copy" :size="12" />
+            {{ copied ? '已复制' : `TraceId: ${block.traceId.slice(0, 12)}...` }}
+          </button>
         </div>
         <button
           v-if="block.retryAvailable"

@@ -69,7 +69,7 @@ export class OrchestrationEntryService {
       { field: 'cancel_reason', value: '' },
       { field: 'error_message', value: '' },
       { field: 'final_response', value: '' },
-      { field: 'metadata', value: '{}' },
+      { field: 'metadata', value: JSON.stringify({ trace_id: input.trace_id ?? '' }) },
     ];
 
     const insInput = Object.assign(new InsertDBInput(), {
@@ -133,6 +133,7 @@ export class OrchestrationEntryService {
       user_query: input.user_query,
       strategy,
       work_context: buildCtxOutput.work_context,
+      trace_id: input.trace_id,
     };
     const startOutput: StartOrchestrationOutput = { final_response: '' };
 
@@ -140,13 +141,27 @@ export class OrchestrationEntryService {
       await this.orchestrationStrategy.startOrchestration(startInput, startCtx, startOutput);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      this.logger?.error?.('receiveWork: orchestration failed', { work_id: workId, error: errMsg });
+      this.logger?.error?.('receiveWork: orchestration failed', { work_id: workId, trace_id: input.trace_id ?? '', error: errMsg });
       await this.markWorkFailed(workId, errMsg);
       output.work_id = workId;
       output.interact_id = interactId;
       output.orchestration_strategy = strategy;
       output.final_response = '抱歉，处理您的问题时出现了错误，请稍后重试。';
       output.error = errMsg;
+      output.error_code = 'ORCHESTRATION_FAILED';
+      return false;
+    }
+
+    // JSONNode 节点执行失败（经 HANDLE_ERROR 节点收敛），startOrchestration 正常返回但携带 error
+    if (startOutput.error) {
+      const errMsg = startOutput.error;
+      await this.markWorkFailed(workId, errMsg);
+      output.work_id = workId;
+      output.interact_id = interactId;
+      output.orchestration_strategy = strategy;
+      output.final_response = startOutput.final_response || '抱歉，处理您的问题时出现了错误，请稍后重试。';
+      output.error = errMsg;
+      output.error_code = startOutput.error_code ?? 'ORCHESTRATION_NODE_FAILED';
       return false;
     }
 

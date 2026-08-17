@@ -1675,6 +1675,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
         const msgContent = typeof body.msg_content === 'string' ? body.msg_content : '';
         const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : [];
+        const traceId = typeof body.trace_id === 'string' && body.trace_id
+          ? body.trace_id
+          : (typeof body.traceid === 'string' && body.traceid ? body.traceid : IdGenerator.generate());
 
         if (!sessionId) { sendJson(res, 400, { error: 'session_id is required' }); return; }
         if (!msgContent.trim()) { sendJson(res, 400, { error: 'msg_content cannot be empty' }); return; }
@@ -1719,6 +1722,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           session_id: sessionId,
           msg_content: msgContent,
           citing_msg_ids: citingMsgIds,
+          trace_id: traceId,
           force_orchestration_strategy: typeof body.force_orchestration_strategy === 'string' ? body.force_orchestration_strategy : undefined,
         });
         const streamOutput = new OpenChatStreamOutput();

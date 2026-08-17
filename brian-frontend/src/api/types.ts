@@ -65,6 +65,7 @@ export interface ErrorBlock extends BlockBase {
   message: string
   errorCode: string
   retryAvailable: boolean
+  traceId?: string
 }
 
 export interface UnsupportedBlock extends BlockBase {
@@ -84,6 +85,7 @@ export interface FeedbackBlock extends BlockBase {
   msgId: string
   rating?: number
   liked?: boolean
+  traceId?: string
 }
 
 export type Block =

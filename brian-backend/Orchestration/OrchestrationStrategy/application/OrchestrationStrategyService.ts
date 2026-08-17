@@ -72,18 +72,24 @@ export class OrchestrationStrategyService {
     const execInput = Object.assign(new ExecJSONNodeInput(), {
       orchestration_id: input.work_id,
       jsonnode_definition: parsedDef,
+      trace_id: input.trace_id,
       initial_data: {
         session_id: input.session_id,
         work_id: input.work_id,
         interact_id: input.interact_id,
         user_query: input.user_query,
         work_context: input.work_context ?? {},
+        trace_id: input.trace_id ?? '',
       },
     });
     const execOutput = new ExecJSONNodeOutput();
     await this.jsonNode.execJSONNode(execInput, new JSONNodeContext(), execOutput);
 
     output.final_response = (execOutput.shared_data.final_response as string) ?? '';
+    if (execOutput.shared_data._error) {
+      output.error = String(execOutput.shared_data._error);
+      output.error_code = 'ORCHESTRATION_NODE_FAILED';
+    }
     return true;
   }
 

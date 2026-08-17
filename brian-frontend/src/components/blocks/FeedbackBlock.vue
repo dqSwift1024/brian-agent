@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ThumbsUp, ThumbsDown, Star } from '@lucide/vue'
+import { ThumbsUp, ThumbsDown, Star, Copy, Check } from '@lucide/vue'
 import { feedbackApi } from '@/api'
 import type { FeedbackBlock } from '@/api/types'
 
@@ -8,6 +8,7 @@ const props = defineProps<{ block: FeedbackBlock }>()
 const rating = ref(0)
 const hoveredRating = ref(0)
 const submitted = ref(false)
+const copied = ref(false)
 
 async function submitRating(score: number) {
   if (submitted.value) return
@@ -25,11 +26,21 @@ async function submitLike(type: 'like' | 'dislike') {
     submitted.value = true
   } catch { /* ignore */ }
 }
+
+async function copyTraceId() {
+  const traceId = props.block.traceId
+  if (!traceId) return
+  try {
+    await navigator.clipboard.writeText(traceId)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
   <div class="py-1">
-    <div class="flex items-center gap-2 px-2">
+    <div class="flex items-center gap-2 px-2 flex-wrap">
       <template v-if="submitted">
         <span class="text-xs text-apple-gray-400">感谢反馈</span>
       </template>
@@ -55,6 +66,16 @@ async function submitLike(type: 'like' | 'dislike') {
           <ThumbsDown :size="14" />
         </button>
       </template>
+
+      <button
+        v-if="block.traceId"
+        class="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-xs text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 transition-colors"
+        :title="block.traceId"
+        @click="copyTraceId"
+      >
+        <component :is="copied ? Check : Copy" :size="12" />
+        {{ copied ? '已复制' : '复制 TraceId' }}
+      </button>
     </div>
   </div>
 </template>

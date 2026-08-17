@@ -282,6 +282,7 @@ export class OrchestrationExecutionService {
         work_id,
         interact_id,
         task_content: enhancedContent,
+        trace_id: input.trace_id,
       });
       const execOutput = new ExecAgentOutput();
       const execSuccess = await this.agentExecution.execAgent(execInput, new AgentExecutionContext(), execOutput);
@@ -454,6 +455,7 @@ export class OrchestrationExecutionService {
         plan_id: agent_dag.plan_id,
         task_id: agentNode.task_id,
         work_context: work_context,
+        trace_id: input.trace_id,
       });
       const singleOutput = new ExecSingleAgentOutput();
       const ok = await this.execSingleAgent(singleInput, context, singleOutput);

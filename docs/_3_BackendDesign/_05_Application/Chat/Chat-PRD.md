@@ -48,6 +48,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - `msg_content`（STRING，必选）：用户输入内容
 - `citing_msg_ids`（STRING[]，可选）：引用的消息 ID 列表
 - `force_orchestration_strategy`（ENUM，可选）：强制编排策略（"SIMPLE" | "PLANNING"）
+- `trace_id`（STRING，可选）：请求链路追踪 ID，贯穿整条处理链路与日志，前端生成并透传；不传时由后端自动生成
 
 **SSE 消息格式**：`data: {json}\n\n`，其中 json 为扁平对象 `{ event: <事件类型>, ...payload }`（事件名内嵌在 data 行中，前端按 `event` 字段分发）。心跳为 SSE 注释行 `: ping`，间隔由 `chat_config.sse_heartbeat_interval_ms` 配置（默认 30000ms）。
 
@@ -55,15 +56,15 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 
 | 事件类型 | 数据内容 | 触发时机 | 数据来源 |
 |---------|---------|---------|---------|
-| `connected` | `{ session_id }` | SSE 连接建立成功 | 本模块 |
+| `connected` | `{ session_id, trace_id }` | SSE 连接建立成功 | 本模块 |
 | `loading` | `{ work_id }` | work 已提交，Orchestration 层开始处理 | OrchestrationEntry |
 | `agent_created` | `{ agent_id, agent_type, agent_name }` | AgentBuilder 构建完成一个 Agent | OrchestrationExecution |
 | `agent_status` | `{ agent_id, status, elapsed_ms }` | Agent 执行状态变更（RUNNING → COMPLETED / FAILED） | OrchestrationExecution |
 | `agent_thinking` | `{ agent_id, think_content }` | Agent 执行 Think 阶段产生思考内容 | AgentExecution |
 | `agent_output` | `{ agent_id, output_content }` | Agent 执行 Answer 阶段产生输出 | AgentExecution |
 | `text` | `{ work_id, chunk }` | WriterAgent 生成最终回复的文本片段 | WriterAgent |
-| `done` | `{ work_id, interact_id, final_response, elapsed_ms, token_usage }` | work 执行完成 | OrchestrationEntry |
-| `error` | `{ work_id, error_message, error_code }` | work 执行失败 | OrchestrationEntry |
+| `done` | `{ work_id, interact_id, trace_id, final_response, elapsed_ms, token_usage }` | work 执行完成 | OrchestrationEntry |
+| `error` | `{ work_id, trace_id, error_message, error_code }` | work 执行失败（含节点级失败的真实错误信息） | OrchestrationEntry |
 
 **处理流程**：
 
