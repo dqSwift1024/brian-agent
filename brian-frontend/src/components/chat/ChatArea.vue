@@ -16,6 +16,27 @@ const leftWidth = computed(() => `${sessionStore.splitRatio * 100}%`)
 const rightWidth = computed(() => `${(1 - sessionStore.splitRatio) * 100}%`)
 const isDragging = ref(false)
 
+type TimelineEntry =
+  | { kind: 'message'; key: string; sort: number; message: ChatMessage }
+  | { kind: 'block'; key: string; sort: number; block: Block }
+
+const timeline = computed<TimelineEntry[]>(() => {
+  const entries: TimelineEntry[] = []
+  for (const m of sessionStore.messages) {
+    entries.push({ kind: 'message', key: `m-${m.id}`, sort: m.timestamp, message: m })
+  }
+  for (const b of sessionStore.blocks) {
+    entries.push({ kind: 'block', key: `b-${b.id}`, sort: b.meta.createdAt, block: b })
+  }
+  entries.sort((a, b) => {
+    if (a.sort !== b.sort) return a.sort - b.sort
+    // 同一毫秒内：用户消息排在所属回复块之前，保证一问一答顺序
+    if (a.kind !== b.kind) return a.kind === 'message' ? -1 : 1
+    return a.key.localeCompare(b.key)
+  })
+  return entries
+})
+
 function startResize(e: MouseEvent) {
   e.preventDefault()
   isDragging.value = true
@@ -257,34 +278,34 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
           <p class="text-sm mt-1">开始一段对话</p>
         </div>
 
-        <template v-for="msg in sessionStore.messages" :key="msg.id">
+        <template v-for="entry in timeline" :key="entry.key">
           <div
+            v-if="entry.kind === 'message'"
             class="max-w-[85%]"
-            :class="msg.role === 'user' ? 'ml-auto' : 'mr-auto'"
+            :class="entry.message.role === 'user' ? 'ml-auto' : 'mr-auto'"
           >
             <div
               class="rounded-2xl px-4 py-3"
-              :class="msg.role === 'user'
+              :class="entry.message.role === 'user'
                 ? 'bg-brian-blue text-white'
                 : 'block-card'"
             >
-              <p class="text-sm whitespace-pre-wrap">{{ msg.content }}</p>
+              <p class="text-sm whitespace-pre-wrap">{{ entry.message.content }}</p>
             </div>
 
-            <div v-if="msg.citingIds?.length" class="mt-1 flex flex-wrap gap-1">
+            <div v-if="entry.message.citingIds?.length" class="mt-1 flex flex-wrap gap-1">
               <span
-                v-for="cid in msg.citingIds"
+                v-for="cid in entry.message.citingIds"
                 :key="cid"
                 class="px-2 py-0.5 text-xs rounded-full bg-brian-blue/10 text-brian-blue"
               >{{ cid.slice(-8) }}</span>
             </div>
           </div>
-        </template>
 
-        <!-- Block Stream -->
-        <div v-for="block in sessionStore.blocks" :key="block.id" class="max-w-[85%]" :class="block.role === 'user' ? 'ml-auto' : 'mr-auto'">
-          <BlockRenderer :block="block" />
-        </div>
+          <div v-else class="max-w-[85%]" :class="entry.block.role === 'user' ? 'ml-auto' : 'mr-auto'">
+            <BlockRenderer :block="entry.block" />
+          </div>
+        </template>
 
         <!-- Streaming cursor -->
         <div v-if="sessionStore.isStreaming" class="flex items-center gap-2 text-apple-gray-400 text-sm">

@@ -70,7 +70,6 @@ async function copyTraceId() {
       <button
         v-if="block.traceId"
         class="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-xs text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 transition-colors"
-        :title="block.traceId"
         @click="copyTraceId"
       >
         <component :is="copied ? Check : Copy" :size="12" />
