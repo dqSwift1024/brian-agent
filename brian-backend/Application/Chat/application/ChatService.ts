@@ -10,7 +10,6 @@ import {
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import {
-  SaveInfoInput, SaveInfoOutput,
   LastNInfoInput, LastNInfoOutput,
   GraphInfoInput, GraphInfoOutput,
   KeywordKInfoInput, KeywordKInfoOutput,
@@ -76,29 +75,6 @@ export class ChatService {
     const workId = IdGenerator.generate();
     const interactId = IdGenerator.generate();
 
-    try {
-      const saveInput = Object.assign(new SaveInfoInput(), {
-        session_id: input.session_id,
-        work_id: workId,
-        interact_id: interactId,
-        info_type: 'REQUEST',
-        info_creator_role: 'USER',
-        info_creator_id: '',
-        info: input.msg_content,
-        parent_info_ids: input.citing_msg_ids ?? [],
-      });
-      await this.infoCore.saveInfo(
-        saveInput,
-        Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext,
-        new SaveInfoOutput(),
-      );
-    } catch (err: unknown) {
-      this.logger?.error?.('submitWork: failed to save user info', {
-        session_id: input.session_id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
     let userProfile: Record<string, unknown> | undefined;
     try {
       const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
@@ -119,6 +95,7 @@ export class ChatService {
       user_query: input.msg_content,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
+      citing_msg_ids: input.citing_msg_ids ?? [],
     });
     const rwOutput = new ReceiveWorkOutput();
     const rwContext = Object.assign(new OrchestrationEntryContext(), {
@@ -142,29 +119,6 @@ export class ChatService {
     }
 
     const finalResponse = rwOutput.final_response || '';
-
-    try {
-      const saveRespInput = Object.assign(new SaveInfoInput(), {
-        session_id: input.session_id,
-        work_id: workId,
-        interact_id: interactId,
-        info_type: 'RESPONSE',
-        info_creator_role: 'AGENT',
-        info_creator_id: workId,
-        info: finalResponse,
-      });
-      await this.infoCore.saveInfo(
-        saveRespInput,
-        Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext,
-        new SaveInfoOutput(),
-      );
-    } catch (err: unknown) {
-      this.logger?.error?.('submitWork: failed to save response info', {
-        session_id: input.session_id,
-        work_id: workId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
 
     try {
       const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
@@ -228,29 +182,6 @@ export class ChatService {
     const workId = IdGenerator.generate();
     const interactId = IdGenerator.generate();
 
-    try {
-      const saveInput = Object.assign(new SaveInfoInput(), {
-        session_id: input.session_id,
-        work_id: workId,
-        interact_id: interactId,
-        info_type: 'REQUEST',
-        info_creator_role: 'USER',
-        info_creator_id: '',
-        info: input.msg_content,
-        parent_info_ids: input.citing_msg_ids ?? [],
-      });
-      await this.infoCore.saveInfo(
-        saveInput,
-        Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext,
-        new SaveInfoOutput(),
-      );
-    } catch (err: unknown) {
-      this.logger?.error?.('openChatStream: failed to save user info', {
-        session_id: input.session_id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
     let userProfile: Record<string, unknown> | undefined;
     try {
       const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
@@ -274,6 +205,7 @@ export class ChatService {
       trace_id: input.trace_id,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
+      citing_msg_ids: input.citing_msg_ids ?? [],
     });
     const rwOutput = new ReceiveWorkOutput();
     const rwContext = Object.assign(new OrchestrationEntryContext(), {
@@ -315,29 +247,6 @@ export class ChatService {
       const chunkSize = Math.floor(Math.random() * 4) + 2;
       emit('text', { work_id: workId, chunk: finalResponse.substring(i, i + chunkSize) });
       i += chunkSize;
-    }
-
-    try {
-      const saveRespInput = Object.assign(new SaveInfoInput(), {
-        session_id: input.session_id,
-        work_id: workId,
-        interact_id: interactId,
-        info_type: 'RESPONSE',
-        info_creator_role: 'AGENT',
-        info_creator_id: workId,
-        info: finalResponse,
-      });
-      await this.infoCore.saveInfo(
-        saveRespInput,
-        Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext,
-        new SaveInfoOutput(),
-      );
-    } catch (err: unknown) {
-      this.logger?.error?.('openChatStream: failed to save response info', {
-        session_id: input.session_id,
-        work_id: workId,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
 
     emit('done', { work_id: workId, interact_id: interactId, trace_id: input.trace_id ?? '', final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });

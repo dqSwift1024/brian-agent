@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { MessageCircle } from '@lucide/vue'
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
@@ -14,6 +14,18 @@ const showSearch = ref(false)
 const searchQuery = ref('')
 const selectedSessions = ref<Set<string>>(new Set())
 const overflowWarning = ref(false)
+
+onMounted(async () => {
+  const sid = sessionStore.currentSessionId
+  if (!sid) return
+  try {
+    await sessionStore.loadChatHistory(sid, 'default-user')
+  } catch { /* ignore */ }
+  await Promise.all([
+    sessionStore.loadDag(sid, 'default-user'),
+    sessionStore.loadExchanges(sid, 'default-user'),
+  ])
+})
 
 function toggleSidebar() {
   showSidebar.value = !showSidebar.value

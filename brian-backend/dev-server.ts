@@ -1647,7 +1647,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
         await ctx.chatAccess.getChatHistory(input, context, output);
-        sendJson(res, 200, { messages: output.messages || [] });
+        // 后端 getChatHistory 返回 snake_case，前端 ChatMessage 使用 camelCase，此处统一转换；
+        // 仅保留一问(REQUEST)一答(RESPONSE)，中间过程(THINK/SKILL/MCP/ACT)由 ChatMap DAG 承载。
+        sendJson(res, 200, {
+          messages: (output.messages || [])
+            .filter((m) => m.info_type === 'REQUEST' || m.info_type === 'RESPONSE')
+            .map((m) => ({
+              id: m.info_id,
+              role: m.info_creator_role === 'USER' ? 'user' : 'assistant',
+              content: m.info,
+              timestamp: m.created,
+              citedCount: m.citing_count,
+            })),
+        });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];

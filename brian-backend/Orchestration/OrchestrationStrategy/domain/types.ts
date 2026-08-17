@@ -13,6 +13,10 @@ export class StartOrchestrationInput extends Input {
   user_query!: string;
   strategy!: string;
   work_context?: Record<string, unknown>;
+  citing_msg_ids?: string[];
+  info_type?: string;
+  info_creator_id?: string;
+  info_creator_role?: string;
 }
 
 export class StartOrchestrationOutput extends Output {

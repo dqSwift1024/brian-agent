@@ -754,9 +754,13 @@ describe('ChatService', () => {
       expect(out1.work_id).not.toBe(out2.work_id);
     });
 
-    it('TC-CHAT-031: citing_msg_ids with non-existent IDs ignored gracefully', async () => {
-      mockReceiveWork();
-      const saveInfoSpy = vi.spyOn(ctx.infoCore, 'saveInfo');
+    it('TC-CHAT-031: citing_msg_ids forwarded to orchestration receiveWork', async () => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(
+        async (_i: any, _c: any, o: any) => {
+          o.final_response = 'mock orchestration response';
+          return true;
+        },
+      );
 
       const input = Object.assign(new SubmitWorkInput(), {
         session_id: 'test-session', msg_content: 'hello',
@@ -771,11 +775,9 @@ describe('ChatService', () => {
       expect(output.work_id).toEqual(expect.any(String));
       expect(output.interact_id).toEqual(expect.any(String));
 
-      const saveCalls = saveInfoSpy.mock.calls;
-      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
-      expect(userSaveCall).toBeDefined();
-      expect(userSaveCall[0].parent_info_ids).toEqual(['non-existent-id-1', 'non-existent-id-2']);
-      saveInfoSpy.mockRestore();
+      const call = spy.mock.calls[0];
+      expect(call[0].citing_msg_ids).toEqual(['non-existent-id-1', 'non-existent-id-2']);
+      spy.mockRestore();
     });
 
     it('TC-CHAT-032: Invalid force_orchestration_strategy returns false', async () => {

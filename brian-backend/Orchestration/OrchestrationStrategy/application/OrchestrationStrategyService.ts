@@ -80,6 +80,10 @@ export class OrchestrationStrategyService {
         user_query: input.user_query,
         work_context: input.work_context ?? {},
         trace_id: input.trace_id ?? '',
+        citing_msg_ids: input.citing_msg_ids ?? [],
+        info_type: input.info_type,
+        info_creator_id: input.info_creator_id,
+        info_creator_role: input.info_creator_role,
       },
     });
     const execOutput = new ExecJSONNodeOutput();

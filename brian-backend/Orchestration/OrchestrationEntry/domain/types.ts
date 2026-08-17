@@ -14,6 +14,7 @@ export class ReceiveWorkInput extends Input {
   info_type?: string;
   info_creator_id?: string;
   info_creator_role?: string;
+  citing_msg_ids?: string[];
 }
 
 export class ReceiveWorkOutput extends Output {

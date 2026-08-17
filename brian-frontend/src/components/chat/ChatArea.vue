@@ -161,6 +161,8 @@ async function handleSend(content: string, citingIds: string[]) {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
     sessionStore.setCancelController(null)
+    // 一轮对话结束后刷新 ChatMap，展示最新 work 的 Agent DAG
+    void sessionStore.loadDag(sessionId, 'default-user')
   }
 }
 

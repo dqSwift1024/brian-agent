@@ -408,12 +408,20 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
-      info_type: params.info_type ?? 'REQUEST',
-      info_creator_role: 'USER',
-      info_creator_id: '',
+      info_type: (sharedData.info_type as string) ?? (params.info_type as string) ?? 'REQUEST',
+      info_creator_role: (sharedData.info_creator_role as string) ?? 'USER',
+      info_creator_id: (sharedData.info_creator_id as string) ?? '',
       info: userQuery,
+      parent_info_ids: (sharedData.citing_msg_ids as string[]) ?? [],
     });
-    await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+    try {
+      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+    } catch (err: unknown) {
+      this.logger?.error?.('handleSaveUserInput: saveInfo failed', {
+        work_id: workId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     const newStatus = (params.update_work_status as string) ?? 'CREATED';
     if (workId) {
@@ -916,7 +924,14 @@ export class JSONNodeService {
       info_creator_id: workId,
       info: finalResponse,
     });
-    await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+    try {
+      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+    } catch (err: unknown) {
+      this.logger?.error?.('handleSaveResponse: saveInfo failed', {
+        work_id: workId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     const newStatus = (params.update_work_status as string) ?? 'COMPLETED';
     const updData: DataObject[] = [

@@ -174,24 +174,23 @@ describe('OrchestrationEntry', () => {
       expect(selOutput.row!.status).toBe('COMPLETED');
     });
 
-    it('TC-RW-015: InfoCore 记录 REQUEST 消息', async () => {
-      const input = Object.assign(new ReceiveWorkInput(), { session_id: 's10', user_query: '你好' });
+    it('TC-RW-015: 转发 citing_msg_ids 与 info 字段到 startOrchestration', async () => {
+      const input = Object.assign(new ReceiveWorkInput(), {
+        session_id: 's10', user_query: '你好',
+        citing_msg_ids: ['info-1', 'info-2'],
+        info_type: 'REQUEST',
+        info_creator_role: 'LEARNING',
+        info_creator_id: 'creator-1',
+      });
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
       await entry.receiveWork(input, ctx, output);
-      expect(infoCore.saveInfo).toHaveBeenCalled();
-    });
-
-    it('TC-RW-016: InfoCore 记录 RESPONSE 消息', async () => {
-      const input = Object.assign(new ReceiveWorkInput(), { session_id: 's11', user_query: '你好' });
-      const output = new ReceiveWorkOutput();
-      const ctx = new OrchestrationEntryContext();
-
-      await entry.receiveWork(input, ctx, output);
-      const saveInfoCalls = infoCore.saveInfo.mock.calls;
-      const hasResponse = saveInfoCalls.some((call: any[]) => call[0]?.info_type === 'RESPONSE');
-      expect(hasResponse).toBe(true);
+      const startCall = (strategyAccess.startOrchestration as any).mock.calls[0];
+      expect(startCall[0].citing_msg_ids).toEqual(['info-1', 'info-2']);
+      expect(startCall[0].info_type).toBe('REQUEST');
+      expect(startCall[0].info_creator_role).toBe('LEARNING');
+      expect(startCall[0].info_creator_id).toBe('creator-1');
     });
   });
 

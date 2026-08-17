@@ -8,7 +8,7 @@ import {
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import { SaveInfoInput, SaveInfoOutput, ContextInfoInput, ContextInfoOutput, InfoCoreContext } from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext } from '@brian-agent/core';
 import type { WriterAgentAccess } from '@brian-agent/agent';
 import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
@@ -78,19 +78,6 @@ export class OrchestrationEntryService {
     });
     await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
 
-    const saveInfoInput = Object.assign(new SaveInfoInput(), {
-      session_id: input.session_id,
-      work_id: workId,
-      interact_id: interactId,
-      info_type: input.info_type ?? 'REQUEST',
-      info_creator_role: input.info_creator_role ?? 'USER',
-      info_creator_id: input.info_creator_id ?? '',
-      info: input.user_query,
-    });
-    try {
-      await this.infoCore.saveInfo(saveInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, new SaveInfoOutput());
-    } catch { /* degrade gracefully */ }
-
     let strategy: string;
     if (input.force_orchestration_strategy) {
       strategy = input.force_orchestration_strategy;
@@ -134,6 +121,10 @@ export class OrchestrationEntryService {
       strategy,
       work_context: buildCtxOutput.work_context,
       trace_id: input.trace_id,
+      citing_msg_ids: input.citing_msg_ids,
+      info_type: input.info_type,
+      info_creator_id: input.info_creator_id,
+      info_creator_role: input.info_creator_role,
     };
     const startOutput: StartOrchestrationOutput = { final_response: '' };
 
@@ -166,19 +157,6 @@ export class OrchestrationEntryService {
     }
 
     const finalResponse = startOutput.final_response || '';
-
-    try {
-      const saveRespInput = Object.assign(new SaveInfoInput(), {
-        session_id: input.session_id,
-        work_id: workId,
-        interact_id: interactId,
-        info_type: 'RESPONSE',
-        info_creator_role: 'AGENT',
-        info_creator_id: workId,
-        info: finalResponse,
-      });
-      await this.infoCore.saveInfo(saveRespInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, new SaveInfoOutput());
-    } catch { /* degrade gracefully */ }
 
     const doneData: DataObject[] = [
       { field: 'status', value: 'COMPLETED' },
