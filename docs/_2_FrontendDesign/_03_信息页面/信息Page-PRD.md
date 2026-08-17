@@ -126,3 +126,113 @@
 3.  Tag关系图：节点大小对数缩放合理；悬停边显示权重；点击节点居中≤500ms并弹出关联Work列表；300节点下FPS≥30。
 4.  关键词图：圆形无严重重叠；点击关键词弹出关联Interact卡片；窗口Resize自适应重排。
 5.  跨模块联动：所有跳转、高亮、筛选操作准确无误，状态同步延迟≤200ms。
+
+---
+
+## 7. 历史会话 Tab（前端实现，对应 `/info` 的「历史」页签）
+
+信息页面实际包含「历史 / 记忆 / 资料库 / Tag图 / 关键词图 / 画像 / 消息图」七个页签。其中「历史」页签管理会话列表，行为如下：
+
+### 7.1 展示
+
+- 数据来源：`GET /api/chat/list?userId=...&keyword=...&start_time=...&end_time=...`（后端 `ChatService.searchSession`），按 `lastTime`（最后一条消息时间戳）倒序渲染。
+- 每条会话展示：最后消息时间（`lastTime`）、最后一条消息内容预览（`lastMessage`）、消息数（`messageCount`）。
+- 后端返回字段为 camelCase（`sessionId / lastMessage / lastTime / messageCount`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
+- 「历史」页签以**会话（session）**为单位展示，会话内容来自 `info_raw` 表中的消息记录（`info_type` 含 REQUEST / RESPONSE / THINK / SKILL / MCP / ACT / REFLECT，其中用户问答即 REQUEST + RESPONSE）；「记忆」页签则以**单条 info** 为单位展示。
+
+### 7.2 搜索
+
+- **后端全文搜索**：输入防抖 300ms 后携带 `keyword` 重新请求 `GET /api/chat/list`。
+- 命中规则：`session_title` 或该会话任意 `info_raw.info`（消息内容）包含关键字即命中；无命中返回空列表。
+- 后端 `searchSession` 通过 `UNION` 合并标题命中与会话内容命中的 `session_id`，再以 `IN` 条件过滤。
+- **按时间搜索**：支持「开始时间 / 结束时间」两个 `datetime-local` 输入，前端转为毫秒时间戳后经 `start_time` / `end_time` 参数回传。
+- 时间命中规则：按**消息时间**（`info_raw.created`）过滤，命中在该时间段内存在消息（REQUEST / RESPONSE 等）的会话；关键字与时间范围为 **AND**（交集）关系，任一条件无命中即返回空列表。
+
+### 7.3 删除
+
+- **二次确认**：单个删除与批量删除均弹出确认弹窗，提示将同步清理关联数据且不可恢复。
+- **级联删除**（后端 `ChatService.deleteSession`）：删除 `chat_session`、`info_raw`、`info_graph`，并按会话下 `info_id` 级联清理 `info_tag`、`info_summary`、`info_keyword`、`info_vector`。
+- **不删除** `info_tag_vector`（全局标签向量，跨会话共享，由 `orphan_tag_check` 定时任务负责清理孤立标签）。
+- **批量删除健壮性**：批量删除采用 `Promise.allSettled`，单条失败不影响其余会话删除。
+
+---
+
+## 8. 变更记录
+
+### [2026-08-17] 历史会话 Tab：搜索与删除增强
+
+**变更原因**：历史 Tab 原为前端本地过滤（仅匹配最后一条消息）且删除未清理派生表，存在功能局限与孤儿数据问题。
+
+**修改的方法**：
+- `ChatService.searchSession` — 由「仅 `session_title` 模糊匹配」改为「标题 + 消息内容全文搜索」，命中会话以 `IN` 条件过滤。
+- `ChatService.deleteSession` — 由「仅删 `chat_session`/`info_raw`/`info_graph`」改为「级联清理 `info_tag`/`info_summary`/`info_keyword`/`info_vector`」。
+- 前端 `InfoView.vue` — 搜索改为后端搜索 + 300ms 防抖；删除增加二次确认弹窗；批量删除改用 `Promise.allSettled`。
+- 前端 `api/index.ts` — `chatApi.list` 增加 `keyword` 参数。
+
+**影响的端点**：
+- `GET /api/chat/list` — 支持 `keyword` 全文搜索，返回 camelCase 字段。
+- `DELETE /api/chat/session/:id` — 删除会话时级联清理派生表。
+
+**可能存在的问题**：
+- `info_keyword` 为 FTS5 虚拟表，级联删除依赖其普通列条件删除能力（已用 better-sqlite3 验证可行）。
+- 全文搜索在会话数量极大时 `IN` 条件可能超长，但单机场景会话量有限。
+
+### [2026-08-17] 历史会话 Tab：按时间搜索
+
+**变更原因**：历史 Tab 仅支持关键字搜索，缺少按时间范围回溯对话的能力。
+
+**修改的方法**：
+- `ChatService.searchSession` — 时间过滤由「会话创建时间 `chat_session.created`」改为「消息时间 `info_raw.created`」，命中该时间段内存在消息的会话。
+- `dev-server.ts` `/api/chat/list` — 增加 `start_time` / `end_time` 查询参数解析。
+- 前端 `InfoView.vue` — 增加「开始时间 / 结束时间」`datetime-local` 输入，随关键字一起防抖 300ms 触发搜索。
+- 前端 `api/index.ts` — `chatApi.list` 增加 `startTime` / `endTime` 参数。
+
+**影响的端点**：
+- `GET /api/chat/list` — 新增 `start_time` / `end_time` 查询参数，与 `keyword` 为 AND 关系。
+
+**可能存在的问题**：
+- `datetime-local` 按浏览器本地时区解析，前后端同机部署时区一致，跨时区部署需注意换算。
+
+### [2026-08-17] 记忆 Tab：按时间 / 按标签搜索
+
+**变更原因**：记忆 Tab 原为前端本地过滤，且不支持按时间与按标签搜索。
+
+**修改的方法**：
+- `dev-server.ts` `/api/memory/search` — 新增 `tag`（精确标签）、`start_time` / `end_time`（消息时间）过滤条件，`limit` 上限由 200 提升至 500。
+- 前端 `api/index.ts` — `memoryApi.search` 改为对象参数（`keyword` / `type` / `tag` / `startTime` / `endTime` / `limit`）。
+- 前端 `InfoView.vue` — 记忆 Tab 增加「按标签」「开始时间 / 结束时间」输入，搜索改为后端搜索 + 300ms 防抖。
+
+**影响的端点**：
+- `GET /api/memory/search` — 新增 `tag` / `start_time` / `end_time` 查询参数，与 `keyword` / `type` 为 AND 关系。
+
+**可能存在的问题**：
+- 标签为精确匹配（`=`），如需模糊匹配可扩展为 `LIKE`。
+
+### [2026-08-17] 记忆 Tab：滚动加载（游标分页）+ 日期导航优化
+
+**变更原因**：记忆 Tab 原为一次性加载最多 500 条，超量记忆无法查看；日期导航列在日期过多时被视口截断，丢失导航入口。
+
+**修改的方法**：
+- `dev-server.ts` `/api/memory/list`、`/api/memory/search` — 改为**游标分页**：`cursor`（格式 `created:id`，`id` 为 `info_raw.id` 作 tiebreaker）+ `limit`；排序 `ORDER BY created DESC, id DESC`；返回 `{ memories, has_more, next_cursor }`。
+- 前端 `api/index.ts` — `memoryApi.list` / `memoryApi.search` 返回 `MemoryPage`（`memories / has_more / next_cursor`），支持 `cursor` 参数。
+- 前端 `InfoView.vue` — 记忆列表改为 `IntersectionObserver` + sentinel 无限滚动，滚动到底部用 `next_cursor` 追加加载；日期导航容器加 `max-h + overflow-y-auto` 内部滚动，并随加载动态增长；scroll-spy 自动高亮当前日期。
+
+**影响的端点**：
+- `GET /api/memory/list`、`GET /api/memory/search` — 新增 `cursor` 查询参数，返回结构含 `has_more` / `next_cursor`。
+
+**可能存在的问题**：
+- 游标以 `created` 时间戳为序，同一毫秒内多条记录靠 `id`（uuid 字典序）区分，逻辑自洽但需保证 `ORDER BY` 与游标比较规则一致（均为 `created DESC, id DESC`）。
+- 追加加载期间若新增消息，可能出现边界重复/遗漏（时间序分页的固有问题），单机单用户场景影响可忽略。
+
+### [2026-08-17] 资料库入口统一
+
+**变更原因**：「资料库」Tab（信息页）与「配置中心 > 应用配置 > 文档目录」功能重复，均为同一后端 `/library/*`（SelfLearning 资料库管理）的前端入口。
+
+**修改的方法**：
+- 前端 `ConfigView.vue` — 移除「应用配置 > 文档目录」菜单项、其管理逻辑与实体管理视图模板，仅保留「资料库」Tab 作为唯一入口。
+
+**影响的端点**：
+- 无（后端 `/library/*` 接口保留，资料库 Tab 继续使用）。
+
+**可能存在的问题**：
+- 无。资料库路径处理（`path.resolve` / `path.join` / `fs.*`）为 Node.js 跨平台 API，支持 Windows / Linux / macOS；HTTP 路由的 `split('/')` 为 URL 解析，与操作系统无关。

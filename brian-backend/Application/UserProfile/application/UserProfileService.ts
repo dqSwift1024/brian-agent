@@ -166,10 +166,14 @@ export class UserProfileService {
     const dimensions: Record<string, unknown> = {};
     const now = IdGenerator.now();
 
+    // 前一个已生成版本的维度数据，用于计算每个维度的稳定性（stable/drifting/emerging）
+    const prevVersionDimensions = await this.loadPrevVersionDimensions(sessionId, latestRecord);
+
     for (const dir of enabledDirs) {
       const key = String(dir.direction_key);
       try {
         const result = await this.aggregateDimension(key, sessionId, writerPreferences, latestRecord);
+        (result as Record<string, unknown>).stability = this.determineStability(key, result.value, prevVersionDimensions);
         dimensions[key] = result;
       } catch {
         // skip failed dimensions
@@ -644,6 +648,52 @@ export class UserProfileService {
       LIKE: 'LIKE', IS_NULL: 'IS NULL', IS_NOT_NULL: 'IS NOT NULL',
     };
     return map[op] ?? '=';
+  }
+
+  private async loadPrevVersionDimensions(
+    sessionId: string | undefined,
+    latestRecord: Record<string, unknown> | null,
+  ): Promise<Record<string, string> | null> {
+    if (!latestRecord) return null;
+    try {
+      const conditions = sessionId
+        ? [{ field: 'session_id', operator: Operator.EQ, value: sessionId }]
+        : [];
+      const history = await this.queryTable(
+        USER_PROFILE_RECORD_TABLE,
+        conditions,
+        [{ field: 'version', direction: Direction.DESC }],
+        20,
+      );
+      const latestVersion = Number(latestRecord.version);
+      const prevRecord = history.find((r) => Number(r.version) < latestVersion);
+      if (!prevRecord) return null;
+      const dimRows = await this.queryTable(USER_PROFILE_DIMENSION_DATA_TABLE, [
+        { field: 'profile_record_id', operator: Operator.EQ, value: prevRecord.id },
+      ]);
+      const map: Record<string, string> = {};
+      for (const d of dimRows) {
+        map[String(d.direction_key)] = String(d.dimension_value);
+      }
+      return map;
+    } catch {
+      return null;
+    }
+  }
+
+  private determineStability(
+    key: string,
+    currentValue: unknown,
+    prevVersionDimensions: Record<string, string> | null,
+  ): 'stable' | 'drifting' | 'emerging' {
+    if (!prevVersionDimensions) return 'emerging';
+    if (!(key in prevVersionDimensions)) return 'emerging';
+    try {
+      const prevValue = JSON.parse(prevVersionDimensions[key]);
+      return JSON.stringify(prevValue) === JSON.stringify(currentValue) ? 'stable' : 'drifting';
+    } catch {
+      return 'drifting';
+    }
   }
 
   private async aggregateDimension(

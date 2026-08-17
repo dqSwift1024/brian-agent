@@ -51,6 +51,7 @@ export class SearchSessionOutput extends Output {
     session_title: string;
     message_count: number;
     last_message_time: number;
+    last_message: string;
     created: number;
     updated: number;
   }> = [];

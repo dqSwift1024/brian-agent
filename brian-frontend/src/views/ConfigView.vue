@@ -12,15 +12,15 @@ import {
   Globe, Key, Plus, Pencil, Download, ExternalLink,
   Eye, EyeOff,
   Search, Monitor, Terminal, MessageSquare, Send,
-  BarChart3, Zap, Plug, Radio, Clock, FolderOpen,
+  BarChart3, Zap, Plug, Radio, Clock,
 } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import CronConfigModal from '@/components/CronConfigModal.vue'
-import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi, libraryApi } from '@/api'
+import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi } from '@/api'
 import type { VectorSearchInfo } from '@/api'
-import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord, LibraryPath } from '@/api/types'
+import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
 
 // ============================================================
 // 导航定义（PRD §11）
@@ -133,7 +133,6 @@ const navSections: NavSection[] = [
     subsections: [
       { key: 'app-chat', label: '对话', icon: MessageCircle, type: 'params', configModule: 'chat', configCategories: ['basic'] },
       { key: 'app-selflearning', label: '自学习', icon: GraduationCap, type: 'params', configModule: 'self_learning', configCategories: ['basic', 'weight', 'interval'] },
-      { key: 'app-selflearning-library', label: '文档目录', icon: FolderOpen, type: 'entity', entityType: 'self-learning-library' },
       { key: 'app-profile', label: '用户画像', icon: User, type: 'params', configModule: 'user_profile', configCategories: ['basic'] },
       { key: 'app-profile-direction', label: '画像维度', icon: Layers, type: 'entity', entityType: 'profile-direction' },
       { key: 'app-visualization', label: '消息可视化', icon: BarChart3, type: 'params', configModule: 'visualization', configCategories: ['basic'], configLayer: 'APPLICATION' },
@@ -3399,60 +3398,6 @@ onUnmounted(() => {
   pasteCleanup?.()
 })
 
-// ============================================================
-// 文档目录（自学习资料库）管理
-// ============================================================
-const selfLearningLibraries = ref<LibraryPath[]>([])
-const selfLearningLibLoading = ref(false)
-const selfLearningLibModalVisible = ref(false)
-const selfLearningLibAdding = ref(false)
-const selfLearningLibPath = ref('')
-const selfLearningLibName = ref('')
-const selfLearningPathCheck = ref<{ exists: boolean; isReadable: boolean; isWritable: boolean } | null>(null)
-
-async function loadSelfLearningLibraries() {
-  selfLearningLibLoading.value = true
-  try {
-    selfLearningLibraries.value = await libraryApi.paths()
-  } catch { selfLearningLibraries.value = [] }
-  finally { selfLearningLibLoading.value = false }
-}
-
-function openSelfLearningLibModal() {
-  selfLearningLibPath.value = ''
-  selfLearningLibName.value = ''
-  selfLearningPathCheck.value = null
-  selfLearningLibModalVisible.value = true
-}
-
-async function checkSelfLearningPath() {
-  const p = selfLearningLibPath.value.trim()
-  if (!p) { selfLearningPathCheck.value = null; return }
-  try { selfLearningPathCheck.value = await libraryApi.checkPath(p) }
-  catch { selfLearningPathCheck.value = { exists: false, isReadable: false, isWritable: false } }
-}
-
-async function addSelfLearningLibrary() {
-  const p = selfLearningLibPath.value.trim()
-  if (!p) return
-  selfLearningLibAdding.value = true
-  try {
-    await libraryApi.addPath({ name: selfLearningLibName.value.trim() || p, path: p, category: '', description: '' })
-    selfLearningLibPath.value = ''
-    selfLearningLibName.value = ''
-    selfLearningPathCheck.value = null
-    await loadSelfLearningLibraries()
-  } catch { /* */ }
-  finally { selfLearningLibAdding.value = false }
-}
-
-async function deleteSelfLearningLibrary(id: string) {
-  try {
-    await libraryApi.deletePath(id)
-    await loadSelfLearningLibraries()
-  } catch { /* */ }
-}
-
 watch(activeSubSection, async (val) => {
   const sub = currentSection.value?.subsections.find(s => s.key === val)
   if (sub?.type === 'entity') {
@@ -3471,7 +3416,6 @@ watch(activeSubSection, async (val) => {
       case 'cdt-status': await loadCDTStatus(); break
       case 'cdt-page': await loadCDTStatus(); await loadBookmarks(); setupRemotePasteListener(); break
       case 'profile-direction': await loadProfileDirections(); break
-      case 'self-learning-library': await loadSelfLearningLibraries(); break
     }
   } else if (sub?.type === 'params') {
     await loadConfigTree()
@@ -5387,69 +5331,6 @@ watch(activeSubSection, async (val) => {
                     <Loader2 v-if="profileDirSaving" :size="14" class="animate-spin" />
                     <Save v-else :size="14" />
                     {{ editingProfileDir ? '保存' : '创建' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Teleport>
-        </div>
-
-        <!-- ========================== 实体管理视图 - 文档目录 ========================== -->
-        <div v-if="isEntityView && currentEntityType === 'self-learning-library'" class="px-5 pb-6">
-          <div class="flex justify-between items-center mb-4">
-            <span class="text-xs text-apple-gray-400">{{ selfLearningLibraries.length }} 个目录</span>
-            <button class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors" @click="openSelfLearningLibModal()">
-              <Plus :size="13" /> 添加目录
-            </button>
-          </div>
-          <div v-if="selfLearningLibLoading" class="flex justify-center py-16"><Loader2 :size="24" class="animate-spin text-brian-blue" /></div>
-          <div v-else-if="selfLearningLibraries.length === 0" class="flex flex-col items-center justify-center py-16">
-            <FolderOpen :size="28" class="text-apple-gray-400 mb-3" />
-            <p class="text-sm text-apple-gray-500">暂无文档目录</p>
-          </div>
-          <div v-else class="space-y-3">
-            <div
-              v-for="lib in selfLearningLibraries" :key="lib.id"
-              class="rounded-xl border border-apple-gray-200 dark:border-apple-gray-700 bg-white dark:bg-apple-gray-800 p-4 flex items-center justify-between gap-3"
-            >
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                  <FolderOpen :size="16" class="text-brian-blue flex-shrink-0" />
-                  <span class="font-medium text-apple-gray-900 dark:text-apple-gray-50 truncate">{{ lib.name }}</span>
-                </div>
-                <p class="text-xs text-apple-gray-400 font-mono truncate">{{ lib.path }}</p>
-                <p class="text-[11px] text-apple-gray-400 mt-1">已学习 {{ lib.learnedFiles || 0 }}/{{ lib.totalFiles || 0 }} 个文件</p>
-              </div>
-              <button class="p-1.5 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 transition-colors flex-shrink-0" title="删除" @click="deleteSelfLearningLibrary(lib.id)">
-                <Trash2 :size="16" />
-              </button>
-            </div>
-          </div>
-
-          <!-- Modal: 添加文档目录 -->
-          <Teleport to="body">
-            <div v-if="selfLearningLibModalVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="selfLearningLibModalVisible = false">
-              <div class="w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-apple-gray-800 shadow-xl p-6">
-                <h3 class="text-lg font-semibold mb-4">添加文档目录</h3>
-                <div class="space-y-3">
-                  <div>
-                    <label class="block text-xs font-medium text-apple-gray-500 mb-1">目录路径</label>
-                    <input v-model="selfLearningLibPath" :class="inputClass" placeholder="/path/to/markdown/directory" @blur="checkSelfLearningPath" />
-                    <p v-if="selfLearningPathCheck" class="text-xs mt-1" :class="selfLearningPathCheck.exists ? 'text-success-green' : 'text-error-red'">
-                      {{ selfLearningPathCheck.exists ? '目录存在，可读取' : '目录不存在或不可读' }}
-                    </p>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-apple-gray-500 mb-1">目录名称（可选）</label>
-                    <input v-model="selfLearningLibName" :class="inputClass" placeholder="留空则使用目录名" />
-                  </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-5">
-                  <button class="px-4 py-2 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300" @click="selfLearningLibModalVisible = false">取消</button>
-                  <button class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 disabled:opacity-60" :disabled="selfLearningLibAdding || !selfLearningLibPath.trim()" @click="addSelfLearningLibrary">
-                    <Loader2 v-if="selfLearningLibAdding" :size="14" class="animate-spin" />
-                    <Plus v-else :size="14" />
-                    添加
                   </button>
                 </div>
               </div>

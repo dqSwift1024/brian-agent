@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Clock, Brain, Database, Network, GitBranch,
@@ -29,22 +29,28 @@ const tabs = [
 
 // History tab
 const historySearch = ref('')
+const historyStartTime = ref('')
+const historyEndTime = ref('')
 const chatList = ref<ChatSession[]>([])
 const loadingHistory = ref(false)
 const selectedSessions = ref<Set<string>>(new Set())
 
 async function loadHistory() {
   loadingHistory.value = true
-  try { chatList.value = await chatApi.list('default-user') }
+  try {
+    chatList.value = await chatApi.list(
+      'default-user',
+      historySearch.value.trim() || undefined,
+      historyStartTime.value ? new Date(historyStartTime.value).getTime() : undefined,
+      historyEndTime.value ? new Date(historyEndTime.value).getTime() : undefined,
+    )
+  }
   catch { /* ignore */ }
   finally { loadingHistory.value = false }
 }
 
 const filteredHistory = computed(() => {
-  const sorted = [...chatList.value].sort((a, b) => b.lastTime - a.lastTime)
-  if (!historySearch.value) return sorted
-  const q = historySearch.value.toLowerCase()
-  return sorted.filter(c => (c.lastMessage || '').toLowerCase().includes(q))
+  return [...chatList.value].sort((a, b) => b.lastTime - a.lastTime)
 })
 
 const allHistorySelected = computed(() =>
@@ -63,14 +69,38 @@ function toggleHistorySelect(id: string) {
   selectedSessions.value = next
 }
 
+const deleteConfirm = ref<{ type: 'single' | 'batch'; sessionId?: string } | null>(null)
+
+function requestDeleteSession(sessionId: string) {
+  deleteConfirm.value = { type: 'single', sessionId }
+}
+
+function requestBatchDelete() {
+  deleteConfirm.value = { type: 'batch' }
+}
+
 async function handleDeleteSession(sessionId: string) {
   await chatApi.deleteSession(sessionId)
   chatList.value = chatList.value.filter(c => c.sessionId !== sessionId)
 }
 
 async function handleBatchDelete() {
-  for (const id of selectedSessions.value) await handleDeleteSession(id)
+  const ids = [...selectedSessions.value]
+  const results = await Promise.allSettled(ids.map(id => chatApi.deleteSession(id)))
+  const okIds = ids.filter((_, i) => results[i].status === 'fulfilled')
+  chatList.value = chatList.value.filter(c => !okIds.includes(c.sessionId))
   selectedSessions.value = new Set()
+}
+
+async function confirmDelete() {
+  if (!deleteConfirm.value) return
+  const { type, sessionId } = deleteConfirm.value
+  deleteConfirm.value = null
+  if (type === 'single' && sessionId) {
+    await handleDeleteSession(sessionId)
+  } else if (type === 'batch') {
+    await handleBatchDelete()
+  }
 }
 
 function openSession(sessionId: string) { router.push(`/?session=${sessionId}`) }
@@ -84,25 +114,69 @@ function formatTime(ts: number) {
 // Memory tab
 const memories = ref<MemoryItem[]>([])
 const loadingMemory = ref(false)
+const loadingMoreMemory = ref(false)
+const hasMoreMemory = ref(false)
+const nextMemoryCursor = ref<string | null>(null)
 const memorySearch = ref('')
+const memoryTag = ref('')
+const memoryStartTime = ref('')
+const memoryEndTime = ref('')
 const expandedMemory = ref<string | null>(null)
 
-async function loadMemory() {
-  loadingMemory.value = true
-  try { memories.value = await memoryApi.list() }
-  catch { /* ignore */ }
-  finally { loadingMemory.value = false }
+function buildMemorySearchOpts() {
+  return {
+    keyword: memorySearch.value.trim() || undefined,
+    tag: memoryTag.value.trim() || undefined,
+    startTime: memoryStartTime.value ? new Date(memoryStartTime.value).getTime() : undefined,
+    endTime: memoryEndTime.value ? new Date(memoryEndTime.value).getTime() : undefined,
+    limit: 50,
+  }
 }
 
-const filteredMemories = computed(() => {
-  let result = [...memories.value].sort((a, b) => b.createdAt - a.createdAt)
-  if (memorySearch.value) {
-    const q = memorySearch.value.toLowerCase()
-    result = result.filter(m =>
-      (m.content || '').toLowerCase().includes(q) || m.tags.some(t => t.toLowerCase().includes(q))
-    )
+async function loadMemory(reset = true) {
+  if (reset) loadingMemory.value = true
+  else loadingMoreMemory.value = true
+  try {
+    const data = await memoryApi.search('default-user', {
+      ...buildMemorySearchOpts(),
+      cursor: reset ? undefined : nextMemoryCursor.value || undefined,
+    })
+    if (reset) {
+      memories.value = data.memories
+    } else {
+      memories.value = [...memories.value, ...data.memories]
+    }
+    hasMoreMemory.value = data.has_more
+    nextMemoryCursor.value = data.next_cursor
   }
-  return result
+  catch { /* ignore */ }
+  finally {
+    if (reset) loadingMemory.value = false
+    else loadingMoreMemory.value = false
+  }
+}
+
+async function loadMoreMemory() {
+  if (!hasMoreMemory.value || loadingMoreMemory.value || loadingMemory.value) return
+  await loadMemory(false)
+}
+
+const memorySentinel = ref<HTMLElement | null>(null)
+let memoryObserver: IntersectionObserver | null = null
+
+watch(memorySentinel, (el) => {
+  memoryObserver?.disconnect()
+  memoryObserver = null
+  if (el) {
+    memoryObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) loadMoreMemory()
+    }, { rootMargin: '300px' })
+    memoryObserver.observe(el)
+  }
+})
+
+const filteredMemories = computed(() => {
+  return [...memories.value].sort((a, b) => b.createdAt - a.createdAt)
 })
 
 const memoryTimeline = computed(() => {
@@ -131,6 +205,34 @@ const typeColors: Record<string, string> = {
   episodic: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
   procedural: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
   working: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+}
+
+const activeMemoryDate = ref<string | null>(null)
+
+function scrollMemoryNavToActive(dateKey: string) {
+  document.getElementById(`memory-nav-${dateKey}`)?.scrollIntoView({ block: 'nearest' })
+}
+
+function scrollToMemoryDate(dateKey: string) {
+  activeMemoryDate.value = dateKey
+  scrollMemoryNavToActive(dateKey)
+  document.getElementById(`memory-group-${dateKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function onMemoryScroll() {
+  const groupEls = Array.from(document.querySelectorAll<HTMLElement>('[data-memory-date]'))
+  if (groupEls.length === 0) return
+  const topOffset = 140
+  let current: string | null = null
+  for (const el of groupEls) {
+    const rect = el.getBoundingClientRect()
+    if (rect.top <= topOffset) current = el.getAttribute('data-memory-date')
+    else break
+  }
+  if (current && current !== activeMemoryDate.value) {
+    activeMemoryDate.value = current
+    scrollMemoryNavToActive(current)
+  }
 }
 
 // Library tab
@@ -322,7 +424,8 @@ async function selectKeywordNode(nodeId: string) {
   if (selectedKeyword.value) {
     try {
       const kw = keywordGraphNodes.value.find(n => n.id === nodeId)?.name || nodeId
-      selectedKeywordMemories.value = await memoryApi.search('default-user', kw, undefined, 20)
+      const data = await memoryApi.search('default-user', { keyword: kw, limit: 20 })
+      selectedKeywordMemories.value = data.memories
     } catch { selectedKeywordMemories.value = [] }
   } else {
     selectedKeywordMemories.value = []
@@ -411,11 +514,30 @@ onMounted(() => {
   loadLibraries()
   loadTagGraph()
   loadKeywordGraph()
+  window.addEventListener('scroll', onMemoryScroll, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onMemoryScroll)
+  memoryObserver?.disconnect()
+  memoryObserver = null
 })
 
 watch(activeTab, (val) => {
   if (val === 'profile') loadProfile()
   if (val === 'messageGraph' && messageGraphSessionId.value) loadMessageGraph()
+})
+
+let historySearchTimer: ReturnType<typeof setTimeout> | null = null
+watch([historySearch, historyStartTime, historyEndTime], () => {
+  if (historySearchTimer) clearTimeout(historySearchTimer)
+  historySearchTimer = setTimeout(() => { loadHistory() }, 300)
+})
+
+let memorySearchTimer: ReturnType<typeof setTimeout> | null = null
+watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
+  if (memorySearchTimer) clearTimeout(memorySearchTimer)
+  memorySearchTimer = setTimeout(() => { loadMemory() }, 300)
 })
 </script>
 
@@ -447,16 +569,21 @@ watch(activeTab, (val) => {
 
       <!-- History tab -->
       <div v-if="activeTab === 'history'" class="space-y-3">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <div class="relative flex-1 max-w-md">
             <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-            <input v-model="historySearch" placeholder="搜索会话..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+            <input v-model="historySearch" placeholder="搜索会话内容或标题..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+          </div>
+          <div class="flex items-center gap-2 text-xs text-apple-gray-500">
+            <input v-model="historyStartTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+            <span>至</span>
+            <input v-model="historyEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
           </div>
           <button v-if="filteredHistory.length > 0" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-apple-gray-500 hover:text-brian-blue" @click="toggleHistorySelectAll">
             <component :is="allHistorySelected ? CheckSquare : Square" :size="14" />
             {{ allHistorySelected ? '取消全选' : '全选' }}
           </button>
-          <button v-if="selectedSessions.size > 0" class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg" @click="handleBatchDelete">
+          <button v-if="selectedSessions.size > 0" class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg" @click="requestBatchDelete">
             <Trash2 :size="12" /> 批量删除({{ selectedSessions.size }})
           </button>
         </div>
@@ -480,61 +607,100 @@ watch(activeTab, (val) => {
                 <p class="text-xs text-apple-gray-400 mt-1 truncate">{{ (item.lastMessage || '').slice(0, 50) }}</p>
               </div>
             </div>
-            <button class="ml-3 p-1.5 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" @click.stop="handleDeleteSession(item.sessionId)">
+            <button class="ml-3 p-1.5 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" @click.stop="requestDeleteSession(item.sessionId)">
               <Trash2 :size="16" />
             </button>
+          </div>
+        </div>
+
+        <!-- 删除确认弹窗 -->
+        <div v-if="deleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="deleteConfirm = null">
+          <div class="block-card w-full max-w-sm mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">确认删除</h3>
+              <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="deleteConfirm = null"><X :size="18" /></button>
+            </div>
+            <p class="text-sm text-apple-gray-600 dark:text-apple-gray-300">
+              {{ deleteConfirm.type === 'batch' ? `确定删除选中的 ${selectedSessions.size} 个会话及其全部消息吗？` : '确定删除该会话及其全部消息吗？' }}
+            </p>
+            <p class="text-xs text-apple-gray-400 mt-1">此操作将同时清理关联的记忆、标签与向量数据，且不可恢复。</p>
+            <div class="flex justify-end gap-2 mt-6">
+              <button class="btn-secondary" @click="deleteConfirm = null">取消</button>
+              <button class="px-3 py-2 text-xs font-medium bg-error-red text-white rounded-lg hover:bg-error-red/90 transition-colors" @click="confirmDelete">确认删除</button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Memory tab -->
       <div v-if="activeTab === 'memory'" class="space-y-4">
-        <div class="relative max-w-md">
-          <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-          <input v-model="memorySearch" placeholder="搜索记忆内容或标签..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
-        </div>
         <div v-if="loadingMemory" class="text-center py-8 text-apple-gray-400">加载中...</div>
         <div v-else-if="memoryTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
         <div v-else class="flex gap-6">
-          <div class="w-32 flex-shrink-0">
-            <div class="sticky top-4">
-              <div v-for="group in memoryTimeline" :key="group.dateKey" class="flex items-center gap-2 mb-3">
-                <div class="w-2 h-2 rounded-full bg-brian-blue flex-shrink-0" />
-                <span class="text-xs text-apple-gray-500 font-medium">{{ group.label }}</span>
-              </div>
+          <div class="w-40 flex-shrink-0">
+            <div class="sticky top-4 space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+              <button
+                v-for="group in memoryTimeline"
+                :key="group.dateKey"
+                :id="`memory-nav-${group.dateKey}`"
+                class="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                :class="activeMemoryDate === group.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
+                @click="scrollToMemoryDate(group.dateKey)"
+              >
+                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeMemoryDate === group.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
+                <span>{{ group.label }}</span>
+                <span class="ml-auto text-apple-gray-300">{{ group.items.length }}</span>
+              </button>
             </div>
           </div>
-          <div class="flex-1 space-y-3 min-w-0">
-            <template v-for="group in memoryTimeline" :key="group.dateKey">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="text-sm font-semibold">{{ group.label }}</span>
-                <span class="text-xs text-apple-gray-400">({{ group.items.length }})</span>
+          <div class="flex-1 min-w-0 space-y-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <div class="relative flex-1 max-w-md">
+                <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+                <input v-model="memorySearch" placeholder="搜索记忆内容..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
               </div>
-              <div
-                v-for="mem in group.items"
-                :key="mem.id"
-                class="block-card rounded-xl overflow-hidden cursor-pointer"
-                @click="expandedMemory = expandedMemory === mem.id ? null : mem.id"
-              >
-                <div class="p-4">
-                  <div class="flex items-start justify-between mb-2">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs text-apple-gray-400">{{ new Date(mem.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
-                      <span class="text-xs text-apple-gray-300">#{{ mem.id.slice(-8) }}</span>
+              <input v-model="memoryTag" placeholder="按标签搜索..." class="px-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              <div class="flex items-center gap-2 text-xs text-apple-gray-500">
+                <input v-model="memoryStartTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+                <span>至</span>
+                <input v-model="memoryEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              </div>
+            </div>
+            <div class="space-y-3">
+              <template v-for="group in memoryTimeline" :key="group.dateKey">
+                <div :id="`memory-group-${group.dateKey}`" :data-memory-date="group.dateKey" class="flex items-center gap-2 pt-1 scroll-mt-32">
+                  <span class="text-sm font-semibold">{{ group.label }}</span>
+                  <span class="text-xs text-apple-gray-400">({{ group.items.length }})</span>
+                </div>
+                <div
+                  v-for="mem in group.items"
+                  :key="mem.id"
+                  class="block-card rounded-xl overflow-hidden cursor-pointer"
+                  @click="expandedMemory = expandedMemory === mem.id ? null : mem.id"
+                >
+                  <div class="p-4">
+                    <div class="flex items-start justify-between mb-2">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-apple-gray-400">{{ new Date(mem.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
+                        <span class="text-xs text-apple-gray-300">#{{ mem.id.slice(-8) }}</span>
+                      </div>
+                      <span :class="['px-2 py-0.5 rounded text-xs font-medium', typeColors[mem.type] || 'bg-gray-100 text-gray-600']">{{ mem.type }}</span>
                     </div>
-                    <span :class="['px-2 py-0.5 rounded text-xs font-medium', typeColors[mem.type] || 'bg-gray-100 text-gray-600']">{{ mem.type }}</span>
-                  </div>
-                  <p class="text-sm" :class="expandedMemory === mem.id ? '' : 'line-clamp-2'">{{ mem.content }}</p>
-                  <div class="flex items-center gap-3 mt-2">
-                    <div v-if="mem.tags?.length" class="flex flex-wrap gap-1">
-                      <span v-for="tag in mem.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue">#{{ tag }}</span>
+                    <p class="text-sm" :class="expandedMemory === mem.id ? '' : 'line-clamp-2'">{{ mem.content }}</p>
+                    <div class="flex items-center gap-3 mt-2">
+                      <div v-if="mem.tags?.length" class="flex flex-wrap gap-1">
+                        <span v-for="tag in mem.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue">#{{ tag }}</span>
+                      </div>
+                      <span class="text-xs text-apple-gray-400 ml-auto">置信度: {{ Math.round((mem.confidence || 0) * 100) }}%</span>
+                      <ChevronRight :size="14" class="text-apple-gray-400 transition-transform" :class="expandedMemory === mem.id ? 'rotate-90' : ''" />
                     </div>
-                    <span class="text-xs text-apple-gray-400 ml-auto">置信度: {{ Math.round((mem.confidence || 0) * 100) }}%</span>
-                    <ChevronRight :size="14" class="text-apple-gray-400 transition-transform" :class="expandedMemory === mem.id ? 'rotate-90' : ''" />
                   </div>
                 </div>
+              </template>
+              <div ref="memorySentinel" v-if="hasMoreMemory || loadingMoreMemory" class="text-center py-4 text-xs text-apple-gray-400">
+                {{ loadingMoreMemory ? '加载中...' : '继续上滑加载更多' }}
               </div>
-            </template>
+            </div>
           </div>
         </div>
       </div>

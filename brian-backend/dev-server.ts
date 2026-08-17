@@ -1623,11 +1623,24 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ===== Chat Routes =====
       } else if (method === 'GET' && pathname === '/api/chat/list') {
-        const input = Object.assign(new SearchSessionInput(), { keyword: params.get('keyword') || undefined });
+        const input = Object.assign(new SearchSessionInput(), {
+          keyword: params.get('keyword') || undefined,
+          start_time: params.get('start_time') ? parseInt(params.get('start_time')!, 10) : undefined,
+          end_time: params.get('end_time') ? parseInt(params.get('end_time')!, 10) : undefined,
+        });
         const output = new SearchSessionOutput();
         const context = new ChatContext();
         await ctx.chatAccess.searchSession(input, context, output);
-        sendJson(res, 200, { sessions: output.sessions || [], total: output.total });
+        // 后端 searchSession 返回 snake_case，前端 ChatSession 类型使用 camelCase，此处统一转换。
+        sendJson(res, 200, {
+          sessions: (output.sessions || []).map((s) => ({
+            sessionId: s.session_id,
+            lastMessage: s.last_message || s.session_title || '',
+            lastTime: s.last_message_time,
+            messageCount: s.message_count,
+          })),
+          total: output.total,
+        });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/history/')) {
         const sid = pathname.split('/api/chat/history/')[1];
@@ -1803,11 +1816,33 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ===== Memory Routes =====
       } else if (method === 'GET' && pathname === '/api/memory/list') {
+        const limit = Math.min(Math.max(parseInt(params.get('limit') || '50', 10) || 50, 1), 200);
+        const cursor = (params.get('cursor') || '').trim();
+        const conds: string[] = [];
+        const args: any[] = [];
+        if (cursor) {
+          const idx = cursor.indexOf(':');
+          const cCreated = idx > 0 ? Number(cursor.slice(0, idx)) : NaN;
+          const cId = idx > 0 ? cursor.slice(idx + 1) : '';
+          if (!isNaN(cCreated)) {
+            conds.push('("created" < ? OR ("created" = ? AND "id" < ?))');
+            args.push(cCreated, cCreated, cId);
+          }
+        }
+        const where = conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : '';
         const rows = ctx.relationDb.queryRaw<any>(
-          'SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw" ORDER BY "created" DESC LIMIT 500',
+          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
+          args,
         );
-        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
-        sendJson(res, 200, { memories: rows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])) });
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, pageRows.map((r: any) => r.info_id));
+        const last = pageRows[pageRows.length - 1];
+        sendJson(res, 200, {
+          memories: pageRows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])),
+          has_more: hasMore,
+          next_cursor: hasMore && last ? `${last.created}:${last.id}` : null,
+        });
 
       } else if (method === 'GET' && /\/api\/memory\/tag\//.test(pathname)) {
         const parts = pathname.split('/');
@@ -1822,7 +1857,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && pathname === '/api/memory/search') {
         const kw = (params.get('keyword') || '').trim();
         const type = (params.get('type') || '').trim();
-        const limit = Math.min(Math.max(parseInt(params.get('limit') || '20', 10) || 20, 1), 200);
+        const tag = (params.get('tag') || '').trim();
+        const startTime = params.get('start_time') ? parseInt(params.get('start_time')!, 10) : undefined;
+        const endTime = params.get('end_time') ? parseInt(params.get('end_time')!, 10) : undefined;
+        const cursor = (params.get('cursor') || '').trim();
+        const limit = Math.min(Math.max(parseInt(params.get('limit') || '50', 10) || 50, 1), 200);
         const conds: string[] = [];
         const args: any[] = [];
         if (kw) {
@@ -1842,13 +1881,41 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             args.push(...infoTypes);
           }
         }
+        if (tag) {
+          conds.push('"info_id" IN (SELECT "info_id" FROM "info_tag" WHERE "tag" = ?)');
+          args.push(tag);
+        }
+        if (startTime !== undefined) {
+          conds.push('"created" >= ?');
+          args.push(startTime);
+        }
+        if (endTime !== undefined) {
+          conds.push('"created" <= ?');
+          args.push(endTime);
+        }
+        if (cursor) {
+          const idx = cursor.indexOf(':');
+          const cCreated = idx > 0 ? Number(cursor.slice(0, idx)) : NaN;
+          const cId = idx > 0 ? cursor.slice(idx + 1) : '';
+          if (!isNaN(cCreated)) {
+            conds.push('("created" < ? OR ("created" = ? AND "id" < ?))');
+            args.push(cCreated, cCreated, cId);
+          }
+        }
         const where = conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : '';
         const rows = ctx.relationDb.queryRaw<any>(
-          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC LIMIT ${limit}`,
+          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
           args,
         );
-        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
-        sendJson(res, 200, rows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])));
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, pageRows.map((r: any) => r.info_id));
+        const last = pageRows[pageRows.length - 1];
+        sendJson(res, 200, {
+          memories: pageRows.map((r: any) => mapInfoToMemory(r, tagMap.get(r.info_id) || [])),
+          has_more: hasMore,
+          next_cursor: hasMore && last ? `${last.created}:${last.id}` : null,
+        });
 
       } else if (method === 'GET' && pathname === '/api/memory/tags') {
         const tagRows = ctx.relationDb.queryRaw<{ tag: string; cnt: number }>(

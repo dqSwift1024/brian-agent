@@ -24,7 +24,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const chatApi = {
-  list: (userId: string) => request<{ sessions: ChatSession[] }>(`/chat/list?userId=${encodeURIComponent(userId)}`).then(r => r.sessions),
+  list: (userId: string, keyword?: string, startTime?: number, endTime?: number) =>
+    request<{ sessions: ChatSession[] }>(`/chat/list?userId=${encodeURIComponent(userId)}${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}${startTime ? `&start_time=${startTime}` : ''}${endTime ? `&end_time=${endTime}` : ''}`).then(r => r.sessions),
   history: (sessionId: string, userId: string) =>
     request<{ messages: ChatMessage[] }>(`/chat/history/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.messages),
   exchanges: (sessionId: string, userId: string) =>
@@ -46,12 +47,29 @@ export const chatApi = {
     request<void>(`/chat/cancel/${encodeURIComponent(exchangeId)}`, { method: 'POST' })
 }
 
+export interface MemoryPage {
+  memories: MemoryItem[]
+  has_more: boolean
+  next_cursor: string | null
+}
+
 export const memoryApi = {
-  list: () => request<{ memories: MemoryItem[] }>('/memory/list').then(r => r.memories),
+  list: (limit = 50, cursor?: string) =>
+    request<MemoryPage>(`/memory/list?limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
   byTag: (userId: string, tag: string) =>
     request<MemoryItem[]>(`/memory/tag/${encodeURIComponent(userId)}/${encodeURIComponent(tag)}`),
-  search: (userId: string, keyword: string, type?: string, limit = 20) =>
-    request<MemoryItem[]>(`/memory/search?userId=${encodeURIComponent(userId)}&keyword=${encodeURIComponent(keyword)}${type ? `&type=${type}` : ''}&limit=${limit}`),
+  search: (userId: string, opts?: { keyword?: string; type?: string; tag?: string; startTime?: number; endTime?: number; limit?: number; cursor?: string }) => {
+    const q = new URLSearchParams()
+    q.set('userId', userId)
+    if (opts?.keyword) q.set('keyword', opts.keyword)
+    if (opts?.type) q.set('type', opts.type)
+    if (opts?.tag) q.set('tag', opts.tag)
+    if (opts?.startTime) q.set('start_time', String(opts.startTime))
+    if (opts?.endTime) q.set('end_time', String(opts.endTime))
+    if (opts?.cursor) q.set('cursor', opts.cursor)
+    q.set('limit', String(opts?.limit ?? 50))
+    return request<MemoryPage>(`/memory/search?${q.toString()}`)
+  },
   tags: () => request<{ tags: string[] }>('/memory/tags').then(r => r.tags),
   tagGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/tag-graph'),
   keywordGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/keyword-graph'),

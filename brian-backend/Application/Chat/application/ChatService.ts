@@ -3,7 +3,6 @@ import {
   SelectDBInput, SelectDBOutput,
   SelectOneDBInput, SelectOneDBOutput,
   UpdateDBInput, UpdateDBOutput,
-  DeleteDBInput, DeleteDBOutput,
   CountDBInput, CountDBOutput,
   DataObject, DBContext,
   IdGenerator, ValidationError, NotFoundError, Operator,
@@ -374,44 +373,53 @@ export class ChatService {
       throw new ValidationError('session_ids must be a non-empty array');
     }
 
+    // ===== 原始实现（保留参考）：仅删除 chat_session / info_raw / info_graph 三张表 =====
+    // for (const sessionId of input.session_ids) {
+    //   const delSessionInput = Object.assign(new DeleteDBInput(), { table: 'chat_session', conditions: [...] });
+    //   ... deleteDB(chat_session), deleteDB(info_raw), deleteDB(info_graph)
+    // }
+    // ===== 修改后：级联清理按 info_id 关联的派生表，避免孤儿数据 =====
+
     let deletedCount = 0;
 
     for (const sessionId of input.session_ids) {
-      const delSessionInput = Object.assign(new DeleteDBInput(), {
-        table: 'chat_session',
-        conditions: [
+      try {
+        // 1. 收集该会话下所有 info_id
+        const infoRows = await this.relationDb.select('info_raw', {
+          conditions: [{ field: 'session_id', operator: Operator.EQ, value: sessionId }],
+          fields: ['info_id'],
+        });
+        const infoIds = infoRows.map((r) => String(r.info_id ?? '')).filter(Boolean);
+
+        // 2. 删除按 info_id 关联的派生表（info_tag_vector 为全局标签向量，交由 orphan_tag_check 定时任务清理）
+        if (infoIds.length > 0) {
+          await this.relationDb.delete('info_tag', [
+            { field: 'info_id', operator: Operator.IN, value: infoIds },
+          ]);
+          await this.relationDb.delete('info_summary', [
+            { field: 'info_id', operator: Operator.IN, value: infoIds },
+          ]);
+          await this.relationDb.delete('info_keyword', [
+            { field: 'info_id', operator: Operator.IN, value: infoIds },
+          ]);
+          await this.relationDb.delete('info_vector', [
+            { field: 'info_id', operator: Operator.IN, value: infoIds },
+          ]);
+        }
+
+        // 3. 删除主表与关系表
+        await this.relationDb.delete('info_graph', [
           { field: 'session_id', operator: Operator.EQ, value: sessionId },
-        ] as Condition[],
-      });
-      const delSessionOutput = Object.assign(new DeleteDBOutput(), {});
-      await this.relationDb.deleteDB(delSessionInput, new DBContext(), delSessionOutput);
-      deletedCount += delSessionOutput.affected_rows;
-
-      try {
-        const delInfoInput = Object.assign(new DeleteDBInput(), {
-          table: 'info_raw',
-          conditions: [
-            { field: 'session_id', operator: Operator.EQ, value: sessionId },
-          ] as Condition[],
-        });
-        await this.relationDb.deleteDB(delInfoInput, new DBContext(), Object.assign(new DeleteDBOutput(), {}));
+        ]);
+        await this.relationDb.delete('info_raw', [
+          { field: 'session_id', operator: Operator.EQ, value: sessionId },
+        ]);
+        const affected = await this.relationDb.delete('chat_session', [
+          { field: 'session_id', operator: Operator.EQ, value: sessionId },
+        ]);
+        deletedCount += affected;
       } catch (err: unknown) {
-        this.logger?.error?.('deleteSession: failed to delete info_raw', {
-          session_id: sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-
-      try {
-        const delGraphInput = Object.assign(new DeleteDBInput(), {
-          table: 'info_graph',
-          conditions: [
-            { field: 'session_id', operator: Operator.EQ, value: sessionId },
-          ] as Condition[],
-        });
-        await this.relationDb.deleteDB(delGraphInput, new DBContext(), Object.assign(new DeleteDBOutput(), {}));
-      } catch (err: unknown) {
-        this.logger?.error?.('deleteSession: failed to delete info_graph', {
+        this.logger?.error?.('deleteSession: failed to delete session', {
           session_id: sessionId,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -430,26 +438,64 @@ export class ChatService {
     const conditions: Condition[] = [];
 
     if (input.keyword) {
+      // ===== 原始实现（保留参考）：仅按 session_title 模糊匹配 =====
+      // conditions.push({
+      //   field: 'session_title',
+      //   operator: Operator.LIKE,
+      //   value: `%${input.keyword}%`,
+      // });
+      // ===== 修改后：全文搜索，会话标题或消息内容（info_raw.info）命中 =====
+      const kw = `%${input.keyword}%`;
+      const matchedRows = this.relationDb.queryRaw<{ session_id: string }>(
+        `SELECT "session_id" FROM "chat_session" WHERE "session_title" LIKE ? UNION SELECT DISTINCT "session_id" FROM "info_raw" WHERE "info" LIKE ?`,
+        [kw, kw],
+      );
+      const matchedIds = matchedRows.map((r) => r.session_id).filter(Boolean);
+      if (matchedIds.length === 0) {
+        output.sessions = [];
+        output.total = 0;
+        return true;
+      }
       conditions.push({
-        field: 'session_title',
-        operator: Operator.LIKE,
-        value: `%${input.keyword}%`,
+        field: 'session_id',
+        operator: Operator.IN,
+        value: matchedIds,
       });
     }
 
-    if (input.start_time !== undefined) {
+    if (input.start_time !== undefined || input.end_time !== undefined) {
+      // ===== 原始实现（保留参考）：按会话创建时间 chat_session.created 过滤 =====
+      // if (input.start_time !== undefined) {
+      //   conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
+      // }
+      // if (input.end_time !== undefined) {
+      //   conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
+      // }
+      // ===== 修改后：按消息时间 info_raw.created 过滤，命中在该时间段内有对话（REQUEST/RESPONSE 等）的会话 =====
+      const timeConds: string[] = [];
+      const timeArgs: unknown[] = [];
+      if (input.start_time !== undefined) {
+        timeConds.push('"created" >= ?');
+        timeArgs.push(input.start_time);
+      }
+      if (input.end_time !== undefined) {
+        timeConds.push('"created" <= ?');
+        timeArgs.push(input.end_time);
+      }
+      const timeRows = this.relationDb.queryRaw<{ session_id: string }>(
+        `SELECT DISTINCT "session_id" FROM "info_raw" WHERE ${timeConds.join(' AND ')}`,
+        timeArgs,
+      );
+      const timeMatchedIds = timeRows.map((r) => r.session_id).filter(Boolean);
+      if (timeMatchedIds.length === 0) {
+        output.sessions = [];
+        output.total = 0;
+        return true;
+      }
       conditions.push({
-        field: 'created',
-        operator: Operator.GE,
-        value: input.start_time,
-      });
-    }
-
-    if (input.end_time !== undefined) {
-      conditions.push({
-        field: 'created',
-        operator: Operator.LE,
-        value: input.end_time,
+        field: 'session_id',
+        operator: Operator.IN,
+        value: timeMatchedIds,
       });
     }
 
@@ -476,6 +522,7 @@ export class ChatService {
 
       let messageCount = 0;
       let lastMessageTime = 0;
+      let lastMessage = '';
 
       try {
         const cntInput = Object.assign(new CountDBInput(), {
@@ -506,6 +553,7 @@ export class ChatService {
         await this.relationDb.selectDB(lastSelInput, new DBContext(), lastSelOutput);
         if (lastSelOutput.rows.length > 0) {
           lastMessageTime = lastSelOutput.rows[0].created as number;
+          lastMessage = (lastSelOutput.rows[0].info as string) ?? '';
         }
       } catch {
         /* degrade gracefully */
@@ -516,6 +564,7 @@ export class ChatService {
         session_title: (row.session_title as string) ?? '',
         message_count: messageCount,
         last_message_time: lastMessageTime,
+        last_message: lastMessage || (row.session_title as string) || '',
         created: (row.created as number) ?? 0,
         updated: (row.updated as number) ?? 0,
       });

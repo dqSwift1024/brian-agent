@@ -241,37 +241,55 @@ export class VisualizationService {
 
     const summaryLength = config.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH;
 
+    // 会话内消息元信息（info_type / info_creator_role / work_id），用于节点着色与问答边判定。
+    // ===== 原始实现（保留参考）：仅查询 work_id 用于边类型判定 =====
+    // const workIdMap = new Map<string, string>();
+    // const infoRows = await this.relationDb.select(INFO_RAW_TABLE, {
+    //   conditions: [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }],
+    //   fields: ['info_id', 'work_id'],
+    // });
+    // for (const row of infoRows) {
+    //   workIdMap.set(String(row.info_id ?? ''), String(row.work_id ?? ''));
+    // }
+    // ===== 修改后：额外携带 info_type / info_creator_role，前端据此区分用户消息 =====
+    const infoMetaMap = new Map<string, { work_id: string; info_type: string; info_creator_role: string }>();
+    try {
+      const infoRows = await this.relationDb.select(INFO_RAW_TABLE, {
+        conditions: [
+          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+        ],
+        fields: ['info_id', 'work_id', 'info_type', 'info_creator_role'],
+      });
+      for (const row of infoRows) {
+        infoMetaMap.set(String(row.info_id ?? ''), {
+          work_id: String(row.work_id ?? ''),
+          info_type: String(row.info_type ?? ''),
+          info_creator_role: String(row.info_creator_role ?? ''),
+        });
+      }
+    } catch {
+    }
+
     const enhancedNodes = rawNodes.slice(0, maxNodes).map((node) => {
       const infoId = node.info_id;
       const summary = summaryMap.get(infoId);
       const citeData = globalCitationMap.get(infoId);
+      const meta = infoMetaMap.get(infoId);
       return {
         id: node.id,
         label: node.label ?? '',
         info_id: infoId ?? '',
+        info_type: meta?.info_type ?? '',
+        info_creator_role: meta?.info_creator_role ?? '',
         info_summary: this.truncate(summary ?? node.label ?? infoId ?? '', summaryLength),
         citing_count: citeData?.citingCount ?? 0,
         cited_count: citeData?.citedCount ?? 0,
       };
     });
 
-    const workIdMap = new Map<string, string>();
-    try {
-      const infoRows = await this.relationDb.select(INFO_RAW_TABLE, {
-        conditions: [
-          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-        ],
-        fields: ['info_id', 'work_id'],
-      });
-      for (const row of infoRows) {
-        workIdMap.set(String(row.info_id ?? ''), String(row.work_id ?? ''));
-      }
-    } catch {
-    }
-
     const enhancedEdges = rawEdges.map((edge) => {
-      const citingWork = workIdMap.get(edge.citing_info_id ?? '') ?? '';
-      const citedWork = workIdMap.get(edge.cited_info_id ?? '') ?? '';
+      const citingWork = infoMetaMap.get(edge.citing_info_id ?? '')?.work_id ?? '';
+      const citedWork = infoMetaMap.get(edge.cited_info_id ?? '')?.work_id ?? '';
       const edgeType = citingWork && citedWork && citingWork === citedWork ? 'REPLY' : 'CITATION';
       return {
         id: edge.id,
