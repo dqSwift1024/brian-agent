@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import type { ChatMessage, ChatSession, DagNode, DagEdge, AgentChainNode, Block } from '@/api/types'
-import { chatApi } from '@/api'
+import { chatApi, visualizationApi } from '@/api'
 
 export const useSessionStore = defineStore('session', () => {
   const currentSessionId = ref(localStorage.getItem('chat-current-session-id') || '')
@@ -55,12 +55,38 @@ export const useSessionStore = defineStore('session', () => {
     } catch { /* ignore */ }
   }
 
-  async function loadDag(sessionId: string, userId: string) {
+  async function loadDag(sessionId: string, _userId: string) {
     try {
-      const result = await chatApi.dag(sessionId, userId)
-      dagNodes.value = result.nodes || []
-      dagEdges.value = result.edges || []
-      dagWorkId.value = result.work_id || ''
+      // ChatMap 展示消息关系图谱（一问一答 + 引用），而非 Agent 执行 DAG
+      const result = await visualizationApi.messageDAG({
+        session_id: sessionId,
+        include_question_answer_edges: true,
+        include_citation_edges: true,
+      })
+      const rawNodes = (result.graph?.nodes ?? []) as Array<Record<string, unknown>>
+      const rawEdges = (result.graph?.edges ?? []) as Array<Record<string, unknown>>
+
+      const msgNodes = rawNodes
+        .filter((n) => n.info_type === 'REQUEST' || n.info_type === 'RESPONSE')
+        .reverse()
+
+      const idSet = new Set(msgNodes.map((n) => String(n.info_id ?? n.id ?? '')))
+      const nodes: DagNode[] = msgNodes.map((n, idx) => {
+        const isUser = n.info_type === 'REQUEST'
+        return {
+          id: String(n.info_id ?? n.id ?? ''),
+          label: String(n.info_summary ?? '').slice(0, 20),
+          x: isUser ? -170 : 170,
+          y: idx * 140 + 300,
+          status: isUser ? 'user' : 'assistant',
+        }
+      })
+      const edges: DagEdge[] = rawEdges
+        .filter((e) => idSet.has(String(e.from ?? '')) && idSet.has(String(e.to ?? '')))
+        .map((e) => ({ source: String(e.from ?? ''), target: String(e.to ?? '') }))
+      dagNodes.value = nodes
+      dagEdges.value = edges
+      dagWorkId.value = ''
     } catch { /* ignore */ }
   }
 
