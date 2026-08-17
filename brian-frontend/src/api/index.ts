@@ -42,6 +42,8 @@ export const chatApi = {
       method: 'POST',
       body: JSON.stringify({ session_title: title || '' })
     }),
+  getSessionDetail: (sessionId: string) =>
+    request<{ session: { session_id: string } }>(`/chat/session/${encodeURIComponent(sessionId)}`),
   deleteSession: (sessionId: string) =>
     request<void>(`/chat/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   search: (keyword: string) =>

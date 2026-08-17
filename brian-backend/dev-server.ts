@@ -150,6 +150,7 @@ import {
   CreateSessionInput, CreateSessionOutput,
   DeleteSessionInput, DeleteSessionOutput,
   SearchSessionInput, SearchSessionOutput,
+  GetSessionDetailInput, GetSessionDetailOutput,
   GetChatHistoryInput, GetChatHistoryOutput,
   SearchMessageInput, SearchMessageOutput,
   CancelWorkInput, CancelWorkOutput,
@@ -1739,6 +1740,18 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
         await ctx.chatAccess.deleteSession(input, context, output);
         sendJson(res, 200, { deleted_count: output.deleted_count });
+
+      } else if (method === 'GET' && pathname.startsWith('/api/chat/session/')) {
+        const sid = pathname.split('/api/chat/session/')[1];
+        const input = Object.assign(new GetSessionDetailInput(), { session_id: sid });
+        const output = new GetSessionDetailOutput();
+        const context = new ChatContext();
+        try {
+          await ctx.chatAccess.getSessionDetail(input, context, output);
+          sendJson(res, 200, { session: output.session });
+        } catch (err: any) {
+          sendJson(res, 404, { error: err?.message || 'Session not found' });
+        }
 
       } else if (method === 'GET' && pathname === '/api/chat/search') {
         const kw = params.get('keyword') || '';

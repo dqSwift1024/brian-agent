@@ -28,7 +28,15 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function ensureSession(): Promise<string> {
-    if (currentSessionId.value) return currentSessionId.value
+    if (currentSessionId.value) {
+      // 校验本地缓存的会话是否真实存在于后端，避免使用失效/本地伪造的 session_id
+      try {
+        await chatApi.getSessionDetail(currentSessionId.value)
+        return currentSessionId.value
+      } catch {
+        /* 会话已不存在，落入下方创建新会话 */
+      }
+    }
     const created = await chatApi.createSession()
     currentSessionId.value = created.session_id
     localStorage.setItem('chat-current-session-id', created.session_id)
