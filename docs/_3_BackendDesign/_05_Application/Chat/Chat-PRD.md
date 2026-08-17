@@ -98,19 +98,18 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 1. 校验 `session_id` 和 `msg_content` 非空；
 2. 调用 `checkSessionOverflow` 检查会话是否已溢出（消息数超过上限），若溢出则返回错误；
 3. 生成 `work_id` 和 `interact_id`（UUID）；
-4. 调用 InfoCore.saveInfo 保存用户输入消息（info_type=REQUEST、info_creator_role=USER、info_creator_id 为空）；
-5. 若 `citing_msg_ids` 非空，在 InfoCore.saveInfo 中传入 parent_info_ids 建立引用关系；
+4. 将 `user_query`、`citing_msg_ids`、`force_orchestration_strategy` 等透传给 `OrchestrationEntry.receiveWork` 提交工作（Chat 层不直接保存消息，落库统一由 Orchestration 层策略节点完成）；
+5. 由 Orchestration 层 JSONNode 策略的 `SAVE_USER_INPUT` 节点保存 REQUEST 消息（含 `citing_msg_ids` 引用关系），`SAVE_RESPONSE` 节点保存 RESPONSE 消息——避免 Chat 层与 Orchestration 层重复落库；
 6. 通过 SSE 推送 `loading` 事件（含 work_id）；
-7. 调用 OrchestrationEntry.receiveWork 提交工作（传入 session_id、user_query、force_orchestration_strategy）；
-8. OrchestrationEntry 执行过程中，通过回调/事件机制将各阶段状态推送到 SSE 事件队列：
+7. OrchestrationEntry 执行过程中，通过回调/事件机制将各阶段状态推送到 SSE 事件队列：
    a. Agent 创建 → `agent_created` 事件；
    b. Agent 状态变更 → `agent_status` 事件；
    c. Agent 思考内容（Think 阶段）→ `agent_thinking` 事件；
    d. Agent 输出内容（Answer 阶段）→ `agent_output` 事件；
    e. WriterAgent 文本片段 → `text` 事件；
-9. work 执行完成，推送 `done` 事件（含 work_id、interact_id、final_response、elapsed_ms、token_usage）；
-10. 若 work 执行失败，推送 `error` 事件（含 error_message）；
-11. 将 work_id 和 interact_id 写入 output 返回；
+8. work 执行完成，推送 `done` 事件（含 work_id、interact_id、final_response、elapsed_ms、token_usage、trace_id）；
+9. 若 work 执行失败，推送 `error` 事件（含 error_message、error_code、trace_id）；
+10. 将 work_id 和 interact_id 写入 output 返回；
 
 ### 3.3. 会话管理
 
@@ -254,15 +253,15 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - page_current（INT，可选）：当前页码
 - page_size（INT，可选）：每页记录数
 
-**输出**：
-- messages：消息列表 [{ info_id, info_type, info_creator_role, info, created, pin, citing_count }]
+**输出**（HTTP 层经 snake_case → camelCase 转换，仅保留 REQUEST / RESPONSE 消息）：
+- messages：消息列表 [{ id, role, content, timestamp, citedCount }]，其中 `role` 由 `info_creator_role` 映射（USER→user，其余→assistant）；中间过程（THINK / SKILL / MCP / ACT）不在此返回，由 ChatMap DAG 承载
 - total：总记录数
 
 **处理流程**：
 
 1. 调用 InfoCore.lastNInfo 查询消息（传入 session_id、work_id、lastN 等过滤条件）；
 2. 对每条消息，调用 RelationDBProvider.countDB 统计 `info_graph` 表中该消息被引用的次数（citing_count）；
-3. 返回消息列表；
+3. 过滤出 info_type ∈ {REQUEST, RESPONSE}，映射为前端 camelCase 结构后返回；
 
 #### 3.4.2. 搜索消息（searchMessage）
 

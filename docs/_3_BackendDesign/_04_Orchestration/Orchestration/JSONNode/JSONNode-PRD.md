@@ -87,8 +87,9 @@
 ```
 
 **处理逻辑**：
-1. 调用 InfoCore.saveInfo 将输入内容（来自执行上下文的 user_query）保存为 info_type=REQUEST、info_creator_role=USER；
-2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status；
+1. 调用 InfoCore.saveInfo 将输入内容（来自执行上下文的 user_query）保存为 info_type=REQUEST、info_creator_role=USER；`info_type` / `info_creator_role` / `info_creator_id` 优先取自 shared_data（由 OrchestrationEntry 透传），`citing_msg_ids` 透传为 parent_info_ids 建立引用关系；
+2. saveInfo 失败时降级记录日志，不中断编排；
+3. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status；
 
 ### 3.2. BUILD_WORK_CONTEXT — 构建工作上下文
 
@@ -280,7 +281,7 @@
 ```
 
 **处理逻辑**：
-1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；
+1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；saveInfo 失败时降级记录日志，不中断编排；
 2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status 和 final_response 字段；
 
 ### 3.13. HANDLE_ERROR — 错误处理

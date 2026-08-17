@@ -50,6 +50,8 @@
     -   卡片点击：高亮当前卡片 + 右侧对话区通过 `scrollToBlock(block_id)` 自动滚动定位到对应消息块并高亮。
     -   DAG 入口：卡片上边缘吸附按钮，点击触发 Agent 编排弹窗。
 -   **数据联动**：ChatMap 卡片与对话区消息基于同一套 `block_id` 体系进行双向同步。
+-   **数据加载**：页面挂载（onMounted）时若有当前会话，自动调用 `getAgentChain(session_id)` 加载最新 work 的 Agent DAG；每轮对话结束（done/error）后再次刷新 DAG，保证图谱与最新一轮 work 保持一致。
+-   **空态**：无节点时显示「暂无 ChatMap 数据」占位，提示发送消息后生成对话图谱。
 
 ### 4.3 对话内容展示层 (Block-Native Message Stream)
 
@@ -126,6 +128,7 @@
     -   删除：单条删除或批量勾选删除，需二次确认。
 -   **溢出保护**：切换会话前调用 `checkSessionOverflow()`，超限则 Toast 提示并阻断操作。
 -   **会话切换清理**：切换会话时，清空当前 Block 列表并重新初始化流解析器，避免跨会话 Block 状态污染。
+-   **刷新恢复**：页面挂载（onMounted）时，若 localStorage 存在当前会话 ID，自动调用 `getChatHistory` / `getAgentChain` / `loadExchanges` 恢复历史消息与 ChatMap，刷新后不丢失对话。
 
 ### 4.5 Agent 编排 DAG 弹窗
 
