@@ -38,10 +38,31 @@ function startResize(e: MouseEvent) {
 async function handleSend(content: string, citingIds: string[]) {
   if (!content.trim()) return
 
-  const sessionId = sessionStore.currentSessionId || `session-${Date.now()}`
-  if (!sessionStore.currentSessionId) {
-    sessionStore.currentSessionId = sessionId
-    localStorage.setItem('chat-current-session-id', sessionId)
+  // ===== 原始实现（保留参考）：本地直接生成 session id，未在后端创建会话 =====
+  // const sessionId = sessionStore.currentSessionId || `session-${Date.now()}`
+  // if (!sessionStore.currentSessionId) {
+  //   sessionStore.currentSessionId = sessionId
+  //   localStorage.setItem('chat-current-session-id', sessionId)
+  // }
+
+  // ===== 修改后：先在后端创建会话，再以返回的 session_id 发起流式对话 =====
+  let sessionId: string
+  try {
+    sessionId = await sessionStore.ensureSession()
+  } catch (err: unknown) {
+    const botMsgId = `msg-${Date.now()}-bot`
+    const errBlock: Block = {
+      id: `block-err-${Date.now()}`,
+      msgId: botMsgId,
+      role: 'system',
+      type: 'ErrorFallback',
+      message: err instanceof Error ? err.message : '创建会话失败',
+      errorCode: 'SESSION_CREATE_FAILED',
+      retryAvailable: true,
+      meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+    } as Block
+    sessionStore.addBlock(errBlock)
+    return
   }
 
   const userMsg: ChatMessage = {

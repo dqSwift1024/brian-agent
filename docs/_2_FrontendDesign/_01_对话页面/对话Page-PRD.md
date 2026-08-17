@@ -33,7 +33,8 @@
 | 引用标签 | Tag | 选中历史消息后在输入框上方显示摘要，支持点击 × 移除 | 多选时横向排列 |
 | 发送按钮 | Icon Button | 1. 默认蓝色，空内容禁用(灰色)2. 发送中显示 Loading 动画 | 状态机管理 |
 | 乐观更新 | - | 提交后立即构造临时 UserTextBlock 插入列表尾部，待服务端返回正式 Block ID 后替换 | 提升体感速度 |
-| 提交接口 | API | `submitWork(session_id, msg_content, citing_msg_ids)` | 发送成功后清空输入框 |
+| 会话初始化 | API | 发送前若当前无会话 ID，先调用 `createSession()` 在后端创建会话，再以返回的 `session_id` 发起流式对话；禁止前端本地拼造 session_id（如 `session-${Date.now()}`），否则后端校验 session 不存在而报错 | 会话 ID 由后端 `IdGenerator.generate()` 生成 |
+| 提交接口 | API | `submitWork(session_id, msg_content, citing_msg_ids)`（流式走 `openChatStream` → `POST /api/chat/stream`） | 发送成功后清空输入框 |
 
 ### 4.2 ChatMap 可视化区
 

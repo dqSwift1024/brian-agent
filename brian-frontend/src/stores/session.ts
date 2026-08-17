@@ -27,6 +27,14 @@ export const useSessionStore = defineStore('session', () => {
     chatList.value = await chatApi.list(userId)
   }
 
+  async function ensureSession(): Promise<string> {
+    if (currentSessionId.value) return currentSessionId.value
+    const created = await chatApi.createSession()
+    currentSessionId.value = created.session_id
+    localStorage.setItem('chat-current-session-id', created.session_id)
+    return created.session_id
+  }
+
   async function loadChatHistory(sessionId: string, userId: string) {
     currentSessionId.value = sessionId
     localStorage.setItem('chat-current-session-id', sessionId)
@@ -139,7 +147,7 @@ export const useSessionStore = defineStore('session', () => {
   return {
     currentSessionId, messages, blocks, chatList, dagNodes, dagEdges, dagWorkId,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
-    setSplitRatio, loadChatList, loadChatHistory, loadExchanges, loadDag,
+    setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, toggleMsgSelection,
     toggleCitingMode, setStreaming, setCancelController, cancelCurrentTask
