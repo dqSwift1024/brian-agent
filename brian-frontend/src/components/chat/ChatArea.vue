@@ -445,6 +445,10 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
           name: formattedName,
           type: defaultType || 'WORKER',
         },
+        context: {
+          userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
+          citingMessages: [],
+        },
         steps: [],
         meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
       }

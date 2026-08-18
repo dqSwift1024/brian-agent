@@ -155,28 +155,41 @@ function formatJson(val: unknown): string {
       <div v-if="isExpanded" class="border-t border-purple-100 dark:border-purple-900/40 bg-white/60 dark:bg-apple-gray-900/40 p-3.5 space-y-3">
         
         <!-- 1. 【最最最顶部置顶展示】Context 上下文信息环境 -->
-        <div v-if="hasContext" class="p-3 rounded-lg border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-r from-purple-50/80 to-blue-50/50 dark:from-purple-950/40 dark:to-blue-950/30 text-xs space-y-2">
-          <div class="flex items-center gap-1.5 font-bold text-purple-900 dark:text-purple-200 border-b pb-1">
-            <Database :size="13" class="text-purple-600 dark:text-purple-400" />
-            <span>对话与 Agent 运行上下文环境 (Context)</span>
+        <div class="p-3 rounded-lg border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-r from-purple-50/80 to-blue-50/50 dark:from-purple-950/40 dark:to-blue-950/30 text-xs space-y-2">
+          <div class="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200 border-b pb-1">
+            <div class="flex items-center gap-1.5">
+              <Database :size="13" class="text-purple-600 dark:text-purple-400" />
+              <span>运行与对话上下文环境 (Context)</span>
+            </div>
+            <span v-if="block.context?.strategy" class="text-[10px] font-normal px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
+              策略: {{ block.context.strategy }}
+            </span>
           </div>
 
-          <div v-if="block.context?.userProfile" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
-            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">用户画像 Profile:</span>
-            <pre class="mt-0.5 text-[10px] text-apple-gray-700 dark:text-apple-gray-300 overflow-x-auto">{{ formatJson(block.context.userProfile) }}</pre>
-          </div>
-
-          <div v-if="block.context?.citingMessages?.length" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
-            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">引用的历史上下文消息:</span>
-            <ul class="mt-1 space-y-1">
-              <li v-for="(msg, mIdx) in block.context.citingMessages" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300">
+          <!-- 引用的历史上下文问答 -->
+          <div class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40 space-y-1">
+            <div class="flex items-center justify-between font-semibold text-purple-800 dark:text-purple-300 text-[11px]">
+              <span>引用的历史上下文消息:</span>
+              <span class="text-[10px] text-apple-gray-400 font-normal">
+                {{ block.context?.citingMessages?.length ? `共 ${block.context.citingMessages.length} 条关联` : '独立单轮上下文 (无显式引用历史消息)' }}
+              </span>
+            </div>
+            <ul v-if="block.context?.citingMessages?.length" class="space-y-1 mt-1">
+              <li v-for="(msg, mIdx) in block.context.citingMessages" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 bg-purple-50/40 dark:bg-purple-900/20 p-1.5 rounded">
                 • {{ formatJson(msg) }}
               </li>
             </ul>
           </div>
 
+          <!-- 用户画像 Profile 偏好 -->
+          <div v-if="block.context?.userProfile" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
+            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">用户画像与交互偏好 (Profile):</span>
+            <pre class="mt-0.5 text-[10px] text-apple-gray-700 dark:text-apple-gray-300 overflow-x-auto">{{ formatJson(block.context.userProfile) }}</pre>
+          </div>
+
+          <!-- 相关知识/背景记忆 -->
           <div v-if="block.context?.customContext" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
-            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">相关知识/上下文背景:</span>
+            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">相关知识/记忆背景:</span>
             <p class="mt-0.5 text-[11px] text-apple-gray-600 dark:text-apple-gray-300 whitespace-pre-wrap">{{ block.context.customContext }}</p>
           </div>
         </div>

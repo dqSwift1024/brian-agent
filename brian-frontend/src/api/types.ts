@@ -78,6 +78,7 @@ export interface ThinkingBlock extends BlockBase {
     recentWorks?: unknown[]
     citingMessages?: unknown[]
     customContext?: string
+    strategy?: string
   }
   input?: string | Record<string, unknown>
   output?: string | Record<string, unknown>

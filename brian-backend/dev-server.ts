@@ -1810,9 +1810,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               const llmId = row.llm_id ? String(row.llm_id) : undefined;
               const soulId = row.soul_id ? String(row.soul_id) : undefined;
 
-              // 解析 task_content 作为 Input 与 Context
+              // 解析 task_content 构造完整的 Input 与 Context 数据
               let inputQuery: string | undefined = undefined;
-              let contextData: any = undefined;
+              let contextData: any = {
+                strategy: isUuid ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)',
+                userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
+                citingMessages: [],
+              };
 
               if (row.task_content) {
                 try {
@@ -1826,10 +1830,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                       inputQuery = String(row.task_content);
                     }
 
-                    if (Array.isArray(parsedTask.session_context) && parsedTask.session_context.length > 0) {
-                      contextData = {
-                        citingMessages: parsedTask.session_context,
-                      };
+                    if (Array.isArray(parsedTask.session_context)) {
+                      contextData.citingMessages = parsedTask.session_context;
+                    }
+                    if (parsedTask.user_profile) {
+                      contextData.userProfile = parsedTask.user_profile;
                     }
                   } else {
                     inputQuery = String(row.task_content);
