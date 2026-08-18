@@ -5,6 +5,7 @@ import {
   UpdateDBOutput, DBContext, IdGenerator, ValidationError,
   InfoType,
   type Logger, type Condition,
+  type StreamAccess,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import {
@@ -67,6 +68,7 @@ export class JSONNodeService {
     private readonly mqAccess?: any,
     private readonly mqCore?: any,
     private readonly logger?: Logger,
+    private readonly streamAccess?: StreamAccess,
   ) {}
 
   getNodeTypeRegistry(): Map<string, NodeHandler> {
@@ -154,6 +156,18 @@ export class JSONNodeService {
         elapsed_ms: 0,
       };
 
+      const sId = (sharedData.session_id as string) ?? context.session_id ?? '';
+      const wId = (sharedData.work_id as string) ?? context.work_id ?? '';
+      const iId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
+
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+        await this.streamAccess.pushEvent(sId, 'dag_node_start', 'DAG', {
+          node_id: node.node_id,
+          node_type: node.node_type,
+          params: node.params,
+        }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+      }
+
       try {
         const timeoutMs = this.config.node_timeout_ms;
         if (timeoutMs > 0) {
@@ -169,6 +183,15 @@ export class JSONNodeService {
         traceEntry.status = 'SUCCESS';
         traceEntry.elapsed_ms = Date.now() - startedAt;
         trace.push(traceEntry);
+
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+          await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
+            node_id: node.node_id,
+            node_type: node.node_type,
+            status: 'SUCCESS',
+            elapsed_ms: traceEntry.elapsed_ms,
+          }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+        }
 
         if (this.config.trace_enabled) {
           await this.saveTrace(input.orchestration_id, traceEntry);
@@ -187,6 +210,16 @@ export class JSONNodeService {
         const errorMsg = err instanceof Error ? err.message : String(err);
         traceEntry.error = errorMsg;
         trace.push(traceEntry);
+
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+          await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
+            node_id: node.node_id,
+            node_type: node.node_type,
+            status: 'ERROR',
+            error: errorMsg,
+            elapsed_ms: traceEntry.elapsed_ms,
+          }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+        }
 
         if (this.config.trace_enabled) {
           await this.saveTrace(input.orchestration_id, traceEntry);
@@ -509,6 +542,20 @@ export class JSONNodeService {
       created_at: IdGenerator.now(),
       metadata: { orchestration_version: '1.0' },
     };
+
+    // 上下文构建过程与结果：流式推送给前端，但不存入消息表 info_raw（避免内容膨胀）
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      await this.streamAccess.pushEvent(sessionId, 'context_built', 'CONTEXT', {
+        recent_works_count: recentWorks.length,
+        user_profile_present: Boolean(userProfile && Object.keys(userProfile).length > 0),
+        session_context_count: Array.isArray(sessionContext) ? sessionContext.length : 0,
+        created_at: IdGenerator.now(),
+      }, {
+        work_id: workId,
+        interact_id: (sharedData.interact_id as string) ?? context.interact_id ?? '',
+        node_id: 'BUILD_WORK_CONTEXT',
+      });
+    }
   }
 
   private async handleSelectStrategy(
@@ -548,6 +595,8 @@ export class JSONNodeService {
     context: JSONNodeContext,
   ): Promise<void> {
     const userQuery = (sharedData.user_query as string) ?? '';
+    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
+    const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     const interactId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
     const forceNew = (params.force_new as boolean) ?? false;
 
@@ -557,7 +606,12 @@ export class JSONNodeService {
       force_new: forceNew,
     });
     const buildOutput = new BuildAgentOutput();
-    await this.agentBuilder.buildAgent(buildInput, new AgentBuilderContext(), buildOutput);
+    const builderCtx = Object.assign(new AgentBuilderContext(), {
+      session_id: sessionId,
+      work_id: workId,
+      interact_id: interactId,
+    });
+    await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
     const agentId = buildOutput.agent_id;
 
     sharedData.current_agent_id = agentId;
@@ -651,6 +705,14 @@ export class JSONNodeService {
     };
     sharedData.task_count = (planOutput.task_dag as unknown as TaskDAG)?.nodes?.length ?? 0;
 
+    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      await this.streamAccess.pushEvent(sessionId, 'plan_created', 'DAG', {
+        plan_id: planOutput.plan_id,
+        task_dag: planOutput.task_dag,
+      }, { work_id: workId, interact_id: interactId, node_id: 'PLAN_WORK' });
+    }
+
     const updData: DataObject[] = [
       { field: 'status', value: 'PLANNING' },
       { field: 'task_count', value: sharedData.task_count },
@@ -693,6 +755,15 @@ export class JSONNodeService {
 
     sharedData[saveKey] = buildOutput.agent_dag;
     sharedData.task_agent_map = buildOutput.task_agent_map;
+
+    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
+    const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      await this.streamAccess.pushEvent(sessionId, 'agent_dag_created', 'DAG', {
+        agent_dag: buildOutput.agent_dag,
+        task_agent_map: buildOutput.task_agent_map,
+      }, { work_id: workId, interact_id: interactId, node_id: 'BUILD_AGENT_DAG' });
+    }
   }
 
   private async handleExecDAG(

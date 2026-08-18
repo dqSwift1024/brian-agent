@@ -5,7 +5,7 @@ import {
   Loader2,
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
-import type { ChatMessage, Block, TextBlock } from '@/api/types'
+import type { ChatMessage, Block, TextBlock, ThinkingBlock } from '@/api/types'
 import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
 import MessageCard from './MessageCard.vue'
@@ -25,13 +25,6 @@ const nodeMap = computed(() => {
   }
   return m
 })
-
-function formatTime(ts: number) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const pad = (x: number) => String(x).padStart(2, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 function nodeOf(msg: ChatMessage) {
   return nodeMap.value.get(msg.id)
@@ -134,12 +127,16 @@ function startResize(e: MouseEvent) {
 async function handleSend(content: string, citingIds: string[]) {
   if (!content.trim()) return
 
-  // ===== 原始实现（保留参考）：本地直接生成 session id，未在后端创建会话 =====
-  // const sessionId = sessionStore.currentSessionId || `session-${Date.now()}`
-  // if (!sessionStore.currentSessionId) {
-  //   sessionStore.currentSessionId = sessionId
-  //   localStorage.setItem('chat-current-session-id', sessionId)
-  // }
+  // ===== 原始实现（保留参考）：提前插入空 thinkingBlock，导致时序倒置与空卡片 =====
+  // const botMsgId = `msg-${Date.now()}-bot`
+  // const thinkingBlock: Block = {
+  //   id: `block-think-${Date.now()}`,
+  //   msgId: botMsgId,
+  //   role: 'assistant',
+  //   type: 'ThinkingChain',
+  //   meta: { status: 'streaming', createdAt: Date.now(), updatedAt: Date.now() },
+  // } as Block
+  // sessionStore.addBlock(thinkingBlock)
 
   // ===== 修改后：先在后端创建会话，再以返回的 session_id 发起流式对话 =====
   let sessionId: string
@@ -179,14 +176,7 @@ async function handleSend(content: string, citingIds: string[]) {
   currentTraceId = traceId
 
   const botMsgId = `msg-${Date.now()}-bot`
-  const thinkingBlock: Block = {
-    id: `block-think-${Date.now()}`,
-    msgId: botMsgId,
-    role: 'assistant',
-    type: 'ThinkingChain',
-    meta: { status: 'streaming', createdAt: Date.now(), updatedAt: Date.now() },
-  } as Block
-  sessionStore.addBlock(thinkingBlock)
+  textBlockId = null
 
   sessionStore.setStreaming(true)
   try {
@@ -224,25 +214,35 @@ async function handleSend(content: string, citingIds: string[]) {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6))
-            handleStreamEvent(data.event || 'message', data, botMsgId, thinkingBlock.id)
+            const rawData = JSON.parse(line.slice(6))
+            handleStreamEvent(rawData, botMsgId)
           } catch { /* ignore parse errors */ }
         }
       }
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
-      sessionStore.updateBlock(thinkingBlock.id, {
-        meta: { ...thinkingBlock.meta, status: 'error', errorMessage: err.message }
-      } as Partial<Block>)
+      const errBlock: Block = {
+        id: `block-err-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'system',
+        type: 'ErrorFallback',
+        message: err.message,
+        errorCode: 'STREAM_ERROR',
+        retryAvailable: true,
+        meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+      } as Block
+      sessionStore.addBlock(errBlock)
     }
   } finally {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
     sessionStore.setCancelController(null)
     // 一轮对话结束后刷新 ChatMap 与历史消息，展示最新图谱与引用关联，并重置复选
-    void sessionStore.loadDag(sessionId, 'default-user')
-    void sessionStore.loadChatHistory(sessionId, 'default-user')
+    await sessionStore.loadDag(sessionId, 'default-user')
+    await sessionStore.loadChatHistory(sessionId, 'default-user')
+    // 清理流式期间生成的临时文本段落 Block，避免与后端加载回来的 ChatMessage 重复展示
+    sessionStore.cleanupTransientTextBlocks(botMsgId)
     sessionStore.clearSelection()
   }
 }
@@ -250,29 +250,56 @@ async function handleSend(content: string, citingIds: string[]) {
 let textBlockId: string | null = null
 let currentTraceId = ''
 
-function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgId: string, thinkingBlockId: string) {
+function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
+  // 解析结构化 BrianSSEMessage 协议或兼容旧事件对象
+  const isStructured = 'msg_id' in data && 'event' in data
+  const event = String(isStructured ? data.event : (data.event || 'message'))
+  const payload = (isStructured ? (data.data as Record<string, unknown> ?? {}) : data) as Record<string, unknown>
+  const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
+  const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
+
   switch (event) {
     case 'connected':
     case 'loading':
       break
 
     case 'agent_thinking':
-    case 'thinking':
-      sessionStore.appendBlockContent(thinkingBlockId, String(data.chunk || ''))
+    case 'thinking': {
+      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
+      const thinkKey = agentId ? `block-think-${botMsgId}-${agentId}` : `block-think-${botMsgId}`
+      const existing = sessionStore.blocks.find(b => b.id === thinkKey)
+      if (!existing) {
+        const thinkingBlock: ThinkingBlock = {
+          id: thinkKey,
+          msgId: botMsgId,
+          role: 'assistant',
+          type: 'ThinkingChain',
+          content: chunk,
+          summary: '',
+          durationMs: 0,
+          agentInfo: agentId ? { name: agentId, type: 'WORKER' } : undefined,
+          meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
+        }
+        sessionStore.addBlock(thinkingBlock as Block)
+      } else {
+        sessionStore.appendBlockContent(thinkKey, chunk)
+      }
       break
+    }
 
+    case 'text_chunk':
     case 'text':
     case 'agent_output': {
-      const chunk = String(data.chunk || '')
+      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
       if (!textBlockId) {
-        textBlockId = `block-text-${Date.now()}`
+        textBlockId = `block-text-${botMsgId}`
         const textBlock: Block = {
           id: textBlockId,
           msgId: botMsgId,
           role: 'assistant',
           type: 'TextParagraph',
           content: chunk,
-          meta: { status: 'streaming', createdAt: Date.now(), updatedAt: Date.now() },
+          meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
         } as TextBlock
         sessionStore.addBlock(textBlock)
       } else {
@@ -281,24 +308,38 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
       break
     }
 
+    case 'agent_action':
     case 'agent_status': {
       const toolBlock: Block = {
         id: `block-tool-${Date.now()}`,
         msgId: botMsgId,
         role: 'tool',
         type: 'ToolInvocation',
-        toolName: String(data.tool_name || ''),
-        params: (data.params as Record<string, unknown>) || {},
-        meta: { status: data.status === 'done' ? 'done' : 'streaming', createdAt: Date.now(), updatedAt: Date.now() },
+        toolName: String(payload.tool_name || payload.tool_type || 'Tool'),
+        params: (payload.params as Record<string, unknown>) || {},
+        result: payload.result,
+        meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: serverTime, updatedAt: serverTime },
       } as Block
       sessionStore.addBlock(toolBlock)
+      break
+    }
+
+    case 'agent_built': {
+      const agentName = String(payload.agent_name || payload.agent_id || '')
+      if (agentName && agentId) {
+        const thinkKey = `block-think-${botMsgId}-${agentId}`
+        const existing = sessionStore.blocks.find(b => b.id === thinkKey) as ThinkingBlock | undefined
+        if (existing) {
+          existing.agentInfo = { name: agentName, type: 'WORKER' }
+        }
+      }
       break
     }
 
     case 'citation':
       if (textBlockId) {
         sessionStore.updateBlock(textBlockId, {
-          citingIds: data.citing_ids as string[],
+          citingIds: payload.citing_ids as string[],
         } as Partial<Block>)
       }
       break
@@ -310,8 +351,8 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
         msgId: botMsgId,
         role: 'assistant',
         type: 'Feedback',
-        traceId: String(data.trace_id || currentTraceId || ''),
-        meta: { status: 'done', createdAt: Date.now(), updatedAt: Date.now() },
+        traceId: String(payload.trace_id || currentTraceId || ''),
+        meta: { status: 'done', createdAt: serverTime, updatedAt: serverTime },
       } as Block
       sessionStore.addBlock(feedbackBlock)
       textBlockId = null
@@ -324,11 +365,11 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
         msgId: botMsgId,
         role: 'system',
         type: 'ErrorFallback',
-        message: String(data.error_message || '未知错误'),
-        errorCode: String(data.error_code || ''),
+        message: String(payload.error_message || '未知错误'),
+        errorCode: String(payload.error_code || ''),
         retryAvailable: false,
-        traceId: String(data.trace_id || currentTraceId || ''),
-        meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+        traceId: String(payload.trace_id || currentTraceId || ''),
+        meta: { status: 'error', createdAt: serverTime, updatedAt: serverTime },
       } as Block
       sessionStore.addBlock(errBlock)
       break

@@ -24,6 +24,14 @@ import { BookmarkAccess } from './Base/BookmarkProvider';
 import { ChunkAccess } from './Base/ChunkProvider';
 import { CronAccess } from './Base/CronProvider';
 import {
+  StreamAccess,
+  RegisterStreamInput,
+  RegisterStreamOutput,
+  StreamContext,
+  CloseStreamInput,
+  CloseStreamOutput,
+} from './Base/StreamProvider';
+import {
   CronContext, ListCronTasksOutput,
   GetCronTaskInput, GetCronTaskOutput,
   SetCronTaskInput, SetCronTaskOutput,
@@ -357,6 +365,7 @@ async function buildContext() {
   // Bookmark
   const bookmarkAccess = new BookmarkAccess(relationDb, logger);
   const toolAccess = new ToolAccess();
+  const streamAccess = new StreamAccess(relationDb, logger);
 
   // ---- Core Providers ----
   const infoCore = new InfoCoreAccess(relationDb, llmAccess, promptsAccess, vectorDBAccess, graphDBAccess, logger);
@@ -390,9 +399,9 @@ async function buildContext() {
   await agentStrategy.initialize();
   const agentContext = new AgentContextAccess(relationDb, infoCore, logger);
   await agentContext.initialize();
-  const agentBuilder = new AgentBuilderAccess(relationDb, llmAccess, promptsAccess, agentLibrary, agentStrategy, llmCore, mcpCore, skillCore, soulCore, logger);
+  const agentBuilder = new AgentBuilderAccess(relationDb, llmAccess, promptsAccess, agentLibrary, agentStrategy, llmCore, mcpCore, skillCore, soulCore, logger, infoCore, streamAccess);
   await agentBuilder.initialize();
-  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, logger);
+  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, logger, streamAccess);
   await agentExecution.initialize();
   const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, logger);
   await writerAgent.initialize();
@@ -419,7 +428,7 @@ async function buildContext() {
   await orchestrationExecution.initialize();
   const orchestrationVisualization = new OrchestrationVisualizationAccess(relationDb, agentLibrary, agentExecution, logger);
   await orchestrationVisualization.initialize();
-  const jsonNode = new JSONNodeAccess(relationDb, infoCore, agentBuilder, writerAgent, plannerAgent, evolutorAgent, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger);
+  const jsonNode = new JSONNodeAccess(relationDb, infoCore, agentBuilder, writerAgent, plannerAgent, evolutorAgent, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, streamAccess);
   await jsonNode.initialize();
   const orchestrationStrategy = new OrchestrationStrategyAccess(relationDb, agentBuilder, plannerAgent, writerAgent, evolutorAgent, orchestrationExecution, jsonNode, mqCore, logger);
   await orchestrationStrategy.initialize();
@@ -428,7 +437,7 @@ async function buildContext() {
 
   // ---- Application Layer ----
   new ChatSchemaInitializer(relationDb).init();
-  const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
+  const chatAccess = new ChatAccess(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger, streamAccess);
 
   const chunkAccess = new ChunkAccess(logger);
   const selfLearningAccess = new SelfLearningAccess(relationDb, infoCore, mqCore, llmCore, evolutorAgent, writerAgent, orchestrationEntry, graphDBAccess, mqAccess, chunkAccess, llmAccess, promptsAccess, logger);
@@ -600,6 +609,7 @@ async function buildContext() {
     cdtAccess, bookmarkAccess,
     toolAccess,
     cronAccess,
+    streamAccess,
     infoCore, llmCore, mcpCore, skillCore, soulCore, mqCore,
     cdtCore,
     agentLibrary, agentStrategy, agentContext, agentBuilder,
@@ -1733,20 +1743,38 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
 
         let clientClosed = false;
-        req.on('close', () => { clientClosed = true; });
+        req.on('close', () => {
+          clientClosed = true;
+          ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          ).catch(() => {});
+        });
 
         const write = (str: string) => {
           if (clientClosed) return;
           try { res.write(str); } catch { /* ignore */ }
         };
 
-        const heartbeat = setInterval(() => {
-          if (clientClosed) { clearInterval(heartbeat); return; }
-          try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
-        }, heartbeatIntervalMs);
+        // 注册到 Base 层 StreamProvider（由 StreamProvider 统一管理心跳与结构化数据分发）
+        await ctx.streamAccess.registerStream(
+          Object.assign(new RegisterStreamInput(), {
+            session_id: sessionId,
+            writer: (chunk: string) => {
+              if (clientClosed) return false;
+              try { res.write(chunk); return true; } catch { return false; }
+            },
+            onClose: () => {
+              if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+            },
+          }),
+          new StreamContext(),
+          new RegisterStreamOutput(),
+        );
 
         const onEvent = (evt: { event: string; data: Record<string, unknown> }) => {
-          // SSE data 行：{ event, ...data } 扁平化，供前端按 event 名分发
+          // 兼容旧格式（若有监听器直接调用）
           write(`data: ${JSON.stringify({ event: evt.event, ...evt.data })}\n\n`);
         };
 
@@ -1763,9 +1791,16 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           await ctx.chatAccess.openChatStream(streamInput, new ChatContext(), streamOutput, onEvent);
         } catch (err: any) {
-          onEvent({ event: 'error', data: { error_message: err?.message || 'Stream failed', error_code: 'INTERNAL' } });
+          await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
+            error_message: err?.message || 'Stream failed',
+            error_code: 'INTERNAL',
+          });
         } finally {
-          clearInterval(heartbeat);
+          await ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          );
           if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
         }
         return;

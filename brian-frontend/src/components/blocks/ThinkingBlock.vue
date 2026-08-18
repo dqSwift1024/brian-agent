@@ -24,7 +24,7 @@ const isStreaming = computed(() => props.block.meta.status === 'streaming')
             :class="{ 'rotate-90': isExpanded }"
           />
           <span class="text-xs font-medium text-purple-600 dark:text-purple-400">
-            {{ block.agentInfo?.name || 'Agent' }} · 思考中
+            {{ block.agentInfo?.name || 'Agent' }} · {{ isStreaming ? '思考中' : '思考过程' }}
           </span>
           <Loader2 v-if="isStreaming" :size="12" class="animate-spin text-purple-400" />
         </div>

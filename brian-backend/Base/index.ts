@@ -76,3 +76,7 @@ export * from './ChunkProvider';
 
 // CronProvider
 export * from './CronProvider';
+
+// StreamProvider
+export * from './StreamProvider';
+

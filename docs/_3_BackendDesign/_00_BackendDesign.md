@@ -30,6 +30,7 @@
 | **GraphDBProvider** | 对图数据库的封装，解耦上层业务和底层图数据库；目前底层的关系数据库选择TinyGraphDB） |
 | **MQProvider** | 对消息队列的封装，解耦上层业务和消息队列；目前通过 SQLite 实现消息队列功能。 |
 | **VectorDBProvider** | 对向量数据库的封装，解耦上层业务和向量数据库；为上层进行向量存储和相似性检索能力；目前向量数据库选择 VectorDB |
+| **StreamProvider** | 负责服务端 SSE (Server-Sent Events) 端点管理、心跳保活、多 Agent 并发流缓冲隔离、打字机 chunk 分片与结构化事件帧（BrianSSEMessage）推送 |
 
 ---
 

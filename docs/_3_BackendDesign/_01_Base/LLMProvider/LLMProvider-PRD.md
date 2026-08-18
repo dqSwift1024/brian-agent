@@ -296,11 +296,18 @@
 
 **处理流程**：
 
-1. 若未传 ID，自动查找 is_default=1 且 enable=1 的默认模型；
-2. 根据 ID 获取 llm_available 记录及关联的 llm_provider；
-3. 使用提供商的 api_key 进行认证，构造 OpenAI 兼容 POST 请求（针对 Google 系列提供商同时附带 `Authorization: Bearer <api_key>` 与 `x-goog-api-key` 以兼容其 OpenAI 格式路由）；
-4. 从 API 响应中提取 result、input_tokens（prompt_tokens）、output_tokens（completion_tokens）、duration_ms；
-5. 更新 llm_usage 表当天 usage_count 并累计 input_tokens / output_tokens；
+1. **候选模型解析与降级队列构建**：
+   - 优先将显式指定的模型（`input.id`）加入候选队列；
+   - 随后加入系统默认启用的模型（`is_default = 1` 且 `enable = 1`）；
+   - 最后加入系统其余所有已启用的可用模型（`enable = 1`）；
+   - 对候选队列去重，若队列为空则抛出 `ValidationError` / `NotFoundError`；
+2. **循环降级推理（Failover Loop）**：
+   - 按候选队列顺序依次尝试模型推理；
+   - 根据当前候选模型 ID 获取 `llm_available` 记录及关联的 `llm_provider`，验证启用状态；
+   - 使用提供商配置构造请求（支持 OpenAI 兼容格式、Google / Anthropic 等多态策略）；
+   - 发起 HTTP 请求，若成功（HTTP 200 且返回合法数据），提取 `result`、`input_tokens`、`output_tokens`、`duration_ms`，更新 `llm_usage` 统计并返回 `true`；
+   - 若遇到 HTTP 429 限流、网络超时、连接异常或服务商错误，记录调试日志并自动无缝回退至队列中的下一个候选模型；
+3. **全失败收敛**：若队列中所有候选模型均尝试失败，汇总错误信息写入 `output.error` / `output.error_code` 并返回 `false`。
 
 **出参（ExecLLMOutput extends Output）**：
 

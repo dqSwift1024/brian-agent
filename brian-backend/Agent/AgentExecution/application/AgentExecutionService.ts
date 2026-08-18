@@ -1,5 +1,5 @@
 ﻿import type {
-  RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess,
+  RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess, StreamAccess, Logger,
 } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
@@ -107,6 +107,8 @@ export class AgentExecutionService {
     private readonly mqCore: MQCoreAccess,
     private readonly skillCore: SkillCoreAccess,
     private readonly mcpCore: MCPCoreAccess,
+    private readonly logger?: Logger,
+    private readonly streamAccess?: StreamAccess,
   ) {}
 
   async execAgent(
@@ -990,6 +992,10 @@ export class AgentExecutionService {
     const { input, ctx, agent, skillIds, mcpIds, contextData, toolsJson, agentName, domain } = env;
 
     try {
+      const sessionId = ctx.session_id || '';
+      const workId = input.work_id || ctx.work_id || '';
+      const interactId = input.interact_id || ctx.interact_id || '';
+
       if (step.step === 'Think') {
         const thinkOut = new ThinkOutput();
         await this.think(
@@ -1007,6 +1013,16 @@ export class AgentExecutionService {
           ctx,
           thinkOut,
         );
+
+        if (this.streamAccess && typeof this.streamAccess.pushText === 'function' && sessionId && thinkOut.reasoning) {
+          await this.streamAccess.pushText(sessionId, 'agent_thinking', thinkOut.reasoning, {
+            work_id: workId,
+            interact_id: interactId,
+            agent_id: input.agent_id,
+            node_id: step.step,
+          });
+        }
+
         const nextAction = parseJsonObject(thinkOut.next_action) ?? {};
         const subSteps = Array.isArray(nextAction.sub_steps)
           ? (nextAction.sub_steps as unknown[]).map(String)
@@ -1035,6 +1051,20 @@ export class AgentExecutionService {
           ctx,
           actOut,
         );
+
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+          await this.streamAccess.pushEvent(sessionId, 'agent_action', 'TRACE', {
+            tool_type: actOut.tool_type,
+            tool_id: actOut.tool_id,
+            result: actOut.result,
+          }, {
+            work_id: workId,
+            interact_id: interactId,
+            agent_id: input.agent_id,
+            node_id: step.step,
+          });
+        }
+
         return {
           history: `${history}\nAct: ${actOut.result}`,
           jumpTarget: step.next ?? null,
@@ -1062,6 +1092,19 @@ export class AgentExecutionService {
           ctx,
           reflectOut,
         );
+
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+          await this.streamAccess.pushEvent(sessionId, 'agent_reflection', 'TRACE', {
+            passed: !reflectOut.should_continue,
+            reflection: reflectOut.reflection,
+          }, {
+            work_id: workId,
+            interact_id: interactId,
+            agent_id: input.agent_id,
+            node_id: step.step,
+          });
+        }
+
         return {
           history: `${history}\nReflect: ${reflectOut.reflection}`,
           conditionValue: reflectOut.should_continue,

@@ -1327,7 +1327,6 @@ describe('LLMProvider', () => {
 
       const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
       expect(ok).toBe(true);
-      expect(execInput.id).toBe(llmId);
     });
 
     it('缺少 prompt 应该抛出 ValidationError', async () => {
@@ -1341,18 +1340,122 @@ describe('LLMProvider', () => {
       ).rejects.toThrow(ValidationError);
     });
 
-    it('不存在的 LLM ID 应该抛出 NotFoundError', async () => {
+    it('指定模型调用失败时自动降级到默认模型并成功', async () => {
+      // 1. 创建一个不可达/报错的提供商和模型
+      const pFailInput = new AddLLMProviderInput();
+      pFailInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
+      const pFailOut = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(pFailInput, new LLMContext(), pFailOut);
+
+      const lFailInput = new AddLLMInput();
+      lFailInput.data = makeLLMData(pFailOut.id, { llm_title: 'failing-model', is_default: false });
+      const lFailOut = new AddLLMOutput();
+      await llmAccess.addLLM(lFailInput, new LLMContext(), lFailOut);
+
+      // 2. 将正常工作的模型设为默认模型
+      await llmAccess.updateLLM(
+        Object.assign(new UpdateLLMInput(), {
+          id: llmId,
+          data: { is_default: true, enable: true },
+        }),
+        new LLMContext(),
+        new UpdateLLMOutput(),
+      );
+
+      // 3. 调用指定的故障模型
       const execInput = new ExecLLMInput();
-      execInput.id = 'nonexistent';
-      execInput.prompt = 'test';
+      execInput.id = lFailOut.id;
+      execInput.prompt = 'test failover to default';
       const execOut = new ExecLLMOutput();
 
-      await expect(
-        llmAccess.execLLM(execInput, new LLMContext(), execOut),
-      ).rejects.toThrow(NotFoundError);
+      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      expect(ok).toBe(true);
+      expect(execOut.result).toBeTruthy();
     });
 
-    it('禁用的 LLM 应该抛出 ValidationError', async () => {
+    it('默认模型也失败时自动降级到后续启用的可用模型', async () => {
+      // 1. 创建故障模型 A（作为指定模型）
+      const pFailInput1 = new AddLLMProviderInput();
+      pFailInput1.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19998', enable: true });
+      const pFailOut1 = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(pFailInput1, new LLMContext(), pFailOut1);
+
+      const lFailInput1 = new AddLLMInput();
+      lFailInput1.data = makeLLMData(pFailOut1.id, { llm_title: 'failing-model-1', is_default: false });
+      const lFailOut1 = new AddLLMOutput();
+      await llmAccess.addLLM(lFailInput1, new LLMContext(), lFailOut1);
+
+      // 2. 创建故障模型 B（作为默认模型）
+      const pFailInput2 = new AddLLMProviderInput();
+      pFailInput2.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19997', enable: true });
+      const pFailOut2 = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(pFailInput2, new LLMContext(), pFailOut2);
+
+      const lFailInput2 = new AddLLMInput();
+      lFailInput2.data = makeLLMData(pFailOut2.id, { llm_title: 'failing-model-default', is_default: true });
+      const lFailOut2 = new AddLLMOutput();
+      await llmAccess.addLLM(lFailInput2, new LLMContext(), lFailOut2);
+
+      // 3. 将原有的正常模型设为非默认但启用
+      await llmAccess.updateLLM(
+        Object.assign(new UpdateLLMInput(), {
+          id: llmId,
+          data: { is_default: false, enable: true },
+        }),
+        new LLMContext(),
+        new UpdateLLMOutput(),
+      );
+
+      // 4. 调用指定的故障模型 A -> 尝试默认模型 B (失败) -> 尝试正常模型 llmId (成功)
+      const execInput = new ExecLLMInput();
+      execInput.id = lFailOut1.id;
+      execInput.prompt = 'test multi-step failover';
+      const execOut = new ExecLLMOutput();
+
+      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      expect(ok).toBe(true);
+      expect(execOut.result).toBeTruthy();
+    });
+
+    it('所有可用模型均失败时返回 false 并记录错误', async () => {
+      // 禁用所有可用模型
+      const allRows = await relationDb.select('llm_available', {});
+      for (const row of allRows) {
+        await llmAccess.updateLLM(
+          Object.assign(new UpdateLLMInput(), {
+            id: String(row.id),
+            data: { enable: false },
+          }),
+          new LLMContext(),
+          new UpdateLLMOutput(),
+        );
+      }
+
+      // 添加一个不可达模型作为唯一启用模型
+      const pFailInput = new AddLLMProviderInput();
+      pFailInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
+      const pFailOut = new AddLLMProviderOutput();
+      await llmAccess.addLLMProvider(pFailInput, new LLMContext(), pFailOut);
+
+      const lFailInput = new AddLLMInput();
+      lFailInput.data = makeLLMData(pFailOut.id, { llm_title: 'failing-model-only', enable: true });
+      const lFailOut = new AddLLMOutput();
+      await llmAccess.addLLM(lFailInput, new LLMContext(), lFailOut);
+
+      const execInput = new ExecLLMInput();
+      execInput.id = lFailOut.id;
+      execInput.prompt = 'test all fail';
+      const execOut = new ExecLLMOutput();
+
+      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      expect(ok).toBe(false);
+      expect(execOut.error).toContain('所有可用模型均调用失败');
+    });
+
+
+
+    it('不可达的提供商应该返回 error（非异常）', async () => {
+      // 禁用 beforeEach 中的正常模型，使得不可达模型为唯一候选
       await llmAccess.updateLLM(
         Object.assign(new UpdateLLMInput(), {
           id: llmId,
@@ -1362,39 +1465,6 @@ describe('LLMProvider', () => {
         new UpdateLLMOutput(),
       );
 
-      const execInput = new ExecLLMInput();
-      execInput.id = llmId;
-      execInput.prompt = 'test';
-      const execOut = new ExecLLMOutput();
-
-      await expect(
-        llmAccess.execLLM(execInput, new LLMContext(), execOut),
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('禁用的提供商应该抛出 ValidationError', async () => {
-      await llmAccess.updateLLMProvider(
-        Object.assign(new UpdateLLMProviderInput(), {
-          id: providerId,
-          data: { enable: false },
-        }),
-        new LLMContext(),
-        new UpdateLLMProviderOutput(),
-      );
-
-      const execInput = new ExecLLMInput();
-      execInput.id = llmId;
-      execInput.prompt = 'test';
-      const execOut = new ExecLLMOutput();
-
-      await expect(
-        llmAccess.execLLM(execInput, new LLMContext(), execOut),
-      ).rejects.toThrow(ValidationError);
-    });
-
-
-
-    it('不可达的提供商应该返回 error（非异常）', async () => {
       const pInput2 = new AddLLMProviderInput();
       pInput2.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
       const pOut2 = new AddLLMProviderOutput();

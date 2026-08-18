@@ -16,6 +16,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import type { Logger } from '../../shared/aop/AopProxy';
 import { ConfigService } from '../../shared/config/ConfigService';
 import {
   ComponentDisabledError,
@@ -107,8 +108,12 @@ export class LLMService {
 
   /**
    * @param relationDb RelationDBProvider 接入层
+   * @param logger 可选日志记录器
    */
-  constructor(private readonly relationDb: RelationDBAccess) {
+  constructor(
+    private readonly relationDb: RelationDBAccess,
+    private readonly logger?: Logger,
+  ) {
     this.config = new ConfigService(relationDb, LLM_CONFIG_TABLE);
   }
 
@@ -1341,62 +1346,218 @@ export class LLMService {
   //   return true;
   // }
 
-  // ===== 修改后的方法 =====
+  // ===== 原始方法（保留作为参考）：单模型直接调用，无故障自动降级机制 =====
+  // async execLLM(
+  //   input: ExecLLMInput,
+  //   _context: LLMContext,
+  //   output: ExecLLMOutput,
+  // ): Promise<boolean> {
+  //   this.ensureEnabled();
+  //   if (!input.id) {
+  //     const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //       { field: 'is_default', operator: Operator.EQ, value: 1 },
+  //       { field: 'enable', operator: Operator.EQ, value: 1 },
+  //     ]);
+  //     if (defaultLLM) {
+  //       input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
+  //     } else {
+  //       const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //         { field: 'enable', operator: Operator.EQ, value: 1 },
+  //       ]);
+  //       if (firstEnabled) {
+  //         input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
+  //       } else {
+  //         throw new ValidationError('id 不能为空，且无可用模型');
+  //       }
+  //     }
+  //   }
+  //   const prompt = String(input.prompt ?? '');
+  //   if (!prompt) {
+  //     throw new ValidationError('prompt 不能为空');
+  //   }
+  //   const startTime = Date.now();
+  //   const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: input.id },
+  //   ]);
+  //   if (!llmRow) throw new NotFoundError('LLM', input.id);
+  //   const llm = llmRow as unknown as LLMAvailableRecord;
+  //   if (!llm.enable) throw new ValidationError(`LLM ${input.id} 已禁用`);
+  //   const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
+  //   ]);
+  //   if (!providerRow) throw new NotFoundError('LLMProvider', llm.llm_provider_id);
+  //   const provider = providerRow as unknown as LLMProviderRecord;
+  //   if (!provider.enable) throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
+  //   const strategy = LLMStrategyFactory.getStrategy(provider);
+  //   const req = strategy.buildChatRequest(provider, llm, input);
+  //   const res = await this.fetchWithTimeout(req.url, { method: req.method, headers: req.headers, body: req.body }, EXEC_TIMEOUT_MS);
+  //   ...
+  //   return true;
+  // }
+
+  // ===== 修改后的方法：支持模型故障自动降级回退（指定模型 -> 默认模型 -> 启用模型1 -> 启用模型2 ...） =====
   async execLLM(
     input: ExecLLMInput,
     _context: LLMContext,
     output: ExecLLMOutput,
   ): Promise<boolean> {
     this.ensureEnabled();
-    if (!input.id) {
-      // 1. 优先使用已启用的系统默认模型（is_default=1 且 enable=1）
-      const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-        { field: 'is_default', operator: Operator.EQ, value: 1 },
-        { field: 'enable', operator: Operator.EQ, value: 1 },
-      ]);
-      if (defaultLLM) {
-        input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
-      } else {
-        // 2. 兜底使用首个已启用的可用模型（enable=1）
-        const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-          { field: 'enable', operator: Operator.EQ, value: 1 },
-        ]);
-        if (firstEnabled) {
-          input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
-        } else {
-          throw new ValidationError('id 不能为空，且无可用模型');
-        }
-      }
-    }
     const prompt = String(input.prompt ?? '');
     if (!prompt) {
       throw new ValidationError('prompt 不能为空');
     }
 
-    const startTime = Date.now();
+    // 解析候选模型队列（按优先级排序并去重）
+    const candidateIds = await this.resolveCandidateModels(input.id);
+    if (candidateIds.length === 0) {
+      if (input.id) {
+        throw new NotFoundError('LLM', input.id);
+      }
+      throw new ValidationError('id 不能为空，且无可用模型');
+    }
 
+    const startTime = Date.now();
+    let lastError = '';
+    let lastErrorCode = '';
+
+    for (let i = 0; i < candidateIds.length; i++) {
+      const currentId = candidateIds[i];
+      const singleOutput = new ExecLLMOutput();
+      const ok = await this.executeSingleLLM(currentId, input, startTime, singleOutput);
+      if (ok) {
+        Object.assign(output, singleOutput);
+        if (i > 0) {
+          this.logger?.debug(
+            `LLM failover: 模型 ${candidateIds[0]} 调用失败，自动降级至候选模型 ${currentId} 成功 (尝试第 ${i + 1} 个)`,
+            {
+              original_id: candidateIds[0],
+              fallback_id: currentId,
+              attempt_index: i + 1,
+            },
+          );
+        }
+        return true;
+      }
+
+      lastError = singleOutput.error || 'Unknown error';
+      lastErrorCode = singleOutput.error_code || 'EXEC_FAILED';
+      this.logger?.debug(
+        `LLM candidate ${currentId} (${i + 1}/${candidateIds.length}) failed: ${lastError}`,
+        {
+          model_id: currentId,
+          error: lastError,
+        },
+      );
+    }
+
+    // 若仅传入了一个 ID 且无任何其他候选模型可用，且属于特定异常类型
+    if (candidateIds.length === 1 && (lastErrorCode === 'NOT_FOUND' || lastErrorCode === 'VALIDATION_ERROR')) {
+      if (lastErrorCode === 'NOT_FOUND') {
+        throw new NotFoundError('LLM', candidateIds[0]);
+      }
+      throw new ValidationError(lastError);
+    }
+
+    output.error = `所有可用模型均调用失败 (尝试了 ${candidateIds.length} 个模型): ${lastError}`;
+    output.error_code = lastErrorCode || 'ALL_MODELS_FAILED';
+    output.duration_ms = Date.now() - startTime;
+    return false;
+  }
+
+  /**
+   * 构建候选模型队列（按优先级排序并去重）：
+   * 1. 显式指定的模型 (input.id)
+   * 2. 默认模型 (is_default = 1 且 enable = 1)
+   * 3. 数据库中其余所有启用的模型 (enable = 1)
+   */
+  private async resolveCandidateModels(specifiedId?: string): Promise<string[]> {
+    const candidates: string[] = [];
+    const added = new Set<string>();
+
+    const addCandidate = (id?: string) => {
+      if (id && !added.has(id)) {
+        candidates.push(id);
+        added.add(id);
+      }
+    };
+
+    // 1. 显式指定的模型
+    if (specifiedId) {
+      addCandidate(specifiedId);
+    }
+
+    // 2. 系统默认模型
+    try {
+      const defaultRows = await this.relationDb.select(LLM_AVAILABLE_TABLE, {
+        conditions: [
+          { field: 'is_default', operator: Operator.EQ, value: 1 },
+          { field: 'enable', operator: Operator.EQ, value: 1 },
+        ],
+      });
+      for (const row of defaultRows) {
+        addCandidate((row as unknown as LLMAvailableRecord).id);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 3. 其余所有已启用的模型
+    try {
+      const allEnabledRows = await this.relationDb.select(LLM_AVAILABLE_TABLE, {
+        conditions: [
+          { field: 'enable', operator: Operator.EQ, value: 1 },
+        ],
+      });
+      for (const row of allEnabledRows) {
+        addCandidate((row as unknown as LLMAvailableRecord).id);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return candidates;
+  }
+
+  /**
+   * 单个模型的底层推理请求执行
+   */
+  private async executeSingleLLM(
+    llmId: string,
+    input: ExecLLMInput,
+    startTime: number,
+    output: ExecLLMOutput,
+  ): Promise<boolean> {
     const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-      { field: 'id', operator: Operator.EQ, value: input.id },
+      { field: 'id', operator: Operator.EQ, value: llmId },
     ]);
     if (!llmRow) {
-      throw new NotFoundError('LLM', input.id);
+      output.error = `LLM ${llmId} 不存在`;
+      output.error_code = 'NOT_FOUND';
+      return false;
     }
     const llm = llmRow as unknown as LLMAvailableRecord;
     if (!llm.enable) {
-      throw new ValidationError(`LLM ${input.id} 已禁用`);
+      output.error = `LLM ${llmId} 已禁用`;
+      output.error_code = 'VALIDATION_ERROR';
+      return false;
     }
 
     const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
       { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
     ]);
     if (!providerRow) {
-      throw new NotFoundError('LLMProvider', llm.llm_provider_id);
+      output.error = `LLMProvider ${llm.llm_provider_id} 不存在`;
+      output.error_code = 'NOT_FOUND';
+      return false;
     }
     const provider = providerRow as unknown as LLMProviderRecord;
     if (!provider.enable) {
-      throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
+      output.error = `LLMProvider ${provider.id} 已禁用`;
+      output.error_code = 'VALIDATION_ERROR';
+      return false;
     }
 
+    const prompt = String(input.prompt ?? '');
     const body: Record<string, unknown> = {
       model: llm.llm_title,
       messages: [{ role: 'user', content: prompt }],
@@ -1465,7 +1626,7 @@ export class LLMService {
     }
 
     // 成功后更新 llm_usage 表当天的 usage_count 与 token 用量
-    await this.upsertUsage(input.id, output.input_tokens, output.output_tokens);
+    await this.upsertUsage(llmId, output.input_tokens, output.output_tokens);
     return true;
   }
 

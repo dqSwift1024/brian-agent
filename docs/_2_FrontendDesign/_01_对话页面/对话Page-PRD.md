@@ -104,16 +104,20 @@
 
 #### 4.3.5 流式协议与 Block 映射
 
+* **事件驱动与无冗余占位**：发送消息时前端不再本地预插空白 `ThinkingChain` 块，所有 Block 均由后端 SSE `BrianSSEMessage` 结构化事件驱动按需生成，杜绝空状态与时序倒置；
+* **流式与持久化平滑衔接**：流式过程中以打字机形式渲染 `TextParagraph` 与 `ThinkingChain`；对话结束（`done`）后拉取后端完整历史消息，平滑清理临时 `TextParagraph` 块，避免与官方 `MessageCard` 产生双份重复渲染。
+
 | SSE Event | Block 操作 | 说明 |
 | :--- | :--- | :--- |
+| `connected` | Update(ConnectionState) | 确认 SSE 链路已建立 |
 | `loading` | Insert(StatusBlock, state=loading) | 插入加载状态块，后续被实际内容块替换 |
-| `agent_thinking` | Append(ThinkingChainBlock, content) | 向思维链块追加内容，触发折叠态活动指示器 |
-| `agent_created` | Update(ThinkingChainBlock, meta.agent_info) | 更新思维链块的 Agent 名称与类型元数据 |
-| `agent_status` | Update(ToolInvocationBlock, status) | 更新工具调用块的执行状态（running/success/error） |
-| `agent_output` | Insert/Append(ArtifactPreviewBlock) | 插入或更新产物预览块 |
-| `text` | Append(TextParagraphBlock, delta) | 向文本块追加增量内容，经帧率缓冲后渲染 |
+| `agent_building` | Update(AgentSpec) | 提示 Agent 正在分析与装配 |
+| `agent_built` | Update(ThinkingChainBlock, meta.agent_info) | 更新思维链块的 Agent 名称与类型元数据 |
+| `agent_thinking` | Append(ThinkingChainBlock, content) | 向思维链块追加思考内容（以 2-5 字符打字机 chunk 渲染） |
+| `agent_action` / `agent_status` | Insert/Update(ToolInvocationBlock) | 插入或更新工具调用块的执行状态与参数结果 |
+| `text_chunk` / `text` | Append(TextParagraphBlock, delta) | 向文本块追加增量内容，以打字机 chunk 进行流畅渲染 |
 | `citation` | Update(TextParagraphBlock, meta.citing_ids) | 更新文本块的引用关系元数据，触发引用标签条重渲染 |
-| `done` | Finalize(BlockGroup) | 标记当前消息组所有 Block 为完成态，移除光标与加载指示器，启用反馈组件 |
+| `done` | Finalize(BlockGroup) | 标记当前消息组所有 Block 为完成态，移除光标，加载官方 MessageCard 并清理临时文本块 |
 
 #### 4.3.6 块级交互与反馈
 -   **悬浮工具栏**：鼠标悬停 Block 区域 300ms 后浮现轻量操作栏（复制、引用、反馈）；移出后延迟 200ms 消失；移动端改为长按触发底部面板。

@@ -110,6 +110,25 @@ export interface SSEChatEvent {
   data: Record<string, unknown>
 }
 
+export type SSEMessageType = 'TEXT' | 'DAG' | 'CONTEXT' | 'AGENT_SPEC' | 'TRACE' | 'CONTROL'
+
+export interface BrianSSEMessage<T = unknown> {
+  msg_id: string
+  seq: number
+  session_id: string
+  interact_id: string
+  work_id: string
+  agent_id?: string
+  node_id?: string
+  event: string
+  msg_type: SSEMessageType
+  full_length?: number
+  chunk_length: number
+  accumulated_length: number
+  timestamp: number
+  data: T
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -175,6 +194,8 @@ export interface ChatMapNode {
   citedCount: number
   citingInfoIds: string[]
   citedInfoIds: string[]
+  workId?: string
+  interactId?: string
   x: number
   y: number
 }

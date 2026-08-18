@@ -1,4 +1,4 @@
-import type { RelationDBAccess, Logger } from '@brian-agent/base';
+import type { RelationDBAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import type { WriterAgentAccess, EvolutorAgentAccess } from '@brian-agent/agent';
@@ -34,9 +34,10 @@ export class ChatAccess {
     evolutorAgent: EvolutorAgentAccess,
     orchestrationEntry: OrchestrationEntryAccess,
     logger?: Logger,
+    streamAccess?: StreamAccess,
   ) {
     new ChatSchemaInitializer(relationDb).init();
-    const raw = new ChatService(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger);
+    const raw = new ChatService(relationDb, infoCore, writerAgent, evolutorAgent, orchestrationEntry, logger, streamAccess);
     this.service = AopProxy.wrap(raw, { logger });
   }
 

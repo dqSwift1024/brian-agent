@@ -1,4 +1,4 @@
-import type { RelationDBAccess, Logger } from '@brian-agent/base';
+import type { RelationDBAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import type {
@@ -34,12 +34,13 @@ export class JSONNodeAccess {
     mqAccess?: any,
     mqCore?: any,
     logger?: Logger,
+    streamAccess?: StreamAccess,
   ) {
     this.initPromise = new JSONNodeSchemaInitializer(relationDb).init();
     const raw = new JSONNodeService(
       relationDb, infoCore, agentBuilder, writerAgent,
       plannerAgent, evolutorAgent, orchestrationExecution,
-      llmAccess, promptsAccess, mqAccess, mqCore, logger,
+      llmAccess, promptsAccess, mqAccess, mqCore, logger, streamAccess,
     );
     raw.registerBuiltinHandlers();
     this.service = AopProxy.wrap(raw, { logger });

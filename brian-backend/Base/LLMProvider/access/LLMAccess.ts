@@ -82,7 +82,7 @@ export class LLMAccess {
     // 初始化表结构
     new LLMSchemaInitializer(relationDb).init();
     // 创建 Service 并通过代理模式增加切面注入能力
-    const rawService = new LLMService(relationDb);
+    const rawService = new LLMService(relationDb, logger);
     this.service = AopProxy.wrap(rawService, { logger });
   }
 

@@ -104,6 +104,8 @@ export const useSessionStore = defineStore('session', () => {
         citedCount: Number(n.cited_count ?? 0),
         citingInfoIds: (n.citing_info_ids as string[]) ?? [],
         citedInfoIds: (n.cited_info_ids as string[]) ?? [],
+        workId: n.work_id ? String(n.work_id) : undefined,
+        interactId: n.interact_id ? String(n.interact_id) : undefined,
         x: 0,
         y: idx * 190 + 120,
       }))
@@ -206,6 +208,10 @@ export const useSessionStore = defineStore('session', () => {
     )
   }
 
+  function cleanupTransientTextBlocks(msgId: string) {
+    blocks.value = blocks.value.filter(b => !(b.msgId === msgId && b.type === 'TextParagraph'))
+  }
+
   function toggleMsgSelection(msgId: string) {
     const next = new Set(selectedMsgIds.value)
     if (next.has(msgId)) next.delete(msgId)
@@ -249,7 +255,7 @@ export const useSessionStore = defineStore('session', () => {
     focusInfoId, centerInfoId,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
-    updateBlock, appendBlockContent, finalizeBlocks, toggleMsgSelection,
+    updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask
   }

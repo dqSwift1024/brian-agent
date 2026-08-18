@@ -1,15 +1,19 @@
-import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
+import type { RelationDBAccess, LLMAccess, PromptsAccess, StreamAccess, Logger } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
+  InfoType,
   type DataObject,
 } from '@brian-agent/base';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentStrategyAccess } from '../../AgentStrategy/access/AgentStrategyAccess';
 import type {
-  LLMCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess,
+  LLMCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess, InfoCoreAccess,
+} from '@brian-agent/core';
+import {
+  SaveInfoInput, SaveInfoOutput, InfoCoreContext,
 } from '@brian-agent/core';
 import {
   type AgentBuilderConfigRecord,
@@ -55,6 +59,9 @@ export class AgentBuilderService {
     private readonly mcpCore: MCPCoreAccess,
     private readonly skillCore: SkillCoreAccess,
     private readonly soulCore: SoulCoreAccess,
+    private readonly logger?: Logger,
+    private readonly infoCore?: InfoCoreAccess,
+    private readonly streamAccess?: StreamAccess,
   ) {}
 
   async buildAgent(
@@ -65,6 +72,16 @@ export class AgentBuilderService {
     const config = await this.getConfig();
     const libCtx = this.toLibCtx(ctx, input.interact_id);
     const agentId = IdGenerator.generate();
+    const sessionId = ctx.session_id || '';
+    const workId = ctx.work_id || '';
+    const interactId = input.interact_id || ctx.interact_id || '';
+
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      await this.streamAccess.pushEvent(sessionId, 'agent_building', 'AGENT_SPEC', {
+        status: 'ANALYZING',
+        task_content: input.task_content,
+      }, { work_id: workId, interact_id: interactId, agent_id: agentId });
+    }
 
     // 先通过 Core 为该 agent 匹配 LLM，供任务分析使用（禁止 llm_model LIMIT 1）
     const analysisLlm = await this.matchLlmForAgent(agentId, input.interact_id);
@@ -94,6 +111,13 @@ export class AgentBuilderService {
           new RecordAgentUsageOutput(),
         );
         output.agent_id = matchOut.agent_id;
+
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+          await this.streamAccess.pushEvent(sessionId, 'agent_matched', 'AGENT_SPEC', {
+            agent_id: matchOut.agent_id,
+            reused: true,
+          }, { work_id: workId, interact_id: interactId, agent_id: matchOut.agent_id });
+        }
         return true;
       }
     }
@@ -157,6 +181,13 @@ export class AgentBuilderService {
       soulOut,
     );
 
+    const agentName = this.generateAgentName(
+      soulOut.soul,
+      skillOut.skills || [],
+      analysis.domain || analysis.signature,
+      agentId,
+    );
+
     const addOut = new AddAgentOutput();
     const ok = await this.agentLibrary.addAgent(
       Object.assign(new AddAgentInput(), {
@@ -166,12 +197,7 @@ export class AgentBuilderService {
         llm_id: llmId,
         soul_id: soulOut.soul_id || '',
         task_signature: signature,
-        agent_name: this.generateAgentName(
-          soulOut.soul,
-          skillOut.skills || [],
-          analysis.domain || analysis.signature,
-          agentId,
-        ),
+        agent_name: agentName,
       }),
       libCtx,
       addOut,
@@ -213,6 +239,53 @@ export class AgentBuilderService {
         new SoulCoreContext(),
         new OptSoulOutput(),
       );
+    }
+
+    // 依用户规范：Agent 自主构建过程保存至消息表 info_raw
+    if (this.infoCore && typeof this.infoCore.saveInfo === 'function' && sessionId) {
+      try {
+        const saveIn = Object.assign(new SaveInfoInput(), {
+          session_id: sessionId,
+          work_id: workId,
+          interact_id: interactId,
+          info_type: InfoType.AGENT,
+          info_creator_role: 'LEARNING',
+          info_creator_id: agentId,
+          info: JSON.stringify({
+            event: 'agent_built',
+            agent_id: agentId,
+            agent_name: agentName,
+            task_signature: signature,
+            complexity,
+            domain,
+            strategy_id: strategyOut.strategy_id,
+            llm_id: llmId,
+            soul_id: soulOut.soul_id || '',
+            soul: soulOut.soul,
+            skills: (skillOut.skills || []).map(s => s.skill_brief || s.skill_id),
+            mcps: mcpOut.mcp_ids || [],
+          }),
+        });
+        await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    // 流式推送 Agent 自主构建完成事件
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      await this.streamAccess.pushEvent(sessionId, 'agent_built', 'AGENT_SPEC', {
+        agent_id: agentId,
+        agent_name: agentName,
+        task_signature: signature,
+        complexity,
+        domain,
+        strategy_id: strategyOut.strategy_id,
+        llm_id: llmId,
+        soul: soulOut.soul,
+        skills: (skillOut.skills || []).map(s => s.skill_brief || s.skill_id),
+        mcps: mcpOut.mcp_ids || [],
+      }, { work_id: workId, interact_id: interactId, agent_id: agentId });
     }
 
     // 自动优化由 Evolutor 评估后经 MQ 触发 optimizeAgent，auto_optimize 开关在 optimizeAgent 入口读取

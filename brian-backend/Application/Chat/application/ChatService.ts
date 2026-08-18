@@ -7,6 +7,7 @@ import {
   DataObject, DBContext,
   IdGenerator, ValidationError, NotFoundError, Operator,
   type Logger, type Condition,
+  type StreamAccess,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import {
@@ -49,6 +50,7 @@ export class ChatService {
     private readonly evolutorAgent: EvolutorAgentAccess,
     private readonly orchestrationEntry: OrchestrationEntryAccess,
     private readonly logger?: Logger,
+    private readonly streamAccess?: StreamAccess,
   ) {}
 
   async submitWork(
@@ -184,6 +186,12 @@ export class ChatService {
     };
 
     emit('connected', { session_id: input.session_id, trace_id: input.trace_id ?? '' });
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+      await this.streamAccess.pushEvent(input.session_id, 'connected', 'CONTROL', {
+        session_id: input.session_id,
+        trace_id: input.trace_id ?? '',
+      });
+    }
 
     const workId = IdGenerator.generate();
     const interactId = IdGenerator.generate();
@@ -204,6 +212,11 @@ export class ChatService {
     }
 
     emit('loading', { work_id: workId });
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+      await this.streamAccess.pushEvent(input.session_id, 'loading', 'CONTROL', {
+        work_id: workId,
+      }, { work_id: workId, interact_id: interactId });
+    }
 
     const citingMsgIds = Array.from(new Set([
       ...(input.citing_msg_ids ?? []),
@@ -240,6 +253,14 @@ export class ChatService {
         error: errorMsg,
       });
       emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: 'ORCHESTRATION_FAILED' });
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+        await this.streamAccess.pushEvent(input.session_id, 'error', 'CONTROL', {
+          work_id: workId,
+          trace_id: input.trace_id ?? '',
+          error_message: errorMsg,
+          error_code: 'ORCHESTRATION_FAILED',
+        }, { work_id: workId, interact_id: interactId });
+      }
       output.events = events;
       return true;
     }
@@ -248,6 +269,14 @@ export class ChatService {
       const errorMsg = rwOutput.error || '处理失败';
       const errorCode = rwOutput.error_code || 'ORCHESTRATION_FAILED';
       emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: errorCode });
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+        await this.streamAccess.pushEvent(input.session_id, 'error', 'CONTROL', {
+          work_id: workId,
+          trace_id: input.trace_id ?? '',
+          error_message: errorMsg,
+          error_code: errorCode,
+        }, { work_id: workId, interact_id: interactId });
+      }
       output.events = events;
       return true;
     }
@@ -255,6 +284,15 @@ export class ChatService {
     const elapsedMs = Date.now() - startedAt;
     const finalResponse = rwOutput.final_response || '';
 
+    // 通过 StreamAccess 进行 2-5 字符随机 chunk 打字机流式推送
+    if (this.streamAccess && typeof this.streamAccess.pushText === 'function') {
+      await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
+        work_id: workId,
+        interact_id: interactId,
+      });
+    }
+
+    // 兼容回调
     for (let i = 0; i < finalResponse.length; ) {
       const chunkSize = Math.floor(Math.random() * 4) + 2;
       emit('text', { work_id: workId, chunk: finalResponse.substring(i, i + chunkSize) });
@@ -262,6 +300,16 @@ export class ChatService {
     }
 
     emit('done', { work_id: workId, interact_id: interactId, trace_id: input.trace_id ?? '', final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
+    if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+      await this.streamAccess.pushEvent(input.session_id, 'done', 'CONTROL', {
+        work_id: workId,
+        interact_id: interactId,
+        trace_id: input.trace_id ?? '',
+        final_response: finalResponse,
+        elapsed_ms: elapsedMs,
+        token_usage: tokenUsage,
+      }, { work_id: workId, interact_id: interactId });
+    }
 
     output.events = events;
     return true;

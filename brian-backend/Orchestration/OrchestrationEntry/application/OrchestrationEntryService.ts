@@ -50,8 +50,8 @@ export class OrchestrationEntryService {
     context: OrchestrationEntryContext,
     output: ReceiveWorkOutput,
   ): Promise<boolean> {
-    const workId = IdGenerator.generate();
-    const interactId = IdGenerator.generate();
+    const workId = context.work_id || IdGenerator.generate();
+    const interactId = context.interact_id || IdGenerator.generate();
     const now = IdGenerator.now();
 
     const workData: DataObject[] = [

@@ -286,7 +286,13 @@ export class OrchestrationExecutionService {
         trace_id: input.trace_id,
       });
       const execOutput = new ExecAgentOutput();
-      const execSuccess = await this.agentExecution.execAgent(execInput, new AgentExecutionContext(), execOutput);
+      const agentCtx = Object.assign(new AgentExecutionContext(), {
+        session_id: context.session_id,
+        work_id,
+        interact_id,
+        trace_id: input.trace_id,
+      });
+      const execSuccess = await this.agentExecution.execAgent(execInput, agentCtx, execOutput);
       if (!execSuccess) {
         const elapsed = Date.now() - startedAt;
         const errorMsg = (execOutput as unknown as Record<string, unknown>).error as string ?? 'execAgent returned false';
