@@ -1689,7 +1689,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         */
 
-        // ===== 修改后代码：聚合各 Work 关联的 Agent 执行记录与 Trace 步骤，为各个 RESPONSE 组装 ThinkingBlocks =====
+        // ===== 修改后代码：精准关联各 Work 的 Agent 执行与 Trace 迭代步骤，完整解析上下文、Input、Output 与步骤 =====
         const rawMessages = (output.messages || []).filter(
           (m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE
         );
@@ -1704,12 +1704,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           try {
             const placeholders = responseWorkIds.map(() => '?').join(',');
             const execRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
-              `SELECT e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
-                      a.agent_name, a.agent_type, a.llm_id, a.soul_id, a.skill_ids, a.mcp_ids,
+              `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
+                      a.agent_name, a.agent_type, a.llm_id, a.soul_id,
                       t.iterations_json
                FROM orchestration_agent_execution e
-               LEFT JOIN agent a ON e.agent_id = a.id
-               LEFT JOIN agent_execution_trace t ON e.trace_id = t.trace_id OR e.agent_id = t.agent_id
+               LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
+               LEFT JOIN agent_execution_trace t ON (e.trace_id IS NOT NULL AND e.trace_id != '' AND e.trace_id = t.trace_id)
                WHERE e.work_id IN (${placeholders})
                ORDER BY e.created ASC`,
               responseWorkIds,
@@ -1725,18 +1725,48 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               const llmId = row.llm_id ? String(row.llm_id) : undefined;
               const soulId = row.soul_id ? String(row.soul_id) : undefined;
 
-              let skills: string[] | undefined;
-              try { if (row.skill_ids) skills = JSON.parse(String(row.skill_ids)); } catch { /* ignore */ }
+              // 解析 task_content 作为 Input 与 Context
+              let inputQuery: string | undefined = row.task_content ? String(row.task_content) : undefined;
+              let contextData: any = undefined;
 
-              let mcps: string[] | undefined;
-              try { if (row.mcp_ids) mcps = JSON.parse(String(row.mcp_ids)); } catch { /* ignore */ }
+              if (row.task_content) {
+                try {
+                  const parsedTask = JSON.parse(String(row.task_content));
+                  if (parsedTask && typeof parsedTask === 'object') {
+                    if (parsedTask.user_query) {
+                      inputQuery = String(parsedTask.user_query);
+                    }
+                    if (Array.isArray(parsedTask.session_context) && parsedTask.session_context.length > 0) {
+                      contextData = {
+                        citingMessages: parsedTask.session_context,
+                      };
+                    }
+                  }
+                } catch { /* ignore parse error */ }
+              }
+
+              // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
+              let iterJson = row.iterations_json;
+              if (!iterJson && agentId) {
+                try {
+                  const fallbackTraceRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
+                    `SELECT iterations_json FROM agent_execution_trace 
+                     WHERE agent_id = ? ORDER BY ABS(created - ?) ASC LIMIT 1`,
+                    [agentId, Number(row.created ?? Date.now())],
+                  );
+                  if (fallbackTraceRows.length > 0 && fallbackTraceRows[0].iterations_json) {
+                    iterJson = fallbackTraceRows[0].iterations_json;
+                  }
+                } catch { /* ignore fallback error */ }
+              }
 
               const steps: any[] = [];
               let content = '';
+              let outputAnswer = row.answer ? String(row.answer) : undefined;
 
-              if (row.iterations_json) {
+              if (iterJson) {
                 try {
-                  const iters = JSON.parse(String(row.iterations_json));
+                  const iters = JSON.parse(String(iterJson));
                   if (Array.isArray(iters)) {
                     for (const iter of iters) {
                       if (iter.think) {
@@ -1747,19 +1777,23 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                             phase: 'THINK',
                             iteration: iter.iteration_index ?? (steps.length + 1),
                             content: reasoning,
+                            tokenUsage: iter.think.token_usage,
+                            elapsedMs: iter.iteration_elapsed_ms,
                           });
                         }
                       }
                       if (iter.act) {
+                        const toolName = String(iter.act.tool_type || iter.act.tool_id || 'Tool');
                         steps.push({
                           phase: 'ACT',
                           iteration: iter.iteration_index ?? (steps.length + 1),
                           toolCalls: [{
-                            toolName: String(iter.act.tool_type || iter.act.tool_id || 'Tool'),
+                            toolName: toolName !== 'NONE' ? toolName : '系统思考',
                             toolType: String(iter.act.tool_type || 'Tool'),
                             params: iter.act.params,
                             result: iter.act.result,
                           }],
+                          elapsedMs: iter.iteration_elapsed_ms,
                         });
                       }
                       if (iter.reflect) {
@@ -1768,15 +1802,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                           iteration: iter.iteration_index ?? (steps.length + 1),
                           reflection: String(iter.reflect.reflection ?? ''),
                           passed: iter.reflect.should_continue === false,
+                          elapsedMs: iter.iteration_elapsed_ms,
                         });
+                      }
+                      if (iter.answer && iter.answer.answer && !outputAnswer) {
+                        outputAnswer = String(iter.answer.answer);
                       }
                     }
                   }
                 } catch { /* ignore */ }
               }
 
-              if (!content && row.task_content) {
-                content = String(row.task_content);
+              if (!content && inputQuery) {
+                content = inputQuery;
               }
 
               const block = {
@@ -1793,11 +1831,10 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                   type: agentType,
                   llmId,
                   soulId,
-                  skills,
-                  mcps,
                 },
-                input: row.task_content ? String(row.task_content) : undefined,
-                output: row.answer ? String(row.answer) : undefined,
+                context: contextData,
+                input: inputQuery,
+                output: outputAnswer,
                 steps,
                 meta: {
                   status: 'done',
