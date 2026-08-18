@@ -13,10 +13,11 @@
  * 已迁移至 ToolProvider 模块，经 `@brian-agent/base` 统一导出。
  */
 
-// 基类
+// 基类与全局枚举
 export { Input } from './base/Input';
 export { Context } from './base/Context';
 export { Output } from './base/Output';
+export { InfoType, CollectionSource, ContextSource } from './base/InfoEnums';
 
 // 查询对象
 export {

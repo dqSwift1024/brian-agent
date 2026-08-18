@@ -21,9 +21,15 @@ export class PlannerAgentSchemaInitializer {
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,
         complexity_decompose_threshold INTEGER NOT NULL DEFAULT 50,
         plan_prompt_template_id TEXT NOT NULL,
-        max_subtask_count INTEGER NOT NULL DEFAULT 10
+        max_subtask_count INTEGER NOT NULL DEFAULT 10,
+        llm_id TEXT
       )`,
     );
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE ${PLANNER_AGENT_CONFIG_TABLE} ADD COLUMN llm_id TEXT`);
+    } catch {
+      // 字段已存在
+    }
 
     const count = await this.relationDb.count(PLANNER_AGENT_CONFIG_TABLE);
     if (count > 0) return;

@@ -13,9 +13,15 @@ export class WriterAgentSchemaInitializer {
         default_language TEXT NOT NULL DEFAULT 'zh-CN',
         default_style TEXT NOT NULL DEFAULT 'clear',
         default_depth TEXT NOT NULL DEFAULT 'medium',
-        default_format TEXT NOT NULL DEFAULT 'MARKDOWN'
+        default_format TEXT NOT NULL DEFAULT 'MARKDOWN',
+        llm_id TEXT
       )`,
     );
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE ${WRITER_AGENT_CONFIG_TABLE} ADD COLUMN llm_id TEXT`);
+    } catch {
+      // 字段已存在
+    }
     this.relationDb.executeRaw(
       `CREATE TABLE IF NOT EXISTS ${WRITER_AGENT_USER_PROFILE_TABLE} (
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,

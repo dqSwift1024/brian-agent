@@ -6,6 +6,7 @@ import {
   DataObject, DBContext,
   IdGenerator, ValidationError, Operator,
   OperationType,
+  InfoType,
   type Logger, type Condition, type Operation,
 } from '@brian-agent/base';
 import type { AgentBuilderAccess, AgentExecutionAccess, AgentLibraryAccess } from '@brian-agent/agent';
@@ -336,7 +337,7 @@ export class OrchestrationExecutionService {
         session_id: context.session_id ?? '',
         work_id,
         interact_id,
-        info_type: 'ACT',
+        info_type: InfoType.ACT,
         info_creator_role: 'AGENT',
         info_creator_id: agent_id,
         info: `${task_content} → ${execOutput.answer}`,

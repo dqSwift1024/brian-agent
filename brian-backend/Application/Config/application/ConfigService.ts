@@ -1266,6 +1266,9 @@ export class ConfigService {
       else if (prefix.startsWith('info_core.context_config.base_keyword_count')) input.base_keyword_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_random_count')) input.base_random_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.total')) input.total = Number(value);
+      else if (prefix.startsWith('info_core.context_config.max_context_items')) input.max_context_items = Number(value);
+      else if (prefix.startsWith('info_core.context_config.enable_snapshot_persistence')) input.enable_snapshot_persistence = value ? 1 : 0;
+      else if (prefix.startsWith('info_core.context_config.priority_order')) input.priority_order = String(value);
       const output: any = {};
       await this.infoCore.updateInfoContextConfig(input, {} as any, output);
       return;
@@ -1282,6 +1285,7 @@ export class ConfigService {
       if (prefix.startsWith('planner_agent.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith('planner_agent.plan_prompt_template_id')) input.plan_prompt_template_id = value as string;
       else if (prefix.startsWith('planner_agent.max_subtask_count')) input.max_subtask_count = value as number;
+      else if (prefix.startsWith('planner_agent.llm_id')) input.llm_id = value as string;
       const output: any = {};
       await this.plannerAgent.configPlannerAgent(input, {} as any, output);
       return;
@@ -1289,6 +1293,7 @@ export class ConfigService {
     if (prefix.startsWith('writer_agent.')) {
       const input: any = {};
       if (prefix.startsWith('writer_agent.write_prompt_template_id')) input.write_prompt_template_id = value as string;
+      else if (prefix.startsWith('writer_agent.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith('writer_agent.default_language')) input.default_language = value as string;
       else if (prefix.startsWith('writer_agent.default_style')) input.default_style = value as string;
       else if (prefix.startsWith('writer_agent.default_depth')) input.default_depth = value as string;
@@ -1305,6 +1310,7 @@ export class ConfigService {
       else if (prefix.startsWith('evolutor_agent.eval_frequency_threshold')) input.eval_frequency_threshold = value as number;
       else if (prefix.startsWith('evolutor_agent.eval_schedule_interval_ms')) input.eval_schedule_interval_ms = value as number;
       else if (prefix.startsWith('evolutor_agent.eval_batch_size')) input.eval_batch_size = value as number;
+      else if (prefix.startsWith('evolutor_agent.llm_id')) input.llm_id = value as string;
       const output: any = {};
       await this.evolutorAgent.configEvolutorAgent(input, {} as any, output);
       return;

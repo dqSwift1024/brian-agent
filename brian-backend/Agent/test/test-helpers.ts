@@ -80,13 +80,14 @@ export function initAgentSchema(db: RelationDBAccess): void {
     `CREATE TABLE IF NOT EXISTS "planner_agent_config" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
       "complexity_decompose_threshold" INTEGER NOT NULL DEFAULT 50,
-      "plan_prompt_template_id" TEXT NOT NULL DEFAULT '', "max_subtask_count" INTEGER NOT NULL DEFAULT 10
+      "plan_prompt_template_id" TEXT NOT NULL DEFAULT '', "max_subtask_count" INTEGER NOT NULL DEFAULT 10,
+      "llm_id" TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS "writer_agent_config" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
       "write_prompt_template_id" TEXT NOT NULL DEFAULT '', "default_language" TEXT NOT NULL DEFAULT 'zh-CN',
       "default_style" TEXT NOT NULL DEFAULT 'clear', "default_depth" TEXT NOT NULL DEFAULT 'medium',
-      "default_format" TEXT NOT NULL DEFAULT 'MARKDOWN'
+      "default_format" TEXT NOT NULL DEFAULT 'MARKDOWN', "llm_id" TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS "writer_agent_user_profile" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
@@ -108,7 +109,8 @@ export function initAgentSchema(db: RelationDBAccess): void {
       "optimize_threshold" INTEGER NOT NULL DEFAULT 60,
       "eval_frequency_threshold" INTEGER NOT NULL DEFAULT 5,
       "eval_schedule_interval_ms" INTEGER NOT NULL DEFAULT 3600000,
-      "eval_batch_size" INTEGER NOT NULL DEFAULT 20
+      "eval_batch_size" INTEGER NOT NULL DEFAULT 20,
+      "llm_id" TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS "agent_context" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,

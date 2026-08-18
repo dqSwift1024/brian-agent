@@ -4,6 +4,7 @@ import {
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
+  InfoType,
   type DataObject,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -94,9 +95,8 @@ export class PlannerAgentService {
     }
 
     let dag: TaskDag | null = null;
-    if (agent.llm_id && config?.plan_prompt_template_id) {
-      dag = await this.llmPlan(agent.llm_id, agent.soul_id, config.plan_prompt_template_id, input.task_content, contextExtra, maxSub);
-    }
+    const targetLlmId = config?.llm_id || agent?.llm_id || '';
+    dag = await this.llmPlan(targetLlmId, agent?.soul_id || '', config?.plan_prompt_template_id || '', input.task_content, contextExtra, maxSub);
     if (!dag) {
       const complexity = this.estimateComplexity(input.task_content);
       if (complexity < threshold) {
@@ -239,6 +239,9 @@ export class PlannerAgentService {
       }
       data.push({ field: 'max_subtask_count', value: input.max_subtask_count });
     }
+    if (input.llm_id !== undefined) {
+      data.push({ field: 'llm_id', value: input.llm_id || null });
+    }
     if (data.length > 0) {
       data.push({ field: 'updated', value: IdGenerator.now() });
       await this.relationDb.update(
@@ -261,28 +264,42 @@ export class PlannerAgentService {
   ): Promise<TaskDag | null> {
     try {
       const system = '';
-      // soul optional - get via raw if needed skipped
-      const promptOut = new ExecPromptOutput();
-      await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), {
-          id: promptId,
-          variables: { task_content: task, context: contextExtra, max_subtask_count: maxSub, soul_id: soulId },
-        }),
-        new PromptContext(),
-        promptOut,
-      );
-      if (!promptOut.prompt) return null;
+      let prompt =
+        `Task: ${task}\n` +
+        (contextExtra ? `Context:\n${contextExtra}\n` : '') +
+        `Max subtasks: ${maxSub}\n\n` +
+        `Decompose the task into a DAG of subtasks if it is complex. ` +
+        `Return ONLY valid JSON with format: ` +
+        `{"nodes":[{"task_id":"1","task_content":"...","task_complexity":50,"task_domain":"","priority":1,"dependencies":[]}],` +
+        `"edges":[{"from_task_id":"1","to_task_id":"2"}]}`;
+
+      if (promptId) {
+        try {
+          const promptOut = new ExecPromptOutput();
+          await this.promptsAccess.execPrompt(
+            Object.assign(new ExecPromptInput(), {
+              id: promptId,
+              variables: { task_content: task, context: contextExtra, max_subtask_count: maxSub, soul_id: soulId },
+            }),
+            new PromptContext(),
+            promptOut,
+          );
+          if (promptOut.prompt) prompt = promptOut.prompt;
+        } catch { /* use fallback prompt */ }
+      }
 
       const llmOut = new ExecLLMOutput();
-      await this.llmAccess.execLLM(
+      const ok = await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), {
           id: llmId,
-          prompt: promptOut.prompt,
+          prompt,
           ...(system ? { system } : {}),
         }),
         new LLMContext(),
         llmOut,
       );
+      if (!ok || !llmOut.result) return null;
+
       const parsed = parseJsonObject(llmOut.result);
       if (!parsed) return null;
       const nodes = (parsed.nodes as TaskDag['nodes']) ?? [];
@@ -381,7 +398,7 @@ export class PlannerAgentService {
           session_id: ctx.session_id,
           work_id: workId,
           interact_id: interactId,
-          info_type: 'ACT',
+          info_type: InfoType.ACT,
           info_creator_role: 'AGENT',
           info_creator_id: planId,
           info: JSON.stringify(dag),
@@ -414,6 +431,7 @@ export class PlannerAgentService {
       complexity_decompose_threshold: Number(row.complexity_decompose_threshold ?? 50),
       plan_prompt_template_id: String(row.plan_prompt_template_id ?? ''),
       max_subtask_count: Number(row.max_subtask_count ?? 10),
+      llm_id: (row.llm_id as string) || null,
     };
   }
 

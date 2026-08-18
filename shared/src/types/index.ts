@@ -18,6 +18,31 @@ export type CommandRiskLevel = 'safe' | 'dangerous' | 'high_risk';
 
 export type UserPreferenceCategory = 'aesthetic' | 'content' | 'communication' | 'behavior';
 
+export enum InfoType {
+  REQUEST = 'REQUEST',
+  RESPONSE = 'RESPONSE',
+  THINK = 'THINK',
+  REFLECT = 'REFLECT',
+  ACT = 'ACT',
+  SKILL = 'SKILL',
+  MCP = 'MCP',
+  SELF_LEARNING = 'SELF_LEARNING',
+  AGENT = 'AGENT',
+}
+
+export enum CollectionSource {
+  PINNED = 'PINNED',
+  TIMELINE = 'TIMELINE',
+  TAG_RELATIVE = 'TAG_RELATIVE',
+  SIMILARITY = 'SIMILARITY',
+  KEYWORD = 'KEYWORD',
+  RANDOM = 'RANDOM',
+  CUSTOM = 'CUSTOM',
+}
+
+export const ContextSource = CollectionSource;
+export type ContextSource = CollectionSource;
+
 export interface MemoryNode {
   id: string;
   type: NodeType;

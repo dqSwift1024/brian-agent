@@ -31,6 +31,7 @@ export interface EvolutorAgentConfigRecord {
   eval_frequency_threshold: number;
   eval_schedule_interval_ms: number;
   eval_batch_size: number;
+  llm_id: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +156,7 @@ export class ConfigEvolutorAgentInput extends Input {
   eval_frequency_threshold?: number;
   eval_schedule_interval_ms?: number;
   eval_batch_size?: number;
+  llm_id?: string | null;
 }
 
 export class ConfigEvolutorAgentOutput extends Output {

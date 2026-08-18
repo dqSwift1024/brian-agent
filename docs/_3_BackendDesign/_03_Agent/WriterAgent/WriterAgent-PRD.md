@@ -101,6 +101,7 @@
 **功能**：配置 WriterAgent 的参数
 **入参**：
 - input：ConfigWriterAgentInput（继承 Input），包含以下字段：
+  - llm_id：指定写作使用的 LLM 模型 ID（可选，留空则由 LLMProvider 自动回退为系统默认模型或首个启用模型）
   - write_prompt_template_id：写作 prompt 模板 ID（可选）
   - default_language：默认语言（可选，可选值：zh-CN / en-US）
   - default_style：默认风格（可选，可选值：clear / concise / detailed / creative）
@@ -114,8 +115,9 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `writer_agent_config` 表获取当前配置；
 2. 对每个非空入参进行校验和更新：
-   a. prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
-   b. 枚举字段校验：default_language 必须为 zh-CN / en-US；default_style 必须为 clear / concise / detailed / creative；default_depth 必须为 shallow / medium / deep；default_format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
+   a. llm_id：若非空则写入；若为空字符串则清空；
+   b. prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
+   c. 枚举字段校验：default_language 必须为 zh-CN / en-US；default_style 必须为 clear / concise / detailed / creative；default_depth 必须为 shallow / medium / deep；default_format 必须为 TEXT / MARKDOWN / JSON，非法值抛出 ValidationError；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
@@ -135,6 +137,7 @@
 | id | 数据唯一标识 | UUID | N | 主键 | |
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| llm_id | 写作模型 ID | UUID | Y | | 留空时自动回退系统默认模型或可用首模型 |
 | write_prompt_template_id | 写作 prompt 模板 ID | UUID | N | | |
 | default_language | 默认语言 | VARCHAR | N | | 默认 zh-CN |
 | default_style | 默认风格 | VARCHAR | N | | clear / concise / detailed / creative |

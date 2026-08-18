@@ -10,6 +10,7 @@ import {
   GraphDBAccess,
   Operator,
   IdGenerator,
+  CollectionSource,
 } from '@brian-agent/base';
 import {
   InfoCoreAccess,
@@ -672,6 +673,54 @@ describe('InfoCoreProvider', () => {
       expect(output.categories?.timeline.length).toBe(0);
       expect(output.sources_summary?.selected).toBe(2);
       expect(output.sources_summary?.pinned).toBe(1);
+    });
+
+    it('should populate complete message object data structure', async () => {
+      const sessionId = 'struct-test-session';
+      const out = new SaveInfoOutput();
+      await infoCore.saveInfo(makeSaveInput({ session_id: sessionId, info: 'Hello World' }), new InfoCoreContext(), out);
+
+      const input = new ContextInfoInput();
+      input.session_id = sessionId;
+      const output = new ContextInfoOutput();
+      await infoCore.context(input, new InfoCoreContext(), output);
+
+      expect(output.list.length).toBeGreaterThanOrEqual(1);
+      const item = output.list[0];
+      expect(item.info_id).toBeTruthy();
+      expect(item.id).toBeTruthy();
+      expect(item.info).toBe('Hello World');
+      expect(item.content).toBe('Hello World');
+      expect(typeof item.summary).toBe('string');
+      expect(typeof item.summary_length).toBe('number');
+      expect(item.info_length).toBe(11);
+      expect(item.content_length).toBe(11);
+      expect(item.info_type).toBeTruthy();
+      expect(item.collection_source).toBe(CollectionSource.TIMELINE);
+      expect(item.source).toBe(CollectionSource.TIMELINE);
+    });
+
+    it('should respect priority order when deduplicating messages in default mode', async () => {
+      const sessionId = 'priority-test-session';
+      const out = new SaveInfoOutput();
+      await infoCore.saveInfo(makeSaveInput({ session_id: sessionId, info: 'Pinned and Timeline Message' }), new InfoCoreContext(), out);
+      const msgId = out.info_id;
+
+      // Pin the message
+      const pinIn = new PinInfoInput();
+      pinIn.info_id = msgId;
+      await infoCore.pinInfo(pinIn, new InfoCoreContext(), new PinInfoOutput());
+
+      const input = new ContextInfoInput();
+      input.session_id = sessionId;
+      const output = new ContextInfoOutput();
+      await infoCore.context(input, new InfoCoreContext(), output);
+
+      // Even though the message is in timeline and pinned, priority PINNED > TIMELINE should preserve it as PINNED
+      const found = output.list.find((m) => m.info_id === msgId);
+      expect(found).toBeDefined();
+      expect(found?.collection_source).toBe(CollectionSource.PINNED);
+      expect(found?.source).toBe(CollectionSource.PINNED);
     });
   });
 

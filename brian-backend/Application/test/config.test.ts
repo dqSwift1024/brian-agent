@@ -483,15 +483,15 @@ describe('ConfigService', () => {
 
   describe('updateConfig', () => {
     it('TC-CFG-085: BOOLEAN update succeeds', async () => {
-      vi.spyOn(agentContext, 'configAgentContext').mockResolvedValue(true);
-      const key = 'agent_context.enable_snapshot_persistence';
+      vi.spyOn(infoCore, 'updateInfoContextConfig').mockResolvedValue(true);
+      const key = 'info_core.context_config.enable_snapshot_persistence';
       const input = new UpdateConfigInput();
       input.config_key = key;
       input.value = false;
       const output = new UpdateConfigOutput();
       const result = await service.updateConfig(input, ctx(), output);
       expect(result).toBe(true);
-      expect(agentContext.configAgentContext).toHaveBeenCalled();
+      expect(infoCore.updateInfoContextConfig).toHaveBeenCalled();
     });
 
     it('TC-CFG-086: INT update succeeds', async () => {
@@ -561,7 +561,7 @@ describe('ConfigService', () => {
 
     it('TC-CFG-094: BOOLEAN type with string value throws ValidationError', async () => {
       const input = new UpdateConfigInput();
-      input.config_key = 'agent_context.enable_snapshot_persistence';
+      input.config_key = 'info_core.context_config.enable_snapshot_persistence';
       input.value = 'true';
       const output = new UpdateConfigOutput();
       await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);

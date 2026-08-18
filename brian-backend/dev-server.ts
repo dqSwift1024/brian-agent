@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess } from './Base/ToolProvider';
+import { IdGenerator, ToolAccess, InfoType, CollectionSource, ContextSource } from './Base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -243,13 +243,15 @@ function mapRandomFactorField(mode: string): string {
  */
 function mapInfoToMemory(row: any, tags: string[] = []): any {
   const typeMap: Record<string, string> = {
-    REQUEST: 'episodic',
-    RESPONSE: 'semantic',
-    THINK: 'procedural',
-    REFLECT: 'procedural',
-    ACT: 'working',
-    SKILL: 'procedural',
-    MCP: 'procedural',
+    [InfoType.REQUEST]: 'episodic',
+    [InfoType.RESPONSE]: 'semantic',
+    [InfoType.THINK]: 'procedural',
+    [InfoType.REFLECT]: 'procedural',
+    [InfoType.ACT]: 'working',
+    [InfoType.SKILL]: 'procedural',
+    [InfoType.MCP]: 'procedural',
+    [InfoType.SELF_LEARNING]: 'semantic',
+    [InfoType.AGENT]: 'procedural',
   };
   const type = typeMap[row.info_type] || (row.info_creator_role === 'USER' ? 'episodic' : 'semantic');
   return {
@@ -1658,7 +1660,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // 仅保留一问(REQUEST)一答(RESPONSE)，中间过程(THINK/SKILL/MCP/ACT)由 ChatMap DAG 承载。
         sendJson(res, 200, {
           messages: (output.messages || [])
-            .filter((m) => m.info_type === 'REQUEST' || m.info_type === 'RESPONSE')
+            .filter((m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE)
             .map((m) => ({
               id: m.info_id,
               role: m.info_creator_role === 'USER' ? 'user' : 'assistant',

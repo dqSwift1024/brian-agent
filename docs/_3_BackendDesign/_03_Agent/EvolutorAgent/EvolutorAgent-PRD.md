@@ -181,6 +181,7 @@
 **功能**：配置 EvolutorAgent 的参数
 **入参**：
 - input：ConfigEvolutorAgentInput（继承 Input），包含以下字段：
+  - llm_id：指定评估使用的 LLM 模型 ID（可选，留空则由 LLMProvider 自动回退为系统默认模型或首个启用模型）
   - eval_work_prompt_template_id：Work Agent 评估 prompt 模板 ID（可选）
   - eval_write_prompt_template_id：WriterAgent 评估 prompt 模板 ID（可选）
   - optimize_threshold：触发优化的评分阈值（可选，默认 60）
@@ -195,10 +196,11 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `evolutor_agent_config` 表获取当前配置；
 2. 对每个非空入参进行校验和更新：
-   a. prompt_template_id 类：校验 PromptsProvider.soPrompt 中存在；
-   b. optimize_threshold：校验为 0-100 整数；
-   c. eval_frequency_threshold：校验为正整数；
-   d. 其他：校验为正整数；
+   a. llm_id：若非空则写入；若为空字符串则清空；
+   b. prompt_template_id 类：校验 PromptsProvider.soPrompt 中存在；
+   c. optimize_threshold：校验为 0-100 整数；
+   d. eval_frequency_threshold：校验为正整数；
+   e. 其他：校验为正整数；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
@@ -237,6 +239,7 @@
 | id | 数据唯一标识 | UUID | N | 主键 | |
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| llm_id | 评估模型 ID | UUID | Y | | 留空时自动回退系统默认模型或可用首模型 |
 | eval_work_prompt_template_id | 评估 Work Agent 的 prompt 模板 ID | UUID | N | | |
 | eval_write_prompt_template_id | 评估 WriterAgent 的 prompt 模板 ID | UUID | N | | |
 | optimize_threshold | 触发优化的评分阈值 | INT | N | | 默认 60 |
@@ -244,11 +247,11 @@
 | eval_schedule_interval_ms | 定时评估间隔（毫秒） | INT | N | | 默认 3600000 |
 | eval_batch_size | 每批评估数量 | INT | N | | 默认 20 |
 
-## 实现约定（与代码同步，2026-07-28）
+## 实现约定（与代码同步）
 
 1. **优化决策**：evalWorkAgent/evalWriterAgent 在 need_optimize 时向 MQ `agent.optimize` 发送消息，**不**直接调用 optimizeAgent。
 2. **startEvalSchedule**：通过 MQCore.startWorker 启动 `agent.optimize`、`agent.eval`、`agent.eval_schedule` 三类 worker；optimize worker 内调用 AgentBuilder.optimizeAgent。
-3. **LLM**：使用 Evolutor 系统 Agent 自身绑定的 llm_id（Core.matchLLM），禁止 llm_model 自选。
+3. **LLM**：评估模型解析优先级为：Evolutor Agent 配置的 `llm_id` -> 系统 Agent 绑定的 `llm_id` -> 系统默认模型 (LLMProvider) -> 首个启用模型 (LLMProvider)。
 4. **stopEvalSchedule**：调用 MQCore.stopWorker(identifier)。
 5. **评分刷新**：`eval_score` 不再被单次评估直接覆盖，evalWorkAgent 评估后由 `refreshEvalScore` 以 usage_count 加权平均刷新（`new = (old × usage_count + overall) / (usage_count + 1)`）。
 6. **评估频率阈值**：`eval_frequency_threshold` 作为定时调度 Worker 触发批量评估的「累计未评估次数」阈值（需为正整数）；仅当某 Agent 近期未评估 usage 数达到该阈值时才触发评估。

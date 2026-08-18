@@ -96,9 +96,8 @@ export class EvolutorAgentService {
       getOut,
     );
     const evolutor = getOut.agents[0];
-    const llmId = evolutor?.llm_id || '';
-
     const config = await this.getConfig();
+    const targetLlmId = config?.llm_id || evolutor?.llm_id || '';
     const threshold = config?.optimize_threshold ?? 60;
 
     let traceData: unknown = null;
@@ -119,7 +118,12 @@ export class EvolutorAgentService {
     };
     let suggestions: string[] = [];
 
-    if (llmId && config?.eval_work_prompt_template_id) {
+    let prompt =
+      `Task: ${input.task_content}\nOutput: ${input.agent_output}\n` +
+      (traceData ? `Trace: ${JSON.stringify(traceData)}\n` : '') +
+      `Evaluate the agent output. Return JSON: {"correctness":50,"completeness":50,"efficiency":50,"relevance":50,"overall":50,"suggestions":[]}`;
+
+    if (config?.eval_work_prompt_template_id) {
       try {
         const promptOut = new ExecPromptOutput();
         await this.promptsAccess.execPrompt(
@@ -134,33 +138,37 @@ export class EvolutorAgentService {
           new PromptContext(),
           promptOut,
         );
-        if (promptOut.prompt) {
-          const llmOut = new ExecLLMOutput();
-          await this.llmAccess.execLLM(
-            Object.assign(new ExecLLMInput(), { id: llmId, prompt: promptOut.prompt }),
-            new LLMContext(),
-            llmOut,
-          );
-          const parsed = parseJsonObject(llmOut.result);
-          if (parsed) {
-            const c = Number(parsed.correctness ?? 50);
-            const comp = Number(parsed.completeness ?? 50);
-            const eff = Number(parsed.efficiency ?? 50);
-            const rel = Number(parsed.relevance ?? 50);
-            scores = {
-              correctness: c,
-              completeness: comp,
-              efficiency: eff,
-              relevance: rel,
-              overall: Number(parsed.overall ?? Math.round((c + comp + eff + rel) / 4)),
-            };
-            suggestions = Array.isArray(parsed.suggestions)
-              ? (parsed.suggestions as unknown[]).map(String)
-              : [];
-          }
-        }
-      } catch { /* defaults */ }
+        if (promptOut.prompt) prompt = promptOut.prompt;
+      } catch { /* use fallback prompt */ }
     }
+
+    try {
+      const llmOut = new ExecLLMOutput();
+      const ok = await this.llmAccess.execLLM(
+        Object.assign(new ExecLLMInput(), { id: targetLlmId, prompt }),
+        new LLMContext(),
+        llmOut,
+      );
+      if (ok && llmOut.result) {
+        const parsed = parseJsonObject(llmOut.result);
+        if (parsed) {
+          const c = Number(parsed.correctness ?? 50);
+          const comp = Number(parsed.completeness ?? 50);
+          const eff = Number(parsed.efficiency ?? 50);
+          const rel = Number(parsed.relevance ?? 50);
+          scores = {
+            correctness: c,
+            completeness: comp,
+            efficiency: eff,
+            relevance: rel,
+            overall: Number(parsed.overall ?? Math.round((c + comp + eff + rel) / 4)),
+          };
+          suggestions = Array.isArray(parsed.suggestions)
+            ? (parsed.suggestions as unknown[]).map(String)
+            : [];
+        }
+      }
+    } catch { /* defaults */ }
 
     // 从 trace 估算 efficiency（迭代越少越高）
     if (traceData && typeof traceData === 'object') {
@@ -236,8 +244,9 @@ export class EvolutorAgentService {
       libCtx,
       getOut,
     );
-    const llmId = getOut.agents[0]?.llm_id || '';
+    const evolutor = getOut.agents[0];
     const config = await this.getConfig();
+    const targetLlmId = config?.llm_id || evolutor?.llm_id || '';
     const threshold = config?.optimize_threshold ?? 60;
 
     let scores = {
@@ -245,7 +254,12 @@ export class EvolutorAgentService {
     };
     let suggestions: string[] = [];
 
-    if (llmId && config?.eval_write_prompt_template_id) {
+    let prompt =
+      `User query: ${input.user_query}\nFinal response: ${input.final_response}\n` +
+      `Agent results: ${JSON.stringify(input.agent_results)}\n` +
+      `Evaluate writer agent response. Return JSON: {"clarity":60,"informativeness":60,"user_alignment":60,"conciseness":60,"overall":60,"suggestions":[]}`;
+
+    if (config?.eval_write_prompt_template_id) {
       try {
         const promptOut = new ExecPromptOutput();
         await this.promptsAccess.execPrompt(
@@ -260,33 +274,37 @@ export class EvolutorAgentService {
           new PromptContext(),
           promptOut,
         );
-        if (promptOut.prompt) {
-          const llmOut = new ExecLLMOutput();
-          await this.llmAccess.execLLM(
-            Object.assign(new ExecLLMInput(), { id: llmId, prompt: promptOut.prompt }),
-            new LLMContext(),
-            llmOut,
-          );
-          const parsed = parseJsonObject(llmOut.result);
-          if (parsed) {
-            const clarity = Number(parsed.clarity ?? 60);
-            const info = Number(parsed.informativeness ?? 60);
-            const align = Number(parsed.user_alignment ?? 60);
-            const conc = Number(parsed.conciseness ?? 60);
-            scores = {
-              clarity,
-              informativeness: info,
-              user_alignment: align,
-              conciseness: conc,
-              overall: Number(parsed.overall ?? Math.round((clarity + info + align + conc) / 4)),
-            };
-            suggestions = Array.isArray(parsed.suggestions)
-              ? (parsed.suggestions as unknown[]).map(String)
-              : [];
-          }
-        }
-      } catch { /* defaults */ }
+        if (promptOut.prompt) prompt = promptOut.prompt;
+      } catch { /* use fallback prompt */ }
     }
+
+    try {
+      const llmOut = new ExecLLMOutput();
+      const ok = await this.llmAccess.execLLM(
+        Object.assign(new ExecLLMInput(), { id: targetLlmId, prompt }),
+        new LLMContext(),
+        llmOut,
+      );
+      if (ok && llmOut.result) {
+        const parsed = parseJsonObject(llmOut.result);
+        if (parsed) {
+          const clarity = Number(parsed.clarity ?? 60);
+          const info = Number(parsed.informativeness ?? 60);
+          const align = Number(parsed.user_alignment ?? 60);
+          const conc = Number(parsed.conciseness ?? 60);
+          scores = {
+            clarity,
+            informativeness: info,
+            user_alignment: align,
+            conciseness: conc,
+            overall: Number(parsed.overall ?? Math.round((clarity + info + align + conc) / 4)),
+          };
+          suggestions = Array.isArray(parsed.suggestions)
+            ? (parsed.suggestions as unknown[]).map(String)
+            : [];
+        }
+      }
+    } catch { /* defaults */ }
 
     const needOptimize = scores.overall < threshold;
     const evalId = IdGenerator.generate();
@@ -640,6 +658,9 @@ export class EvolutorAgentService {
       if (input.eval_batch_size <= 0) throw new ValidationError('eval_batch_size 必须 > 0');
       data.push({ field: 'eval_batch_size', value: input.eval_batch_size });
     }
+    if (input.llm_id !== undefined) {
+      data.push({ field: 'llm_id', value: input.llm_id || null });
+    }
     if (data.length > 0) {
       data.push({ field: 'updated', value: IdGenerator.now() });
       await this.relationDb.update(
@@ -665,6 +686,7 @@ export class EvolutorAgentService {
       eval_frequency_threshold: Number(row.eval_frequency_threshold ?? 5),
       eval_schedule_interval_ms: Number(row.eval_schedule_interval_ms ?? 3600000),
       eval_batch_size: Number(row.eval_batch_size ?? 20),
+      llm_id: (row.llm_id as string) || null,
     };
   }
 

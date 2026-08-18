@@ -16,6 +16,7 @@ export interface WriterAgentConfigRecord {
   default_style: string;
   default_depth: string;
   default_format: string;
+  llm_id: string | null;
 }
 
 export interface WriterAgentUserProfileRecord {
@@ -84,6 +85,7 @@ export class ConfigWriterAgentInput extends Input {
   default_style?: string;
   default_depth?: string;
   default_format?: string;
+  llm_id?: string | null;
 }
 
 export class ConfigWriterAgentOutput extends Output {

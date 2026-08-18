@@ -504,9 +504,11 @@
 4. 新增提供商默认 enable = false，需手动启用后才可调用其模型；
 5. 资源级 LLM 提供商 / LLM 模型的启用/禁用通过 `updateLLMProvider` / `updateLLM` 修改 `enable` 字段实现；
 6. `execLLM` 采用显式类型字段（`prompt` 必填、`system`、`temperature`、`max_tokens` 可选）承接参数，`extra` 承接其他透传参数原样进入请求体；
-7. `execLLM` 的 ID 可为空，为空时自动使用 `is_default=1` 的默认模型；
-8. Condition、OrderBy、Page 为项目公共查询对象，定义于 `RelationDBProvider-PRD.md`；
-9. 节点/记录的系统字段（`id`、`created`、`updated`）由 Provider 维护，不可通过 Data 对象修改；
-10. `enableLLM` 为运行时启用/禁用（可恢复），启用/禁用状态持久化到 `llm_config`；
-11. 所有写操作推荐使用 `transactionDB` 保证原子性；
-12. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；
+7. `execLLM` 的模型解析具备统一三级兜底：当 ID 为空或指定模型不存在/未启用时，依次回退至 1) 系统默认模型（`is_default=1`） -> 2) 系统首个启用的可用模型；
+8. 网络请求与代理支持：`fetchWithTimeout` 自动感知系统 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` 环境变量并通过代理 Agent 转发外部请求，本地地址（`localhost` / `127.0.0.1`）自动绕过代理直连；
+9. 提供商认证适配：OpenAI 兼容协议使用 `Authorization: Bearer <API_KEY>`，Google Gemini API 自动采用 `x-goog-api-key` 头部与 URL `?key=` 参数认证（避免发送 Bearer 导致 Google 误识别为 OAuth2 报 401）；
+10. Condition、OrderBy、Page 为项目公共查询对象，定义于 `RelationDBProvider-PRD.md`；
+11. 节点/记录的系统字段（`id`、`created`、`updated`）由 Provider 维护，不可通过 Data 对象修改；
+12. `enableLLM` 为运行时启用/禁用（可恢复），启用/禁用状态持久化到 `llm_config`；
+13. 所有写操作推荐使用 `transactionDB` 保证原子性；
+14. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；

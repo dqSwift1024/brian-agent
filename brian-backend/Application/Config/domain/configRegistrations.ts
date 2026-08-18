@@ -60,8 +60,9 @@ export const MODULE_LABELS: Record<string, { label: string; desc: string }> = {
   agent_execution: { label: 'AgentExecution', desc: 'Agent 执行引擎' },
   agent_strategy: { label: 'AgentStrategy', desc: 'Agent 策略管理' },
   agent_context: { label: 'AgentContext', desc: 'Agent 上下文管理' },
-  writer_agent: { label: 'WriterAgent', desc: '写作 Agent' },
-  evolutor_agent: { label: 'EvolutorAgent', desc: '进化 Agent' },
+  planner_agent: { label: 'Planner Agent', desc: '规划 Agent' },
+  writer_agent: { label: 'Writer Agent', desc: '写作 Agent' },
+  evolutor_agent: { label: 'Evolutor Agent', desc: '进化 Agent' },
   entry: { label: 'Entry', desc: '编排入口（复杂度分解、策略选择）' },
   strategy: { label: 'Strategy', desc: '编排策略配置' },
   execution: { label: 'Execution', desc: '编排执行引擎' },
@@ -192,6 +193,9 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'context_config', 'context_config.base_keyword_count', '关键词基础数量', 'INT', 100, '上下文构建-关键词'),
   core('info_core', 'context_config', 'context_config.base_random_count', '随机基础数量', 'INT', 50, '上下文构建-随机'),
   core('info_core', 'context_config', 'context_config.total', '上下文总数限制', 'INT', 1000),
+  core('info_core', 'context_config', 'context_config.max_context_items', '最大上下文条目数', 'INT', 200, '单次上下文构建的最大 info 条目数'),
+  core('info_core', 'context_config', 'context_config.enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
+  core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),
 
   // --- MCPCoreProvider ---
   core('mcp_core', 'basic', 'regen_rate', 'MCP 重新匹配概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
@@ -252,23 +256,22 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   agent('agent_execution', 'basic', 'default_max_iterations', '默认最大迭代次数', 'INT', 10, 'ReAct 循环最大轮数'),
   agent('agent_execution', 'basic', 'async_worker_interval', '异步工作间隔（ms）', 'INT', 1000),
 
-  // --- AgentContext ---
-  agent('agent_context', 'basic', 'max_context_items', '最大上下文条目数', 'INT', 200, '单次上下文构建的最大 info 条目数'),
-  agent('agent_context', 'basic', 'enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
-
   // --- PlannerAgent ---
   agent('planner_agent', 'basic', 'complexity_decompose_threshold', '复杂度分解阈值', 'INT', 50, '任务复杂度超过此值触发拆解为子任务'),
+  agent('planner_agent', 'basic', 'llm_id', '规划模型', 'STRING', '', '留空则使用系统默认模型'),
   agent('planner_agent', 'basic', 'plan_prompt_template_id', '计划生成 Prompt', 'STRING', '', '任务拆解所用的 Prompt 模板'),
   agent('planner_agent', 'basic', 'max_subtask_count', '最大子任务数', 'INT', 10, '单次规划最多拆分的子任务数'),
 
   // --- WriterAgent ---
   agent('writer_agent', 'basic', 'write_prompt_template_id', '写作 Prompt', 'STRING', '', '结果汇总所用的 Prompt 模板'),
+  agent('writer_agent', 'basic', 'llm_id', '写作模型', 'STRING', '', '留空则使用系统默认模型'),
   agent('writer_agent', 'basic', 'default_language', '默认语言', 'ENUM', 'zh-CN', '结果输出默认语言', ['zh-CN', 'en-US']),
   agent('writer_agent', 'basic', 'default_style', '默认风格', 'ENUM', 'clear', '结果输出默认风格', ['clear', 'concise', 'detailed', 'creative']),
   agent('writer_agent', 'basic', 'default_depth', '默认深度', 'ENUM', 'medium', '结果输出默认详细程度', ['shallow', 'medium', 'deep']),
   agent('writer_agent', 'basic', 'default_format', '默认格式', 'ENUM', 'MARKDOWN', '结果输出默认格式', ['TEXT', 'MARKDOWN', 'JSON']),
 
   // --- EvolutorAgent ---
+  agent('evolutor_agent', 'basic', 'llm_id', '评估模型', 'STRING', '', '留空则使用系统默认模型'),
   agent('evolutor_agent', 'basic', 'eval_work_prompt_template_id', 'Work 评估 Prompt', 'STRING', '', '评估 WorkAgent 结果所用的 Prompt 模板'),
   agent('evolutor_agent', 'basic', 'eval_write_prompt_template_id', 'Write 评估 Prompt', 'STRING', '', '评估 WriterAgent 结果所用的 Prompt 模板'),
   agent('evolutor_agent', 'basic', 'optimize_threshold', '优化阈值', 'INT', 60, '评分低于此值触发优化'),

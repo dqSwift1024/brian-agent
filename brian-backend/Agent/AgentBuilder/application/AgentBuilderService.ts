@@ -399,6 +399,21 @@ export class AgentBuilderService {
       );
       const found = getOut.agents.find((a) => a.enable);
       if (found) {
+        // 若发现复用的 Agent 身上的 llm_id 已失效或被删除，清空悬空 ID 允许统一动态兜底
+        if (found.llm_id) {
+          const llmExists = await this.relationDb.selectOne('llm_available', [
+            { field: 'id', operator: Operator.EQ, value: found.llm_id },
+            { field: 'enable', operator: Operator.EQ, value: 1 },
+          ]);
+          if (!llmExists) {
+            await this.agentLibrary.updateAgent(
+              Object.assign(new UpdateAgentInput(), { agent_id: found.agent_id, llm_id: '' }),
+              libCtx,
+              new UpdateAgentOutput(),
+            );
+            found.llm_id = '';
+          }
+        }
         output.agent_id = found.agent_id;
         return true;
       }

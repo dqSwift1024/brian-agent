@@ -2,7 +2,9 @@ import {
   RelationDBAccess, InsertDBInput, SelectDBInput,
   SelectOneDBInput, UpdateDBInput, Operator, DataObject,
   InsertDBOutput, SelectDBOutput, SelectOneDBOutput,
-  UpdateDBOutput, DBContext, IdGenerator, ValidationError, type Logger, type Condition,
+  UpdateDBOutput, DBContext, IdGenerator, ValidationError,
+  InfoType,
+  type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import {
@@ -413,7 +415,7 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
-      info_type: (sharedData.info_type as string) ?? (params.info_type as string) ?? 'REQUEST',
+      info_type: (sharedData.info_type as string) ?? (params.info_type as string) ?? InfoType.REQUEST,
       info_creator_role: (sharedData.info_creator_role as string) ?? 'USER',
       info_creator_id: (sharedData.info_creator_id as string) ?? '',
       info: userQuery,
@@ -936,7 +938,7 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
-      info_type: 'RESPONSE',
+      info_type: InfoType.RESPONSE,
       info_creator_role: 'AGENT',
       info_creator_id: workId,
       info: finalResponse,
@@ -995,7 +997,7 @@ export class JSONNodeService {
       session_id: sessionId,
       work_id: workId,
       interact_id: interactId,
-      info_type: 'RESPONSE',
+      info_type: InfoType.RESPONSE,
       info_creator_role: 'AGENT',
       info_creator_id: workId,
       info: responseText,

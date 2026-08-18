@@ -137,5 +137,12 @@ describe('EvolutorAgent', () => {
       await expect(evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { eval_frequency_threshold: 2.5 }),
         new EvolutorAgentContext(), new ConfigEvolutorAgentOutput())).rejects.toThrow(ValidationError);
     });
+
+    it('TC-EA-033: 更新 llm_id', async () => {
+      const out = new ConfigEvolutorAgentOutput();
+      await evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { llm_id: 'evolutor-model-1' }),
+        new EvolutorAgentContext(), out);
+      expect(out.config?.llm_id).toBe('evolutor-model-1');
+    });
   });
 });

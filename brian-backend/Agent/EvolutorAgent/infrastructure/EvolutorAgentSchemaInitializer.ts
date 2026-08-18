@@ -26,9 +26,15 @@ export class EvolutorAgentSchemaInitializer {
         optimize_threshold INTEGER NOT NULL DEFAULT 60,
         eval_frequency_threshold INTEGER NOT NULL DEFAULT 5,
         eval_schedule_interval_ms INTEGER NOT NULL DEFAULT 3600000,
-        eval_batch_size INTEGER NOT NULL DEFAULT 20
+        eval_batch_size INTEGER NOT NULL DEFAULT 20,
+        llm_id TEXT
       )`,
     );
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE ${EVOLUTOR_AGENT_CONFIG_TABLE} ADD COLUMN llm_id TEXT`);
+    } catch {
+      // 字段已存在
+    }
 
     const count = await this.relationDb.count(EVOLUTOR_AGENT_CONFIG_TABLE);
     if (count > 0) return;

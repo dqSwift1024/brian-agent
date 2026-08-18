@@ -87,4 +87,7 @@ export type {
   InfoConfigRecord,
   InfoVectorConfigRecord,
   InfoContextConfigRecord,
+  ContextCollectionSource,
+  ContextInfoItem,
+  ContextInfoCategories,
 } from './domain/types';

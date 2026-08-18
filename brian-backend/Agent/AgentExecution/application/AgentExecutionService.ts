@@ -11,6 +11,7 @@ import {
   SendMQInput, SendMQOutput, MQContext,
   GetQueueStatsInput, GetQueueStatsOutput,
   SoPromptInput, SoPromptOutput,
+  InfoType,
   type DataObject,
 } from '@brian-agent/base';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
@@ -261,7 +262,7 @@ export class AgentExecutionService {
             session_id: sessionId,
             work_id: input.work_id || ctx.work_id || '',
             interact_id: input.interact_id || ctx.interact_id || '',
-            info_type: 'ACT',
+            info_type: InfoType.ACT,
             info_creator_role: 'AGENT',
             info_creator_id: input.agent_id,
             info: JSON.stringify({
@@ -580,7 +581,7 @@ export class AgentExecutionService {
             session_id: ctx.session_id,
             work_id: ctx.work_id || '',
             interact_id: ctx.interact_id || '',
-            info_type: 'RESPONSE',
+            info_type: InfoType.RESPONSE,
             info_creator_role: 'AGENT',
             info_creator_id: input.agent_id,
             info: output.answer,

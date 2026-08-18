@@ -124,6 +124,7 @@
 **功能**：配置 PlannerAgent 的参数
 **入参**：
 - input：ConfigPlannerAgentInput（继承 Input），包含以下字段：
+  - llm_id：指定规划使用的 LLM 模型 ID（可选，留空则由 LLMProvider 自动回退为系统默认模型或首个启用模型）
   - complexity_decompose_threshold：拆解复杂度阈值（可选，默认 50）
   - plan_prompt_template_id：规划 prompt 模板 ID（可选）
   - max_subtask_count：最大子任务数量（可选，默认 10）
@@ -135,9 +136,10 @@
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `planner_agent_config` 表获取当前配置；
 2. 对每个非空入参进行校验和更新：
-   a. complexity_decompose_threshold：校验为 0-100 整数；
-   b. plan_prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
-   c. max_subtask_count：校验为正整数；
+   a. llm_id：若非空则写入；若为空字符串则清空；
+   b. complexity_decompose_threshold：校验为 0-100 整数；
+   c. plan_prompt_template_id：校验 PromptsProvider.soPrompt 中存在；
+   d. max_subtask_count：校验为正整数；
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
@@ -173,6 +175,7 @@
 | id | 数据唯一标识 | UUID | N | 主键 | |
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| llm_id | 规划模型 ID | UUID | Y | | 留空时自动回退系统默认模型或可用首模型 |
 | complexity_decompose_threshold | 拆解复杂度阈值 | INT | N | | 0-100，默认 50 |
 | plan_prompt_template_id | 规划 prompt 模板 ID | UUID | N | | |
 | max_subtask_count | 最大子任务数 | INT | N | | 默认 10 |

@@ -6,7 +6,7 @@
  * 所有 Input 继承 {@link Input}，所有 Context 继承 {@link Context}，所有 Output 继承 {@link Output}。
  */
 
-import { Input, Context, Output } from '@brian-agent/base';
+import { Input, Context, Output, InfoType, CollectionSource, ContextSource } from '@brian-agent/base';
 import type { Page } from '@brian-agent/base';
 
 // ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ export interface InfoRawRecord {
   work_id: string;
   interact_id: string;
   info_id: string;
-  info_type: string;
+  info_type: InfoType | string;
   info_creator_role: string;
   info_creator_id: string;
   info: string;
@@ -142,6 +142,9 @@ export interface InfoContextConfigRecord {
   base_keyword_count: number;
   base_random_count: number;
   total: number;
+  max_context_items: number;
+  enable_snapshot_persistence: number;
+  priority_order: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,28 +326,56 @@ export class GraphInfoOutput extends Output {
 // context
 // ---------------------------------------------------------------------------
 
+export type ContextCollectionSource = CollectionSource;
+
+export interface ContextInfoItem {
+  id: string;
+  info_id: string;
+  session_id: string;
+  work_id: string;
+  interact_id: string;
+  info_type: InfoType | string;
+  info_creator_role?: string;
+  info_creator_id?: string;
+  info: string;
+  content: string;
+  summary: string;
+  summary_length: number;
+  info_length: number;
+  content_length: number;
+  collection_source: CollectionSource;
+  source: CollectionSource | string;
+  pin: number;
+  created: number;
+  updated: number;
+}
+
 /** 上下文分类结构 */
 export interface ContextInfoCategories {
-  selected: InfoRawRecord[];
-  pinned: InfoRawRecord[];
-  timeline: InfoRawRecord[];
-  tag_relative: InfoRawRecord[];
-  similarity: InfoRawRecord[];
-  keyword: InfoRawRecord[];
-  random: InfoRawRecord[];
+  selected: ContextInfoItem[];
+  pinned: ContextInfoItem[];
+  timeline: ContextInfoItem[];
+  tag_relative: ContextInfoItem[];
+  similarity: ContextInfoItem[];
+  keyword: ContextInfoItem[];
+  random: ContextInfoItem[];
 }
 
 /** context 入参 */
 export class ContextInfoInput extends Input {
   session_id!: string;
   info_id?: string;
+  /** 构建模式：DEFAULT 默认构建 / CUSTOM 自定义构建 */
+  mode?: 'DEFAULT' | 'CUSTOM' | string;
   /** 复选消息 ID 列表（勾选后仅提取复选消息与钉住消息） */
   selected_msg_ids?: string[];
+  /** 自定义指定消息 ID 列表（等同 selected_msg_ids） */
+  custom_info_ids?: string[];
 }
 
 /** context 出参 */
 export class ContextInfoOutput extends Output {
-  list: Array<InfoRawRecord & { source?: string }> = [];
+  list: ContextInfoItem[] = [];
   categories?: ContextInfoCategories;
   sources_summary?: Record<string, number>;
 }
@@ -431,6 +462,9 @@ export class UpdateInfoContextConfigInput extends Input {
   base_keyword_count?: number;
   base_random_count?: number;
   total?: number;
+  max_context_items?: number;
+  enable_snapshot_persistence?: number | boolean;
+  priority_order?: string;
 }
 /** updateInfoContextConfig 出参 */
 export class UpdateInfoContextConfigOutput extends Output {}

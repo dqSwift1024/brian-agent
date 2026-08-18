@@ -25,6 +25,7 @@ export interface PlannerAgentConfigRecord {
   complexity_decompose_threshold: number;
   plan_prompt_template_id: string;
   max_subtask_count: number;
+  llm_id: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ export class ConfigPlannerAgentInput extends Input {
   complexity_decompose_threshold?: number;
   plan_prompt_template_id?: string;
   max_subtask_count?: number;
+  llm_id?: string | null;
 }
 
 export class ConfigPlannerAgentOutput extends Output {

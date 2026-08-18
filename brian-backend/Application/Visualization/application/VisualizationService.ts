@@ -11,6 +11,7 @@ import type {
 import {
   IdGenerator,
   Operator,
+  InfoType,
   GetLLMInput,
   GetLLMOutput,
   LLMContext,
@@ -557,7 +558,7 @@ export class VisualizationService {
 
         for (const row of group) {
           const type = String(row.info_type ?? '').toUpperCase();
-          if (type === 'REQUEST') {
+          if (type === InfoType.REQUEST) {
             requests.push(row);
           } else {
             responses.push(row);

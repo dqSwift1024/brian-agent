@@ -23,6 +23,30 @@ export const CommandRiskLevelSchema = z.enum(['safe', 'dangerous', 'high_risk'])
 
 export const UserPreferenceCategorySchema = z.enum(['aesthetic', 'content', 'communication', 'behavior']);
 
+export const InfoTypeSchema = z.enum([
+  'REQUEST',
+  'RESPONSE',
+  'THINK',
+  'REFLECT',
+  'ACT',
+  'SKILL',
+  'MCP',
+  'SELF_LEARNING',
+  'AGENT',
+]);
+
+export const CollectionSourceSchema = z.enum([
+  'PINNED',
+  'TIMELINE',
+  'TAG_RELATIVE',
+  'SIMILARITY',
+  'KEYWORD',
+  'RANDOM',
+  'CUSTOM',
+]);
+
+export const ContextSourceSchema = CollectionSourceSchema;
+
 export const MemoryNodeSchema = z.object({
   id: z.string(),
   type: NodeTypeSchema,

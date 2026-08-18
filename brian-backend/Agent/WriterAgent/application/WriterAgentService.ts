@@ -5,6 +5,7 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
   GetSoulInput, GetSoulOutput, SoulContext,
+  InfoType,
   type DataObject,
 } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
@@ -112,72 +113,68 @@ export class WriterAgentService {
 
     let response = '';
     let tokens = 0;
-    const llmId = agent?.llm_id || '';
-    if (llmId) {
-      let system = '';
-      if (agent?.soul_id && this.soulAccess) {
-        try {
-          const soulOut = new GetSoulOutput();
-          await this.soulAccess.getSoul(
-            Object.assign(new GetSoulInput(), { id: agent.soul_id }),
-            new SoulContext(),
-            soulOut,
-          );
-          system = soulOut.soul?.soul_content ?? soulOut.soul?.soul_brief ?? '';
-        } catch { /* ignore */ }
-      }
+    const llmId = config?.llm_id || agent?.llm_id || '';
 
-      let prompt =
-        `User query: ${input.user_query}\nPreferences: ${JSON.stringify(preferences)}\n` +
-        `Context:\n${contextExtra}\nResults:\n${results}\n` +
-        `Generate a structured response as a JSON array of content blocks. ` +
-        `Available block types:\n` +
-        `- "text_paragraph": plain text content\n` +
-        `- "heading": section title, meta: { "level": 2 }\n` +
-        `- "code_block": code snippet, meta: { "language": "python" }\n` +
-        `- "list_item": bullet point in a list\n` +
-        `- "artifact_preview": generated artifact or file\n` +
-        `- "error_fallback": error message\n` +
-        `Return ONLY valid JSON array, example:\n` +
-        `[{"type":"text_paragraph","content":"Hello"},{"type":"heading","content":"Code","meta":{"level":2}},` +
-        `{"type":"code_block","content":"print(1)","meta":{"language":"python"}}]`;
+    let system = '';
+    if (agent?.soul_id && this.soulAccess) {
+      try {
+        const soulOut = new GetSoulOutput();
+        await this.soulAccess.getSoul(
+          Object.assign(new GetSoulInput(), { id: agent.soul_id }),
+          new SoulContext(),
+          soulOut,
+        );
+        system = soulOut.soul?.soul_content ?? soulOut.soul?.soul_brief ?? '';
+      } catch { /* ignore */ }
+    }
 
-      if (config?.write_prompt_template_id) {
-        try {
-          const promptOut = new ExecPromptOutput();
-          await this.promptsAccess.execPrompt(
-            Object.assign(new ExecPromptInput(), {
-              id: config.write_prompt_template_id,
-              variables: {
-                user_query: input.user_query,
-                preferences: JSON.stringify(preferences),
-                context: contextExtra,
-                agent_results: JSON.stringify(input.agent_results),
-                soul: system,
-              },
-            }),
-            new PromptContext(),
-            promptOut,
-          );
-          if (promptOut.prompt) prompt = promptOut.prompt;
-        } catch { /* use fallback prompt */ }
-      }
+    let prompt =
+      `User query: ${input.user_query}\nPreferences: ${JSON.stringify(preferences)}\n` +
+      `Context:\n${contextExtra}\nResults:\n${results}\n` +
+      `Generate a structured response as a JSON array of content blocks. ` +
+      `Available block types:\n` +
+      `- "text_paragraph": plain text content\n` +
+      `- "heading": section title, meta: { "level": 2 }\n` +
+      `- "code_block": code snippet, meta: { "language": "python" }\n` +
+      `- "list_item": bullet point in a list\n` +
+      `- "artifact_preview": generated artifact or file\n` +
+      `- "error_fallback": error message\n` +
+      `Return ONLY valid JSON array, example:\n` +
+      `[{"type":"text_paragraph","content":"Hello"},{"type":"heading","content":"Code","meta":{"level":2}},` +
+      `{"type":"code_block","content":"print(1)","meta":{"language":"python"}}]`;
 
-      const llmOut = new ExecLLMOutput();
-      await this.llmAccess.execLLM(
-        Object.assign(new ExecLLMInput(), {
-          id: llmId,
-          prompt,
-          ...(system ? { system } : {}),
-        }),
-        new LLMContext(),
-        llmOut,
-      );
-      tokens = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
-      const blocks = this.parseBlocks(llmOut.result);
-      response = blocks.map(b => b.content).join('\n\n');
-      output.blocks = blocks;
-    } else {
+    if (config?.write_prompt_template_id) {
+      try {
+        const promptOut = new ExecPromptOutput();
+        await this.promptsAccess.execPrompt(
+          Object.assign(new ExecPromptInput(), {
+            id: config.write_prompt_template_id,
+            variables: {
+              user_query: input.user_query,
+              preferences: JSON.stringify(preferences),
+              context: contextExtra,
+              agent_results: JSON.stringify(input.agent_results),
+              soul: system,
+            },
+          }),
+          new PromptContext(),
+          promptOut,
+        );
+        if (promptOut.prompt) prompt = promptOut.prompt;
+      } catch { /* use fallback prompt */ }
+    }
+
+    const llmOut = new ExecLLMOutput();
+    const ok = await this.llmAccess.execLLM(
+      Object.assign(new ExecLLMInput(), {
+        id: llmId,
+        prompt,
+        ...(system ? { system } : {}),
+      }),
+      new LLMContext(),
+      llmOut,
+    );
+    if (!ok) {
       response = `Summary: ${input.user_query.slice(0, 100)}\n\nResults:\n${results}`;
       output.blocks = [{
         id: IdGenerator.generate(),
@@ -185,6 +182,11 @@ export class WriterAgentService {
         content: response,
         meta: { streaming_status: 'completed' as const },
       }];
+    } else {
+      tokens = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
+      const blocks = this.parseBlocks(llmOut.result);
+      response = blocks.map(b => b.content).join('\n\n');
+      output.blocks = blocks;
     }
 
     await this.agentLibrary.recordAgentUsage(
@@ -204,7 +206,7 @@ export class WriterAgentService {
             session_id: ctx.session_id,
             work_id: input.work_id || ctx.work_id || '',
             interact_id: input.interact_id || ctx.interact_id || '',
-            info_type: 'RESPONSE',
+            info_type: InfoType.RESPONSE,
             info_creator_role: 'AGENT',
             info_creator_id: buildOut.agent_id,
             info: response,
@@ -354,6 +356,9 @@ export class WriterAgentService {
       }
       data.push({ field: 'default_format', value: input.default_format });
     }
+    if (input.llm_id !== undefined) {
+      data.push({ field: 'llm_id', value: input.llm_id || null });
+    }
     if (data.length > 0) {
       data.push({ field: 'updated', value: IdGenerator.now() });
       await this.relationDb.update(
@@ -396,6 +401,7 @@ export class WriterAgentService {
       default_style: String(row.default_style ?? 'clear'),
       default_depth: String(row.default_depth ?? 'medium'),
       default_format: String(row.default_format ?? 'MARKDOWN'),
+      llm_id: (row.llm_id as string) || null,
     };
   }
 

@@ -5,6 +5,7 @@ import {
   UpdateDBInput, UpdateDBOutput,
   Operator, DataObject, DBContext, IdGenerator,
   ValidationError, NotFoundError,
+  InfoType,
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -142,7 +143,7 @@ export class OrchestrationEntryService {
         const reqRows = await this.relationDb.select('info_raw', {
           conditions: [
             { field: 'work_id', operator: Operator.EQ, value: workId },
-            { field: 'info_type', operator: Operator.EQ, value: 'REQUEST' },
+            { field: 'info_type', operator: Operator.EQ, value: InfoType.REQUEST },
           ],
         });
         const reqId = reqRows.length > 0 ? (reqRows[0].info_id as string) : '';
@@ -151,7 +152,7 @@ export class OrchestrationEntryService {
           session_id: input.session_id,
           work_id: workId,
           interact_id: interactId,
-          info_type: 'RESPONSE',
+          info_type: InfoType.RESPONSE,
           info_creator_role: 'AGENT',
           info_creator_id: workId,
           info: `[错误] ${errMsg}`,

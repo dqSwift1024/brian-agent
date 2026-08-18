@@ -13,6 +13,8 @@
  * 通过 Node.js 全局 fetch 实现。
  */
 
+import http from 'node:http';
+import https from 'node:https';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import {
@@ -170,13 +172,142 @@ export class LLMService {
     options: RequestInit,
     timeoutMs: number,
   ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const proxy =
+      process.env.HTTPS_PROXY ||
+      process.env.https_proxy ||
+      process.env.HTTP_PROXY ||
+      process.env.http_proxy ||
+      process.env.ALL_PROXY ||
+      process.env.all_proxy;
+
+    let parsedUrl: URL;
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
+      parsedUrl = new URL(url);
+    } catch {
+      parsedUrl = new URL(url, 'http://localhost');
     }
+
+    const isLocalhost =
+      parsedUrl.hostname === '127.0.0.1' ||
+      parsedUrl.hostname === 'localhost' ||
+      parsedUrl.hostname === '::1' ||
+      parsedUrl.hostname === '0.0.0.0';
+
+    if (!proxy || isLocalhost) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // 存在代理且为外部地址时：使用代理 Agent 发起 HTTP/HTTPS 请求
+    return new Promise((resolve, reject) => {
+      let isSettled = false;
+      const isHttps = parsedUrl.protocol === 'https:';
+      const lib = isHttps ? https : http;
+
+      let agent: any = undefined;
+      try {
+        if (isHttps) {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { HttpsProxyAgent } = require('https-proxy-agent');
+          agent = new HttpsProxyAgent(proxy);
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { HttpProxyAgent } = require('http-proxy-agent');
+          agent = new HttpProxyAgent(proxy);
+        }
+      } catch {
+        // 缺少 agent 库时降级为直接直连
+      }
+
+      const headers: Record<string, string> = {};
+      if (options.headers) {
+        if (Array.isArray(options.headers)) {
+          for (const [k, v] of options.headers) headers[k] = String(v);
+        } else if (typeof (options.headers as any).entries === 'function') {
+          for (const [k, v] of (options.headers as any).entries()) headers[k] = String(v);
+        } else {
+          for (const [k, v] of Object.entries(options.headers as Record<string, string>)) {
+            if (v !== undefined) headers[k] = String(v);
+          }
+        }
+      }
+
+      const reqOptions: https.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port ? Number(parsedUrl.port) : (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: options.method || 'GET',
+        headers,
+        timeout: timeoutMs,
+      };
+      if (agent) {
+        reqOptions.agent = agent;
+      }
+
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      const req = lib.request(reqOptions, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        res.on('end', () => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+          const bodyBuffer = Buffer.concat(chunks);
+          const bodyText = bodyBuffer.toString('utf-8');
+          const responseObj = {
+            ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
+            status: res.statusCode || 200,
+            statusText: res.statusMessage || '',
+            headers: new Headers(res.headers as Record<string, string>),
+            text: async () => bodyText,
+            json: async () => JSON.parse(bodyText),
+          } as unknown as Response;
+          resolve(responseObj);
+        });
+      });
+
+      req.on('error', (err) => {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+
+      req.on('timeout', () => {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timer);
+          req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
+        }
+      });
+
+      if (options.signal) {
+        options.signal.addEventListener('abort', () => {
+          if (!isSettled) {
+            isSettled = true;
+            clearTimeout(timer);
+            req.destroy(new Error('Request aborted'));
+          }
+        });
+      }
+
+      if (options.body) {
+        req.write(typeof options.body === 'string' ? options.body : JSON.stringify(options.body));
+      }
+      req.end();
+    });
   }
 
   /**
@@ -490,10 +621,27 @@ export class LLMService {
     const provider = row as unknown as LLMProviderRecord;
 
     const start = Date.now();
+    let testUrl = provider.llm_provider_url;
+    const isGoogle =
+      provider.llm_provider_title?.toLowerCase().includes('google') ||
+      testUrl.includes('googleapis.com');
+
+    const headers: Record<string, string> = {};
+    if (provider.api_key) {
+      if (isGoogle) {
+        headers['x-goog-api-key'] = provider.api_key;
+        if (!testUrl.includes('key=')) {
+          testUrl += (testUrl.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
+        }
+      } else {
+        headers['Authorization'] = `Bearer ${provider.api_key}`;
+        headers['x-api-key'] = provider.api_key;
+      }
+    }
     try {
       const res = await this.fetchWithTimeout(
-        provider.llm_provider_url,
-        { method: 'GET' },
+        testUrl,
+        { method: 'GET', headers },
         TEST_TIMEOUT_MS,
       );
       output.response_time_ms = Date.now() - start;
@@ -700,14 +848,23 @@ export class LLMService {
     }
 
     const modelsPath = provider.models_path || MODELS_PATH;
-    const url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
+    let url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
+    const isGoogle =
+      provider.llm_provider_title?.toLowerCase().includes('google') ||
+      url.includes('googleapis.com');
 
     let models: Array<Record<string, unknown>> = [];
     const headers: Record<string, string> = {};
     if (provider.api_key) {
-      headers['Authorization'] = `Bearer ${provider.api_key}`;
-      headers['x-goog-api-key'] = provider.api_key;
-      headers['x-api-key'] = provider.api_key;
+      if (isGoogle) {
+        headers['x-goog-api-key'] = provider.api_key;
+        if (!url.includes('key=')) {
+          url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
+        }
+      } else {
+        headers['Authorization'] = `Bearer ${provider.api_key}`;
+        headers['x-api-key'] = provider.api_key;
+      }
     }
     try {
       const res = await this.fetchWithTimeout(
@@ -1101,15 +1258,25 @@ export class LLMService {
       }
     }
 
+    const chatPath = provider.chat_path || CHAT_PATH;
+    let url = this.buildEndpoint(provider.llm_provider_url, chatPath);
+    const isGoogle =
+      provider.llm_provider_title?.toLowerCase().includes('google') ||
+      url.includes('googleapis.com');
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
     if (provider.api_key) {
-      headers['Authorization'] = `Bearer ${provider.api_key}`;
+      if (isGoogle) {
+        headers['x-goog-api-key'] = provider.api_key;
+        if (!url.includes('key=')) {
+          url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
+        }
+      } else {
+        headers['Authorization'] = `Bearer ${provider.api_key}`;
+      }
     }
-
-    const chatPath = provider.chat_path || CHAT_PATH;
-    const url = this.buildEndpoint(provider.llm_provider_url, chatPath);
     try {
       const res = await this.fetchWithTimeout(
         url,

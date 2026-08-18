@@ -56,5 +56,12 @@ describe('PlannerAgent', () => {
       await expect(planner.configPlannerAgent(Object.assign(new ConfigPlannerAgentInput(), { complexity_decompose_threshold: 150 }),
         new PlannerAgentContext(), new ConfigPlannerAgentOutput())).rejects.toThrow(ValidationError);
     });
+
+    it('TC-PA-013: 更新 llm_id', async () => {
+      const out = new ConfigPlannerAgentOutput();
+      await planner.configPlannerAgent(Object.assign(new ConfigPlannerAgentInput(), { llm_id: 'planner-model-1' }),
+        new PlannerAgentContext(), out);
+      expect(out.config?.llm_id).toBe('planner-model-1');
+    });
   });
 });

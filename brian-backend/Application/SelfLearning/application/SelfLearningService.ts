@@ -11,6 +11,7 @@ import {
   Operator, DataObject, DBContext, IdGenerator, NotFoundError, ValidationError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
+  InfoType,
   type Logger, type Condition,
 } from '@brian-agent/base';
 import type { GraphDBAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
@@ -744,7 +745,7 @@ export class SelfLearningService {
       const countInput = Object.assign(new CountDBInput(), {
         table: 'info_raw',
         conditions: [
-          { field: 'info_type', operator: Operator.EQ, value: 'REQUEST' },
+          { field: 'info_type', operator: Operator.EQ, value: InfoType.REQUEST },
           { field: 'created', operator: Operator.GE, value: threshold },
         ] as Condition[],
       });
@@ -945,7 +946,7 @@ export class SelfLearningService {
           session_type: 'self_learning',
           user_query: trimmed,
           force_orchestration_strategy: strategy,
-          info_type: 'REQUEST',
+          info_type: InfoType.REQUEST,
           info_creator_role: 'LEARNING',
           info_creator_id: '',
         });

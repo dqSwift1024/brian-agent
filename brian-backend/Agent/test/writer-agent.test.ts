@@ -99,5 +99,12 @@ describe('WriterAgent', () => {
       await expect(writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { default_language: 'fr' }),
         new WriterAgentContext(), new ConfigWriterAgentOutput())).rejects.toThrow(ValidationError);
     });
+
+    it('TC-WR-016: 更新 llm_id', async () => {
+      const out = new ConfigWriterAgentOutput();
+      await writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { llm_id: 'writer-model-1' }),
+        new WriterAgentContext(), out);
+      expect(out.config?.llm_id).toBe('writer-model-1');
+    });
   });
 });

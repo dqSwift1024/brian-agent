@@ -21,6 +21,9 @@ import {
   IdGenerator,
   Operator,
   GraphDirection,
+  InfoType,
+  CollectionSource,
+  ContextSource,
 } from '@brian-agent/base';
 import type { Condition } from '@brian-agent/base';
 import { Jieba } from '@node-rs/jieba';
@@ -106,6 +109,8 @@ import type {
   InfoConfigRecord,
   InfoVectorConfigRecord,
   InfoContextConfigRecord,
+  ContextCollectionSource,
+  ContextInfoItem,
 } from '../domain/types';
 import {
   ExecLLMInput,
@@ -1212,9 +1217,118 @@ export class InfoCoreService {
 
     const contextConfig = await this.getInfoContextConfig();
     const maxTotal = contextConfig?.total || 1000;
+    const priorityOrderStr = contextConfig?.priority_order || 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
+    const customIds = input.custom_info_ids || input.selected_msg_ids || [];
+    const isCustomMode = input.mode === 'CUSTOM' || customIds.length > 0;
 
-    // 1. 收集钉住消息 (pinned)
-    const pinnedItems: Array<InfoRawRecord & { source?: string }> = [];
+    // Helper: 将 raw record 转为标准 ContextInfoItem
+    const toContextItem = async (
+      raw: InfoRawRecord,
+      collectionSource: ContextCollectionSource,
+    ): Promise<ContextInfoItem> => {
+      let summaryText = '';
+      try {
+        const summaryRow = await this.getInfoSummaryRow(raw.info_id);
+        if (summaryRow?.summary) {
+          summaryText = summaryRow.summary;
+        }
+      } catch { /* best-effort */ }
+
+      let contentText = raw.info || '';
+      if (!contentText && summaryText) {
+        contentText = `[摘要] ${summaryText}`;
+      }
+
+      return {
+        id: raw.id || raw.info_id,
+        info_id: raw.info_id,
+        session_id: raw.session_id,
+        work_id: raw.work_id || '',
+        interact_id: raw.interact_id || '',
+        info_type: raw.info_type || InfoType.REQUEST,
+        info_creator_role: raw.info_creator_role,
+        info_creator_id: raw.info_creator_id,
+        info: contentText,
+        content: contentText,
+        summary: summaryText,
+        summary_length: summaryText.length,
+        info_length: contentText.length,
+        content_length: contentText.length,
+        collection_source: collectionSource,
+        source: collectionSource,
+        pin: raw.pin ? 1 : 0,
+        created: raw.created,
+        updated: raw.updated,
+      };
+    };
+
+    // 1. 自定义构建模式 (CUSTOM)
+    if (isCustomMode) {
+      // 1.1 收集钉住消息 (PINNED)
+      const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
+        conditions: [
+          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+          { field: 'pin', operator: Operator.EQ, value: 1 },
+        ],
+        order_by: [{ field: 'created', direction: 'DESC' }],
+      });
+      const pinnedItems: ContextInfoItem[] = [];
+      const pinnedIdSet = new Set<string>();
+      for (const row of pinnedRows) {
+        const raw = this.toInfoRawRecord(row);
+        const item = await toContextItem(raw, CollectionSource.PINNED);
+        pinnedItems.push(item);
+        pinnedIdSet.add(item.info_id);
+      }
+
+      // 1.2 收集传入指定消息 (CUSTOM)
+      const customItems: ContextInfoItem[] = [];
+      const seenCustomIds = new Set<string>();
+      for (const msgId of customIds) {
+        if (!msgId || seenCustomIds.has(msgId) || pinnedIdSet.has(msgId)) continue;
+        seenCustomIds.add(msgId);
+        const row = await this.getInfoByInfoId(msgId);
+        if (row && row.session_id === input.session_id) {
+          const item = await toContextItem(row, CollectionSource.CUSTOM);
+          customItems.push(item);
+        }
+      }
+      // 按时间倒序排序
+      customItems.sort((a, b) => b.created - a.created);
+
+      const resultList = [...pinnedItems, ...customItems].slice(0, maxTotal);
+
+      output.list = resultList;
+      output.categories = {
+        selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
+        pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
+        timeline: [],
+        tag_relative: [],
+        similarity: [],
+        keyword: [],
+        random: [],
+      };
+      output.sources_summary = {
+        selected: output.categories.selected.length,
+        pinned: output.categories.pinned.length,
+        timeline: 0,
+        tag_relative: 0,
+        similarity: 0,
+        keyword: 0,
+        random: 0,
+      };
+      return true;
+    }
+
+    // 2. 默认构建模式 (DEFAULT)
+    const timelineLimit = contextConfig?.base_timeline_count ?? 500;
+    const tagLimit = contextConfig?.base_tag_relative_count ?? 200;
+    const simLimit = contextConfig?.base_similarity_count ?? 150;
+    const kwLimit = contextConfig?.base_keyword_count ?? 100;
+    const randLimit = contextConfig?.base_random_count ?? 50;
+
+    // 2.1 收集各维度候选原始消息
+    // PINNED (会话内钉住消息)
     const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
       conditions: [
         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
@@ -1222,265 +1336,152 @@ export class InfoCoreService {
       ],
       order_by: [{ field: 'created', direction: 'DESC' }],
     });
-    for (const row of pinnedRows) {
-      const record = this.toInfoRawRecord(row) as InfoRawRecord & { source?: string };
-      record.source = 'pinned';
-      if (!record.info || record.info === '') {
-        const summary = await this.getInfoSummaryRow(record.info_id);
-        if (summary) record.info = `[摘要] ${summary.summary}`;
-        else continue;
-      }
-      pinnedItems.push(record);
+    const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
+
+    // TIMELINE (会话内时间线消息)
+    const timelineCandidates = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+
+    // 获取参考文本（参考 input.info_id，若无则使用最新的用户消息）
+    let refInfoRow: InfoRawRecord | null = null;
+    if (input.info_id) {
+      refInfoRow = await this.getInfoByInfoId(input.info_id);
     }
-    const pinnedIdSet = new Set(pinnedItems.map((item) => item.info_id));
-
-    // 2. 判断是否存在复选消息（若有勾选，仅基于复选消息与钉住消息进行问答）
-    if (input.selected_msg_ids && input.selected_msg_ids.length > 0) {
-      const selectedItems: Array<InfoRawRecord & { source?: string }> = [];
-      const selectedIdSet = new Set<string>();
-
-      for (const msgId of input.selected_msg_ids) {
-        if (!msgId || selectedIdSet.has(msgId) || pinnedIdSet.has(msgId)) continue;
-        selectedIdSet.add(msgId);
-
-        const row = await this.getInfoByInfoId(msgId);
-        if (row && row.session_id === input.session_id) {
-          const record = { ...row, source: 'selected' };
-          if (!record.info || record.info === '') {
-            const summary = await this.getInfoSummaryRow(record.info_id);
-            if (summary) record.info = `[摘要] ${summary.summary}`;
-            else continue;
-          }
-          selectedItems.push(record);
-        }
-      }
-
-      // 按时间倒序排序复选消息
-      selectedItems.sort((a, b) => b.created - a.created);
-
-      const resultList = [...pinnedItems, ...selectedItems].slice(0, maxTotal);
-
-      output.list = resultList;
-      output.categories = {
-        selected: selectedItems,
-        pinned: pinnedItems,
-        timeline: [],
-        tag_relative: [],
-        similarity: [],
-        keyword: [],
-        random: [],
-      };
-      output.sources_summary = {
-        selected: selectedItems.length,
-        pinned: pinnedItems.length,
-        timeline: 0,
-        tag_relative: 0,
-        similarity: 0,
-        keyword: 0,
-        random: 0,
-      };
-      return true;
+    if (!refInfoRow && timelineCandidates.length > 0) {
+      refInfoRow = timelineCandidates.find((t) => t.info_type === InfoType.REQUEST) || timelineCandidates[0] || null;
     }
+    const refText = refInfoRow?.info || '';
 
-    // 3. 无复选消息时：执行完整多维上下文构建
-    if (!contextConfig) {
-      const fallback = await this.lastNInfoTimeline(input.session_id, 100);
-      const taggedFallback = fallback.map((item) => {
-        const tagged = { ...item, source: item.pin ? 'pinned' : 'timeline' };
-        return tagged;
-      });
-      output.list = taggedFallback;
-      output.categories = {
-        selected: [],
-        pinned: pinnedItems,
-        timeline: taggedFallback.filter((i) => i.source === 'timeline'),
-        tag_relative: [],
-        similarity: [],
-        keyword: [],
-        random: [],
-      };
-      output.sources_summary = {
-        selected: 0,
-        pinned: pinnedItems.length,
-        timeline: taggedFallback.filter((i) => i.source === 'timeline').length,
-        tag_relative: 0,
-        similarity: 0,
-        keyword: 0,
-        random: 0,
-      };
-      return true;
-    }
-
-    // 3.1 时间线消息 (timeline)
-    const rawTimelineItems = await this.lastNInfoTimeline(input.session_id, contextConfig.base_timeline_count);
-    const timelineItems: Array<InfoRawRecord & { source?: string }> = [];
-    const timelineMap = new Map<string, InfoRawRecord & { source?: string }>();
-    for (const item of rawTimelineItems) {
-      if (!pinnedIdSet.has(item.info_id)) {
-        const tagged = { ...item, source: 'timeline' };
-        timelineItems.push(tagged);
-        timelineMap.set(item.info_id, tagged);
-      }
-    }
-
-    const timelineActual = timelineMap.size;
-    let remaining = maxTotal - pinnedItems.length;
-    if (remaining <= 0) {
-      output.list = pinnedItems.slice(0, maxTotal);
-      output.categories = {
-        selected: [],
-        pinned: pinnedItems,
-        timeline: [],
-        tag_relative: [],
-        similarity: [],
-        keyword: [],
-        random: [],
-      };
-      output.sources_summary = {
-        selected: 0,
-        pinned: pinnedItems.length,
-        timeline: 0,
-        tag_relative: 0,
-        similarity: 0,
-        keyword: 0,
-        random: 0,
-      };
-      return true;
-    }
-
-    // 3.2 按比例动态分配辅助来源数量
-    let tagCount = 0, simCount = 0, kwCount = 0, randCount = 0;
-    remaining -= timelineActual;
-    if (remaining > 0) {
-      tagCount = Math.min(contextConfig.base_tag_relative_count, remaining);
-      remaining -= tagCount;
-    }
-    if (remaining > 0) {
-      simCount = Math.min(contextConfig.base_similarity_count, remaining);
-      remaining -= simCount;
-    }
-    if (remaining > 0) {
-      kwCount = Math.min(contextConfig.base_keyword_count, remaining);
-      remaining -= kwCount;
-    }
-    if (remaining > 0) {
-      randCount = Math.min(contextConfig.base_random_count, remaining);
-    }
-
-    const seenIds = new Set<string>([...pinnedIdSet, ...timelineMap.keys()]);
-    const tagRelativeItems: Array<InfoRawRecord & { source?: string }> = [];
-    const similarityItems: Array<InfoRawRecord & { source?: string }> = [];
-    const keywordItems: Array<InfoRawRecord & { source?: string }> = [];
-    const randomItems: Array<InfoRawRecord & { source?: string }> = [];
-
-    // 3.3 辅助来源提取
-    if (input.info_id && (tagCount > 0 || simCount > 0 || kwCount > 0)) {
-      const infoRow = await this.getInfoByInfoId(input.info_id);
-      if (infoRow) {
-        if (tagCount > 0) {
-          try {
-            const relInput = new RelationKInfoInput();
-            relInput.info_id = input.info_id;
-            relInput.topN = tagCount;
-            const relOutput = new RelationKInfoOutput();
-            await this.relationKInfo(relInput, _context, relOutput);
-            for (const item of relOutput.list) {
-              if (!seenIds.has(item.info_id)) {
-                seenIds.add(item.info_id);
-                const tagged = { ...item, source: 'tag_relative' };
-                tagRelativeItems.push(tagged);
-              }
-            }
-          } catch { /* 忽略 */ }
-        }
-        if (simCount > 0) {
-          try {
-            const simInput = new SimilarKInfoInput();
-            simInput.info = infoRow.info;
-            simInput.topK = simCount;
-            const simOutput = new SimilarKInfoOutput();
-            await this.similarKInfo(simInput, _context, simOutput);
-            for (const item of simOutput.list) {
-              if (!seenIds.has(item.info_id)) {
-                seenIds.add(item.info_id);
-                const tagged = { ...item, source: 'similarity' };
-                similarityItems.push(tagged);
-              }
-            }
-          } catch { /* 忽略 */ }
-        }
-        if (kwCount > 0) {
-          try {
-            const kwInput = new KeywordKInfoInput();
-            kwInput.info = infoRow.info;
-            const kwOutput = new KeywordKInfoOutput();
-            await this.keywordKInfo(kwInput, _context, kwOutput);
-            const topKw = kwOutput.list.slice(0, kwCount);
-            for (const item of topKw) {
-              if (!seenIds.has(item.info_id)) {
-                seenIds.add(item.info_id);
-                const tagged = { ...item, source: 'keyword' };
-                keywordItems.push(tagged);
-              }
-            }
-          } catch { /* 忽略 */ }
-        }
-      }
-    }
-
-    if (randCount > 0) {
+    // TAG_RELATIVE (全系统标签相关性)
+    const tagCandidates: InfoRawRecord[] = [];
+    if (refInfoRow && tagLimit > 0) {
       try {
-        const rawRandom = await this.randomSampleInfos(input.session_id, randCount);
-        for (const item of rawRandom) {
-          if (!seenIds.has(item.info_id)) {
-            seenIds.add(item.info_id);
-            const tagged = { ...item, source: 'random' };
-            randomItems.push(tagged);
-          }
+        const relInput = new RelationKInfoInput();
+        relInput.info_id = refInfoRow.info_id;
+        relInput.topN = tagLimit;
+        const relOutput = new RelationKInfoOutput();
+        await this.relationKInfo(relInput, _context, relOutput);
+        for (const item of relOutput.list) {
+          tagCandidates.push(item);
         }
-      } catch { /* 忽略 */ }
+      } catch { /* ignore */ }
     }
 
-    const nonPinnedList = [
-      ...timelineItems,
-      ...tagRelativeItems,
-      ...similarityItems,
-      ...keywordItems,
-      ...randomItems,
-    ];
-
-    // 3.4 上下文内容回退：已老化信息使用摘要替代
-    for (const item of nonPinnedList) {
-      if (!item.info || item.info === '') {
-        const summary = await this.getInfoSummaryRow(item.info_id);
-        if (summary) {
-          item.info = `[摘要] ${summary.summary}`;
+    // SIMILARITY (全系统向量相似度)
+    const simCandidates: InfoRawRecord[] = [];
+    if (refText && simLimit > 0) {
+      try {
+        const simInput = new SimilarKInfoInput();
+        simInput.info = refText;
+        simInput.topK = simLimit;
+        const simOutput = new SimilarKInfoOutput();
+        await this.similarKInfo(simInput, _context, simOutput);
+        for (const item of simOutput.list) {
+          simCandidates.push(item);
         }
+      } catch { /* ignore */ }
+    }
+
+    // KEYWORD (全系统关键词相关性)
+    const kwCandidates: InfoRawRecord[] = [];
+    if (refText && kwLimit > 0) {
+      try {
+        const kwInput = new KeywordKInfoInput();
+        kwInput.info = refText;
+        const kwOutput = new KeywordKInfoOutput();
+        await this.keywordKInfo(kwInput, _context, kwOutput);
+        for (const item of kwOutput.list.slice(0, kwLimit)) {
+          kwCandidates.push(item);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // RANDOM (全系统随机关联)
+    let randCandidates: InfoRawRecord[] = [];
+    if (randLimit > 0) {
+      try {
+        randCandidates = await this.randomSampleInfos(randLimit);
+      } catch { /* ignore */ }
+    }
+
+    // 2.2 组装候选映射表
+    const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
+      [CollectionSource.PINNED, pinnedCandidates],
+      [CollectionSource.TIMELINE, timelineCandidates],
+      [CollectionSource.TAG_RELATIVE, tagCandidates],
+      [CollectionSource.SIMILARITY, simCandidates],
+      [CollectionSource.KEYWORD, kwCandidates],
+      [CollectionSource.RANDOM, randCandidates],
+    ]);
+
+    // 2.3 解析优先级顺序
+    // 默认："钉住消息" > 按时间线消息 > 标签相关性消息 > 向量相似度消息 > 关键词相关性消息 > 随机关联消息
+    const rawPriority = priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource);
+    const validSources: ContextCollectionSource[] = [
+      CollectionSource.PINNED,
+      CollectionSource.TIMELINE,
+      CollectionSource.TAG_RELATIVE,
+      CollectionSource.SIMILARITY,
+      CollectionSource.KEYWORD,
+      CollectionSource.RANDOM,
+    ];
+    const priorityList: ContextCollectionSource[] = [];
+    for (const src of rawPriority) {
+      if (validSources.includes(src) && !priorityList.includes(src)) {
+        priorityList.push(src);
+      }
+    }
+    for (const src of validSources) {
+      if (!priorityList.includes(src)) {
+        priorityList.push(src);
       }
     }
 
-    // 3.5 排序：钉住消息位于最前，非钉住消息按时间倒序排列
-    nonPinnedList.sort((a, b) => b.created - a.created);
-    const resultList = [...pinnedItems, ...nonPinnedList].slice(0, maxTotal);
+    // 2.4 按优先级依次收集去重
+    const seenIds = new Set<string>();
+    const collectedItems: ContextInfoItem[] = [];
+
+    for (const sourceKey of priorityList) {
+      const candidates = candidatesMap.get(sourceKey) || [];
+      for (const cand of candidates) {
+        if (!cand || !cand.info_id || seenIds.has(cand.info_id)) {
+          continue;
+        }
+        seenIds.add(cand.info_id);
+        const item = await toContextItem(cand, sourceKey);
+        collectedItems.push(item);
+      }
+    }
+
+    // 2.5 截取 total 条
+    const resultList = collectedItems.slice(0, maxTotal);
 
     output.list = resultList;
     output.categories = {
       selected: [],
-      pinned: pinnedItems,
-      timeline: timelineItems,
-      tag_relative: tagRelativeItems,
-      similarity: similarityItems,
-      keyword: keywordItems,
-      random: randomItems,
+      pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
+      timeline: resultList.filter((i) => i.collection_source === CollectionSource.TIMELINE),
+      tag_relative: resultList.filter((i) => i.collection_source === CollectionSource.TAG_RELATIVE),
+      similarity: resultList.filter((i) => i.collection_source === CollectionSource.SIMILARITY),
+      keyword: resultList.filter((i) => i.collection_source === CollectionSource.KEYWORD),
+      random: resultList.filter((i) => i.collection_source === CollectionSource.RANDOM),
     };
     output.sources_summary = {
       selected: 0,
-      pinned: pinnedItems.length,
-      timeline: timelineItems.length,
-      tag_relative: tagRelativeItems.length,
-      similarity: similarityItems.length,
-      keyword: keywordItems.length,
-      random: randomItems.length,
+      pinned: output.categories.pinned.length,
+      timeline: output.categories.timeline.length,
+      tag_relative: output.categories.tag_relative.length,
+      similarity: output.categories.similarity.length,
+      keyword: output.categories.keyword.length,
+      random: output.categories.random.length,
+    };
+    output.sources_summary = {
+      selected: 0,
+      pinned: output.categories.pinned.length,
+      timeline: output.categories.timeline.length,
+      tag_relative: output.categories.tag_relative.length,
+      similarity: output.categories.similarity.length,
+      keyword: output.categories.keyword.length,
+      random: output.categories.random.length,
     };
 
     return true;
@@ -1683,10 +1684,18 @@ export class InfoCoreService {
     assertNonNegativeInt(input.base_similarity_count, 'base_similarity_count');
     assertNonNegativeInt(input.base_keyword_count, 'base_keyword_count');
     assertNonNegativeInt(input.base_random_count, 'base_random_count');
+    assertNonNegativeInt(input.max_context_items, 'max_context_items');
     if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 1)) {
       throw new ValidationError('total 必须为 >= 1 的整数');
     }
-    await this.upsertConfigRow(INFO_CONTEXT_CONFIG_TABLE, input, {
+    const dataInput: Record<string, unknown> = { ...input };
+    if (input.enable_snapshot_persistence !== undefined) {
+      dataInput.enable_snapshot_persistence = input.enable_snapshot_persistence ? 1 : 0;
+    }
+    if (input.priority_order !== undefined) {
+      dataInput.priority_order = String(input.priority_order);
+    }
+    await this.upsertConfigRow(INFO_CONTEXT_CONFIG_TABLE, dataInput as any, {
       defaultRecord: {
         base_timeline_count: 500,
         base_tag_relative_count: 200,
@@ -1694,6 +1703,9 @@ export class InfoCoreService {
         base_keyword_count: 100,
         base_random_count: 50,
         total: 1000,
+        max_context_items: 200,
+        enable_snapshot_persistence: 1,
+        priority_order: 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM',
       },
     });
     return true;
@@ -2135,13 +2147,17 @@ export class InfoCoreService {
   }
 
   private async randomSampleInfos(
-    sessionId: string,
     count: number,
+    sessionId?: string,
   ): Promise<InfoRawRecord[]> {
     if (count <= 0) return [];
 
+    const conditions = sessionId
+      ? [{ field: 'session_id', operator: Operator.EQ, value: sessionId }]
+      : [];
+
     const rows = await this.relationDb.select(INFO_RAW_TABLE, {
-      conditions: [{ field: 'session_id', operator: Operator.EQ, value: sessionId }],
+      conditions,
       order_by: [{ field: 'created', direction: 'DESC' }],
       page: { current: 1, size: 500 },
     });
@@ -2413,12 +2429,15 @@ export class InfoCoreService {
       id: raw['id'] as string,
       created: raw['created'] as number,
       updated: raw['updated'] as number,
-      base_timeline_count: raw['base_timeline_count'] as number,
-      base_tag_relative_count: raw['base_tag_relative_count'] as number,
-      base_similarity_count: raw['base_similarity_count'] as number,
-      base_keyword_count: raw['base_keyword_count'] as number,
-      base_random_count: raw['base_random_count'] as number,
-      total: raw['total'] as number,
+      base_timeline_count: Number(raw['base_timeline_count'] ?? 500),
+      base_tag_relative_count: Number(raw['base_tag_relative_count'] ?? 200),
+      base_similarity_count: Number(raw['base_similarity_count'] ?? 150),
+      base_keyword_count: Number(raw['base_keyword_count'] ?? 100),
+      base_random_count: Number(raw['base_random_count'] ?? 50),
+      total: Number(raw['total'] ?? 1000),
+      max_context_items: Number(raw['max_context_items'] ?? 200),
+      enable_snapshot_persistence: Number(raw['enable_snapshot_persistence'] ?? 1),
+      priority_order: String(raw['priority_order'] ?? 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'),
     };
   }
 }

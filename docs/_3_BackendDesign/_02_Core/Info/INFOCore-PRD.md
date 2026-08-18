@@ -463,32 +463,48 @@
 
 ### 2.5.7. 构建上下文（context）
 
-**功能**：根据session_id构建上下文（支持复选消息指定、钉住消息置顶、多维分类聚合）
+**功能**：根据 session_id 构建上下文，支持「默认构建」（多维度收集去重）与「自定义构建」（指定消息 ID + 钉住消息）。
 **入参**：
 - input：ContextInfoInput（继承 Input），包含以下字段：
   - session_id：会话 ID（必选）
   - info_id：信息 ID（可选，用于辅助检索关联消息）
-  - selected_msg_ids：复选消息 ID 列表（可选；若提供且非空，本次问答仅根据复选消息与钉住消息构建上下文）
+  - mode：构建模式（可选：`DEFAULT` 默认构建 / `CUSTOM` 自定义构建）
+  - selected_msg_ids / custom_info_ids：自定义消息 ID 列表（可选；若提供且非空，自动按自定义构建模式处理）
 - context：InfoCoreContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ContextInfoOutput（继承 Output），承载返回内容：
-  - list：构建的上下文消息列表，每项包含 `source` 来源标注（`selected`/`pinned`/`timeline`/`tag_relative`/`similarity`/`keyword`/`random`）
+  - list：构建的上下文消息列表，每项对象包含：
+    - `id` / `info_id`：数据唯一标识 / 消息 ID
+    - `summary`：消息摘要文本
+    - `info` / `content`：消息内容文本（若原始消息老化清空则自动回退使用摘要）
+    - `summary_length`：消息摘要长度
+    - `info_length` / `content_length`：消息内容长度
+    - `info_type`：消息类型（`REQUEST` / `RESPONSE` / `SELF_LEARNING` / `AGENT` 等）
+    - `collection_source`：采集方式（`PINNED` / `TIMELINE` / `TAG_RELATIVE` / `SIMILARITY` / `KEYWORD` / `RANDOM` / `CUSTOM`）
+    - `source`：小写来源标注（`pinned` / `timeline` / `tag_relative` / `similarity` / `keyword` / `random` / `selected`）
   - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `tag_relative`, `similarity`, `keyword`, `random`）
   - sources_summary：各分类消息数量汇总统计（`Record<string, number>`）
+
 **处理流程**：
 
-1. **收集钉住消息**：调用 RelationDBProvider.selectDB 查询 `info_raw` 表中当前 session 下 pin=true 的消息，按创建时间倒序排列，标注 source 为 `'pinned'`。对老化清空的消息执行摘要回退；
-2. **复选消息分支**：若 `selected_msg_ids` 非空：
-   a. 遍历 `selected_msg_ids`，根据 `info_id` 查询 `info_raw` 表并校验所属 `session_id`，排除已在钉住列表中的重复项；
-   b. 将复选消息标注 source 为 `'selected'`，对老化清空的消息执行摘要回退；
-   c. 仅将钉住消息与复选消息合并（钉住在前，复选在后按时间倒序），填充 `categories.selected` 与 `categories.pinned`，其余分类置空；
-   d. 统计 `sources_summary`（仅包含 selected 与 pinned），返回结果；
-3. **常规多维聚合分支**（`selected_msg_ids` 为空）：
-   a. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取构建参数：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`；
-   b. 查询时间线消息（`timeline`），排除钉住项，按时间倒序排列；
-   c. 动态计算剩余配额，按比例提取标签相关（`tag_relative`）、语义相似（`similarity`）、关键词（`keyword`）与随机抽样（`random`）消息，依次去重；
-   d. 对各来源消息执行摘要回退，并统一注入对应的 `source` 标注；
-   e. 排序组装：钉住消息位于最前，非钉住消息按时间倒序排列，截取前 `total` 条；
-   f. 构建分类字典 `categories` 与数量汇总 `sources_summary` 写入 output 返回；
+1. **自定义构建模式**（`mode === 'CUSTOM'` 或传入 `selected_msg_ids` / `custom_info_ids`）：
+   a. 收集当前 session 下 `pin=1` 的钉住消息，标记为 `PINNED`；
+   b. 遍历传入的消息 ID 列表，查询对应的消息记录，排除已在钉住列表中的项，标记为 `CUSTOM`；
+   c. 对老化清空的消息执行摘要回退，补充完整的消息对象结构；
+   d. 合并钉住消息与自定义消息（钉住在前，自定义在后按时间倒序），截取前 `total` 条返回；
+
+2. **默认构建模式**（`mode === 'DEFAULT'` 且未传入指定消息 ID）：
+   a. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取配置：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`, `priority_order`；
+   b. 并行/依次收集各维度候选消息：
+      - **按时间线消息（会话内）**：查询当前 session 下最近 `base_timeline_count` 条消息；
+      - **标签相关性消息（全系统）**：根据参考消息通过 `relationKInfo` 检索 `base_tag_relative_count` 条；
+      - **向量相似度消息（全系统）**：根据参考消息通过 `similarKInfo` 检索 `base_similarity_count` 条；
+      - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索 `base_keyword_count` 条；
+      - **随机关联消息（全系统）**：从全系统中随机抽样 `base_random_count` 条；
+      - **钉住消息（会话内）**：查询当前 session 下所有 `pin=1` 的消息；
+   c. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；
+   d. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；
+   e. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
+   f. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回。
 
 ## 2.6. 老化清理
 
@@ -735,6 +751,9 @@
 | base_keyword_count | 基于关键词搜索的信息加载数量 | INT | N | | 默认100 |
 | base_random_count | 随机联想的信息加载数量 | INT | N | | 默认50 |
 | total | 总的消息量 | INT | N | | 默认为1000 |
+| max_context_items | 最大上下文条目数 | INT | N | | 默认200 |
+| enable_snapshot_persistence | 启用上下文快照持久化 | INT | N | | 默认1 (true) |
+| priority_order | 维度优先级顺序 | TEXT | N | | 默认 PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM |
 
 ## 4. HTTP 路由映射（dev-server.ts 装配）
 
