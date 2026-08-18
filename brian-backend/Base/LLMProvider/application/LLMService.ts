@@ -67,6 +67,7 @@ import {
   LLM_USAGE_TABLE,
   LLM_CONFIG_TABLE,
 } from '../domain/types';
+import { LLMStrategyFactory } from './strategies';
 
 /** testLLMProvider 默认连接超时时间（毫秒） */
 const TEST_TIMEOUT_MS = 10000;
@@ -602,6 +603,63 @@ export class LLMService {
    * 使用 HTTP GET 请求，只要收到响应即视为连通（connected=true），
    * 网络错误或超时视为不可达（connected=false）。
    */
+  // ===== 原始方法（保留作为参考）=====
+  // async testLLMProvider(
+  //   input: TestLLMProviderInput,
+  //   _context: LLMContext,
+  //   output: TestLLMProviderOutput,
+  // ): Promise<boolean> {
+  //   this.ensureEnabled();
+  //   if (!input.id) {
+  //     throw new ValidationError('id 不能为空');
+  //   }
+  //
+  //   const row = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: input.id },
+  //   ]);
+  //   if (!row) {
+  //     throw new NotFoundError('LLMProvider', input.id);
+  //   }
+  //   const provider = row as unknown as LLMProviderRecord;
+  //
+  //   const start = Date.now();
+  //   let testUrl = provider.llm_provider_url;
+  //   const isGoogle =
+  //     provider.llm_provider_title?.toLowerCase().includes('google') ||
+  //     testUrl.includes('googleapis.com');
+  //
+  //   const headers: Record<string, string> = {};
+  //   if (provider.api_key) {
+  //     if (isGoogle) {
+  //       headers['x-goog-api-key'] = provider.api_key;
+  //       if (!testUrl.includes('key=')) {
+  //         testUrl += (testUrl.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
+  //       }
+  //     } else {
+  //       headers['Authorization'] = `Bearer ${provider.api_key}`;
+  //       headers['x-api-key'] = provider.api_key;
+  //     }
+  //   }
+  //   try {
+  //     const res = await this.fetchWithTimeout(
+  //       testUrl,
+  //       { method: 'GET', headers },
+  //       TEST_TIMEOUT_MS,
+  //     );
+  //     output.response_time_ms = Date.now() - start;
+  //     output.status_code = res.status;
+  //     // 只要收到 HTTP 响应即视为连通（即使状态码非 2xx）
+  //     output.connected = true;
+  //   } catch (err) {
+  //     output.response_time_ms = Date.now() - start;
+  //     output.connected = false;
+  //     output.error = err instanceof Error ? err.message : String(err);
+  //     output.error_code = 'CONNECT_ERROR';
+  //   }
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async testLLMProvider(
     input: TestLLMProviderInput,
     _context: LLMContext,
@@ -621,27 +679,13 @@ export class LLMService {
     const provider = row as unknown as LLMProviderRecord;
 
     const start = Date.now();
-    let testUrl = provider.llm_provider_url;
-    const isGoogle =
-      provider.llm_provider_title?.toLowerCase().includes('google') ||
-      testUrl.includes('googleapis.com');
+    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const req = strategy.buildTestRequest(provider);
 
-    const headers: Record<string, string> = {};
-    if (provider.api_key) {
-      if (isGoogle) {
-        headers['x-goog-api-key'] = provider.api_key;
-        if (!testUrl.includes('key=')) {
-          testUrl += (testUrl.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
-        }
-      } else {
-        headers['Authorization'] = `Bearer ${provider.api_key}`;
-        headers['x-api-key'] = provider.api_key;
-      }
-    }
     try {
       const res = await this.fetchWithTimeout(
-        testUrl,
-        { method: 'GET', headers },
+        req.url,
+        { method: req.method, headers: req.headers, body: req.body },
         TEST_TIMEOUT_MS,
       );
       output.response_time_ms = Date.now() - start;
@@ -847,29 +891,20 @@ export class LLMService {
       return true;
     }
 
-    const modelsPath = provider.models_path || MODELS_PATH;
-    let url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
-    const isGoogle =
-      provider.llm_provider_title?.toLowerCase().includes('google') ||
-      url.includes('googleapis.com');
+    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const req = strategy.buildListModelsRequest(provider);
+    let parsedModels: Array<{
+      modelId: string;
+      displayName?: string;
+      description?: string;
+      maxTokens?: number;
+      raw: Record<string, unknown>;
+    }> = [];
 
-    let models: Array<Record<string, unknown>> = [];
-    const headers: Record<string, string> = {};
-    if (provider.api_key) {
-      if (isGoogle) {
-        headers['x-goog-api-key'] = provider.api_key;
-        if (!url.includes('key=')) {
-          url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
-        }
-      } else {
-        headers['Authorization'] = `Bearer ${provider.api_key}`;
-        headers['x-api-key'] = provider.api_key;
-      }
-    }
     try {
       const res = await this.fetchWithTimeout(
-        url,
-        { method: 'GET', headers },
+        req.url,
+        { method: req.method, headers: req.headers, body: req.body },
         LIST_TIMEOUT_MS,
       );
       if (!res.ok) {
@@ -885,19 +920,14 @@ export class LLMService {
         // 请求失败时不写入/更新缓存时间戳
         return false;
       }
-      const json = (await res.json()) as {
-        data?: Array<Record<string, unknown>>;
-        models?: Array<Record<string, unknown>>;
-      };
-      if (Array.isArray(json.data)) {
-        models = json.data;
-      } else if (Array.isArray(json.models)) {
-        models = json.models;
-      } else if (Array.isArray(json)) {
-        models = json as unknown as Array<Record<string, unknown>>;
-      } else {
-        models = [];
+      const rawText = await res.text();
+      let json: unknown = {};
+      try {
+        json = JSON.parse(rawText);
+      } catch {
+        json = {};
       }
+      parsedModels = strategy.parseListModelsResponse(json, rawText);
     } catch (err) {
       output.error = err instanceof Error ? err.message : String(err);
       output.error_code = 'CONNECT_ERROR';
@@ -907,26 +937,12 @@ export class LLMService {
 
     // upsert 到 llm_cache 表（按 llm_provider_id + llm_title 判重）
     const now = IdGenerator.now();
-    for (const m of models) {
-      const rawName = String(m.name || m.id || '');
-      if (!rawName) continue;
-      const modelId = rawName.replace(/^models\//, '');
-      const rawM = m as Record<string, unknown>;
-      let brief: string | null = null;
-      if (rawM.displayName) {
-        brief = rawM.description ? `${rawM.displayName} - ${rawM.description}` : String(rawM.displayName);
-      } else if (rawM.owned_by) {
-        brief = `owned_by: ${String(rawM.owned_by)}`;
-      } else if (rawM.description) {
-        brief = String(rawM.description);
-      }
-      const tl = rawM.token_limits as Record<string, unknown> | undefined;
-      const topProvider = rawM.top_provider as Record<string, unknown> | undefined;
-      const maxTokens = Number(
-        rawM.inputTokenLimit || rawM.context_length || tl?.context_window
-        || rawM.max_tokens || rawM.max_completion_tokens
-        || (topProvider?.max_completion_tokens) || 0,
-      );
+    for (const m of parsedModels) {
+      const modelId = m.modelId;
+      if (!modelId) continue;
+      const brief = m.description ?? null;
+      const maxTokens = m.maxTokens ?? 0;
+
       const existing = await this.relationDb.selectOne(LLM_CACHE_TABLE, [
         {
           field: 'llm_provider_id',
@@ -941,7 +957,7 @@ export class LLMService {
           LLM_CACHE_TABLE,
           [
             { field: 'llm_brief', value: brief },
-            { field: 'llm_param', value: JSON.stringify(m) },
+            { field: 'llm_param', value: JSON.stringify(m.raw) },
             { field: 'max_tokens', value: maxTokens },
             { field: 'updated', value: now },
           ],
@@ -964,7 +980,7 @@ export class LLMService {
             { field: 'llm_provider_id', value: input.llm_provider_id },
             { field: 'llm_title', value: modelId },
             { field: 'llm_brief', value: brief },
-            { field: 'llm_param', value: JSON.stringify(m) },
+            { field: 'llm_param', value: JSON.stringify(m.raw) },
             { field: 'max_tokens', value: maxTokens },
           ]);
         } catch {
@@ -1177,6 +1193,155 @@ export class LLMService {
    * - max_tokens: 最大 Token 数（可选，未指定时使用模型默认 max_tokens）
    * - extra: 其他参数原样传入请求体
    */
+  // ===== 原始方法（保留作为参考）=====
+  // async execLLM(
+  //   input: ExecLLMInput,
+  //   _context: LLMContext,
+  //   output: ExecLLMOutput,
+  // ): Promise<boolean> {
+  //   this.ensureEnabled();
+  //   if (!input.id) {
+  //     // 1. 优先使用已启用的系统默认模型（is_default=1 且 enable=1）
+  //     const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //       { field: 'is_default', operator: Operator.EQ, value: 1 },
+  //       { field: 'enable', operator: Operator.EQ, value: 1 },
+  //     ]);
+  //     if (defaultLLM) {
+  //       input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
+  //     } else {
+  //       // 2. 兜底使用首个已启用的可用模型（enable=1）
+  //       const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //         { field: 'enable', operator: Operator.EQ, value: 1 },
+  //       ]);
+  //       if (firstEnabled) {
+  //         input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
+  //       } else {
+  //         throw new ValidationError('id 不能为空，且无可用模型');
+  //       }
+  //     }
+  //   }
+  //   const prompt = String(input.prompt ?? '');
+  //   if (!prompt) {
+  //     throw new ValidationError('prompt 不能为空');
+  //   }
+  //
+  //   const startTime = Date.now();
+  //
+  //   const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: input.id },
+  //   ]);
+  //   if (!llmRow) {
+  //     throw new NotFoundError('LLM', input.id);
+  //   }
+  //   const llm = llmRow as unknown as LLMAvailableRecord;
+  //   if (!llm.enable) {
+  //     throw new ValidationError(`LLM ${input.id} 已禁用`);
+  //   }
+  //
+  //   const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+  //     { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
+  //   ]);
+  //   if (!providerRow) {
+  //     throw new NotFoundError('LLMProvider', llm.llm_provider_id);
+  //   }
+  //   const provider = providerRow as unknown as LLMProviderRecord;
+  //   if (!provider.enable) {
+  //     throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
+  //   }
+  //
+  //   const body: Record<string, unknown> = {
+  //     model: llm.llm_title,
+  //     messages: [{ role: 'user', content: prompt }],
+  //   };
+  //   if (input.system) {
+  //     (body.messages as Array<Record<string, unknown>>).unshift(
+  //       { role: 'system', content: input.system },
+  //     );
+  //   }
+  //   if (input.temperature !== undefined) {
+  //     body.temperature = input.temperature;
+  //   }
+  //   if (input.max_tokens !== undefined) {
+  //     body.max_tokens = input.max_tokens;
+  //   } else if (llm.max_tokens) {
+  //     body.max_tokens = llm.max_tokens;
+  //   }
+  //   // 透传其他参数（extra 中的参数原样进入请求体）
+  //   if (input.extra) {
+  //     for (const [k, v] of Object.entries(input.extra)) {
+  //       if (!['prompt', 'system', 'temperature', 'max_tokens', 'model', 'messages', 'api_key'].includes(k)) {
+  //         body[k] = v;
+  //       }
+  //     }
+  //   }
+  //
+  //   const chatPath = provider.chat_path || CHAT_PATH;
+  //   let url = this.buildEndpoint(provider.llm_provider_url, chatPath);
+  //   const isGoogle =
+  //     provider.llm_provider_title?.toLowerCase().includes('google') ||
+  //     url.includes('googleapis.com');
+  //
+  //   const headers: Record<string, string> = {
+  //     'Content-Type': 'application/json',
+  //   };
+  //   if (provider.api_key) {
+  //     if (isGoogle) {
+  //       headers['x-goog-api-key'] = provider.api_key;
+  //       if (!url.includes('key=')) {
+  //         url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
+  //       }
+  //     } else {
+  //       headers['Authorization'] = `Bearer ${provider.api_key}`;
+  //     }
+  //   }
+  //   try {
+  //     const res = await this.fetchWithTimeout(
+  //       url,
+  //       {
+  //         method: 'POST',
+  //         headers,
+  //         body: JSON.stringify(body),
+  //       },
+  //       EXEC_TIMEOUT_MS,
+  //     );
+  //     if (!res.ok) {
+  //       const text = await res.text();
+  //       output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
+  //       output.error_code = 'REMOTE_ERROR';
+  //       output.duration_ms = Date.now() - startTime;
+  //       return false;
+  //     }
+  //     const text = await res.text();
+  //     output.raw_response = text;
+  //     let json: {
+  //       choices?: Array<{
+  //         message?: { content?: string };
+  //       }>;
+  //       usage?: { prompt_tokens?: number; completion_tokens?: number };
+  //     } = {};
+  //     try {
+  //       json = JSON.parse(text) as typeof json;
+  //     } catch {
+  //       json = {};
+  //     }
+  //     output.result = (json.choices?.[0]?.message?.content ?? '') as string;
+  //     output.input_prompt = prompt;
+  //     output.input_tokens = json.usage?.prompt_tokens ?? 0;
+  //     output.output_tokens = json.usage?.completion_tokens ?? 0;
+  //     output.duration_ms = Date.now() - startTime;
+  //   } catch (err) {
+  //     output.error = err instanceof Error ? err.message : String(err);
+  //     output.error_code = 'CONNECT_ERROR';
+  //     output.duration_ms = Date.now() - startTime;
+  //     return false;
+  //   }
+  //
+  //   // 成功后更新 llm_usage 表当天的 usage_count 与 token 用量
+  //   await this.upsertUsage(input.id, output.input_tokens, output.output_tokens);
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async execLLM(
     input: ExecLLMInput,
     _context: LLMContext,
@@ -1258,32 +1423,16 @@ export class LLMService {
       }
     }
 
-    const chatPath = provider.chat_path || CHAT_PATH;
-    let url = this.buildEndpoint(provider.llm_provider_url, chatPath);
-    const isGoogle =
-      provider.llm_provider_title?.toLowerCase().includes('google') ||
-      url.includes('googleapis.com');
+    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const req = strategy.buildChatRequest(provider, llm, input);
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (provider.api_key) {
-      if (isGoogle) {
-        headers['x-goog-api-key'] = provider.api_key;
-        if (!url.includes('key=')) {
-          url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
-        }
-      } else {
-        headers['Authorization'] = `Bearer ${provider.api_key}`;
-      }
-    }
     try {
       const res = await this.fetchWithTimeout(
-        url,
+        req.url,
         {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
         },
         EXEC_TIMEOUT_MS,
       );
@@ -1294,23 +1443,19 @@ export class LLMService {
         output.duration_ms = Date.now() - startTime;
         return false;
       }
-      const text = await res.text();
-      output.raw_response = text;
-      let json: {
-        choices?: Array<{
-          message?: { content?: string };
-        }>;
-        usage?: { prompt_tokens?: number; completion_tokens?: number };
-      } = {};
+      const rawText = await res.text();
+      output.raw_response = rawText;
+      let json: unknown = {};
       try {
-        json = JSON.parse(text) as typeof json;
+        json = JSON.parse(rawText);
       } catch {
         json = {};
       }
-      output.result = (json.choices?.[0]?.message?.content ?? '') as string;
+      const parsed = strategy.parseChatResponse(json, rawText);
+      output.result = parsed.content;
       output.input_prompt = prompt;
-      output.input_tokens = json.usage?.prompt_tokens ?? 0;
-      output.output_tokens = json.usage?.completion_tokens ?? 0;
+      output.input_tokens = parsed.inputTokens;
+      output.output_tokens = parsed.outputTokens;
       output.duration_ms = Date.now() - startTime;
     } catch (err) {
       output.error = err instanceof Error ? err.message : String(err);
@@ -1385,26 +1530,16 @@ export class LLMService {
       throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
     }
 
-    const body: Record<string, unknown> = {
-      model: llm.llm_title,
-      input: text,
-    };
+    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const req = strategy.buildEmbedRequest(provider, llm, input);
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (provider.api_key) {
-      headers['Authorization'] = `Bearer ${provider.api_key}`;
-    }
-
-    const url = this.buildEndpoint(provider.llm_provider_url, EMBED_PATH);
     try {
       const res = await this.fetchWithTimeout(
-        url,
+        req.url,
         {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
         },
         EXEC_TIMEOUT_MS,
       );
@@ -1417,17 +1552,15 @@ export class LLMService {
       }
       const rawText = await res.text();
       output.raw_response = rawText;
-      let json: {
-        data?: Array<{ embedding?: number[] }>;
-        usage?: { prompt_tokens?: number };
-      } = {};
+      let json: unknown = {};
       try {
-        json = JSON.parse(rawText) as typeof json;
+        json = JSON.parse(rawText);
       } catch {
         json = {};
       }
-      output.embedding = json.data?.[0]?.embedding ?? [];
-      output.input_tokens = json.usage?.prompt_tokens ?? 0;
+      const parsed = strategy.parseEmbedResponse(json, rawText);
+      output.embedding = parsed.embedding;
+      output.input_tokens = parsed.inputTokens;
       output.duration_ms = Date.now() - startTime;
     } catch (err) {
       output.error = err instanceof Error ? err.message : String(err);

@@ -2,10 +2,10 @@
 
 ## 1. 设计目标
 
-1. 解耦 LLM 和系统，通过 Repository 设计模式为上层提供统一的 LLM 操作接口；
+1. 解耦 LLM 和系统，通过 Repository 与策略模式（Strategy Pattern）为上层提供统一且多态的 LLM 操作接口；
 2. 所有对 LLM 的操作都不能直接进行，都必须要通过 LLMProvider；
 3. 管理 LLM 提供商及其模型；
-4. 接管 LLM 调用请求，提供统一的推理执行接口；
+4. 接管 LLM 调用请求，提供统一的推理执行接口；通过策略模式支持通用 OpenAI 兼容提供商与各异提供商（Google、Anthropic、Ollama 等）的请求构造与多态解析；
 5. 提供可视化数据接口，支持 LLM 服务健康状态监控；
 6. LLMProvider 用到的所有配置项统一存储于关系数据库配置表，方便后续分布式部署；
 
@@ -298,7 +298,7 @@
 
 1. 若未传 ID，自动查找 is_default=1 且 enable=1 的默认模型；
 2. 根据 ID 获取 llm_available 记录及关联的 llm_provider；
-3. 使用提供商的 api_key 进行认证，构造 OpenAI 兼容 POST 请求；
+3. 使用提供商的 api_key 进行认证，构造 OpenAI 兼容 POST 请求（针对 Google 系列提供商同时附带 `Authorization: Bearer <api_key>` 与 `x-goog-api-key` 以兼容其 OpenAI 格式路由）；
 4. 从 API 响应中提取 result、input_tokens（prompt_tokens）、output_tokens（completion_tokens）、duration_ms；
 5. 更新 llm_usage 表当天 usage_count 并累计 input_tokens / output_tokens；
 
@@ -396,6 +396,48 @@
 **返回**：Boolean，表示操作是否完成
 
 > 注：组件初始化时从 llm_config 读取 `enabled` 状态以恢复上次的可用状态。
+
+### 3.5. 多态策略模式架构（Strategy Pattern）
+
+针对不同模型提供商在请求端点路径、鉴权请求头、请求体数据结构（如顶层 `system` vs `messages` 数组）、Token 约束以及响应返回结构上的差异，采用策略模式（Strategy Pattern）与策略工厂（`LLMStrategyFactory`）实现多态调用。
+
+#### 3.5.1. 策略接口（ILLMProviderStrategy）
+
+| 方法 | 说明 |
+| :--- | :--- |
+| `supports(provider)` | 判定当前策略是否适用于该提供商 |
+| `buildTestRequest(provider)` | 构造连通性探测请求（URL、Method、Headers） |
+| `buildListModelsRequest(provider)` | 构造模型列表拉取请求 |
+| `parseListModelsResponse(json, rawText)` | 多态解析各提供商模型目录响应 |
+| `buildChatRequest(provider, model, input)` | 构造对话补全 / Messages 请求 |
+| `parseChatResponse(json, rawText)` | 多态解析对话回复内容与 Token 用量 |
+| `buildEmbedRequest(provider, model, input)` | 构造向量化请求 |
+| `parseEmbedResponse(json, rawText)` | 多态解析向量浮点数组 |
+
+#### 3.5.2. 内置策略实现
+
+1. **BaseLLMStrategy / OpenAIStrategy**：
+   - 适用于 OpenAI、DeepSeek、Moonshot、Zhipu AI、Qwen、SiliconFlow、OpenRouter、Groq、Together、火山引擎等通用 OpenAI 兼容服务商；
+   - 默认路由：`v1/chat/completions`、`v1/models`、`v1/embeddings`；
+   - 标准鉴权：`Authorization: Bearer <api_key>`。
+2. **GoogleStrategy**：
+   - 适用于 Google Gemini 系列；
+   - 缺省路由：`openai/chat/completions`（OpenAI 兼容）或 `models`（模型列表）；
+   - 组合鉴权：同时注入 `Authorization: Bearer <api_key>`、`x-goog-api-key` 及 URL 查询参数 `?key=`；
+   - 思考模型 Token 保护：保障至少 1024 Token 空间供思维链模型（如 Gemini 3.7-Flash）完成内部思考与结果输出；
+   - 兼容解析：同时支持 OpenAI `{ choices: [...] }` 与 Google 原生 `{ candidates: [...] }` 结构。
+3. **AnthropicStrategy**：
+   - 适用于 Anthropic Claude 系列；
+   - 专用鉴权：`x-api-key: <api_key>` 与 `anthropic-version: 2023-06-01`；
+   - 参数适配：将 `system` 提升为顶层独立参数，强制补齐 `max_tokens`；
+   - 结构解析：解析 Anthropic `{ content: [{ type: 'text', text }] }` 结构。
+4. **OllamaStrategy**：
+   - 适用于本地部署的 Ollama / 本地模型；
+   - 免鉴权适配，支持 Ollama 原生 `/api/tags` 列表及 details 参数解析。
+
+#### 3.5.3. 策略工厂（LLMStrategyFactory）
+
+通过单例注册中心根据 `llm_provider_title` 与 `llm_provider_url` 动态分发策略，未命中特殊规则时自动安全回退至通用 `OpenAIStrategy`，并支持运行时注册第三方扩展策略。
 
 ## 4. 表设计
 
