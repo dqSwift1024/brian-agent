@@ -3,15 +3,12 @@ import { ref, computed, watch, nextTick } from 'vue'
 import {
   MessageCircle,
   Loader2,
-  Pin,
-  PinOff,
-  ChevronDown,
-  CornerUpRight,
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
 import type { ChatMessage, Block, TextBlock } from '@/api/types'
 import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
+import MessageCard from './MessageCard.vue'
 import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
 
 const sessionStore = useSessionStore()
@@ -20,8 +17,6 @@ const leftWidth = computed(() => `${sessionStore.splitRatio * 100}%`)
 const rightWidth = computed(() => `${(1 - sessionStore.splitRatio) * 100}%`)
 const isDragging = ref(false)
 const listRef = ref<HTMLDivElement | null>(null)
-const expandedCiting = ref<string | null>(null)
-const expandedCited = ref<string | null>(null)
 
 const nodeMap = computed(() => {
   const m = new Map<string, { summary: string; pin: boolean; citingCount: number; citedCount: number; citingInfoIds: string[]; citedInfoIds: string[] }>()
@@ -69,15 +64,6 @@ function getCitingIds(msg: ChatMessage): string[] {
   return []
 }
 
-function getMessageSummary(infoId: string): string {
-  const node = nodeMap.value.get(infoId)
-  if (node?.summary) return node.summary
-  if (node?.info) return node.info.slice(0, 24)
-  const msg = sessionStore.messages.find(m => m.id === infoId)
-  if (msg?.content) return msg.content.slice(0, 24)
-  return infoId.slice(0, 8)
-}
-
 // ChatMap 点击节点 -> 滚动列表使该消息居中
 watch(() => sessionStore.focusInfoId, async (id) => {
   if (!id) return
@@ -102,8 +88,6 @@ function togglePin(id: string) {
 }
 
 function jumpTo(id: string) {
-  expandedCiting.value = null
-  expandedCited.value = null
   scrollListTo(id)
 }
 
@@ -384,109 +368,25 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
             :class="entry.message.role === 'user' ? 'ml-auto' : 'mr-auto'"
             :data-info-id="entry.message.id"
           >
-            <div
-              class="rounded-2xl px-3 py-2.5 cursor-pointer"
-              :class="[
-                entry.message.role === 'user'
-                  ? 'bg-brian-blue text-white'
-                  : (entry.message.content.startsWith('[错误]') ? 'block-card border-error-red/40 bg-error-red/5 text-error-red' : 'block-card')
-              ]"
-              @click="centerMapOn(entry.message.id)"
-            >
-              <div class="flex items-center justify-between mb-1 text-[10px]">
-                <span :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
-                  {{ formatTime(entry.message.timestamp) }}
-                </span>
-                <div class="flex items-center gap-1.5">
-                  <label class="flex items-center cursor-pointer" title="勾选以指定本次问答上下文" @click.stop>
-                    <input
-                      type="checkbox"
-                      class="rounded cursor-pointer h-3.5 w-3.5"
-                      :class="entry.message.role === 'user' ? 'accent-white' : 'accent-brian-blue'"
-                      :checked="sessionStore.selectedMsgIds.has(entry.message.id)"
-                      @change="sessionStore.toggleMsgSelection(entry.message.id)"
-                    />
-                  </label>
-                  <button
-                    class="p-0.5 rounded hover:text-warning-orange transition-colors"
-                    :class="nodeOf(entry.message)?.pin ? 'text-warning-orange' : (entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400')"
-                    :title="nodeOf(entry.message)?.pin ? '取消钉住' : '钉住'"
-                    @click.stop="togglePin(entry.message.id)"
-                  >
-                    <component :is="nodeOf(entry.message)?.pin ? Pin : PinOff" :size="12" />
-                  </button>
-                </div>
-              </div>
-
-              <p class="text-sm whitespace-pre-wrap">{{ entry.message.content }}</p>
-
-              <div class="flex items-center gap-1.5 mt-1.5">
-                <button
-                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors"
-                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
-                  @click.stop="expandedCited = expandedCited === entry.message.id ? null : entry.message.id"
-                >
-                  引用 {{ getCitedCount(entry.message) }}
-                  <ChevronDown :size="10" :class="expandedCited === entry.message.id ? 'rotate-180' : ''" />
-                </button>
-                <button
-                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors"
-                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 hover:bg-apple-gray-200'"
-                  @click.stop="expandedCiting = expandedCiting === entry.message.id ? null : entry.message.id"
-                >
-                  被引用 {{ getCitingCount(entry.message) }}
-                  <ChevronDown :size="10" :class="expandedCiting === entry.message.id ? 'rotate-180' : ''" />
-                </button>
-                <span class="ml-auto text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">
-                  {{ entry.message.content.length }}字
-                </span>
-              </div>
-
-              <!-- 展开：引用列表 -->
-              <div v-if="expandedCited === entry.message.id" class="mt-2 pt-1.5 border-t border-current/10 space-y-1">
-                <p class="text-[10px] font-medium" :class="entry.message.role === 'user' ? 'text-white/80' : 'text-apple-gray-500'">引用以下消息：</p>
-                <button
-                  v-for="cid in getCitedIds(entry.message)"
-                  :key="cid"
-                  class="flex items-center gap-1 w-full text-left text-[11px] truncate py-0.5 rounded px-1"
-                  :class="entry.message.role === 'user' ? 'hover:bg-white/10 text-white' : 'hover:bg-brian-blue/5 text-brian-blue'"
-                  @click.stop="jumpTo(cid)"
-                >
-                  <CornerUpRight :size="10" class="flex-shrink-0" />
-                  <span class="truncate">{{ getMessageSummary(cid) }}</span>
-                </button>
-                <p v-if="!getCitedIds(entry.message).length" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">无引用消息</p>
-              </div>
-
-              <!-- 展开：被引用列表 -->
-              <div v-if="expandedCiting === entry.message.id" class="mt-2 pt-1.5 border-t border-current/10 space-y-1">
-                <p class="text-[10px] font-medium" :class="entry.message.role === 'user' ? 'text-white/80' : 'text-apple-gray-500'">被以下消息引用：</p>
-                <button
-                  v-for="cid in getCitingIds(entry.message)"
-                  :key="cid"
-                  class="flex items-center gap-1 w-full text-left text-[11px] truncate py-0.5 rounded px-1"
-                  :class="entry.message.role === 'user' ? 'hover:bg-white/10 text-white' : 'hover:bg-brian-blue/5 text-brian-blue'"
-                  @click.stop="jumpTo(cid)"
-                >
-                  <CornerUpRight :size="10" class="flex-shrink-0" />
-                  <span class="truncate">{{ getMessageSummary(cid) }}</span>
-                </button>
-                <p v-if="!getCitingIds(entry.message).length" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">无被引用记录</p>
-              </div>
-            </div>
-
-            <div v-if="getCitedIds(entry.message).length" class="mt-1.5 flex flex-wrap gap-1">
-              <span
-                v-for="cid in getCitedIds(entry.message)"
-                :key="cid"
-                class="px-2 py-0.5 text-[10px] rounded-full cursor-pointer transition-colors"
-                :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
-                title="点击在对话列表中定位被引用的消息"
-                @click.stop="jumpTo(cid)"
-              >
-                引用: {{ getMessageSummary(cid) }}
-              </span>
-            </div>
+            <MessageCard
+              :id="entry.message.id"
+              :info-id="entry.message.id"
+              :role="entry.message.role"
+              :content="entry.message.content"
+              :timestamp="entry.message.timestamp"
+              :pin="nodeOf(entry.message)?.pin ?? entry.message.pin"
+              :selected="sessionStore.selectedMsgIds.has(entry.message.id)"
+              :cited-count="getCitedCount(entry.message)"
+              :citing-count="getCitingCount(entry.message)"
+              :cited-info-ids="getCitedIds(entry.message)"
+              :citing-info-ids="getCitingIds(entry.message)"
+              mode="timeline"
+              :node-map="nodeMap"
+              @toggle-select="sessionStore.toggleMsgSelection"
+              @toggle-pin="togglePin"
+              @click-card="centerMapOn"
+              @jump-to="jumpTo"
+            />
           </div>
 
           <div v-else class="max-w-[85%]" :class="entry.block.role === 'user' ? 'ml-auto' : 'mr-auto'">
