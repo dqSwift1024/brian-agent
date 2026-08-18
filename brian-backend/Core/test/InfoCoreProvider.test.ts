@@ -633,6 +633,45 @@ describe('InfoCoreProvider', () => {
 
       expect(Array.isArray(output.list)).toBe(true);
       expect(output.list.length).toBeGreaterThanOrEqual(1);
+      expect(output.categories).toBeDefined();
+      expect(output.sources_summary).toBeDefined();
+      expect(output.list[0].source).toBeDefined();
+    });
+
+    it('should only return selected and pinned items when selected_msg_ids is provided', async () => {
+      const sessionId = 'selected-context-session';
+      const createdIds: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const out = new SaveInfoOutput();
+        await infoCore.saveInfo(makeSaveInput({ session_id: sessionId, info: `Message ${i}` }), new InfoCoreContext(), out);
+        createdIds.push(out.info_id);
+      }
+
+      // Pin message 0
+      const pinIn = new PinInfoInput();
+      pinIn.info_id = createdIds[0];
+      await infoCore.pinInfo(pinIn, new InfoCoreContext(), new PinInfoOutput());
+
+      // Select message 2 and 3
+      const input = new ContextInfoInput();
+      input.session_id = sessionId;
+      input.selected_msg_ids = [createdIds[2], createdIds[3]];
+      const output = new ContextInfoOutput();
+      await infoCore.context(input, new InfoCoreContext(), output);
+
+      expect(output.list.length).toBe(3); // 1 pinned + 2 selected
+      const resultIds = output.list.map((m) => m.info_id);
+      expect(resultIds).toContain(createdIds[0]); // pinned
+      expect(resultIds).toContain(createdIds[2]); // selected
+      expect(resultIds).toContain(createdIds[3]); // selected
+      expect(resultIds).not.toContain(createdIds[1]); // not selected or pinned
+      expect(resultIds).not.toContain(createdIds[4]); // not selected or pinned
+
+      expect(output.categories?.selected.length).toBe(2);
+      expect(output.categories?.pinned.length).toBe(1);
+      expect(output.categories?.timeline.length).toBe(0);
+      expect(output.sources_summary?.selected).toBe(2);
+      expect(output.sources_summary?.pinned).toBe(1);
     });
   });
 

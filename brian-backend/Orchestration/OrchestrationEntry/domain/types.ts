@@ -15,6 +15,7 @@ export class ReceiveWorkInput extends Input {
   info_creator_id?: string;
   info_creator_role?: string;
   citing_msg_ids?: string[];
+  selected_msg_ids?: string[];
 }
 
 export class ReceiveWorkOutput extends Output {
@@ -45,6 +46,7 @@ export class ReceiveWorkAsyncInput extends Input {
   info_type?: string;
   info_creator_id?: string;
   info_creator_role?: string;
+  selected_msg_ids?: string[];
 }
 
 export class ReceiveWorkAsyncOutput extends Output {
@@ -58,6 +60,7 @@ export class BuildWorkContextInput extends Input {
   work_id!: string;
   user_query!: string;
   max_recent_works?: number;
+  selected_msg_ids?: string[];
 }
 
 export class BuildWorkContextOutput extends Output {

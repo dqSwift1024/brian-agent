@@ -602,6 +602,26 @@ describe('ChatService', () => {
       saveInfoSpy.mockRestore();
     });
 
+    it('TC-CHAT-021b: With selected_msg_ids forwards parent_info_ids to infoCore.saveInfo as cited messages', async () => {
+      const saveInfoSpy = vi.spyOn(ctx.infoCore, 'saveInfo');
+
+      const input = Object.assign(new SubmitWorkInput(), {
+        session_id: 'test-session', msg_content: 'hello with selection',
+        selected_msg_ids: ['sel-1', 'sel-2'],
+      });
+      const c = new ChatContext();
+      const output = new SubmitWorkOutput();
+
+      await service.submitWork(input, c, output);
+
+      const saveCalls = saveInfoSpy.mock.calls;
+      const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
+      expect(userSaveCall).toBeDefined();
+      expect(userSaveCall[0].parent_info_ids).toContain('sel-1');
+      expect(userSaveCall[0].parent_info_ids).toContain('sel-2');
+      saveInfoSpy.mockRestore();
+    });
+
     it('TC-CHAT-022: force_orchestration_strategy SIMPLE forwarded to orchestration', async () => {
       const spy = vi.spyOn(ctx.orchestrationEntry, 'receiveWork');
 

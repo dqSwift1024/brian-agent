@@ -1045,16 +1045,162 @@ export class InfoCoreService {
   }
 
   /**
-   * 构建 Agent 上下文：五源融合，按配置比例动态分配，钉住消息在最前面。
+   * 构建 Agent 上下文：多源融合（复选消息、钉住消息、时间线消息、标签关联、向量相似度、关键词、随机抽样）。
    *
    * 来源及优先级：
-   * a. Pinned  — 钉住消息（强制位于最前）
-   * b. Timeline   — lastNInfo
-   * c. Tag        — relationKInfo（需提供 info_id）
-   * d. Similarity — similarKInfo
-   * e. Keyword    — keywordKInfo
-   * f. Random     — 随机抽样
+   * a. Selected — 复选消息（若提供 selected_msg_ids，本次问答仅根据复选消息与钉住消息构建）
+   * b. Pinned   — 钉住消息（强制位于最前）
+   * c. Timeline — lastNInfo（时间顺序lastN消息）
+   * d. Tag      — relationKInfo（标签相关消息，需提供 info_id）
+   * e. Similarity — similarKInfo（相似度相关消息）
+   * f. Keyword  — keywordKInfo（关键词相关消息）
+   * g. Random   — 随机抽样
    */
+  // ===== 原始方法（保留作为参考）=====
+  // async context(
+  //   input: ContextInfoInput,
+  //   _context: InfoCoreContext,
+  //   output: ContextInfoOutput,
+  // ): Promise<boolean> {
+  //   if (!input.session_id) {
+  //     throw new ValidationError('context 需要提供 session_id');
+  //   }
+  //
+  //   const contextConfig = await this.getInfoContextConfig();
+  //   if (!contextConfig) {
+  //     const fallback = await this.lastNInfoTimeline(input.session_id, 100);
+  //     output.list = fallback;
+  //     return true;
+  //   }
+  //
+  //   // 1. 先收集钉住消息
+  //   const pinnedItems: InfoRawRecord[] = [];
+  //   const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
+  //     conditions: [
+  //       { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+  //       { field: 'pin', operator: Operator.EQ, value: 1 },
+  //     ],
+  //     order_by: [{ field: 'created', direction: 'DESC' }],
+  //   });
+  //   for (const row of pinnedRows) {
+  //     const record = this.toInfoRawRecord(row);
+  //     if (!record.info || record.info === '') {
+  //       const summary = await this.getInfoSummaryRow(record.info_id);
+  //       if (summary) record.info = `[摘要] ${summary.summary}`;
+  //       else continue;
+  //     }
+  //     pinnedItems.push(record);
+  //   }
+  //
+  //   // 2. 时间线消息
+  //   const timelineItems = await this.lastNInfoTimeline(input.session_id, contextConfig.base_timeline_count);
+  //   const timelineMap = new Map<string, InfoRawRecord>();
+  //   for (const item of timelineItems) {
+  //     timelineMap.set(item.info_id, item);
+  //   }
+  //
+  //   const timelineActual = timelineMap.size;
+  //   let remaining = (contextConfig.total || 1000) - pinnedItems.length;
+  //   if (remaining <= 0) {
+  //     output.list = pinnedItems.slice(0, contextConfig.total);
+  //     return true;
+  //   }
+  //
+  //   // 3. 按比例动态分配
+  //   let tagCount = 0, simCount = 0, kwCount = 0, randCount = 0;
+  //   remaining -= timelineActual;
+  //   if (remaining > 0) {
+  //     tagCount = Math.min(contextConfig.base_tag_relative_count, remaining);
+  //     remaining -= tagCount;
+  //   }
+  //   if (remaining > 0) {
+  //     simCount = Math.min(contextConfig.base_similarity_count, remaining);
+  //     remaining -= simCount;
+  //   }
+  //   if (remaining > 0) {
+  //     kwCount = Math.min(contextConfig.base_keyword_count, remaining);
+  //     remaining -= kwCount;
+  //   }
+  //   if (remaining > 0) {
+  //     randCount = Math.min(contextConfig.base_random_count, remaining);
+  //   }
+  //
+  //   const mergedMap = new Map<string, InfoRawRecord>();
+  //   for (const item of timelineItems) {
+  //     mergedMap.set(item.info_id, item);
+  //   }
+  //
+  //   // 4. 辅助来源
+  //   if (input.info_id && (tagCount > 0 || simCount > 0 || kwCount > 0)) {
+  //     const infoRow = await this.getInfoByInfoId(input.info_id);
+  //     if (infoRow) {
+  //       if (tagCount > 0) {
+  //         try {
+  //           const relInput = new RelationKInfoInput();
+  //           relInput.info_id = input.info_id;
+  //           relInput.topN = tagCount;
+  //           const relOutput = new RelationKInfoOutput();
+  //           await this.relationKInfo(relInput, _context, relOutput);
+  //           for (const item of relOutput.list) {
+  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+  //           }
+  //         } catch { /* 忽略 */ }
+  //       }
+  //       if (simCount > 0) {
+  //         try {
+  //           const simInput = new SimilarKInfoInput();
+  //           simInput.info = infoRow.info;
+  //           simInput.topK = simCount;
+  //           const simOutput = new SimilarKInfoOutput();
+  //           await this.similarKInfo(simInput, _context, simOutput);
+  //           for (const item of simOutput.list) {
+  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+  //           }
+  //         } catch { /* 忽略 */ }
+  //       }
+  //       if (kwCount > 0) {
+  //         try {
+  //           const kwInput = new KeywordKInfoInput();
+  //           kwInput.info = infoRow.info;
+  //           const kwOutput = new KeywordKInfoOutput();
+  //           await this.keywordKInfo(kwInput, _context, kwOutput);
+  //           const topKw = kwOutput.list.slice(0, kwCount);
+  //           for (const item of topKw) {
+  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+  //           }
+  //         } catch { /* 忽略 */ }
+  //       }
+  //     }
+  //   }
+  //
+  //   if (randCount > 0) {
+  //     try {
+  //       const randomItems = await this.randomSampleInfos(input.session_id, randCount);
+  //       for (const item of randomItems) {
+  //         if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+  //       }
+  //     } catch { /* 忽略 */ }
+  //   }
+  //
+  //   // 5. 上下文内容回退：已老化信息使用摘要替代
+  //   for (const [infoId, item] of mergedMap) {
+  //     if (!item.info || item.info === '') {
+  //       const summary = await this.getInfoSummaryRow(infoId);
+  //       if (summary) {
+  //         item.info = `[摘要] ${summary.summary}`;
+  //       }
+  //     }
+  //   }
+  //
+  //   // 6. 排序：钉住 → 时间线 → tag → similarity → keyword → random
+  //   const sorted = [...mergedMap.values()].sort((a, b) => b.created - a.created);
+  //   const result = [...pinnedItems, ...sorted];
+  //   output.list = result.slice(0, contextConfig.total);
+  //
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async context(
     input: ContextInfoInput,
     _context: InfoCoreContext,
@@ -1065,14 +1211,10 @@ export class InfoCoreService {
     }
 
     const contextConfig = await this.getInfoContextConfig();
-    if (!contextConfig) {
-      const fallback = await this.lastNInfoTimeline(input.session_id, 100);
-      output.list = fallback;
-      return true;
-    }
+    const maxTotal = contextConfig?.total || 1000;
 
-    // 1. 先收集钉住消息
-    const pinnedItems: InfoRawRecord[] = [];
+    // 1. 收集钉住消息 (pinned)
+    const pinnedItems: Array<InfoRawRecord & { source?: string }> = [];
     const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
       conditions: [
         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
@@ -1081,7 +1223,8 @@ export class InfoCoreService {
       order_by: [{ field: 'created', direction: 'DESC' }],
     });
     for (const row of pinnedRows) {
-      const record = this.toInfoRawRecord(row);
+      const record = this.toInfoRawRecord(row) as InfoRawRecord & { source?: string };
+      record.source = 'pinned';
       if (!record.info || record.info === '') {
         const summary = await this.getInfoSummaryRow(record.info_id);
         if (summary) record.info = `[摘要] ${summary.summary}`;
@@ -1089,22 +1232,123 @@ export class InfoCoreService {
       }
       pinnedItems.push(record);
     }
+    const pinnedIdSet = new Set(pinnedItems.map((item) => item.info_id));
 
-    // 2. 时间线消息
-    const timelineItems = await this.lastNInfoTimeline(input.session_id, contextConfig.base_timeline_count);
-    const timelineMap = new Map<string, InfoRawRecord>();
-    for (const item of timelineItems) {
-      timelineMap.set(item.info_id, item);
-    }
+    // 2. 判断是否存在复选消息（若有勾选，仅基于复选消息与钉住消息进行问答）
+    if (input.selected_msg_ids && input.selected_msg_ids.length > 0) {
+      const selectedItems: Array<InfoRawRecord & { source?: string }> = [];
+      const selectedIdSet = new Set<string>();
 
-    const timelineActual = timelineMap.size;
-    let remaining = (contextConfig.total || 1000) - pinnedItems.length;
-    if (remaining <= 0) {
-      output.list = pinnedItems.slice(0, contextConfig.total);
+      for (const msgId of input.selected_msg_ids) {
+        if (!msgId || selectedIdSet.has(msgId) || pinnedIdSet.has(msgId)) continue;
+        selectedIdSet.add(msgId);
+
+        const row = await this.getInfoByInfoId(msgId);
+        if (row && row.session_id === input.session_id) {
+          const record = { ...row, source: 'selected' };
+          if (!record.info || record.info === '') {
+            const summary = await this.getInfoSummaryRow(record.info_id);
+            if (summary) record.info = `[摘要] ${summary.summary}`;
+            else continue;
+          }
+          selectedItems.push(record);
+        }
+      }
+
+      // 按时间倒序排序复选消息
+      selectedItems.sort((a, b) => b.created - a.created);
+
+      const resultList = [...pinnedItems, ...selectedItems].slice(0, maxTotal);
+
+      output.list = resultList;
+      output.categories = {
+        selected: selectedItems,
+        pinned: pinnedItems,
+        timeline: [],
+        tag_relative: [],
+        similarity: [],
+        keyword: [],
+        random: [],
+      };
+      output.sources_summary = {
+        selected: selectedItems.length,
+        pinned: pinnedItems.length,
+        timeline: 0,
+        tag_relative: 0,
+        similarity: 0,
+        keyword: 0,
+        random: 0,
+      };
       return true;
     }
 
-    // 3. 按比例动态分配
+    // 3. 无复选消息时：执行完整多维上下文构建
+    if (!contextConfig) {
+      const fallback = await this.lastNInfoTimeline(input.session_id, 100);
+      const taggedFallback = fallback.map((item) => {
+        const tagged = { ...item, source: item.pin ? 'pinned' : 'timeline' };
+        return tagged;
+      });
+      output.list = taggedFallback;
+      output.categories = {
+        selected: [],
+        pinned: pinnedItems,
+        timeline: taggedFallback.filter((i) => i.source === 'timeline'),
+        tag_relative: [],
+        similarity: [],
+        keyword: [],
+        random: [],
+      };
+      output.sources_summary = {
+        selected: 0,
+        pinned: pinnedItems.length,
+        timeline: taggedFallback.filter((i) => i.source === 'timeline').length,
+        tag_relative: 0,
+        similarity: 0,
+        keyword: 0,
+        random: 0,
+      };
+      return true;
+    }
+
+    // 3.1 时间线消息 (timeline)
+    const rawTimelineItems = await this.lastNInfoTimeline(input.session_id, contextConfig.base_timeline_count);
+    const timelineItems: Array<InfoRawRecord & { source?: string }> = [];
+    const timelineMap = new Map<string, InfoRawRecord & { source?: string }>();
+    for (const item of rawTimelineItems) {
+      if (!pinnedIdSet.has(item.info_id)) {
+        const tagged = { ...item, source: 'timeline' };
+        timelineItems.push(tagged);
+        timelineMap.set(item.info_id, tagged);
+      }
+    }
+
+    const timelineActual = timelineMap.size;
+    let remaining = maxTotal - pinnedItems.length;
+    if (remaining <= 0) {
+      output.list = pinnedItems.slice(0, maxTotal);
+      output.categories = {
+        selected: [],
+        pinned: pinnedItems,
+        timeline: [],
+        tag_relative: [],
+        similarity: [],
+        keyword: [],
+        random: [],
+      };
+      output.sources_summary = {
+        selected: 0,
+        pinned: pinnedItems.length,
+        timeline: 0,
+        tag_relative: 0,
+        similarity: 0,
+        keyword: 0,
+        random: 0,
+      };
+      return true;
+    }
+
+    // 3.2 按比例动态分配辅助来源数量
     let tagCount = 0, simCount = 0, kwCount = 0, randCount = 0;
     remaining -= timelineActual;
     if (remaining > 0) {
@@ -1123,12 +1367,13 @@ export class InfoCoreService {
       randCount = Math.min(contextConfig.base_random_count, remaining);
     }
 
-    const mergedMap = new Map<string, InfoRawRecord>();
-    for (const item of timelineItems) {
-      mergedMap.set(item.info_id, item);
-    }
+    const seenIds = new Set<string>([...pinnedIdSet, ...timelineMap.keys()]);
+    const tagRelativeItems: Array<InfoRawRecord & { source?: string }> = [];
+    const similarityItems: Array<InfoRawRecord & { source?: string }> = [];
+    const keywordItems: Array<InfoRawRecord & { source?: string }> = [];
+    const randomItems: Array<InfoRawRecord & { source?: string }> = [];
 
-    // 4. 辅助来源
+    // 3.3 辅助来源提取
     if (input.info_id && (tagCount > 0 || simCount > 0 || kwCount > 0)) {
       const infoRow = await this.getInfoByInfoId(input.info_id);
       if (infoRow) {
@@ -1140,7 +1385,11 @@ export class InfoCoreService {
             const relOutput = new RelationKInfoOutput();
             await this.relationKInfo(relInput, _context, relOutput);
             for (const item of relOutput.list) {
-              if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+              if (!seenIds.has(item.info_id)) {
+                seenIds.add(item.info_id);
+                const tagged = { ...item, source: 'tag_relative' };
+                tagRelativeItems.push(tagged);
+              }
             }
           } catch { /* 忽略 */ }
         }
@@ -1152,7 +1401,11 @@ export class InfoCoreService {
             const simOutput = new SimilarKInfoOutput();
             await this.similarKInfo(simInput, _context, simOutput);
             for (const item of simOutput.list) {
-              if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+              if (!seenIds.has(item.info_id)) {
+                seenIds.add(item.info_id);
+                const tagged = { ...item, source: 'similarity' };
+                similarityItems.push(tagged);
+              }
             }
           } catch { /* 忽略 */ }
         }
@@ -1164,7 +1417,11 @@ export class InfoCoreService {
             await this.keywordKInfo(kwInput, _context, kwOutput);
             const topKw = kwOutput.list.slice(0, kwCount);
             for (const item of topKw) {
-              if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+              if (!seenIds.has(item.info_id)) {
+                seenIds.add(item.info_id);
+                const tagged = { ...item, source: 'keyword' };
+                keywordItems.push(tagged);
+              }
             }
           } catch { /* 忽略 */ }
         }
@@ -1173,27 +1430,58 @@ export class InfoCoreService {
 
     if (randCount > 0) {
       try {
-        const randomItems = await this.randomSampleInfos(input.session_id, randCount);
-        for (const item of randomItems) {
-          if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
+        const rawRandom = await this.randomSampleInfos(input.session_id, randCount);
+        for (const item of rawRandom) {
+          if (!seenIds.has(item.info_id)) {
+            seenIds.add(item.info_id);
+            const tagged = { ...item, source: 'random' };
+            randomItems.push(tagged);
+          }
         }
       } catch { /* 忽略 */ }
     }
 
-    // 5. 上下文内容回退：已老化信息使用摘要替代
-    for (const [infoId, item] of mergedMap) {
+    const nonPinnedList = [
+      ...timelineItems,
+      ...tagRelativeItems,
+      ...similarityItems,
+      ...keywordItems,
+      ...randomItems,
+    ];
+
+    // 3.4 上下文内容回退：已老化信息使用摘要替代
+    for (const item of nonPinnedList) {
       if (!item.info || item.info === '') {
-        const summary = await this.getInfoSummaryRow(infoId);
+        const summary = await this.getInfoSummaryRow(item.info_id);
         if (summary) {
           item.info = `[摘要] ${summary.summary}`;
         }
       }
     }
 
-    // 6. 排序：钉住 → 时间线 → tag → similarity → keyword → random
-    const sorted = [...mergedMap.values()].sort((a, b) => b.created - a.created);
-    const result = [...pinnedItems, ...sorted];
-    output.list = result.slice(0, contextConfig.total);
+    // 3.5 排序：钉住消息位于最前，非钉住消息按时间倒序排列
+    nonPinnedList.sort((a, b) => b.created - a.created);
+    const resultList = [...pinnedItems, ...nonPinnedList].slice(0, maxTotal);
+
+    output.list = resultList;
+    output.categories = {
+      selected: [],
+      pinned: pinnedItems,
+      timeline: timelineItems,
+      tag_relative: tagRelativeItems,
+      similarity: similarityItems,
+      keyword: keywordItems,
+      random: randomItems,
+    };
+    output.sources_summary = {
+      selected: 0,
+      pinned: pinnedItems.length,
+      timeline: timelineItems.length,
+      tag_relative: tagRelativeItems.length,
+      similarity: similarityItems.length,
+      keyword: keywordItems.length,
+      random: randomItems.length,
+    };
 
     return true;
   }

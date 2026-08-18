@@ -4,6 +4,7 @@ export class PlannerAgentContext extends Context {
   session_id?: string;
   work_id?: string;
   interact_id?: string;
+  selected_msg_ids?: string[];
 }
 
 export interface AgentPlanRecord {

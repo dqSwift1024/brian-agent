@@ -32,6 +32,78 @@ export class AgentContextService {
     private readonly infoCore: InfoCoreAccess,
   ) {}
 
+  // ===== 原始方法（保留作为参考）=====
+  // async buildAgentContext(
+  //   input: BuildAgentContextInput,
+  //   _ctx: AgentContextContext,
+  //   output: BuildAgentContextOutput,
+  // ): Promise<boolean> {
+  //   if (!input.session_id) {
+  //     throw new ValidationError('session_id 为必填');
+  //   }
+  //
+  //   const ctxOutput = new ContextInfoOutput();
+  //   await this.infoCore.context(
+  //     Object.assign(new ContextInfoInput(), { session_id: input.session_id }),
+  //     new InfoCoreContext(),
+  //     ctxOutput,
+  //   );
+  //
+  //   const rawList = ctxOutput.list;
+  //   const contextData = rawList.map((item) => ({
+  //     info_id: item.info_id,
+  //     content: item.info,
+  //     source: '',
+  //   }));
+  //
+  //   const contextId = IdGenerator.generate();
+  //   const now = IdGenerator.now();
+  //
+  //   const sourceCounts: Record<string, number> = {};
+  //   for (const item of contextData) {
+  //     const src = item.source || 'unknown';
+  //     sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+  //   }
+  //
+  //   const config = await this.getConfigInternal();
+  //   if (config && config.enable_snapshot_persistence !== 0) {
+  //     await this.relationDb.insert(AGENT_CONTEXT_TABLE, [
+  //       { field: 'id', value: IdGenerator.generate() },
+  //       { field: 'created', value: now },
+  //       { field: 'updated', value: now },
+  //       { field: 'context_id', value: contextId },
+  //       { field: 'session_id', value: input.session_id },
+  //       { field: 'agent_id', value: input.agent_id || '' },
+  //       { field: 'work_id', value: input.work_id || '' },
+  //       { field: 'trace_id', value: input.trace_id || '' },
+  //       { field: 'context_total_count', value: contextData.length },
+  //       { field: 'context_sources_summary', value: JSON.stringify(sourceCounts) },
+  //     ]);
+  //
+  //     if (contextData.length > 0) {
+  //       const itemOps = contextData.map((item) => ({
+  //         type: OperationType.INSERT,
+  //         table: AGENT_CONTEXT_ITEM_TABLE,
+  //         data: [
+  //           { field: 'id', value: IdGenerator.generate() },
+  //           { field: 'created', value: now },
+  //           { field: 'updated', value: now },
+  //           { field: 'context_id', value: contextId },
+  //           { field: 'info_id', value: item.info_id },
+  //           { field: 'source', value: item.source || '' },
+  //         ],
+  //       }));
+  //       this.relationDb.transactionRaw(itemOps);
+  //     }
+  //   }
+  //
+  //   output.context_data = contextData;
+  //   output.context_id = contextId;
+  //   output.total_context_count = contextData.length;
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async buildAgentContext(
     input: BuildAgentContextInput,
     _ctx: AgentContextContext,
@@ -43,7 +115,10 @@ export class AgentContextService {
 
     const ctxOutput = new ContextInfoOutput();
     await this.infoCore.context(
-      Object.assign(new ContextInfoInput(), { session_id: input.session_id }),
+      Object.assign(new ContextInfoInput(), {
+        session_id: input.session_id,
+        selected_msg_ids: input.selected_msg_ids,
+      }),
       new InfoCoreContext(),
       ctxOutput,
     );
@@ -52,7 +127,7 @@ export class AgentContextService {
     const contextData = rawList.map((item) => ({
       info_id: item.info_id,
       content: item.info,
-      source: '',
+      source: (item as { source?: string }).source || '',
     }));
 
     const contextId = IdGenerator.generate();

@@ -5,6 +5,7 @@ export class AgentExecutionContext extends Context {
   work_id?: string;
   interact_id?: string;
   trace_id?: string;
+  selected_msg_ids?: string[];
 }
 
 export interface AgentExecutionConfigRecord {

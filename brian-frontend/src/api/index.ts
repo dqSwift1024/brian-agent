@@ -32,10 +32,15 @@ export const chatApi = {
     request<{ exchanges: unknown[] }>(`/chat/exchanges/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.exchanges),
   dag: (sessionId: string, userId: string) =>
     request<{ work_id: string; nodes: DagNode[]; edges: DagEdge[] }>(`/chat/dag?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}`),
-  sendMessage: (sessionId: string, content: string, citingIds?: string[]) =>
+  sendMessage: (sessionId: string, content: string, citingIds?: string[], selectedMsgIds?: string[]) =>
     request<{ msgId: string; workId: string }>('/chat/send', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId, msg_content: content, citing_msg_ids: citingIds || [] })
+      body: JSON.stringify({
+        session_id: sessionId,
+        msg_content: content,
+        citing_msg_ids: citingIds || [],
+        selected_msg_ids: selectedMsgIds || [],
+      })
     }),
   createSession: (title?: string) =>
     request<{ session_id: string; session_title: string; created: number }>('/chat/create-session', {

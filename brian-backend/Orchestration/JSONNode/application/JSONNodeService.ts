@@ -404,6 +404,11 @@ export class JSONNodeService {
     const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     const interactId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
 
+    const citingIds = Array.from(new Set([
+      ...((sharedData.citing_msg_ids as string[]) ?? []),
+      ...((sharedData.selected_msg_ids as string[]) ?? []),
+    ]));
+
     const saveInput = Object.assign(new SaveInfoInput(), {
       session_id: sessionId,
       work_id: workId,
@@ -412,7 +417,7 @@ export class JSONNodeService {
       info_creator_role: (sharedData.info_creator_role as string) ?? 'USER',
       info_creator_id: (sharedData.info_creator_id as string) ?? '',
       info: userQuery,
-      parent_info_ids: (sharedData.citing_msg_ids as string[]) ?? [],
+      parent_info_ids: citingIds,
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -453,7 +458,11 @@ export class JSONNodeService {
 
     let sessionContext: Record<string, unknown> = {};
     try {
-      const ctxInfoInput = Object.assign(new ContextInfoInput(), { session_id: sessionId });
+      const selectedMsgIds = Array.isArray(sharedData.selected_msg_ids) ? sharedData.selected_msg_ids as string[] : undefined;
+      const ctxInfoInput = Object.assign(new ContextInfoInput(), {
+        session_id: sessionId,
+        selected_msg_ids: selectedMsgIds,
+      });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, new InfoCoreContext(), ctxInfoOutput);
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;

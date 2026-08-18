@@ -364,6 +364,33 @@ describe('AgentContext', () => {
       expect(summary.unknown).toBe(5);
     });
 
+    it('TC-AC-008b: preserves classified sources in context items and summary', async () => {
+      const infoItems = [
+        { info_id: 'info-1', info: 'a', source: 'pinned' },
+        { info_id: 'info-2', info: 'b', source: 'selected' },
+        { info_id: 'info-3', info: 'c', source: 'timeline' },
+      ];
+      const mockDb = createMockRelationDb();
+      mockDb.storage.agent_context_config.push(makeDefaultConfig());
+      const mockInfoCore = createMockInfoCore(infoItems);
+      const access = await createAccess(mockDb, mockInfoCore);
+
+      const input = new BuildAgentContextInput();
+      input.session_id = 'sess-1';
+      input.selected_msg_ids = ['info-2'];
+      const output = new BuildAgentContextOutput();
+      await access.buildAgentContext(input, new AgentContextContext(), output);
+
+      expect(mockInfoCore.context).toHaveBeenCalledTimes(1);
+      expect(mockInfoCore.context.mock.calls[0][0]).toHaveProperty('selected_msg_ids', ['info-2']);
+
+      const snap = mockDb.storage.agent_context[0];
+      const summary = JSON.parse(snap.context_sources_summary);
+      expect(summary.pinned).toBe(1);
+      expect(summary.selected).toBe(1);
+      expect(summary.timeline).toBe(1);
+    });
+
     it('TC-AC-009: InfoCore.context error propagates', async () => {
       const mockDb = createMockRelationDb();
       mockDb.storage.agent_context_config.push(makeDefaultConfig());

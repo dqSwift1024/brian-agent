@@ -323,15 +323,30 @@ export class GraphInfoOutput extends Output {
 // context
 // ---------------------------------------------------------------------------
 
+/** 上下文分类结构 */
+export interface ContextInfoCategories {
+  selected: InfoRawRecord[];
+  pinned: InfoRawRecord[];
+  timeline: InfoRawRecord[];
+  tag_relative: InfoRawRecord[];
+  similarity: InfoRawRecord[];
+  keyword: InfoRawRecord[];
+  random: InfoRawRecord[];
+}
+
 /** context 入参 */
 export class ContextInfoInput extends Input {
   session_id!: string;
   info_id?: string;
+  /** 复选消息 ID 列表（勾选后仅提取复选消息与钉住消息） */
+  selected_msg_ids?: string[];
 }
 
 /** context 出参 */
 export class ContextInfoOutput extends Output {
-  list: InfoRawRecord[] = [];
+  list: Array<InfoRawRecord & { source?: string }> = [];
+  categories?: ContextInfoCategories;
+  sources_summary?: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------

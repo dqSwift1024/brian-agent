@@ -42,6 +42,42 @@ function nodeOf(msg: ChatMessage) {
   return nodeMap.value.get(msg.id)
 }
 
+function getCitedCount(msg: ChatMessage): number {
+  const fromNode = nodeOf(msg)?.citedCount
+  if (fromNode !== undefined && fromNode > 0) return fromNode
+  return getCitedIds(msg).length
+}
+
+function getCitingCount(msg: ChatMessage): number {
+  const fromNode = nodeOf(msg)?.citingCount
+  if (fromNode !== undefined && fromNode > 0) return fromNode
+  return msg.citingCount ?? 0
+}
+
+function getCitedIds(msg: ChatMessage): string[] {
+  const nodeIds = nodeOf(msg)?.citedInfoIds
+  if (nodeIds && nodeIds.length > 0) return nodeIds
+  if (msg.citedInfoIds && msg.citedInfoIds.length > 0) return msg.citedInfoIds
+  if (msg.citingIds && msg.citingIds.length > 0) return msg.citingIds
+  return []
+}
+
+function getCitingIds(msg: ChatMessage): string[] {
+  const nodeIds = nodeOf(msg)?.citingInfoIds
+  if (nodeIds && nodeIds.length > 0) return nodeIds
+  if (msg.citingInfoIds && msg.citingInfoIds.length > 0) return msg.citingInfoIds
+  return []
+}
+
+function getMessageSummary(infoId: string): string {
+  const node = nodeMap.value.get(infoId)
+  if (node?.summary) return node.summary
+  if (node?.info) return node.info.slice(0, 24)
+  const msg = sessionStore.messages.find(m => m.id === infoId)
+  if (msg?.content) return msg.content.slice(0, 24)
+  return infoId.slice(0, 8)
+}
+
 // ChatMap 点击节点 -> 滚动列表使该消息居中
 watch(() => sessionStore.focusInfoId, async (id) => {
   if (!id) return
@@ -141,12 +177,15 @@ async function handleSend(content: string, citingIds: string[]) {
     return
   }
 
+  const selectedMsgIds = Array.from(sessionStore.selectedMsgIds)
+  const combinedCitingIds = Array.from(new Set([...citingIds, ...selectedMsgIds]))
+
   const userMsg: ChatMessage = {
     id: `msg-${Date.now()}`,
     role: 'user',
     content,
     timestamp: Date.now(),
-    citingIds,
+    citingIds: combinedCitingIds,
   }
   sessionStore.addMessage(userMsg)
 
@@ -176,7 +215,8 @@ async function handleSend(content: string, citingIds: string[]) {
       body: JSON.stringify({
         session_id: sessionId,
         msg_content: content,
-        citing_msg_ids: citingIds,
+        citing_msg_ids: combinedCitingIds,
+        selected_msg_ids: selectedMsgIds,
         trace_id: traceId,
       }),
       signal: abortCtrl.signal,
@@ -216,8 +256,9 @@ async function handleSend(content: string, citingIds: string[]) {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
     sessionStore.setCancelController(null)
-    // 一轮对话结束后刷新 ChatMap，展示最新 work 的消息图谱，并撤销引用复选
+    // 一轮对话结束后刷新 ChatMap 与历史消息，展示最新图谱与引用关联，并重置复选
     void sessionStore.loadDag(sessionId, 'default-user')
+    void sessionStore.loadChatHistory(sessionId, 'default-user')
     sessionStore.clearSelection()
   }
 }
@@ -349,19 +390,22 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
               @click="centerMapOn(entry.message.id)"
             >
               <div class="flex items-center justify-between mb-1 text-[10px]">
-                <label v-if="sessionStore.citingMode" class="flex items-center gap-1 cursor-pointer" @click.stop>
-                  <input
-                    type="checkbox"
-                    class="accent-white"
-                    :checked="sessionStore.selectedMsgIds.has(entry.message.id)"
-                    @change="sessionStore.toggleMsgSelection(entry.message.id)"
-                  />
-                </label>
-                <span v-else :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
-                  {{ formatTime(entry.message.timestamp) }}
-                </span>
+                <div class="flex items-center gap-1.5">
+                  <label class="flex items-center gap-1 cursor-pointer" title="勾选以指定本次问答上下文" @click.stop>
+                    <input
+                      type="checkbox"
+                      class="rounded cursor-pointer h-3.5 w-3.5"
+                      :class="entry.message.role === 'user' ? 'accent-white' : 'accent-brian-blue'"
+                      :checked="sessionStore.selectedMsgIds.has(entry.message.id)"
+                      @change="sessionStore.toggleMsgSelection(entry.message.id)"
+                    />
+                  </label>
+                  <span :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
+                    {{ formatTime(entry.message.timestamp) }}
+                  </span>
+                </div>
                 <button
-                  class="p-0.5 rounded hover:text-warning-orange"
+                  class="p-0.5 rounded hover:text-warning-orange transition-colors"
                   :class="nodeOf(entry.message)?.pin ? 'text-warning-orange' : (entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400')"
                   :title="nodeOf(entry.message)?.pin ? '取消钉住' : '钉住'"
                   @click.stop="togglePin(entry.message.id)"
@@ -374,19 +418,19 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
 
               <div class="flex items-center gap-1.5 mt-1.5">
                 <button
-                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px]"
-                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white' : 'bg-brian-blue/10 text-brian-blue'"
+                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors"
+                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
                   @click.stop="expandedCited = expandedCited === entry.message.id ? null : entry.message.id"
                 >
-                  引用 {{ nodeOf(entry.message)?.citedCount ?? 0 }}
+                  引用 {{ getCitedCount(entry.message) }}
                   <ChevronDown :size="10" :class="expandedCited === entry.message.id ? 'rotate-180' : ''" />
                 </button>
                 <button
-                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px]"
-                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white' : 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300'"
+                  class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors"
+                  :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 hover:bg-apple-gray-200'"
                   @click.stop="expandedCiting = expandedCiting === entry.message.id ? null : entry.message.id"
                 >
-                  被引用 {{ nodeOf(entry.message)?.citingCount ?? 0 }}
+                  被引用 {{ getCitingCount(entry.message) }}
                   <ChevronDown :size="10" :class="expandedCiting === entry.message.id ? 'rotate-180' : ''" />
                 </button>
                 <span class="ml-auto text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">
@@ -394,41 +438,50 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
                 </span>
               </div>
 
-              <div v-if="expandedCited === entry.message.id" class="mt-1.5 space-y-0.5">
-                <p class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">引用以下消息：</p>
+              <!-- 展开：引用列表 -->
+              <div v-if="expandedCited === entry.message.id" class="mt-2 pt-1.5 border-t border-current/10 space-y-1">
+                <p class="text-[10px] font-medium" :class="entry.message.role === 'user' ? 'text-white/80' : 'text-apple-gray-500'">引用以下消息：</p>
                 <button
-                  v-for="cid in nodeOf(entry.message)?.citedInfoIds ?? []"
+                  v-for="cid in getCitedIds(entry.message)"
                   :key="cid"
-                  class="flex items-center gap-1 w-full text-left text-[10px] truncate hover:underline"
+                  class="flex items-center gap-1 w-full text-left text-[11px] truncate py-0.5 rounded px-1"
+                  :class="entry.message.role === 'user' ? 'hover:bg-white/10 text-white' : 'hover:bg-brian-blue/5 text-brian-blue'"
                   @click.stop="jumpTo(cid)"
                 >
                   <CornerUpRight :size="10" class="flex-shrink-0" />
-                  {{ nodeMap.get(cid)?.summary || cid.slice(0, 8) }}
+                  <span class="truncate">{{ getMessageSummary(cid) }}</span>
                 </button>
-                <p v-if="!(nodeOf(entry.message)?.citedInfoIds?.length)" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">无</p>
+                <p v-if="!getCitedIds(entry.message).length" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">无引用消息</p>
               </div>
 
-              <div v-if="expandedCiting === entry.message.id" class="mt-1.5 space-y-0.5">
-                <p class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">被以下消息引用：</p>
+              <!-- 展开：被引用列表 -->
+              <div v-if="expandedCiting === entry.message.id" class="mt-2 pt-1.5 border-t border-current/10 space-y-1">
+                <p class="text-[10px] font-medium" :class="entry.message.role === 'user' ? 'text-white/80' : 'text-apple-gray-500'">被以下消息引用：</p>
                 <button
-                  v-for="cid in nodeOf(entry.message)?.citingInfoIds ?? []"
+                  v-for="cid in getCitingIds(entry.message)"
                   :key="cid"
-                  class="flex items-center gap-1 w-full text-left text-[10px] truncate hover:underline"
+                  class="flex items-center gap-1 w-full text-left text-[11px] truncate py-0.5 rounded px-1"
+                  :class="entry.message.role === 'user' ? 'hover:bg-white/10 text-white' : 'hover:bg-brian-blue/5 text-brian-blue'"
                   @click.stop="jumpTo(cid)"
                 >
                   <CornerUpRight :size="10" class="flex-shrink-0" />
-                  {{ nodeMap.get(cid)?.summary || cid.slice(0, 8) }}
+                  <span class="truncate">{{ getMessageSummary(cid) }}</span>
                 </button>
-                <p v-if="!(nodeOf(entry.message)?.citingInfoIds?.length)" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-300'">无</p>
+                <p v-if="!getCitingIds(entry.message).length" class="text-[10px]" :class="entry.message.role === 'user' ? 'text-white/60' : 'text-apple-gray-400'">无被引用记录</p>
               </div>
             </div>
 
-            <div v-if="entry.message.citingIds?.length" class="mt-1 flex flex-wrap gap-1">
+            <div v-if="getCitedIds(entry.message).length" class="mt-1.5 flex flex-wrap gap-1">
               <span
-                v-for="cid in entry.message.citingIds"
+                v-for="cid in getCitedIds(entry.message)"
                 :key="cid"
-                class="px-2 py-0.5 text-xs rounded-full bg-brian-blue/10 text-brian-blue"
-              >{{ cid.slice(-8) }}</span>
+                class="px-2 py-0.5 text-[10px] rounded-full cursor-pointer transition-colors"
+                :class="entry.message.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"
+                title="点击在对话列表中定位被引用的消息"
+                @click.stop="jumpTo(cid)"
+              >
+                引用: {{ getMessageSummary(cid) }}
+              </span>
             </div>
           </div>
 
@@ -448,8 +501,10 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
         <InputBox
           :disabled="sessionStore.isStreaming"
           :citing-mode="sessionStore.citingMode"
+          :selected-count="sessionStore.selectedMsgIds.size"
           @send="handleSend"
           @toggle-citing="sessionStore.toggleCitingMode()"
+          @clear-selected="sessionStore.clearSelection()"
           @stop="sessionStore.cancelCurrentTask()"
         />
       </div>

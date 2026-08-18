@@ -463,29 +463,32 @@
 
 ### 2.5.7. 构建上下文（context）
 
-**功能**：根据session_id构建上下文
+**功能**：根据session_id构建上下文（支持复选消息指定、钉住消息置顶、多维分类聚合）
 **入参**：
-- input：ContextInput（继承 Input），包含以下字段：
-  - session_id：会话 ID
-  - info_id：信息 ID
-- context：ContextContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
-- output：ContextOutput（继承 Output），承载返回内容：
-  - context_data：构建的上下文数据
+- input：ContextInfoInput（继承 Input），包含以下字段：
+  - session_id：会话 ID（必选）
+  - info_id：信息 ID（可选，用于辅助检索关联消息）
+  - selected_msg_ids：复选消息 ID 列表（可选；若提供且非空，本次问答仅根据复选消息与钉住消息构建上下文）
+- context：InfoCoreContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：ContextInfoOutput（继承 Output），承载返回内容：
+  - list：构建的上下文消息列表，每项包含 `source` 来源标注（`selected`/`pinned`/`timeline`/`tag_relative`/`similarity`/`keyword`/`random`）
+  - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `tag_relative`, `similarity`, `keyword`, `random`）
+  - sources_summary：各分类消息数量汇总统计（`Record<string, number>`）
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取上下文构建参数：base_timeline_count, base_tag_relative_count, base_similarity_count, base_keyword_count, base_random_count, total；
-2. 调用 RelationDBProvider.selectDB 查询 `info_raw` 表中当前 session 下 pin=true 的消息，按创建时间倒序排列。钉住的消息优先作为上下文的最前端部分，收集数量为 `pinned_count`（上限不超过 total）；
-3. 对钉住的消息，若 info 字段为空（已被老化清理），调用 RelationDBProvider.selectOneDB 查询 `info_summary` 表获取摘要文本，以 `[摘要] {summary}` 格式替代原始内容；若摘要也不存在则跳过该条；
-4. 以 info_id 为起点，通过 BFS 逐层遍历 `info_graph` 表的引用链（cited_info_id → citing_info_id），收集消息到达 base_timeline_count 条或直到没有更多引用（使用 visited 集合去重），按消息的原始创建时间倒序排列；
-5. 以步骤 4 中获取到的时间线消息实际数量 `timeline_actual` 为基准，动态计算剩余配额 `remaining = total - pinned_count - timeline_actual`，按比例分配其他来源的加载数量：
-   a. `tag_count = min(base_tag_relative_count, remaining)`，调用 `relationKInfo` 接口获取基于 Tag 相关性的关联信息；
-   b. `similarity_count = min(base_similarity_count, remaining - tag_count)`，调用 `similarKInfo` 接口获取基于语义相似度的关联信息；
-   c. `keyword_count = min(base_keyword_count, remaining - tag_count - similarity_count)`，调用 `keywordKInfo` 接口获取基于关键词搜索的关联信息；
-   d. `random_count = min(base_random_count, remaining - tag_count - similarity_count - keyword_count)`，调用 RelationDBProvider.selectDB 从 `info_raw` 表随机采样（使用 SQLite 的 `ORDER BY RANDOM() LIMIT random_count`）获取随机联想信息；
-6. **摘要回退**：对时间线、tag 关联、语义相似、关键词、随机采样等所有来源收集到的每条信息，若 `info` 字段为空（已被老化清理），调用 RelationDBProvider.selectOneDB 查询 `info_summary` 表获取摘要文本，以 `[摘要] {summary}` 格式替代原始内容；若摘要也不存在则跳过该条；
-7. 将所有来源的信息合并：按来源优先级（pinned > timeline > tag_relative > similarity > keyword > random）和各自内部的相关性/时间排序组装为统一的上下文列表；
-8. 若合并后的总数超过 total，截取前 total 条；
-9. 返回上下文数据列表（info_id, info 内容, source 来源标注），写入 output 返回；
+1. **收集钉住消息**：调用 RelationDBProvider.selectDB 查询 `info_raw` 表中当前 session 下 pin=true 的消息，按创建时间倒序排列，标注 source 为 `'pinned'`。对老化清空的消息执行摘要回退；
+2. **复选消息分支**：若 `selected_msg_ids` 非空：
+   a. 遍历 `selected_msg_ids`，根据 `info_id` 查询 `info_raw` 表并校验所属 `session_id`，排除已在钉住列表中的重复项；
+   b. 将复选消息标注 source 为 `'selected'`，对老化清空的消息执行摘要回退；
+   c. 仅将钉住消息与复选消息合并（钉住在前，复选在后按时间倒序），填充 `categories.selected` 与 `categories.pinned`，其余分类置空；
+   d. 统计 `sources_summary`（仅包含 selected 与 pinned），返回结果；
+3. **常规多维聚合分支**（`selected_msg_ids` 为空）：
+   a. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取构建参数：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`；
+   b. 查询时间线消息（`timeline`），排除钉住项，按时间倒序排列；
+   c. 动态计算剩余配额，按比例提取标签相关（`tag_relative`）、语义相似（`similarity`）、关键词（`keyword`）与随机抽样（`random`）消息，依次去重；
+   d. 对各来源消息执行摘要回退，并统一注入对应的 `source` 标注；
+   e. 排序组装：钉住消息位于最前，非钉住消息按时间倒序排列，截取前 `total` 条；
+   f. 构建分类字典 `categories` 与数量汇总 `sources_summary` 写入 output 返回；
 
 ## 2.6. 老化清理
 

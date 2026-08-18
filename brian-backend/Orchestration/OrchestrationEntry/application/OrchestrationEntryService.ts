@@ -108,6 +108,7 @@ export class OrchestrationEntryService {
       session_id: input.session_id,
       work_id: workId,
       user_query: input.user_query,
+      selected_msg_ids: input.selected_msg_ids,
     });
     const buildCtxOutput = new BuildWorkContextOutput();
     await this.buildWorkContext(buildCtxInput, context, buildCtxOutput);
@@ -122,6 +123,7 @@ export class OrchestrationEntryService {
       work_context: buildCtxOutput.work_context,
       trace_id: input.trace_id,
       citing_msg_ids: input.citing_msg_ids,
+      selected_msg_ids: input.selected_msg_ids,
       info_type: input.info_type,
       info_creator_id: input.info_creator_id,
       info_creator_role: input.info_creator_role,
@@ -360,6 +362,68 @@ export class OrchestrationEntryService {
     return true;
   }
 
+  // ===== 原始方法（保留作为参考）=====
+  // async buildWorkContext(
+  //   input: BuildWorkContextInput,
+  //   _context: OrchestrationEntryContext,
+  //   output: BuildWorkContextOutput,
+  // ): Promise<boolean> {
+  //   if (!input.session_id || !input.work_id) {
+  //     return false;
+  //   }
+  //   let sessionContext: Record<string, unknown> = {};
+  //   try {
+  //     const ctxInfoInput = Object.assign(new ContextInfoInput(), {
+  //       session_id: input.session_id,
+  //     });
+  //     const ctxInfoOutput = new ContextInfoOutput();
+  //     await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);
+  //     sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
+  //   } catch { /* degrade gracefully */ }
+  //
+  //   let userProfile: Record<string, unknown> = {};
+  //   try {
+  //     const profileInput = Object.assign(new GetUserProfileInput(), {
+  //       session_id: input.session_id,
+  //     });
+  //     const profileOutput = new GetUserProfileOutput();
+  //     await this.writerAgent.getUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
+  //     userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
+  //   } catch { /* degrade gracefully */ }
+  //
+  //   const maxRecent = input.max_recent_works ?? await this.getConfigValue('max_recent_works', 5);
+  //   const recentSelInput = Object.assign(new SelectDBInput(), {
+  //     query_param: {
+  //       table: 'orchestration_work',
+  //       conditions: [
+  //         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+  //         { field: 'status', operator: Operator.EQ, value: 'COMPLETED' },
+  //       ] as Condition[],
+  //       page: { current: 1, size: maxRecent },
+  //     },
+  //   });
+  //   const recentSelOutput = Object.assign(new SelectDBOutput(), {});
+  //   await this.relationDb.selectDB(recentSelInput, new DBContext(), recentSelOutput);
+  //
+  //   const recentWorks = recentSelOutput.rows.map((row) => ({
+  //     user_query: row.user_query,
+  //     response_summary: ((row.final_response as string) ?? '').slice(0, 200),
+  //   }));
+  //
+  //   output.work_context = {
+  //     work_id: input.work_id,
+  //     session_id: input.session_id,
+  //     user_query: input.user_query,
+  //     session_context: sessionContext,
+  //     user_profile: userProfile,
+  //     recent_works: recentWorks,
+  //     created_at: IdGenerator.now(),
+  //     metadata: { orchestration_version: '1.0' },
+  //   };
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async buildWorkContext(
     input: BuildWorkContextInput,
     _context: OrchestrationEntryContext,
@@ -372,6 +436,7 @@ export class OrchestrationEntryService {
     try {
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: input.session_id,
+        selected_msg_ids: input.selected_msg_ids,
       });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);
@@ -414,6 +479,7 @@ export class OrchestrationEntryService {
       session_context: sessionContext,
       user_profile: userProfile,
       recent_works: recentWorks,
+      selected_msg_ids: input.selected_msg_ids ?? [],
       created_at: IdGenerator.now(),
       metadata: { orchestration_version: '1.0' },
     };

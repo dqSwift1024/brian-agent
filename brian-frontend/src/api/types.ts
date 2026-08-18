@@ -121,6 +121,10 @@ export interface ChatMessage {
   interactId?: string
   citingIds?: string[]
   citedCount?: number
+  citingCount?: number
+  citedInfoIds?: string[]
+  citingInfoIds?: string[]
+  pin?: boolean
 }
 
 export interface ChatSession {

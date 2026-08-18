@@ -592,13 +592,13 @@ export class VisualizationService {
             fields: ['citing_info_id', 'cited_info_id'],
           });
           for (const row of citingRows) {
-            const edgeKey = `cite_${row.citing_info_id}->${row.cited_info_id}`;
+            const edgeKey = `cite_${row.cited_info_id}->${row.citing_info_id}`;
             if (edgeSet.has(edgeKey)) continue;
             edgeSet.add(edgeKey);
             edges.push({
-              id: `cite_${row.citing_info_id}_${row.cited_info_id}`,
-              from: String(row.citing_info_id ?? ''),
-              to: String(row.cited_info_id ?? ''),
+              id: `cite_${row.cited_info_id}_${row.citing_info_id}`,
+              from: String(row.cited_info_id ?? ''),
+              to: String(row.citing_info_id ?? ''),
               edge_type: 'CITATION',
             });
           }

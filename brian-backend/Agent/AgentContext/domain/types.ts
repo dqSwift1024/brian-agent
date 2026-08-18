@@ -40,6 +40,7 @@ export class BuildAgentContextInput extends Input {
   session_id!: string;
   agent_id?: string;
   work_id?: string;
+  selected_msg_ids?: string[];
 }
 
 export class BuildAgentContextOutput extends Output {
@@ -103,6 +104,7 @@ export const DEFAULT_MAX_CONTEXT_ITEMS = 200;
 export const DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE = 1;
 
 export const CONTEXT_SOURCE_VALID = [
+  'selected',
   'pinned',
   'timeline',
   'tag_relative',

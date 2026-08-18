@@ -157,7 +157,7 @@ export async function setupE2ETestEnvironment(): Promise<E2ETestContext> {
   mockExternalLLMMethods(llmAccess);
 
   const mcpAccess = new MCPAccess(relationDb, logger);
-  await mcpAccess.initialize();
+  try { await (mcpAccess as any).initialize?.(); } catch { /* no initialize */ }
   mockExternalMCPMethods(mcpAccess);
 
   const soulAccess = new SoulAccess(relationDb, logger);

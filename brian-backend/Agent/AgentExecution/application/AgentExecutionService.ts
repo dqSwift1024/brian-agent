@@ -142,7 +142,10 @@ export class AgentExecutionService {
       try {
         const ctxOut = new ContextInfoOutput();
         await this.infoCore.context(
-          Object.assign(new ContextInfoInput(), { session_id: sessionId }),
+          Object.assign(new ContextInfoInput(), {
+            session_id: sessionId,
+            selected_msg_ids: ctx.selected_msg_ids,
+          }),
           new InfoCoreContext(),
           ctxOut,
         );

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { MessageCircle } from '@lucide/vue'
 import { ref, computed, onMounted } from 'vue'
 import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'

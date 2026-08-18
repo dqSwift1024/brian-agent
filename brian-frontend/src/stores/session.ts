@@ -100,7 +100,7 @@ export const useSessionStore = defineStore('session', () => {
         y: idx * 190 + 120,
       }))
 
-      // 引用层级：被引用消息位于引用消息右侧
+      // 引用层级：引用方位于被引用方右侧（连线从被引用方右侧指向引用方左侧）
       const level = new Map<string, number>()
       for (const n of nodes) level.set(n.id, 0)
       let changed = true
@@ -109,15 +109,16 @@ export const useSessionStore = defineStore('session', () => {
         changed = false
         for (const e of edges) {
           if (e.edgeType !== 'CITATION') continue
-          const targetLevel = (level.get(e.target) ?? 0) + 1
-          if (targetLevel > (level.get(e.source) ?? 0)) {
-            level.set(e.source, targetLevel)
+          const srcLevel = level.get(e.source) ?? 0
+          const tgtLevel = level.get(e.target) ?? 0
+          if (srcLevel + 1 > tgtLevel) {
+            level.set(e.target, srcLevel + 1)
             changed = true
           }
         }
       }
       for (const n of nodes) {
-        n.x = (level.get(n.id) ?? 0) * 240
+        n.x = (level.get(n.id) ?? 0) * 260
       }
 
       chatMapNodes.value = nodes
@@ -206,7 +207,6 @@ export const useSessionStore = defineStore('session', () => {
 
   function toggleCitingMode() {
     citingMode.value = !citingMode.value
-    if (!citingMode.value) selectedMsgIds.value = new Set()
   }
 
   function clearSelection() {

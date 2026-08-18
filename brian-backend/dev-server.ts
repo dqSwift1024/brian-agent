@@ -1664,7 +1664,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               role: m.info_creator_role === 'USER' ? 'user' : 'assistant',
               content: m.info,
               timestamp: m.created,
-              citedCount: m.citing_count,
+              pin: m.pin,
+              citingCount: m.citing_count ?? 0,
+              citedCount: m.cited_count ?? 0,
+              citingInfoIds: m.citing_info_ids ?? [],
+              citedInfoIds: m.cited_info_ids ?? [],
+              citingIds: m.cited_info_ids ?? [],
             })),
         });
 
@@ -1677,10 +1682,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { exchanges: output.messages || [] });
 
       } else if (method === 'POST' && pathname === '/api/chat/send') {
+        const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : (Array.isArray(body.citingIds) ? body.citingIds : []);
+        const selectedMsgIds = Array.isArray(body.selected_msg_ids) ? body.selected_msg_ids : (Array.isArray(body.selectedMsgIds) ? body.selectedMsgIds : []);
+        const allCitingIds = Array.from(new Set([...citingMsgIds, ...selectedMsgIds]));
         const input = Object.assign(new SubmitWorkInput(), {
           session_id: body.session_id || body.sessionId,
           msg_content: body.msg_content || body.content,
-          citing_msg_ids: body.citing_msg_ids || body.citingIds || [],
+          citing_msg_ids: allCitingIds,
+          selected_msg_ids: selectedMsgIds,
         });
         const output = new SubmitWorkOutput();
         const context = new ChatContext();
@@ -1691,7 +1700,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // SSE 流式对话端点：通过 chat_config.sse_heartbeat_interval_ms 控制心跳间隔
         const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
         const msgContent = typeof body.msg_content === 'string' ? body.msg_content : '';
-        const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : [];
+        const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : (Array.isArray(body.citingIds) ? body.citingIds : []);
+        const selectedMsgIds = Array.isArray(body.selected_msg_ids) ? body.selected_msg_ids : (Array.isArray(body.selectedMsgIds) ? body.selectedMsgIds : []);
+        const allCitingIds = Array.from(new Set([...citingMsgIds, ...selectedMsgIds]));
         const traceId = typeof body.trace_id === 'string' && body.trace_id
           ? body.trace_id
           : (typeof body.traceid === 'string' && body.traceid ? body.traceid : IdGenerator.generate());
@@ -1738,7 +1749,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const streamInput = Object.assign(new OpenChatStreamInput(), {
           session_id: sessionId,
           msg_content: msgContent,
-          citing_msg_ids: citingMsgIds,
+          citing_msg_ids: allCitingIds,
+          selected_msg_ids: selectedMsgIds,
           trace_id: traceId,
           force_orchestration_strategy: typeof body.force_orchestration_strategy === 'string' ? body.force_orchestration_strategy : undefined,
         });

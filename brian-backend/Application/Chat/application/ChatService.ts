@@ -90,12 +90,18 @@ export class ChatService {
       /* best-effort */
     }
 
+    const citingMsgIds = Array.from(new Set([
+      ...(input.citing_msg_ids ?? []),
+      ...(input.selected_msg_ids ?? []),
+    ]));
+
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: input.session_id,
       user_query: input.msg_content,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
-      citing_msg_ids: input.citing_msg_ids ?? [],
+      citing_msg_ids: citingMsgIds,
+      selected_msg_ids: input.selected_msg_ids ?? [],
     });
     const rwOutput = new ReceiveWorkOutput();
     const rwContext = Object.assign(new OrchestrationEntryContext(), {
@@ -199,13 +205,19 @@ export class ChatService {
 
     emit('loading', { work_id: workId });
 
+    const citingMsgIds = Array.from(new Set([
+      ...(input.citing_msg_ids ?? []),
+      ...(input.selected_msg_ids ?? []),
+    ]));
+
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: input.session_id,
       user_query: input.msg_content,
       trace_id: input.trace_id,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
-      citing_msg_ids: input.citing_msg_ids ?? [],
+      citing_msg_ids: citingMsgIds,
+      selected_msg_ids: input.selected_msg_ids ?? [],
     });
     const rwOutput = new ReceiveWorkOutput();
     const rwContext = Object.assign(new OrchestrationEntryContext(), {
@@ -674,20 +686,26 @@ export class ChatService {
 
     const pageRows = allRows.slice(start, end);
 
+    let graphRows: Array<Record<string, unknown>> = [];
+    try {
+      graphRows = await this.relationDb.select('info_graph', {
+        fields: ['citing_info_id', 'cited_info_id'],
+      });
+    } catch { /* degrade gracefully */ }
+
     for (const row of pageRows) {
-      let citingCount = 0;
-      try {
-        const cntInput = Object.assign(new CountDBInput(), {
-          table: 'info_graph',
-          conditions: [
-            { field: 'cited_info_id', operator: Operator.EQ, value: row.info_id },
-          ] as Condition[],
-        });
-        const cntOutput = Object.assign(new CountDBOutput(), {});
-        await this.relationDb.countDB(cntInput, new DBContext(), cntOutput);
-        citingCount = cntOutput.count;
-      } catch {
-        /* degrade gracefully */
+      const citingInfoIds: string[] = [];
+      const citedInfoIds: string[] = [];
+
+      for (const g of graphRows) {
+        const citing = String(g.citing_info_id ?? '');
+        const cited = String(g.cited_info_id ?? '');
+        if (cited === row.info_id && citing) {
+          citingInfoIds.push(citing);
+        }
+        if (citing === row.info_id && cited) {
+          citedInfoIds.push(cited);
+        }
       }
 
       messages.push({
@@ -697,7 +715,10 @@ export class ChatService {
         info: row.info,
         created: row.created,
         pin: row.pin === 1,
-        citing_count: citingCount,
+        citing_count: citingInfoIds.length,
+        cited_count: citedInfoIds.length,
+        citing_info_ids: [...new Set(citingInfoIds)],
+        cited_info_ids: [...new Set(citedInfoIds)],
       });
     }
 

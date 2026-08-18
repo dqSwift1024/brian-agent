@@ -47,6 +47,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - `session_id`（STRING，必选）：会话 ID
 - `msg_content`（STRING，必选）：用户输入内容
 - `citing_msg_ids`（STRING[]，可选）：引用的消息 ID 列表
+- `selected_msg_ids`（STRING[]，可选）：复选的消息 ID 列表（勾选消息进行问答时传入；复选消息自动作为本次输入消息的被引用信息写入 `info_graph`，且本次问答仅以复选消息与钉住消息构建上下文）
 - `force_orchestration_strategy`（ENUM，可选）：强制编排策略（"SIMPLE" | "PLANNING"）
 - `trace_id`（STRING，可选）：请求链路追踪 ID，贯穿整条处理链路与日志，前端生成并透传；不传时由后端自动生成
 
@@ -87,6 +88,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
   - session_id（STRING，必选）：会话 ID
   - msg_content（STRING，必选）：用户输入内容
   - citing_msg_ids（STRING[]，可选）：引用的消息 ID 列表
+  - selected_msg_ids（STRING[]，可选）：复选的消息 ID 列表（自动合入 citing_msg_ids 作为被引用信息，且作为本次问答的专属上下文）
   - force_orchestration_strategy（ENUM，可选）：强制编排策略（"SIMPLE" | "PLANNING"）
 - context：SubmitWorkContext（继承 Context），会话上下文（session_id 等）
 - output：SubmitWorkOutput（继承 Output），承载返回内容：
@@ -254,13 +256,13 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - page_size（INT，可选）：每页记录数
 
 **输出**（HTTP 层经 snake_case → camelCase 转换，仅保留 REQUEST / RESPONSE 消息）：
-- messages：消息列表 [{ id, role, content, timestamp, citedCount }]，其中 `role` 由 `info_creator_role` 映射（USER→user，其余→assistant）；中间过程（THINK / SKILL / MCP / ACT）不在此返回，由 ChatMap DAG 承载
+- messages：消息列表 [{ id, role, content, timestamp, pin, citingCount, citedCount, citingInfoIds, citedInfoIds, citingIds }]，其中 `role` 由 `info_creator_role` 映射（USER→user，其余→assistant）；包含完整的引用与被引用计数及关联消息 ID 列表；中间过程（THINK / SKILL / MCP / ACT）不在此返回，由 ChatMap DAG 承载
 - total：总记录数
 
 **处理流程**：
 
 1. 调用 InfoCore.lastNInfo 查询消息（传入 session_id、work_id、lastN 等过滤条件）；
-2. 对每条消息，调用 RelationDBProvider.countDB 统计 `info_graph` 表中该消息被引用的次数（citing_count）；
+2. 批量查询 `info_graph` 表计算每条消息的引用（cited_count / cited_info_ids）与被引用（citing_count / citing_info_ids）关联关系；
 3. 过滤出 info_type ∈ {REQUEST, RESPONSE}，映射为前端 camelCase 结构后返回；
 
 #### 3.4.2. 搜索消息（searchMessage）

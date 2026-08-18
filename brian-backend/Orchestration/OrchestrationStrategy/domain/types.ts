@@ -14,6 +14,7 @@ export class StartOrchestrationInput extends Input {
   strategy!: string;
   work_context?: Record<string, unknown>;
   citing_msg_ids?: string[];
+  selected_msg_ids?: string[];
   info_type?: string;
   info_creator_id?: string;
   info_creator_role?: string;

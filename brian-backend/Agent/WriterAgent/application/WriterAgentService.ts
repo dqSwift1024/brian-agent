@@ -95,7 +95,10 @@ export class WriterAgentService {
       try {
         const ctxOut = new ContextInfoOutput();
         await this.infoCore.context(
-          Object.assign(new ContextInfoInput(), { session_id: ctx.session_id }),
+          Object.assign(new ContextInfoInput(), {
+            session_id: ctx.session_id,
+            selected_msg_ids: ctx.selected_msg_ids,
+          }),
           new InfoCoreContext(),
           ctxOut,
         );

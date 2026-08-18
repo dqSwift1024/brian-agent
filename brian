@@ -75,13 +75,13 @@ banner() {
 
 # 通过端口检测后端是否存活
 backend_alive() {
-  curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$BACKEND_PORT/api/config/soul" 2>/dev/null | grep -q "200"
+  curl --noproxy "*" --connect-timeout 2 -m 3 -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$BACKEND_PORT/api/config/soul" 2>/dev/null | grep -q "200"
   return $?
 }
 
 # 通过端口检测前端是否存活
 frontend_alive() {
-  curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT" 2>/dev/null | grep -q "200\|302\|304"
+  curl --noproxy "*" --connect-timeout 2 -m 3 -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT" 2>/dev/null | grep -q "200\|302\|304"
   return $?
 }
 

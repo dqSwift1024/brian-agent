@@ -10,6 +10,7 @@ export class SubmitWorkInput extends Input {
   session_id!: string;
   msg_content!: string;
   citing_msg_ids?: string[];
+  selected_msg_ids?: string[];
   force_orchestration_strategy?: string;
 }
 
@@ -101,6 +102,9 @@ export class GetChatHistoryOutput extends Output {
     created: number;
     pin: boolean;
     citing_count: number;
+    cited_count: number;
+    citing_info_ids: string[];
+    cited_info_ids: string[];
   }> = [];
   total = 0;
 }
@@ -169,6 +173,7 @@ export class OpenChatStreamInput extends Input {
   session_id!: string;
   msg_content!: string;
   citing_msg_ids?: string[];
+  selected_msg_ids?: string[];
   force_orchestration_strategy?: string;
 }
 
