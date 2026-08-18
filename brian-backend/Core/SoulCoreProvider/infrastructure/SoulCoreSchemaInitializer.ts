@@ -35,9 +35,15 @@ export class SoulCoreSchemaInitializer {
         "created"             INTEGER NOT NULL,
         "updated"             INTEGER NOT NULL,
         "regen_rate"          INTEGER NOT NULL DEFAULT 75,
-        "prompt_template_id"  TEXT
+        "prompt_template_id"  TEXT,
+        "llm_id"              TEXT
       )
     `);
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${SOUL_CORE_CONFIG_TABLE}" ADD COLUMN "llm_id" TEXT`);
+    } catch {
+      // 字段已存在则忽略
+    }
 
     // agent_soul 表（UNIQUE agent_id，每个 Agent 有且仅有一条 Soul 绑定）
     this.relationDb.executeRaw(`

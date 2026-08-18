@@ -375,6 +375,60 @@ export class SoulCoreService {
   /**
    * 获取或更新 soul_core_config 配置（SET 语义）。
    */
+  // ===== 原始方法（保留作为参考）=====
+  // async configSoulCore(
+  //   input: ConfigSoulCoreInput,
+  //   _context: SoulCoreContext,
+  //   output: ConfigSoulCoreOutput,
+  // ): Promise<boolean> {
+  //   const existing = await this.getCoreConfig();
+  //   const now = IdGenerator.now();
+  //
+  //   if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
+  //     const updateData: Array<{ field: string; value: unknown }> = [];
+  //     if (input.regen_rate !== undefined) {
+  //       if (input.regen_rate < 0 || input.regen_rate > 100) {
+  //         throw new ValidationError('regen_rate 必须在 0-100 之间');
+  //       }
+  //       updateData.push({ field: 'regen_rate', value: input.regen_rate });
+  //     }
+  //     if (input.prompt_template_id !== undefined) {
+  //       if (input.prompt_template_id) {
+  //         const getPromptOutput = new GetPromptOutput();
+  //         await this.promptsAccess.getPrompt(
+  //           { id: input.prompt_template_id } as GetPromptInput,
+  //           new PromptContext(),
+  //           getPromptOutput,
+  //         );
+  //         if (!getPromptOutput.prompt) {
+  //           throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
+  //         }
+  //       }
+  //       updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
+  //     }
+  //     updateData.push({ field: 'updated', value: now });
+  //
+  //     if (existing?.id) {
+  //       await this.relationDb.update(
+  //         SOUL_CORE_CONFIG_TABLE,
+  //         updateData,
+  //         [{ field: 'id', operator: Operator.EQ, value: existing.id }],
+  //       );
+  //     } else {
+  //       await this.relationDb.insert(SOUL_CORE_CONFIG_TABLE, [
+  //         { field: 'id', value: IdGenerator.generate() },
+  //         { field: 'created', value: now },
+  //         ...updateData,
+  //       ]);
+  //     }
+  //     this.configCache = null;
+  //   }
+  //
+  //   output.config = await this.getCoreConfig();
+  //   return true;
+  // }
+
+  // ===== 修改后的方法 =====
   async configSoulCore(
     input: ConfigSoulCoreInput,
     _context: SoulCoreContext,
@@ -383,7 +437,7 @@ export class SoulCoreService {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
 
-    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
+    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined || input.llm_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
         if (input.regen_rate < 0 || input.regen_rate > 100) {
@@ -404,6 +458,9 @@ export class SoulCoreService {
           }
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
+      }
+      if (input.llm_id !== undefined) {
+        updateData.push({ field: 'llm_id', value: input.llm_id || null });
       }
       updateData.push({ field: 'updated', value: now });
 
@@ -504,10 +561,8 @@ export class SoulCoreService {
     contextId: string,
     interactId: string,
   ): Promise<string> {
-    const llmId = await this.selectFirstEnabledLLM();
-    if (!llmId) {
-      throw new ProcessingError('无法生成 Soul：未找到可用 LLM');
-    }
+    const config = await this.getCoreConfig();
+    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
 
     const generationPrompt = [
       '你是一个 Persona 生成器。请为该 AI Agent 生成一个合适的 Soul（角色设定）。',
@@ -627,13 +682,9 @@ export class SoulCoreService {
       );
     }
 
-    const llmId = await this.selectFirstEnabledLLM();
-    if (!llmId) {
-      throw new ProcessingError('Soul 排名失败：未找到可用 LLM');
-    }
-
+    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
     const execLLMOutput = new ExecLLMOutput();
-    await this.llmAccess.execLLM(
+    const ok = await this.llmAccess.execLLM(
       {
         id: llmId,
         prompt: selectionPrompt,
@@ -643,6 +694,9 @@ export class SoulCoreService {
       new LLMContext(),
       execLLMOutput,
     );
+    if (!ok) {
+      throw new ProcessingError(`Soul 排名失败: ${execLLMOutput.error ?? '未找到可用 LLM'}`);
+    }
 
     return this.parseSoulSelectionResult(execLLMOutput.result, availableSouls);
   }
@@ -713,10 +767,8 @@ export class SoulCoreService {
     currentSoul: Record<string, unknown>,
     candidateSoul: Record<string, unknown>,
   ): Promise<SoulVerdict> {
-    const llmId = await this.selectFirstEnabledLLM();
-    if (!llmId) {
-      throw new ProcessingError('Soul 比较失败：未找到可用 LLM');
-    }
+    const config = await this.getCoreConfig();
+    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
 
     const prompt = [
       'You are a Soul (persona) evaluator. Compare two Souls and decide which one is better for an AI agent.',
@@ -778,15 +830,48 @@ export class SoulCoreService {
   // 内部辅助 — LLM 选择
   // ---------------------------------------------------------------------------
 
-  /** 选择第一个启用的 LLM */
-  private async selectFirstEnabledLLM(): Promise<string | null> {
-    const row = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+  /**
+   * 三级回退选择可用 LLM：
+   * 1. 若配置了模型（llm_id）且处于启用状态，则使用配置的模型；
+   * 2. 若未配置模型或配置模型不可用，则使用系统默认模型（is_default=1 且 enable=1）；
+   * 3. 若无默认模型，则使用系统启用的第一个模型（enable=1）；
+   * 4. 若无任何已启用模型，返回 null。
+   */
+  private async selectEffectiveLLM(configuredLlmId?: string | null): Promise<string | null> {
+    // 1. 如果配置了模型且该模型处于启用状态，使用配置的模型
+    if (configuredLlmId && configuredLlmId.trim() !== '') {
+      const row = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+        { field: 'id', operator: Operator.EQ, value: configuredLlmId.trim() },
+        { field: 'enable', operator: Operator.EQ, value: 1 },
+      ]);
+      if (row) {
+        return String(row.id);
+      }
+    }
+
+    // 2. 如果没有配置模型，使用系统默认的模型（启动状态 is_default=1 且 enable=1）
+    const defaultRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+      { field: 'is_default', operator: Operator.EQ, value: 1 },
       { field: 'enable', operator: Operator.EQ, value: 1 },
     ]);
-    if (!row) {
-      return null;
+    if (defaultRow) {
+      return String(defaultRow.id);
     }
-    return String(row.id);
+
+    // 3. 如果没有默认模型，使用启用的第一个模型
+    const firstEnabledRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+      { field: 'enable', operator: Operator.EQ, value: 1 },
+    ]);
+    if (firstEnabledRow) {
+      return String(firstEnabledRow.id);
+    }
+
+    return null;
+  }
+
+  /** 选择第一个启用的 LLM（兼容旧方法调用） */
+  private async selectFirstEnabledLLM(): Promise<string | null> {
+    return this.selectEffectiveLLM();
   }
 
   // ---------------------------------------------------------------------------
@@ -800,6 +885,7 @@ export class SoulCoreService {
       updated: raw['updated'] as number,
       regen_rate: (raw['regen_rate'] as number) ?? 75,
       prompt_template_id: (raw['prompt_template_id'] as string) || null,
+      llm_id: (raw['llm_id'] as string) || null,
     };
   }
 

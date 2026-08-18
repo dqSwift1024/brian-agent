@@ -26,6 +26,7 @@ export interface SoulCoreConfigRecord {
   updated: number;
   regen_rate: number;
   prompt_template_id: string | null;
+  llm_id: string | null;
 }
 
 /** agent_soul 表记录（Agent 与 Soul 的绑定关系，UNIQUE agent_id） */
@@ -168,6 +169,8 @@ export class ConfigSoulCoreInput extends Input {
   regen_rate?: number;
   /** Prompt 模板 ID */
   prompt_template_id?: string;
+  /** Soul 匹配与评估所使用的 LLM ID（为空则自动回退系统默认模型） */
+  llm_id?: string | null;
 }
 
 /** configSoulCore 出参 */

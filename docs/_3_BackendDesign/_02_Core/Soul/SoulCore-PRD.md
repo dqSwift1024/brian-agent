@@ -113,20 +113,30 @@ SET 行为：接受 `regen_rate` 和 `prompt_template_id` 作为可选更新字�
 - input：ConfigSoulCoreInput（继承 Input），包含以下字段：
   - regen_rate：重新生成Soul的概率（可选）
   - prompt_template_id：模板prompt ID（可选）
+  - llm_id：用于Soul匹配与评估的模型 ID（可选，为空则使用系统默认模型）
 - context：ConfigSoulCoreContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ConfigSoulCoreOutput（继承 Output），承载返回内容：
   - regen_rate：当前生效的重新生成概率
   - prompt_template_id：当前生效的模板prompt ID
+  - llm_id：当前生效的模型 ID
 
 **处理流程**：
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `soul_core_config` 表获取当前配置；
 2. 若 `regen_rate` 非空：校验为 0-100 的整数，更新 regen_rate 字段；
 3. 若 `prompt_template_id` 非空：校验 PromptsProvider.soPrompt 中是否存在该 prompt_template_id，存在则更新，否则返回 false；
-4. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `soul_core_config` 表；
-5. 默认配置初始化由 `ConfigHelper.ensureDefaultConfig` 统一管理（regen_rate=75、prompt_template_id 为空）；
+4. 若 `llm_id` 非空：更新 llm_id 字段；
+5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `soul_core_config` 表；
+6. 默认配置初始化由 `ConfigHelper.ensureDefaultConfig` 统一管理（regen_rate=75、prompt_template_id 为空、llm_id 为空）；
 
-**返回**：更新后的当前配置（regen_rate、prompt_template_id）
+**返回**：更新后的当前配置（regen_rate、prompt_template_id、llm_id）
+
+**LLM 三级回退选择机制**：
+Soul 匹配、生成与优化评估调用 LLM 时按以下顺序选择模型：
+1. **配置的模型**：若 `soul_core_config.llm_id` 已配置且处于启用状态，优先使用该模型；
+2. **系统默认模型**：若未配置或配置模型未启用，使用系统默认的已启用模型（`is_default = 1` 且 `enable = 1`）；
+3. **首个启用模型**：若系统无默认模型，使用 `llm_available` 表中首个启用的模型（`enable = 1`）；
+4. 若无任何已启用模型，抛出 `ProcessingError`。
 
 ## 重要内容
 
@@ -145,7 +155,8 @@ SET 行为：接受 `regen_rate` 和 `prompt_template_id` 作为可选更新字�
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | regen_rate | 重新生成Soul的概率 | INTEGER | N | | 默认75 |
-| prompt_template_id | 模板promptID | UUID | N | | |
+| prompt_template_id | 模板promptID | UUID | Y | | 可选 |
+| llm_id | Soul匹配模型ID | UUID | Y | | 可选，留空使用系统默认模型 |
 
 ### 3.2. AgentSoul关联表
 
@@ -174,6 +185,17 @@ SET 行为：接受 `regen_rate` 和 `prompt_template_id` 作为可选更新字�
 | min_usage_count | 最少使用次数 | INTEGER | N | | 低于该值则老化，默认0 |
 
 ## 变更记录
+
+### [2026-08-19] SoulCore 支持模型配置与三级回退选择机制
+
+**变更原因**：
+1. 配置中心增加 Soul 匹配专有模型配置参数；
+2. 修复此前 SoulCore 内部直接读取第一条已启用模型导致忽略系统默认模型的问题。
+
+**修改的方法**：
+- `soul_core_config` 表与 `SoulCoreConfigRecord` 新增 `llm_id` 字段；
+- `SoulCoreService.selectEffectiveLLM`：实现三级回退选择（配置模型 -> 系统默认模型 -> 首个启用模型）；
+- `configRegistrations`：注册 `soul_core.basic.llm_id` 配置项并打通前端选择下拉框。
 
 ### [2026-08-15] configSoulCore 校验补全 + opt_rule 读取修复
 

@@ -206,6 +206,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- SoulCoreProvider ---
   core('soul_core', 'basic', 'regen_rate', 'Soul 重新生成概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
   core('soul_core', 'basic', 'prompt_template_id', 'Soul 匹配 Prompt', 'STRING', '', '用于 Soul 匹配排名'),
+  core('soul_core', 'basic', 'llm_id', 'Soul 匹配模型', 'STRING', '', '留空则使用系统默认模型'),
   core('soul_core', 'opt_rule', 'opt_rule.days', '优化规则观察天数', 'INT', 30, 'Soul 淘汰/优化规则的观察窗口'),
   core('soul_core', 'opt_rule', 'opt_rule.min_usage_count', '优化规则最小使用次数', 'INT', 5, '低于此次数的 Soul 可能被淘汰'),
 

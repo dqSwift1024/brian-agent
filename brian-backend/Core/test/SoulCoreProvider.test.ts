@@ -121,9 +121,9 @@ describe('SoulCoreProvider', () => {
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should persist config across calls', async () => {
+    it('should persist config across calls and support llm_id', async () => {
       await soulCore.configSoulCore(
-        { regen_rate: 10 } as ConfigSoulCoreInput,
+        { regen_rate: 10, llm_id: 'custom-model-id' } as ConfigSoulCoreInput,
         new SoulCoreContext(),
         new ConfigSoulCoreOutput(),
       );
@@ -131,6 +131,7 @@ describe('SoulCoreProvider', () => {
       const output = new ConfigSoulCoreOutput();
       await soulCore.configSoulCore(new ConfigSoulCoreInput(), new SoulCoreContext(), output);
       expect(output.config!.regen_rate).toBe(10);
+      expect(output.config!.llm_id).toBe('custom-model-id');
     });
   });
 
@@ -272,6 +273,64 @@ describe('SoulCoreProvider', () => {
       expect(output.soul!.soul_brief).toBe('自动生成的 Soul');
       expect(output.soul!.soul_content).toBe('乐于助人的 AI 助手。');
       expect(output.soul!.soul_usage).toBe('通用对话、信息查询、任务辅助');
+
+      spy.mockRestore();
+    });
+
+    it('should follow 3-tier fallback (configured -> default -> first enabled)', async () => {
+      const now = IdGenerator.now();
+      await relationDb.delete(LLM_AVAILABLE_TABLE, []);
+      await relationDb.insert(LLM_AVAILABLE_TABLE, [
+        { field: 'id', value: 'model-first' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'llm_provider_id', value: 'prov-1' },
+        { field: 'llm_title', value: 'first-model' },
+        { field: 'enable', value: 1 },
+        { field: 'is_default', value: 0 },
+      ]);
+      await relationDb.insert(LLM_AVAILABLE_TABLE, [
+        { field: 'id', value: 'model-default' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'llm_provider_id', value: 'prov-1' },
+        { field: 'llm_title', value: 'default-model' },
+        { field: 'enable', value: 1 },
+        { field: 'is_default', value: 1 },
+      ]);
+      await relationDb.insert(LLM_AVAILABLE_TABLE, [
+        { field: 'id', value: 'model-configured' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'llm_provider_id', value: 'prov-1' },
+        { field: 'llm_title', value: 'configured-model' },
+        { field: 'enable', value: 1 },
+        { field: 'is_default', value: 0 },
+      ]);
+
+      let calledModelId = '';
+      const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
+        async (input, _ctx, output) => {
+          calledModelId = input.id;
+          output.result = '{}';
+          return true;
+        },
+      );
+
+      // Case 1: Configured model in soul_core_config -> uses model-configured
+      await soulCore.configSoulCore({ llm_id: 'model-configured' } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
+      await soulCore.matchSoul(buildMatchInput('agent-tier-1'), new SoulCoreContext(), new MatchSoulOutput());
+      expect(calledModelId).toBe('model-configured');
+
+      // Case 2: No configured model (null/empty) -> uses model-default (is_default=1)
+      await soulCore.configSoulCore({ llm_id: null } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
+      await soulCore.matchSoul(buildMatchInput('agent-tier-2'), new SoulCoreContext(), new MatchSoulOutput());
+      expect(calledModelId).toBe('model-default');
+
+      // Case 3: No default model -> uses model-first (first enabled)
+      await relationDb.update(LLM_AVAILABLE_TABLE, [{ field: 'is_default', value: 0 }], [{ field: 'id', operator: Operator.EQ, value: 'model-default' }]);
+      await soulCore.matchSoul(buildMatchInput('agent-tier-3'), new SoulCoreContext(), new MatchSoulOutput());
+      expect(calledModelId).toBe('model-first');
 
       spy.mockRestore();
     });

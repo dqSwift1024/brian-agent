@@ -912,7 +912,7 @@ export class ConfigService {
       const key = configKey.split('skill_core.opt_rule.')[1];
       return (first as unknown as Record<string, unknown>)[key] ?? null;
     }
-    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.prompt_template_id')) {
+    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.prompt_template_id') || configKey.startsWith('soul_core.llm_id')) {
       const out = new ConfigSoulCoreOutput();
       await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, {} as SoulCoreContext, out);
       return this.extractConfigValue(out, 'soul_core', configKey);
@@ -1198,10 +1198,11 @@ export class ConfigService {
       }
       return;
     }
-    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.prompt_template_id')) {
+    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.prompt_template_id') || prefix.startsWith('soul_core.llm_id')) {
       const input: any = {};
       if (prefix.startsWith('soul_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('soul_core.prompt_template_id')) input.prompt_template_id = value as string;
+      if (prefix.startsWith('soul_core.llm_id')) input.llm_id = value as string;
       const output: any = {};
       await this.soulCore.configSoulCore(input, {} as any, output);
       return;

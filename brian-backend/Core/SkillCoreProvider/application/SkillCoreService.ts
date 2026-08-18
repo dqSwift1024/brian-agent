@@ -487,8 +487,15 @@ export class SkillCoreService {
     return llmOutput.result;
   }
 
-  /** 选择第一个启用的 LLM */
+  /** 选择可用的 LLM（优先系统默认启用模型，兜底第一个启用模型） */
   private async selectFirstEnabledLLM(): Promise<string | null> {
+    const defaultRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+      { field: 'is_default', operator: Operator.EQ, value: 1 },
+      { field: 'enable', operator: Operator.EQ, value: 1 },
+    ]);
+    if (defaultRow) {
+      return String(defaultRow.id);
+    }
     const row = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
       { field: 'enable', operator: Operator.EQ, value: 1 },
     ]);
