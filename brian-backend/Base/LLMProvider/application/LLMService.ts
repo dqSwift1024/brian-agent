@@ -1027,14 +1027,24 @@ export class LLMService {
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
+      // 1. 优先使用已启用的系统默认模型（is_default=1 且 enable=1）
       const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
         { field: 'is_default', operator: Operator.EQ, value: 1 },
         { field: 'enable', operator: Operator.EQ, value: 1 },
       ]);
-      if (!defaultLLM) {
-        throw new ValidationError('id 不能为空，且无可用默认模型');
+      if (defaultLLM) {
+        input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
+      } else {
+        // 2. 兜底使用首个已启用的可用模型（enable=1）
+        const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+          { field: 'enable', operator: Operator.EQ, value: 1 },
+        ]);
+        if (firstEnabled) {
+          input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
+        } else {
+          throw new ValidationError('id 不能为空，且无可用模型');
+        }
       }
-      input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
     }
     const prompt = String(input.prompt ?? '');
     if (!prompt) {

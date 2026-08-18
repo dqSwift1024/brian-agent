@@ -67,9 +67,6 @@ import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { AgingEngine } from '../../shared/AgingEngine';
 import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared/MatchCacheHelper';
 
-/** 默认 LLM 模型选择用表名 */
-const LLM_AVAILABLE_TABLE = 'llm_available';
-
 /**
  * SoulCoreProvider 应用服务。
  *
@@ -562,7 +559,7 @@ export class SoulCoreService {
     interactId: string,
   ): Promise<string> {
     const config = await this.getCoreConfig();
-    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
+    const llmId = config?.llm_id || '';
 
     const generationPrompt = [
       '你是一个 Persona 生成器。请为该 AI Agent 生成一个合适的 Soul（角色设定）。',
@@ -682,7 +679,7 @@ export class SoulCoreService {
       );
     }
 
-    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
+    const llmId = config?.llm_id || '';
     const execLLMOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
       {
@@ -768,7 +765,7 @@ export class SoulCoreService {
     candidateSoul: Record<string, unknown>,
   ): Promise<SoulVerdict> {
     const config = await this.getCoreConfig();
-    const llmId = (await this.selectEffectiveLLM(config?.llm_id)) || '';
+    const llmId = config?.llm_id || '';
 
     const prompt = [
       'You are a Soul (persona) evaluator. Compare two Souls and decide which one is better for an AI agent.',
@@ -824,54 +821,6 @@ export class SoulCoreService {
       { field: 'agent_soul_id', value: agentSoulId },
       { field: 'timestamp', value: IdGenerator.now() },
     ]);
-  }
-
-  // ---------------------------------------------------------------------------
-  // 内部辅助 — LLM 选择
-  // ---------------------------------------------------------------------------
-
-  /**
-   * 三级回退选择可用 LLM：
-   * 1. 若配置了模型（llm_id）且处于启用状态，则使用配置的模型；
-   * 2. 若未配置模型或配置模型不可用，则使用系统默认模型（is_default=1 且 enable=1）；
-   * 3. 若无默认模型，则使用系统启用的第一个模型（enable=1）；
-   * 4. 若无任何已启用模型，返回 null。
-   */
-  private async selectEffectiveLLM(configuredLlmId?: string | null): Promise<string | null> {
-    // 1. 如果配置了模型且该模型处于启用状态，使用配置的模型
-    if (configuredLlmId && configuredLlmId.trim() !== '') {
-      const row = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-        { field: 'id', operator: Operator.EQ, value: configuredLlmId.trim() },
-        { field: 'enable', operator: Operator.EQ, value: 1 },
-      ]);
-      if (row) {
-        return String(row.id);
-      }
-    }
-
-    // 2. 如果没有配置模型，使用系统默认的模型（启动状态 is_default=1 且 enable=1）
-    const defaultRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-      { field: 'is_default', operator: Operator.EQ, value: 1 },
-      { field: 'enable', operator: Operator.EQ, value: 1 },
-    ]);
-    if (defaultRow) {
-      return String(defaultRow.id);
-    }
-
-    // 3. 如果没有默认模型，使用启用的第一个模型
-    const firstEnabledRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-      { field: 'enable', operator: Operator.EQ, value: 1 },
-    ]);
-    if (firstEnabledRow) {
-      return String(firstEnabledRow.id);
-    }
-
-    return null;
-  }
-
-  /** 选择第一个启用的 LLM（兼容旧方法调用） */
-  private async selectFirstEnabledLLM(): Promise<string | null> {
-    return this.selectEffectiveLLM();
   }
 
   // ---------------------------------------------------------------------------

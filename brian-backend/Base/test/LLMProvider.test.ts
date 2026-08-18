@@ -1307,7 +1307,8 @@ describe('LLMProvider', () => {
       expect(usageRows[0].usage_count).toBe(2);
     });
 
-    it('缺少 id 应该抛出 ValidationError', async () => {
+    it('缺少 id 且无可用模型时应该抛出 ValidationError', async () => {
+      await relationDb.delete('llm_available', []);
       const execInput = new ExecLLMInput();
       execInput.id = '';
       execInput.prompt = 'test';
@@ -1316,6 +1317,17 @@ describe('LLMProvider', () => {
       await expect(
         llmAccess.execLLM(execInput, new LLMContext(), execOut),
       ).rejects.toThrow(ValidationError);
+    });
+
+    it('缺少 id 时应自动回退到默认模型或首个启用模型', async () => {
+      const execInput = new ExecLLMInput();
+      execInput.id = '';
+      execInput.prompt = 'test fallback';
+      const execOut = new ExecLLMOutput();
+
+      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      expect(ok).toBe(true);
+      expect(execInput.id).toBe(llmId);
     });
 
     it('缺少 prompt 应该抛出 ValidationError', async () => {

@@ -317,20 +317,15 @@ describe('SoulCoreProvider', () => {
         },
       );
 
-      // Case 1: Configured model in soul_core_config -> uses model-configured
+      // Case 1: Configured model in soul_core_config -> passes model-configured to LLMProvider
       await soulCore.configSoulCore({ llm_id: 'model-configured' } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
       await soulCore.matchSoul(buildMatchInput('agent-tier-1'), new SoulCoreContext(), new MatchSoulOutput());
       expect(calledModelId).toBe('model-configured');
 
-      // Case 2: No configured model (null/empty) -> uses model-default (is_default=1)
+      // Case 2: No configured model (null/empty) -> passes empty id to LLMProvider for unified fallback
       await soulCore.configSoulCore({ llm_id: null } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
       await soulCore.matchSoul(buildMatchInput('agent-tier-2'), new SoulCoreContext(), new MatchSoulOutput());
-      expect(calledModelId).toBe('model-default');
-
-      // Case 3: No default model -> uses model-first (first enabled)
-      await relationDb.update(LLM_AVAILABLE_TABLE, [{ field: 'is_default', value: 0 }], [{ field: 'id', operator: Operator.EQ, value: 'model-default' }]);
-      await soulCore.matchSoul(buildMatchInput('agent-tier-3'), new SoulCoreContext(), new MatchSoulOutput());
-      expect(calledModelId).toBe('model-first');
+      expect(calledModelId).toBe('');
 
       spy.mockRestore();
     });

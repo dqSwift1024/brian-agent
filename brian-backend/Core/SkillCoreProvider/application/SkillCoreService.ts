@@ -60,9 +60,6 @@ import { ProcessingError } from '../../shared/errors';
 import { AgingEngine } from '../../shared/AgingEngine';
 import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared/MatchCacheHelper';
 
-/** 默认 LLM 模型选择用表名 */
-const LLM_AVAILABLE_TABLE = 'llm_available';
-
 /**
  * SkillCoreProvider 应用服务。
  *
@@ -467,15 +464,11 @@ export class SkillCoreService {
     return promptOutput.prompt;
   }
 
-  /** 调用 LLM */
+  /** 调用 LLM（留空 ID 由 LLMProvider 统一处理默认模型与首模型兜底） */
   private async callLLM(prompt: string): Promise<string> {
-    const llmId = await this.selectFirstEnabledLLM();
-    if (!llmId) {
-      throw new ProcessingError('未找到可用的 LLM 模型');
-    }
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
-      { id: llmId, prompt },
+      { id: '', prompt },
       new LLMContext(),
       llmOutput,
     );
@@ -485,24 +478,6 @@ export class SkillCoreService {
       );
     }
     return llmOutput.result;
-  }
-
-  /** 选择可用的 LLM（优先系统默认启用模型，兜底第一个启用模型） */
-  private async selectFirstEnabledLLM(): Promise<string | null> {
-    const defaultRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-      { field: 'is_default', operator: Operator.EQ, value: 1 },
-      { field: 'enable', operator: Operator.EQ, value: 1 },
-    ]);
-    if (defaultRow) {
-      return String(defaultRow.id);
-    }
-    const row = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-      { field: 'enable', operator: Operator.EQ, value: 1 },
-    ]);
-    if (!row) {
-      return null;
-    }
-    return String(row.id);
   }
 
   /** 解析 LLM 返回的 Skill 排序结果 */
