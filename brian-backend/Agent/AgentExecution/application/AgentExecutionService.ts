@@ -1020,8 +1020,10 @@ export class AgentExecutionService {
             work_id: workId,
             interact_id: interactId,
             agent_id: input.agent_id,
+            agent_name: agentName,
+            agent_type: (agent as any)?.agent_type || 'WORKER',
             node_id: step.step,
-          });
+          } as any);
         }
 
         const nextAction = parseJsonObject(thinkOut.next_action) ?? {};
@@ -1062,8 +1064,10 @@ export class AgentExecutionService {
             work_id: workId,
             interact_id: interactId,
             agent_id: input.agent_id,
+            agent_name: agentName,
+            agent_type: (agent as any)?.agent_type || 'WORKER',
             node_id: step.step,
-          });
+          } as any);
         }
 
         return {
@@ -1102,8 +1106,10 @@ export class AgentExecutionService {
             work_id: workId,
             interact_id: interactId,
             agent_id: input.agent_id,
+            agent_name: agentName,
+            agent_type: (agent as any)?.agent_type || 'WORKER',
             node_id: step.step,
-          });
+          } as any);
         }
 
         return {

@@ -413,10 +413,24 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
   const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
   const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
 
+  const formatAgentTitle = (rawName?: string, agId?: string, agType?: string): string => {
+    const isUuid = (val?: string) => !val || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+    if (rawName && !isUuid(rawName) && rawName !== agId) {
+      return rawName
+    }
+    const typeUpper = (agType || '').toUpperCase()
+    if (typeUpper === 'PLANNER') return '规划 Agent (Planner)'
+    if (typeUpper === 'WRITER') return '表达 Agent (Writer)'
+    if (typeUpper === 'EVOLUTOR') return '进化 Agent (Evolutor)'
+    return '执行 Agent'
+  }
+
   // 快捷辅助方法：获取或创建某 Agent 的 ThinkingBlock
   const getOrCreateThinkBlock = (agId: string, defaultName?: string, defaultType?: string): ThinkingBlock => {
     const key = agId ? `block-think-${botMsgId}-${agId}` : `block-think-${botMsgId}`
     let existing = sessionStore.blocks.find(b => b.id === key) as ThinkingBlock | undefined
+    const formattedName = formatAgentTitle(defaultName, agId, defaultType)
+
     if (!existing) {
       existing = {
         id: key,
@@ -428,13 +442,22 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         durationMs: 0,
         agentInfo: {
           id: agId,
-          name: defaultName || agId || 'WorkAgent',
+          name: formattedName,
           type: defaultType || 'WORKER',
         },
         steps: [],
         meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
       }
       sessionStore.addBlock(existing as Block)
+    } else {
+      if (defaultName && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(defaultName) && defaultName !== agId) {
+        if (!existing.agentInfo) {
+          existing.agentInfo = { name: defaultName, type: defaultType || 'WORKER' }
+        } else {
+          existing.agentInfo.name = defaultName
+        }
+        sessionStore.updateBlock(existing.id, { agentInfo: existing.agentInfo })
+      }
     }
     return existing
   }
@@ -489,7 +512,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     case 'agent_thinking':
     case 'thinking': {
       const chunk = typeof payload === 'string' ? payload : String(payload.chunk || payload.reasoning || '')
-      const thinkBlock = getOrCreateThinkBlock(agentId)
+      const rawAgName = typeof payload.agent_name === 'string' ? payload.agent_name : undefined
+      const rawAgType = typeof payload.agent_type === 'string' ? payload.agent_type : undefined
+      const thinkBlock = getOrCreateThinkBlock(agentId, rawAgName, rawAgType)
       thinkBlock.content += chunk
       
       // 更新 steps

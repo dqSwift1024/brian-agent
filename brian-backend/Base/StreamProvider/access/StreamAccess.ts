@@ -85,6 +85,8 @@ export class StreamAccess {
       interact_id?: string;
       work_id?: string;
       agent_id?: string;
+      agent_name?: string;
+      agent_type?: string;
       node_id?: string;
       chunk_delay_ms?: number;
     },
@@ -97,6 +99,8 @@ export class StreamAccess {
       interact_id: meta?.interact_id,
       work_id: meta?.work_id,
       agent_id: meta?.agent_id,
+      agent_name: meta?.agent_name,
+      agent_type: meta?.agent_type,
       node_id: meta?.node_id,
       enable_chunking: true,
       chunk_delay_ms: meta?.chunk_delay_ms,
@@ -117,6 +121,8 @@ export class StreamAccess {
       interact_id?: string;
       work_id?: string;
       agent_id?: string;
+      agent_name?: string;
+      agent_type?: string;
       node_id?: string;
     },
   ): Promise<boolean> {
@@ -128,8 +134,9 @@ export class StreamAccess {
       interact_id: meta?.interact_id,
       work_id: meta?.work_id,
       agent_id: meta?.agent_id,
+      agent_name: meta?.agent_name,
+      agent_type: meta?.agent_type,
       node_id: meta?.node_id,
-      enable_chunking: false,
     });
     const output = new PushStreamOutput();
     return this.service.pushStream(input, output);
