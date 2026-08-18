@@ -112,6 +112,23 @@ describe('AgentLibrary', () => {
       expect(out.agent_id).toBe('');
     });
 
+    it('TC-AL-013: 中文及类似提问成功精准匹配复用已有 Agent', async () => {
+      const id = aid();
+      await service.addAgent(Object.assign(new AddAgentInput(), {
+        agent_id: id, agent_type: 'WORKER', strategy_id: 's-1',
+        task_signature: '[general] 如何开发一个个人Agent？',
+      }), new AgentLibraryContext(), new AddAgentOutput());
+
+      const out = new MatchAgentOutput();
+      await service.matchAgent(Object.assign(new MatchAgentInput(), {
+        task_signature: '[general] 如何开发一个个人Agent',
+        similarity_threshold: 0.7,
+      }), new AgentLibraryContext(), out);
+
+      expect(out.agent_id).toBe(id);
+      expect(out.similarity_score).toBeGreaterThanOrEqual(0.7);
+    });
+
     it('TC-AL-015: 按 agent_type 过滤', async () => {
       const wid = aid();
       const wrid = aid();

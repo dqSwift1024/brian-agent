@@ -589,14 +589,48 @@ export class AgentLibraryService {
 
   private simpleSimilarity(a: string, b: string): number {
     if (!a || !b) return 0;
-    const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean));
-    const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
-    if (wordsA.size === 0 || wordsB.size === 0) return 0;
-    let intersection = 0;
-    for (const w of wordsA) {
-      if (wordsB.has(w)) intersection++;
+
+    // 提取 [domain] 领域标识
+    const domainA = a.match(/^\[(.*?)\]/)?.[1] || '';
+    const domainB = b.match(/^\[(.*?)\]/)?.[1] || '';
+
+    // 跨领域隔离：领域不同时不复用
+    if (domainA && domainB && domainA.trim() !== domainB.trim()) {
+      return 0;
     }
-    return intersection / new Set([...wordsA, ...wordsB]).size;
+
+    // 去除领域括号前缀及标点符号归一化
+    const cleanA = a.replace(/^\[.*?\]/, '');
+    const cleanB = b.replace(/^\[.*?\]/, '');
+
+    const normA = cleanA.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, '');
+    const normB = cleanB.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, '');
+
+    if (!normA || !normB) return 0;
+    if (normA === normB) return 1.0;
+
+    // 字符 2-gram 特征提取，兼顾中文与英文词汇
+    const getCharNgrams = (text: string, n = 2): Set<string> => {
+      if (text.length <= n) return new Set([text]);
+      const ngrams = new Set<string>();
+      for (let i = 0; i <= text.length - n; i++) {
+        ngrams.add(text.slice(i, i + n));
+      }
+      return ngrams;
+    };
+
+    const setA = getCharNgrams(normA, 2);
+    const setB = getCharNgrams(normB, 2);
+
+    if (setA.size === 0 || setB.size === 0) return 0;
+
+    let intersection = 0;
+    for (const item of setA) {
+      if (setB.has(item)) intersection++;
+    }
+
+    const union = new Set([...setA, ...setB]).size;
+    return intersection / union;
   }
 
   private opDataToMap(data: unknown): Record<string, unknown> {
