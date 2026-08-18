@@ -10,6 +10,8 @@ import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 type TabKey = 'id' | 'json' | 'xml' | 'regex'
 
 const activeTab = ref<TabKey>('id')
+import { copyToClipboard } from '@/utils/clipboard'
+
 const tabs = [
   { key: 'id' as const, label: 'ID 生成', icon: Fingerprint },
   { key: 'json' as const, label: 'JSON', icon: Braces },
@@ -19,7 +21,7 @@ const tabs = [
 
 async function copyText(text: string) {
   if (!text) return
-  try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
+  await copyToClipboard(text)
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ThumbsUp, ThumbsDown, Star, Copy, Check } from '@lucide/vue'
 import { feedbackApi } from '@/api'
 import type { FeedbackBlock } from '@/api/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const props = defineProps<{ block: FeedbackBlock }>()
 const rating = ref(0)
@@ -30,11 +31,11 @@ async function submitLike(type: 'like' | 'dislike') {
 async function copyTraceId() {
   const traceId = props.block.traceId
   if (!traceId) return
-  try {
-    await navigator.clipboard.writeText(traceId)
+  const success = await copyToClipboard(traceId)
+  if (success) {
     copied.value = true
     setTimeout(() => { copied.value = false }, 1500)
-  } catch { /* ignore */ }
+  }
 }
 </script>
 

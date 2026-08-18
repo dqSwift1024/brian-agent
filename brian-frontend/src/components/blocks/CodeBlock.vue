@@ -2,15 +2,17 @@
 import { ref, computed } from 'vue'
 import { Copy, Check } from '@lucide/vue'
 import type { CodeBlock } from '@/api/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const props = defineProps<{ block: CodeBlock }>()
 const copied = ref(false)
 
-function copyCode() {
-  navigator.clipboard.writeText(props.block.content).then(() => {
+async function copyCode() {
+  const success = await copyToClipboard(props.block.content)
+  if (success) {
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
-  })
+  }
 }
 
 const _isStreaming = computed(() => props.block.meta.status === 'streaming')

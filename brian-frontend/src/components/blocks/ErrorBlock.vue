@@ -2,17 +2,18 @@
 import { ref } from 'vue'
 import { AlertCircle, RefreshCw, Copy, Check } from '@lucide/vue'
 import type { ErrorBlock } from '@/api/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const props = defineProps<{ block: ErrorBlock }>()
 const copied = ref(false)
 
 async function copyTraceId() {
   if (!props.block.traceId) return
-  try {
-    await navigator.clipboard.writeText(props.block.traceId)
+  const success = await copyToClipboard(props.block.traceId)
+  if (success) {
     copied.value = true
     setTimeout(() => { copied.value = false }, 1500)
-  } catch { /* ignore */ }
+  }
 }
 </script>
 

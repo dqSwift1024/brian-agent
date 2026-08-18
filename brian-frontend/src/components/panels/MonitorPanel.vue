@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watchEffect } from 'vue'
 import { Activity, Cpu, HardDrive, Database, TrendingUp, Layers, RefreshCw, Eye, Copy, Check, CheckSquare, Square, Search } from '@lucide/vue'
 import { monitorApi } from '@/api'
 import type { SystemHealth } from '@/api/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const health = ref<SystemHealth>({ status: 'healthy', components: [], uptime: 0 })
 const resources = ref({ cpu: 0, memory: 0, disk: 0 })
@@ -91,20 +92,18 @@ function formatLogEntry(l: { timestamp: number; level: string; source: string; m
 async function copyLog(id: string) {
   const l = logs.value.find(x => x.id === id)
   if (!l) return
-  try {
-    await navigator.clipboard.writeText(formatLogEntry(l))
+  const success = await copyToClipboard(formatLogEntry(l))
+  if (success) {
     copiedLogId.value = id
     setTimeout(() => { if (copiedLogId.value === id) copiedLogId.value = '' }, 1500)
-  } catch { /* ignore */ }
+  }
 }
 
 async function copySelectedLogs() {
   const selected = logs.value.filter(l => selectedLogs.value.has(l.id))
   if (selected.length === 0) return
   const text = selected.map(formatLogEntry).join('\n')
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch { /* ignore */ }
+  await copyToClipboard(text)
 }
 
 onMounted(() => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check } from '@lucide/vue'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const props = withDefaults(
   defineProps<{
@@ -56,7 +57,7 @@ const targetId = computed(() => props.infoId || props.id)
 const isUser = computed(() => props.role === 'user' || props.role === 'USER' || props.role === 'REQUEST')
 const isError = computed(() => props.content.startsWith('[错误]') || props.summary.startsWith('[错误]'))
 
-const effectiveTraceId = computed(() => props.traceId || props.workId || '')
+const effectiveTraceId = computed(() => props.traceId || props.workId || targetId.value || '')
 
 const textLength = computed(() => props.content ? props.content.length : 0)
 
@@ -109,11 +110,11 @@ function handleJump(cid: string) {
 async function copyTraceId() {
   const tid = effectiveTraceId.value
   if (!tid) return
-  try {
-    await navigator.clipboard.writeText(tid)
+  const success = await copyToClipboard(tid)
+  if (success) {
     copied.value = true
     setTimeout(() => { copied.value = false }, 1500)
-  } catch { /* ignore */ }
+  }
 }
 </script>
 
