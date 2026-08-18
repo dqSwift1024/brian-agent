@@ -96,7 +96,7 @@
 | TextParagraph | 用户消息、Agent 最终回复 | 支持富文本行内样式；流式生成时末尾显示闪烁光标；完成后光标淡出；支持原生选中复制 |
 | Heading | 长回复的结构化分段 | 支持多级字阶；点击生成锚点链接，支持 URL 分享定位 |
 | CodeBlock | 代码生成、SQL、JSON 输出 | 语法高亮不阻塞主线程；流式生成时自动滚至最新行；提供一键复制与语言标签 |
-| ThinkingChain | Agent 思考过程、规划步骤 | 默认折叠，仅显示摘要+时长；流式生成中显示活动指示器；展开后自动滚入可视区 |
+| ThinkingChain | Agent 思考过程、规划步骤 | 默认折叠，仅显示摘要+时长；流式生成中显示活动指示器；支持切换查看 Context (用户画像/历史引用)、Input (任务 Prompt)、Steps (Think 推理 / Act 工具调用及参数结果 / Reflect 自我反思与 Pass 结论) 与 Output (节点产出)；刷新/加载历史记录时完整恢复对应 Work 的 Agent 执行 Blocks |
 | ToolInvocation | 工具调用、API 请求 | 卡片式展示工具名+参数摘要+状态；加载中显示骨架屏；完成后支持展开详情 |
 | ArtifactPreview | 生成的图表、文档、图片 | 带边框卡片+缩略图；资源加载中显示占位符；点击触发外部预览回调 |
 | ErrorFallback | 生成失败、接口异常 | 警示样式+友好文案；Hover 显示原始错误码；支持重试按钮（若上游提供回调） |
@@ -171,3 +171,12 @@
 -   **主题支持**：所有视觉样式通过 CSS 变量驱动，支持运行时主题切换且不引发额外重绘。
 -   **状态持久化**：刷新页面后保持当前会话 ID 及 ChatMap 视图位置；Block 本地视觉状态不持久化。
 -   **移动端适配**：针对触摸操作、横向溢出、工具栏触发方式做专项适配。
+
+## 7. 变更记录
+
+### [2026-08-18] Agent 思考过程、上下文与输入输出完整展示升级
+- **变更原因**：针对原本“思考过程信息不全，未展示上下文及各个 Agent 输入输出”的问题进行全链路重构。
+- **功能变更**：
+  1. **ThinkingBlock.vue 重构**：新增 Agent 身份规范标签（LLM 模型 ID、Soul 品格、技能/MCP 工具数），新增 Tab 导航与分块结构，支持展示 Agent 上下文 Context (用户画像/引用消息)、任务输入 Input、步骤步骤 (Think 推理 / Act 工具调用及参数结果 / Reflect 自我反思与通过结论) 以及节点输出 Output。
+  2. **SSE 流式解析增强**：`ChatArea.vue` 在对话流推进中，完整解析并归集 `context_built`, `agent_building`, `agent_built`, `agent_thinking`, `agent_action`, `agent_reflection`, `agent_output` 等事件。
+  3. **历史会话恢复**：后端 `/api/chat/history` 在查询会话记录时，从 `orchestration_agent_execution` 及 `agent_execution_trace` 聚合各 Work 的 Agent 执行轨迹，为回答组装对应的 ThinkingBlocks，前端 `sessionStore.ts` 载入会话时自动恢复，实现刷新页面后思考过程与上下文不丢失。

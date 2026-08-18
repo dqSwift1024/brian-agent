@@ -45,10 +45,32 @@ export const useSessionStore = defineStore('session', () => {
     return created.session_id
   }
 
+  // ===== 原始 loadChatHistory（保留参考） =====
+  /*
   async function loadChatHistory(sessionId: string, userId: string) {
     currentSessionId.value = sessionId
     localStorage.setItem('chat-current-session-id', sessionId)
     messages.value = await chatApi.history(sessionId, userId)
+  }
+  */
+
+  // ===== 修改后的 loadChatHistory：加载历史消息并提取恢复各 Agent 的 ThinkingBlocks =====
+  async function loadChatHistory(sessionId: string, userId: string) {
+    currentSessionId.value = sessionId
+    localStorage.setItem('chat-current-session-id', sessionId)
+    const historyMsgs = await chatApi.history(sessionId, userId)
+    messages.value = historyMsgs
+
+    // 从消息记录的 blocks 数组中恢复 ThinkingBlocks
+    const loadedBlocks: Block[] = []
+    for (const msg of historyMsgs) {
+      if (Array.isArray(msg.blocks) && msg.blocks.length > 0) {
+        for (const b of msg.blocks) {
+          loadedBlocks.push(b)
+        }
+      }
+    }
+    blocks.value = loadedBlocks
   }
 
   async function loadExchanges(sessionId: string, userId: string) {

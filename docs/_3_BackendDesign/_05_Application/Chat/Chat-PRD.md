@@ -59,9 +59,11 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 |---------|---------|---------|---------|
 | `connected` | `{ session_id, trace_id }` | SSE 连接建立成功 | 本模块 |
 | `loading` | `{ work_id }` | work 已提交，Orchestration 层开始处理 | OrchestrationEntry |
-| `agent_created` | `{ agent_id, agent_type, agent_name }` | AgentBuilder 构建完成一个 Agent | OrchestrationExecution |
+| `agent_created` | `{ agent_id, agent_type, agent_name, llm_id, soul_id, skill_ids, mcp_ids }` | AgentBuilder 构建完成一个 Agent | OrchestrationExecution |
 | `agent_status` | `{ agent_id, status, elapsed_ms }` | Agent 执行状态变更（RUNNING → COMPLETED / FAILED） | OrchestrationExecution |
-| `agent_thinking` | `{ agent_id, think_content }` | Agent 执行 Think 阶段产生思考内容 | AgentExecution |
+| `agent_thinking` | `{ agent_id, think_content, input }` | Agent 执行 Think 阶段产生思考内容 | AgentExecution |
+| `agent_action` | `{ agent_id, tool_name, params, result }` | Agent 执行 Act 阶段调用工具/Skill | AgentExecution |
+| `agent_reflection` | `{ agent_id, reflection, passed }` | Agent 执行 Reflect 阶段自我反思结论 | AgentExecution |
 | `agent_output` | `{ agent_id, output_content }` | Agent 执行 Answer 阶段产生输出 | AgentExecution |
 | `text` | `{ work_id, chunk }` | WriterAgent 生成最终回复的文本片段 | WriterAgent |
 | `done` | `{ work_id, interact_id, trace_id, final_response, elapsed_ms, token_usage }` | work 执行完成 | OrchestrationEntry |

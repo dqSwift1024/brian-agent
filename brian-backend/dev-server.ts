@@ -1666,8 +1666,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
         await ctx.chatAccess.getChatHistory(input, context, output);
-        // 后端 getChatHistory 返回 snake_case，前端 ChatMessage 使用 camelCase，此处统一转换；
-        // 仅保留一问(REQUEST)一答(RESPONSE)，中间过程(THINK/SKILL/MCP/ACT)由 ChatMap DAG 承载。
+
+        // ===== 原始代码（保留作为参考）：仅保留一问(REQUEST)一答(RESPONSE)，未填充思考 Blocks =====
+        /*
         sendJson(res, 200, {
           messages: (output.messages || [])
             .filter((m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE)
@@ -1686,6 +1687,158 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               citingIds: m.cited_info_ids ?? [],
             })),
         });
+        */
+
+        // ===== 修改后代码：聚合各 Work 关联的 Agent 执行记录与 Trace 步骤，为各个 RESPONSE 组装 ThinkingBlocks =====
+        const rawMessages = (output.messages || []).filter(
+          (m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE
+        );
+
+        const responseWorkIds = Array.from(
+          new Set(rawMessages.filter((m) => m.info_type === InfoType.RESPONSE && m.work_id).map((m) => String(m.work_id)))
+        );
+
+        const workBlocksMap = new Map<string, any[]>();
+
+        if (responseWorkIds.length > 0) {
+          try {
+            const placeholders = responseWorkIds.map(() => '?').join(',');
+            const execRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
+              `SELECT e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
+                      a.agent_name, a.agent_type, a.llm_id, a.soul_id, a.skill_ids, a.mcp_ids,
+                      t.iterations_json
+               FROM orchestration_agent_execution e
+               LEFT JOIN agent a ON e.agent_id = a.id
+               LEFT JOIN agent_execution_trace t ON e.trace_id = t.trace_id OR e.agent_id = t.agent_id
+               WHERE e.work_id IN (${placeholders})
+               ORDER BY e.created ASC`,
+              responseWorkIds,
+            );
+
+            for (const row of execRows) {
+              const wid = String(row.work_id ?? '');
+              if (!wid) continue;
+
+              const agentId = String(row.agent_id ?? '');
+              const agentName = String(row.agent_name ?? row.agent_id ?? 'WorkAgent');
+              const agentType = String(row.agent_type ?? 'WORKER');
+              const llmId = row.llm_id ? String(row.llm_id) : undefined;
+              const soulId = row.soul_id ? String(row.soul_id) : undefined;
+
+              let skills: string[] | undefined;
+              try { if (row.skill_ids) skills = JSON.parse(String(row.skill_ids)); } catch { /* ignore */ }
+
+              let mcps: string[] | undefined;
+              try { if (row.mcp_ids) mcps = JSON.parse(String(row.mcp_ids)); } catch { /* ignore */ }
+
+              const steps: any[] = [];
+              let content = '';
+
+              if (row.iterations_json) {
+                try {
+                  const iters = JSON.parse(String(row.iterations_json));
+                  if (Array.isArray(iters)) {
+                    for (const iter of iters) {
+                      if (iter.think) {
+                        const reasoning = String(iter.think.reasoning ?? '');
+                        if (reasoning) {
+                          content += (content ? '\n' : '') + reasoning;
+                          steps.push({
+                            phase: 'THINK',
+                            iteration: iter.iteration_index ?? (steps.length + 1),
+                            content: reasoning,
+                          });
+                        }
+                      }
+                      if (iter.act) {
+                        steps.push({
+                          phase: 'ACT',
+                          iteration: iter.iteration_index ?? (steps.length + 1),
+                          toolCalls: [{
+                            toolName: String(iter.act.tool_type || iter.act.tool_id || 'Tool'),
+                            toolType: String(iter.act.tool_type || 'Tool'),
+                            params: iter.act.params,
+                            result: iter.act.result,
+                          }],
+                        });
+                      }
+                      if (iter.reflect) {
+                        steps.push({
+                          phase: 'REFLECT',
+                          iteration: iter.iteration_index ?? (steps.length + 1),
+                          reflection: String(iter.reflect.reflection ?? ''),
+                          passed: iter.reflect.should_continue === false,
+                        });
+                      }
+                    }
+                  }
+                } catch { /* ignore */ }
+              }
+
+              if (!content && row.task_content) {
+                content = String(row.task_content);
+              }
+
+              const block = {
+                id: `block-think-${wid}-${agentId}`,
+                msgId: '',
+                role: 'assistant',
+                type: 'ThinkingChain',
+                content,
+                summary: '',
+                durationMs: Number(row.elapsed_ms ?? 0),
+                agentInfo: {
+                  id: agentId,
+                  name: agentName,
+                  type: agentType,
+                  llmId,
+                  soulId,
+                  skills,
+                  mcps,
+                },
+                input: row.task_content ? String(row.task_content) : undefined,
+                output: row.answer ? String(row.answer) : undefined,
+                steps,
+                meta: {
+                  status: 'done',
+                  createdAt: Number(row.created ?? Date.now()),
+                  updatedAt: Number(row.created ?? Date.now()),
+                },
+              };
+
+              if (!workBlocksMap.has(wid)) {
+                workBlocksMap.set(wid, []);
+              }
+              workBlocksMap.get(wid)!.push(block);
+            }
+          } catch { /* degrade gracefully */ }
+        }
+
+        const messages = rawMessages.map((m) => {
+          const isResponse = m.info_type === InfoType.RESPONSE;
+          const wid = m.work_id ? String(m.work_id) : '';
+          const blocks = (isResponse && wid && workBlocksMap.has(wid))
+            ? workBlocksMap.get(wid)!.map((b) => ({ ...b, msgId: m.info_id }))
+            : undefined;
+
+          return {
+            id: m.info_id,
+            role: m.info_creator_role === 'USER' ? 'user' : 'assistant',
+            content: m.info,
+            timestamp: m.created,
+            pin: m.pin,
+            workId: m.work_id,
+            traceId: m.work_id || m.interact_id || m.info_id,
+            citingCount: m.citing_count ?? 0,
+            citedCount: m.cited_count ?? 0,
+            citingInfoIds: m.citing_info_ids ?? [],
+            citedInfoIds: m.cited_info_ids ?? [],
+            citingIds: m.cited_info_ids ?? [],
+            blocks,
+          };
+        });
+
+        sendJson(res, 200, { messages });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];

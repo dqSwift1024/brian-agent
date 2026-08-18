@@ -250,8 +250,9 @@ async function handleSend(content: string, citingIds: string[]) {
 let textBlockId: string | null = null
 let currentTraceId = ''
 
+// ===== 原始 handleStreamEvent 函数（保留作为参考） =====
+/*
 function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
-  // 解析结构化 BrianSSEMessage 协议或兼容旧事件对象
   const isStructured = 'msg_id' in data && 'event' in data
   const event = String(isStructured ? data.event : (data.event || 'message'))
   const payload = (isStructured ? (data.data as Record<string, unknown> ?? {}) : data) as Record<string, unknown>
@@ -332,6 +333,244 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         if (existing) {
           existing.agentInfo = { name: agentName, type: 'WORKER' }
         }
+      }
+      break
+    }
+
+    case 'citation':
+      if (textBlockId) {
+        sessionStore.updateBlock(textBlockId, {
+          citingIds: payload.citing_ids as string[],
+        } as Partial<Block>)
+      }
+      break
+
+    case 'done': {
+      sessionStore.finalizeBlocks(botMsgId)
+      const feedbackBlock: Block = {
+        id: `block-fb-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'assistant',
+        type: 'Feedback',
+        traceId: String(payload.trace_id || currentTraceId || ''),
+        meta: { status: 'done', createdAt: serverTime, updatedAt: serverTime },
+      } as Block
+      sessionStore.addBlock(feedbackBlock)
+      textBlockId = null
+      break
+    }
+
+    case 'error': {
+      const errBlock: Block = {
+        id: `block-err-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'system',
+        type: 'ErrorFallback',
+        message: String(payload.error_message || '未知错误'),
+        errorCode: String(payload.error_code || ''),
+        retryAvailable: false,
+        traceId: String(payload.trace_id || currentTraceId || ''),
+        meta: { status: 'error', createdAt: serverTime, updatedAt: serverTime },
+      } as Block
+      sessionStore.addBlock(errBlock)
+      break
+    }
+  }
+}
+*/
+
+// ===== 修改后的 handleStreamEvent 函数：完整解析 Agent 基础信息、上下文、输入输出与思维链步骤 =====
+function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
+  const isStructured = 'msg_id' in data && 'event' in data
+  const event = String(isStructured ? data.event : (data.event || 'message'))
+  const payload = (isStructured ? (data.data as Record<string, unknown> ?? {}) : data) as Record<string, unknown>
+  const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
+  const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
+
+  // 快捷辅助方法：获取或创建某 Agent 的 ThinkingBlock
+  const getOrCreateThinkBlock = (agId: string, defaultName?: string, defaultType?: string): ThinkingBlock => {
+    const key = agId ? `block-think-${botMsgId}-${agId}` : `block-think-${botMsgId}`
+    let existing = sessionStore.blocks.find(b => b.id === key) as ThinkingBlock | undefined
+    if (!existing) {
+      existing = {
+        id: key,
+        msgId: botMsgId,
+        role: 'assistant',
+        type: 'ThinkingChain',
+        content: '',
+        summary: '',
+        durationMs: 0,
+        agentInfo: {
+          id: agId,
+          name: defaultName || agId || 'WorkAgent',
+          type: defaultType || 'WORKER',
+        },
+        steps: [],
+        meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
+      }
+      sessionStore.addBlock(existing as Block)
+    }
+    return existing
+  }
+
+  switch (event) {
+    case 'connected':
+    case 'loading':
+      break
+
+    case 'context_built': {
+      // 记录上下文 (User Profile, 引用的历史消息, 最近 Works)
+      const thinkBlock = getOrCreateThinkBlock(agentId)
+      const userProfile = (payload.user_profile as Record<string, unknown>) || undefined
+      const citingMessages = (payload.citations as unknown[]) || undefined
+      const recentWorks = (payload.recent_works as unknown[]) || undefined
+      thinkBlock.context = {
+        userProfile,
+        citingMessages,
+        recentWorks,
+        customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
+      }
+      sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
+      break
+    }
+
+    case 'agent_building':
+    case 'agent_built': {
+      const agentName = String(payload.agent_name || payload.agent_id || agentId || 'WorkAgent')
+      const agentType = String(payload.agent_type || 'WORKER')
+      const llmId = typeof payload.llm_id === 'string' ? payload.llm_id : undefined
+      const soulId = typeof payload.soul_id === 'string' ? payload.soul_id : undefined
+      const skills = Array.isArray(payload.skill_ids) ? payload.skill_ids.map(String) : undefined
+      const mcps = Array.isArray(payload.mcp_ids) ? payload.mcp_ids.map(String) : undefined
+
+      const thinkBlock = getOrCreateThinkBlock(agentId || agentName, agentName, agentType)
+      thinkBlock.agentInfo = {
+        id: agentId || agentName,
+        name: agentName,
+        type: agentType,
+        llmId,
+        soulId,
+        skills,
+        mcps,
+      }
+      if (payload.task_content) {
+        thinkBlock.input = payload.task_content as string | Record<string, unknown>
+      }
+      sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
+      break
+    }
+
+    case 'agent_thinking':
+    case 'thinking': {
+      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || payload.reasoning || '')
+      const thinkBlock = getOrCreateThinkBlock(agentId)
+      thinkBlock.content += chunk
+      
+      // 更新 steps
+      if (!thinkBlock.steps) thinkBlock.steps = []
+      let lastStep = thinkBlock.steps[thinkBlock.steps.length - 1]
+      if (!lastStep || lastStep.phase !== 'THINK') {
+        lastStep = { phase: 'THINK', content: chunk, iteration: thinkBlock.steps.length + 1 }
+        thinkBlock.steps.push(lastStep)
+      } else {
+        lastStep.content = (lastStep.content || '') + chunk
+      }
+
+      if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
+      sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input })
+      break
+    }
+
+    case 'agent_action':
+    case 'agent_status': {
+      const thinkBlock = getOrCreateThinkBlock(agentId)
+      if (!thinkBlock.steps) thinkBlock.steps = []
+
+      const toolName = String(payload.tool_name || payload.tool_type || payload.tool_id || 'Tool')
+      const params = (payload.params as Record<string, unknown>) || {}
+      const result = payload.result
+
+      thinkBlock.steps.push({
+        phase: 'ACT',
+        iteration: thinkBlock.steps.length + 1,
+        toolCalls: [{ toolName, toolType: String(payload.tool_type || toolName), params, result }],
+      })
+      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
+
+      // 同时添加独立 ToolInvocation Block (若需要)
+      const toolBlock: Block = {
+        id: `block-tool-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'tool',
+        type: 'ToolInvocation',
+        toolName,
+        params,
+        result,
+        meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: serverTime, updatedAt: serverTime },
+      } as Block
+      sessionStore.addBlock(toolBlock)
+      break
+    }
+
+    case 'agent_reflection': {
+      const thinkBlock = getOrCreateThinkBlock(agentId)
+      if (!thinkBlock.steps) thinkBlock.steps = []
+
+      thinkBlock.steps.push({
+        phase: 'REFLECT',
+        iteration: thinkBlock.steps.length + 1,
+        reflection: String(payload.reflection || ''),
+        passed: Boolean(payload.passed),
+      })
+      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
+      break
+    }
+
+    case 'agent_output': {
+      const outputVal = payload.output || payload.result || payload.chunk
+      if (agentId) {
+        const thinkBlock = getOrCreateThinkBlock(agentId)
+        thinkBlock.output = outputVal as string | Record<string, unknown>
+        sessionStore.updateBlock(thinkBlock.id, { output: thinkBlock.output })
+      }
+      
+      // 如果也是向用户展示的文本块
+      const chunk = typeof outputVal === 'string' ? outputVal : String(outputVal || '')
+      if (chunk) {
+        if (!textBlockId) {
+          textBlockId = `block-text-${botMsgId}`
+          const textBlock: Block = {
+            id: textBlockId,
+            msgId: botMsgId,
+            role: 'assistant',
+            type: 'TextParagraph',
+            content: chunk,
+            meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
+          } as TextBlock
+          sessionStore.addBlock(textBlock)
+        } else {
+          sessionStore.appendBlockContent(textBlockId, chunk)
+        }
+      }
+      break
+    }
+
+    case 'text_chunk':
+    case 'text': {
+      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
+      if (!textBlockId) {
+        textBlockId = `block-text-${botMsgId}`
+        const textBlock: Block = {
+          id: textBlockId,
+          msgId: botMsgId,
+          role: 'assistant',
+          type: 'TextParagraph',
+          content: chunk,
+          meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
+        } as TextBlock
+        sessionStore.addBlock(textBlock)
+      } else {
+        sessionStore.appendBlockContent(textBlockId, chunk)
       }
       break
     }

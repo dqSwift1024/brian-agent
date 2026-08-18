@@ -1834,4 +1834,40 @@ describe('ChatService', () => {
       expect(output.cancelled).toBe(false);
     });
   });
+
+  describe('getChatHistory - Agent Trace and Thinking Blocks', () => {
+    it('TC-CHAT-140: getChatHistory populates work_id and message metadata for response messages', async () => {
+      const sessId = 'history-trace-sess';
+      const workId = 'work-trace-101';
+
+      // 模拟插入包含 work_id 的用户 REQUEST 消息与系统 RESPONSE 消息
+      const userSave = Object.assign(new SaveInfoInput(), {
+        session_id: sessId,
+        work_id: workId,
+        info_creator_id: 'user-1',
+        info_type: 'REQUEST',
+        info: '分析项目系统架构',
+      });
+      await ctx.infoCore.saveInfo(userSave, new InfoCoreContext(), new SaveInfoOutput());
+
+      const agentSave = Object.assign(new SaveInfoInput(), {
+        session_id: sessId,
+        work_id: workId,
+        info_creator_id: 'agent-writer',
+        info_type: 'RESPONSE',
+        info: '系统采用 Monorepo 分层架构。',
+      });
+      await ctx.infoCore.saveInfo(agentSave, new InfoCoreContext(), new SaveInfoOutput());
+
+      const input = Object.assign(new GetChatHistoryInput(), { session_id: sessId });
+      const output = new GetChatHistoryOutput();
+      await service.getChatHistory(input, new ChatContext(), output);
+
+      expect(output.messages.length).toBe(2);
+      const respMsg = output.messages.find((m) => m.info_type === 'RESPONSE');
+      expect(respMsg).toBeDefined();
+      expect(respMsg?.work_id).toBe(workId);
+      expect(respMsg?.info).toBe('系统采用 Monorepo 分层架构。');
+    });
+  });
 });

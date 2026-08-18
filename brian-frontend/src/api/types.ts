@@ -35,12 +35,53 @@ export interface CodeBlock extends BlockBase {
   content: string
 }
 
+// ===== 原始 ThinkingBlock 定义（保留参考） =====
+// export interface ThinkingBlock extends BlockBase {
+//   type: 'ThinkingChain'
+//   content: string
+//   summary: string
+//   durationMs: number
+//   agentInfo?: { name: string; type: string }
+//   parentMsgId?: string
+// }
+
+// ===== 修改后的 ThinkingBlock 定义（支持完整 Agent 上下文、输入输出及步骤轨迹） =====
+export interface ThinkingStep {
+  phase: 'THINK' | 'ACT' | 'REFLECT' | string
+  iteration?: number
+  content?: string
+  toolCalls?: Array<{ toolName?: string; toolType?: string; params?: unknown; result?: unknown }>
+  reflection?: string
+  passed?: boolean
+  tokenUsage?: number
+  elapsedMs?: number
+}
+
 export interface ThinkingBlock extends BlockBase {
   type: 'ThinkingChain'
   content: string
   summary: string
   durationMs: number
-  agentInfo?: { name: string; type: string }
+  tokenUsage?: number
+  agentInfo?: {
+    id?: string
+    name: string
+    type?: string
+    role?: string
+    llmId?: string
+    soulId?: string
+    skills?: string[]
+    mcps?: string[]
+  }
+  context?: {
+    userProfile?: Record<string, unknown>
+    recentWorks?: unknown[]
+    citingMessages?: unknown[]
+    customContext?: string
+  }
+  input?: string | Record<string, unknown>
+  output?: string | Record<string, unknown>
+  steps?: ThinkingStep[]
   parentMsgId?: string
 }
 
