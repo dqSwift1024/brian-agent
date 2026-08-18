@@ -539,7 +539,7 @@ export class VisualizationService {
     }
 
     const edges: Array<Record<string, unknown>> = [];
-    const edgeSet = new Set<string>();
+    const directionalEdgeSet = new Set<string>();
 
     if (includeQA) {
       const workGroups = new Map<string, Array<Record<string, unknown>>>();
@@ -566,13 +566,16 @@ export class VisualizationService {
 
         for (const req of requests) {
           for (const resp of responses) {
-            const edgeKey = `${req.info_id}->${resp.info_id}`;
-            if (edgeSet.has(edgeKey)) continue;
-            edgeSet.add(edgeKey);
+            const reqId = String(req.info_id ?? '');
+            const respId = String(resp.info_id ?? '');
+            if (!reqId || !respId || reqId === respId) continue;
+            const dirKey = `${reqId}->${respId}`;
+            if (directionalEdgeSet.has(dirKey)) continue;
+            directionalEdgeSet.add(dirKey);
             edges.push({
-              id: `qa_${edgeKey}`,
-              from: String(req.info_id ?? ''),
-              to: String(resp.info_id ?? ''),
+              id: `qa_${dirKey}`,
+              from: reqId,
+              to: respId,
               edge_type: 'QUESTION_ANSWER',
               work_id: String(req.work_id ?? ''),
             });
@@ -592,13 +595,16 @@ export class VisualizationService {
             fields: ['citing_info_id', 'cited_info_id'],
           });
           for (const row of citingRows) {
-            const edgeKey = `cite_${row.cited_info_id}->${row.citing_info_id}`;
-            if (edgeSet.has(edgeKey)) continue;
-            edgeSet.add(edgeKey);
+            const fromId = String(row.cited_info_id ?? '');
+            const toId = String(row.citing_info_id ?? '');
+            if (!fromId || !toId || fromId === toId) continue;
+            const dirKey = `${fromId}->${toId}`;
+            if (directionalEdgeSet.has(dirKey)) continue; // 两个消息框之间同一方向不重复连线
+            directionalEdgeSet.add(dirKey);
             edges.push({
-              id: `cite_${row.cited_info_id}_${row.citing_info_id}`,
-              from: String(row.cited_info_id ?? ''),
-              to: String(row.citing_info_id ?? ''),
+              id: `cite_${fromId}_${toId}`,
+              from: fromId,
+              to: toId,
               edge_type: 'CITATION',
             });
           }

@@ -394,8 +394,11 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
               @click="centerMapOn(entry.message.id)"
             >
               <div class="flex items-center justify-between mb-1 text-[10px]">
+                <span :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
+                  {{ formatTime(entry.message.timestamp) }}
+                </span>
                 <div class="flex items-center gap-1.5">
-                  <label class="flex items-center gap-1 cursor-pointer" title="勾选以指定本次问答上下文" @click.stop>
+                  <label class="flex items-center cursor-pointer" title="勾选以指定本次问答上下文" @click.stop>
                     <input
                       type="checkbox"
                       class="rounded cursor-pointer h-3.5 w-3.5"
@@ -404,18 +407,15 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
                       @change="sessionStore.toggleMsgSelection(entry.message.id)"
                     />
                   </label>
-                  <span :class="entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400'">
-                    {{ formatTime(entry.message.timestamp) }}
-                  </span>
+                  <button
+                    class="p-0.5 rounded hover:text-warning-orange transition-colors"
+                    :class="nodeOf(entry.message)?.pin ? 'text-warning-orange' : (entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400')"
+                    :title="nodeOf(entry.message)?.pin ? '取消钉住' : '钉住'"
+                    @click.stop="togglePin(entry.message.id)"
+                  >
+                    <component :is="nodeOf(entry.message)?.pin ? Pin : PinOff" :size="12" />
+                  </button>
                 </div>
-                <button
-                  class="p-0.5 rounded hover:text-warning-orange transition-colors"
-                  :class="nodeOf(entry.message)?.pin ? 'text-warning-orange' : (entry.message.role === 'user' ? 'text-white/70' : 'text-apple-gray-400')"
-                  :title="nodeOf(entry.message)?.pin ? '取消钉住' : '钉住'"
-                  @click.stop="togglePin(entry.message.id)"
-                >
-                  <component :is="nodeOf(entry.message)?.pin ? Pin : PinOff" :size="12" />
-                </button>
               </div>
 
               <p class="text-sm whitespace-pre-wrap">{{ entry.message.content }}</p>

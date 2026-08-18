@@ -73,13 +73,21 @@ export const useSessionStore = defineStore('session', () => {
         .sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0))
 
       const idSet = new Set(msgNodes.map((n) => String(n.info_id ?? n.id ?? '')))
-      const edges: ChatMapEdge[] = rawEdges
-        .filter((e) => idSet.has(String(e.from ?? '')) && idSet.has(String(e.to ?? '')))
-        .map((e) => ({
-          source: String(e.from ?? ''),
-          target: String(e.to ?? ''),
+      const edgePairSet = new Set<string>()
+      const edges: ChatMapEdge[] = []
+      for (const e of rawEdges) {
+        const from = String(e.from ?? '')
+        const to = String(e.to ?? '')
+        if (!idSet.has(from) || !idSet.has(to) || from === to) continue
+        const pairKey = `${from}->${to}`
+        if (edgePairSet.has(pairKey)) continue
+        edgePairSet.add(pairKey)
+        edges.push({
+          source: from,
+          target: to,
           edgeType: (String(e.edge_type ?? '').toUpperCase().startsWith('QUESTION') ? 'QUESTION_ANSWER' : 'CITATION') as ChatMapEdge['edgeType'],
-        }))
+        })
+      }
 
       // 布局：时间纵向（回复关系向下）、引用层级横向（引用关系从左到右）
       const nodes: ChatMapNode[] = msgNodes.map((n, idx) => ({
