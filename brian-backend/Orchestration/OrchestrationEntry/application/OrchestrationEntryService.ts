@@ -8,7 +8,7 @@ import {
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import { ContextInfoInput, ContextInfoOutput, InfoCoreContext } from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput } from '@brian-agent/core';
 import type { WriterAgentAccess } from '@brian-agent/agent';
 import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
@@ -136,10 +136,34 @@ export class OrchestrationEntryService {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger?.error?.('receiveWork: orchestration failed', { work_id: workId, trace_id: input.trace_id ?? '', error: errMsg });
       await this.markWorkFailed(workId, errMsg);
+
+      // 即使发生异常也保存错误 RESPONSE 消息到 info_raw 并引用用户请求，确保在 ChatMap 与历史中展示
+      try {
+        const reqRows = await this.relationDb.select('info_raw', {
+          conditions: [
+            { field: 'work_id', operator: Operator.EQ, value: workId },
+            { field: 'info_type', operator: Operator.EQ, value: 'REQUEST' },
+          ],
+        });
+        const reqId = reqRows.length > 0 ? (reqRows[0].info_id as string) : '';
+        const parentInfoIds = reqId ? [reqId] : [];
+        const saveIn = Object.assign(new SaveInfoInput(), {
+          session_id: input.session_id,
+          work_id: workId,
+          interact_id: interactId,
+          info_type: 'RESPONSE',
+          info_creator_role: 'AGENT',
+          info_creator_id: workId,
+          info: `[错误] ${errMsg}`,
+          parent_info_ids: parentInfoIds,
+        });
+        await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+      } catch { /* best-effort */ }
+
       output.work_id = workId;
       output.interact_id = interactId;
       output.orchestration_strategy = strategy;
-      output.final_response = '抱歉，处理您的问题时出现了错误，请稍后重试。';
+      output.final_response = `[错误] ${errMsg}`;
       output.error = errMsg;
       output.error_code = 'ORCHESTRATION_FAILED';
       return false;

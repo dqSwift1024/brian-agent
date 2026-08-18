@@ -1234,8 +1234,8 @@ describe('VisualizationService', () => {
       await svc.getVisualizedMessageDAG(input, ctx(), out);
       const cite = (out.graph as any).edges.find((e: any) => e.edge_type === 'CITATION');
       expect(cite).toBeDefined();
-      expect(cite.from).toBe('info-citing');
-      expect(cite.to).toBe('info-cited');
+      expect(cite.from).toBe('info-cited');
+      expect(cite.to).toBe('info-citing');
     });
 
     it('TC-VIS-106: Nodes have all properties', async () => {

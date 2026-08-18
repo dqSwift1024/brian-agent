@@ -270,7 +270,7 @@
 
 ### 3.12. SAVE_RESPONSE — 保存最终回复
 
-**语义**：将最终回复保存到 InfoCore 和 Work 记录。
+**语义**：将最终回复保存到 InfoCore 和 Work 记录（一次问答也是一次引用和被引用关系）。
 
 **参数**：
 ```json
@@ -281,12 +281,12 @@
 ```
 
 **处理逻辑**：
-1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；saveInfo 失败时降级记录日志，不中断编排；
+1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；将对应 REQUEST 消息 ID 传入 `parent_info_ids`，在 `info_graph` 中建立引用边（RESPONSE 引用 REQUEST）；saveInfo 失败时降级记录日志，不中断编排；
 2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status 和 final_response 字段；
 
 ### 3.13. HANDLE_ERROR — 错误处理
 
-**语义**：处理编排流程中的异常，返回默认回复或标记 work 失败。
+**语义**：处理编排流程中的异常，返回错误回复或标记 work 失败（即使报错也保存 RESPONSE 并在 ChatMap 与对话区展示）。
 
 **参数**：
 ```json
@@ -297,9 +297,10 @@
 ```
 
 **处理逻辑**：
-1. 将 default_response 写入 shared_data.final_response（兜底回复）；
-2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status 为 "FAILED"；
-3. 记录错误日志（通过 LogProvider.error）；
+1. 将错误信息（如 `[错误] {errorMsg}`）或 default_response 写入 shared_data.final_response；
+2. 调用 InfoCore.saveInfo 将错误回复保存为 RESPONSE 消息并关联对应 REQUEST 消息 ID（parent_info_ids），确保在 ChatMap 区和对话区正常呈现；
+3. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status 为 "FAILED"、error_message 与 final_response；
+4. 记录错误日志（通过 LogProvider.error）；
 
 ### 3.14. INVOKE — 自定义调用
 

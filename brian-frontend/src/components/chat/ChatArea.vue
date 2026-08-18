@@ -386,7 +386,11 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
           >
             <div
               class="rounded-2xl px-3 py-2.5 cursor-pointer"
-              :class="entry.message.role === 'user' ? 'bg-brian-blue text-white' : 'block-card'"
+              :class="[
+                entry.message.role === 'user'
+                  ? 'bg-brian-blue text-white'
+                  : (entry.message.content.startsWith('[错误]') ? 'block-card border-error-red/40 bg-error-red/5 text-error-red' : 'block-card')
+              ]"
               @click="centerMapOn(entry.message.id)"
             >
               <div class="flex items-center justify-between mb-1 text-[10px]">

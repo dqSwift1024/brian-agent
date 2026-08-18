@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useSessionStore } from '@/stores/session'
-import { Pin, PinOff, ChevronDown, CornerUpRight } from '@lucide/vue'
+import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle } from '@lucide/vue'
 import type { ChatMapNode } from '@/api/types'
 
 const sessionStore = useSessionStore()
@@ -284,7 +284,9 @@ watch(() => sessionStore.centerInfoId, async (id) => {
         class="chat-map-node absolute rounded-lg border bg-white/95 dark:bg-apple-gray-800/95 shadow-sm text-xs transition-all duration-200"
         :style="nodeStyle(n)"
         :class="[
-          n.infoType === 'REQUEST' ? 'border-brian-blue/40' : 'border-apple-gray-200 dark:border-apple-gray-700',
+          (n.info.startsWith('[错误]') || n.summary.startsWith('[错误]'))
+            ? 'border-error-red/50 bg-red-50/50 dark:bg-red-950/30'
+            : (n.infoType === 'REQUEST' ? 'border-brian-blue/40' : 'border-apple-gray-200 dark:border-apple-gray-700'),
           activeNodeId === n.id ? 'ring-2 ring-brian-blue shadow-lg border-brian-blue' : 'hover:border-brian-blue/60'
         ]"
         @click.stop="onNodeClick(n)"
@@ -307,18 +309,25 @@ watch(() => sessionStore.centerInfoId, async (id) => {
             <span class="text-[10px] text-apple-gray-400">{{ formatTime(n.created) }}</span>
           </div>
 
-          <button
-            class="p-0.5 rounded text-apple-gray-400 hover:text-brian-blue"
-            :class="n.pin ? 'text-warning-orange' : ''"
-            :title="n.pin ? '取消钉住' : '钉住'"
-            @click.stop="togglePin(n)"
-          >
-            <component :is="n.pin ? Pin : PinOff" :size="12" />
-          </button>
+          <div class="flex items-center gap-1">
+            <AlertCircle v-if="n.info.startsWith('[错误]') || n.summary.startsWith('[错误]')" :size="12" class="text-error-red" title="执行出错" />
+            <button
+              class="p-0.5 rounded text-apple-gray-400 hover:text-brian-blue"
+              :class="n.pin ? 'text-warning-orange' : ''"
+              :title="n.pin ? '取消钉住' : '钉住'"
+              @click.stop="togglePin(n)"
+            >
+              <component :is="n.pin ? Pin : PinOff" :size="12" />
+            </button>
+          </div>
         </div>
 
         <!-- 摘要 -->
-        <div class="px-2 py-0.5 text-apple-gray-700 dark:text-apple-gray-200 truncate" :title="n.summary">
+        <div
+          class="px-2 py-0.5 truncate font-medium"
+          :class="(n.info.startsWith('[错误]') || n.summary.startsWith('[错误]')) ? 'text-error-red' : 'text-apple-gray-700 dark:text-apple-gray-200'"
+          :title="n.summary"
+        >
           {{ n.summary || '(无内容)' }}
         </div>
 

@@ -419,8 +419,10 @@ export class JSONNodeService {
       info: userQuery,
       parent_info_ids: citingIds,
     });
+    const saveOut = new SaveInfoOutput();
     try {
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), saveOut);
+      sharedData.user_input_info_id = saveOut.info_id;
     } catch (err: unknown) {
       this.logger?.error?.('handleSaveUserInput: saveInfo failed', {
         work_id: workId,
@@ -924,6 +926,12 @@ export class JSONNodeService {
     const responseKey = (params.response_key as string) ?? 'final_response';
     const finalResponse = (sharedData[responseKey] as string) ?? '';
 
+    // 一次问答也是一次引用和被引用关系：RESPONSE 引用对应的 REQUEST 消息
+    const parentInfoIds: string[] = [];
+    if (sharedData.user_input_info_id) {
+      parentInfoIds.push(String(sharedData.user_input_info_id));
+    }
+
     const saveInput = Object.assign(new SaveInfoInput(), {
       session_id: sessionId,
       work_id: workId,
@@ -932,6 +940,7 @@ export class JSONNodeService {
       info_creator_role: 'AGENT',
       info_creator_id: workId,
       info: finalResponse,
+      parent_info_ids: parentInfoIds,
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -963,22 +972,50 @@ export class JSONNodeService {
     params: Record<string, unknown>,
     context: JSONNodeContext,
   ): Promise<void> {
+    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
+    const interactId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
     const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     const defaultResponse = (params.default_response as string) ?? '抱歉，处理您的问题时出现了错误。';
     const errorMsg = (sharedData._error as string) ?? 'Unknown error';
+    const responseText = errorMsg && errorMsg !== 'Unknown error' ? `[错误] ${errorMsg}` : defaultResponse;
 
-    sharedData.final_response = defaultResponse;
+    sharedData.final_response = responseText;
 
     this.logger?.error?.('JSONNode: HANDLE_ERROR triggered', {
       work_id: workId,
       error: errorMsg,
     });
 
+    // 即使报错也将错误回复保存到 info_raw 并关联用户请求，确保在 ChatMap 与对话历史中正常展示
+    const parentInfoIds: string[] = [];
+    if (sharedData.user_input_info_id) {
+      parentInfoIds.push(String(sharedData.user_input_info_id));
+    }
+    const saveInput = Object.assign(new SaveInfoInput(), {
+      session_id: sessionId,
+      work_id: workId,
+      interact_id: interactId,
+      info_type: 'RESPONSE',
+      info_creator_role: 'AGENT',
+      info_creator_id: workId,
+      info: responseText,
+      parent_info_ids: parentInfoIds,
+    });
+    try {
+      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+    } catch (err: unknown) {
+      this.logger?.error?.('handleError: saveInfo failed', {
+        work_id: workId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     if (workId) {
       const newStatus = (params.update_work_status as string) ?? 'FAILED';
       const updData: DataObject[] = [
         { field: 'status', value: newStatus },
         { field: 'error_message', value: errorMsg },
+        { field: 'final_response', value: responseText },
         { field: 'updated', value: IdGenerator.now() },
       ];
       const updInput = Object.assign(new UpdateDBInput(), {
