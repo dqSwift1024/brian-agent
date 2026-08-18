@@ -89,6 +89,8 @@ type TimelineEntry =
   | { kind: 'message'; key: string; sort: number; message: ChatMessage }
   | { kind: 'block'; key: string; sort: number; block: Block }
 
+// ===== 原始 timeline 实现（保留参考） =====
+/*
 const timeline = computed<TimelineEntry[]>(() => {
   const entries: TimelineEntry[] = []
   for (const m of sessionStore.messages) {
@@ -99,8 +101,31 @@ const timeline = computed<TimelineEntry[]>(() => {
   }
   entries.sort((a, b) => {
     if (a.sort !== b.sort) return a.sort - b.sort
-    // 同一毫秒内：用户消息排在所属回复块之前，保证一问一答顺序
     if (a.kind !== b.kind) return a.kind === 'message' ? -1 : 1
+    return a.key.localeCompare(b.key)
+  })
+  return entries
+})
+*/
+
+// ===== 修改后的 timeline 实现：确保思考 Blocks 严格按创建/执行先后顺序在用户提问之后、最终回复之前正确排列 =====
+const timeline = computed<TimelineEntry[]>(() => {
+  const entries: TimelineEntry[] = []
+  for (const m of sessionStore.messages) {
+    entries.push({ kind: 'message', key: `m-${m.id}`, sort: m.timestamp, message: m })
+  }
+  for (const b of sessionStore.blocks) {
+    entries.push({ kind: 'block', key: `b-${b.id}`, sort: b.meta.createdAt || Date.now(), block: b })
+  }
+  entries.sort((a, b) => {
+    if (a.sort !== b.sort) return a.sort - b.sort
+    // 同一时间戳内：用户消息(USER) < 思考Block(Thinking) < 最终回复消息(ASSISTANT)
+    if (a.kind !== b.kind) {
+      if (a.kind === 'message' && a.message.role === 'user') return -1
+      if (b.kind === 'message' && b.message.role === 'user') return 1
+      if (a.kind === 'block') return -1
+      if (b.kind === 'block') return 1
+    }
     return a.key.localeCompare(b.key)
   })
   return entries

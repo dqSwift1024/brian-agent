@@ -1782,7 +1782,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               const agentId = String(row.agent_id ?? '');
               let rawAgentName = String(row.agent_name ?? '');
 
-              // 改进 Agent 具名展现：拒绝原生纯 UUID 名称，提取具名标题
+              // 优先使用数据库记录的具有业务特性的 agent_name，严格消除 UUID
               let agentName = rawAgentName;
               const isUuid = !agentName || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentName) || agentName === agentId;
 
@@ -1798,11 +1798,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                     try {
                       const p = JSON.parse(String(row.task_content));
                       if (p && p.task_domain) domainFromTask = String(p.task_domain);
-                      else if (p && p.user_query) domainFromTask = String(p.user_query).slice(0, 14);
+                      else if (p && p.user_query) domainFromTask = String(p.user_query).slice(0, 16);
                     } catch { /* ignore */ }
                   }
 
-                  agentName = domainFromTask ? `子任务 ${currIdx}: ${domainFromTask}` : `执行 Agent #${currIdx}`;
+                  agentName = domainFromTask ? `执行 Agent ${currIdx}: ${domainFromTask}` : `执行 Agent #${currIdx}`;
                 }
               }
 
