@@ -36,6 +36,7 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
     updated: Number(row.updated),
     agent_id: String(row.agent_id),
     agent_name: String(row.agent_name),
+    agent_purpose: String(row.agent_purpose ?? ''),
     agent_type: String(row.agent_type),
     strategy_id: String(row.strategy_id),
     llm_id: String(row.llm_id ?? ''),
@@ -66,7 +67,7 @@ export class AgentLibraryService {
     if (!input.strategy_id) throw new ValidationError('strategy_id 为必填');
 
     const now = IdGenerator.now();
-    await this.relationDb.insert(AGENT_TABLE, [
+    const insertFields: DataObject[] = [
       { field: 'id', value: IdGenerator.generate() },
       { field: 'created', value: now },
       { field: 'updated', value: now },
@@ -80,7 +81,18 @@ export class AgentLibraryService {
       { field: 'usage_count', value: 0 },
       { field: 'eval_score', value: 50 },
       { field: 'enable', value: 1 },
-    ]);
+    ];
+    if (input.agent_purpose !== undefined) {
+      insertFields.push({ field: 'agent_purpose', value: input.agent_purpose });
+    }
+
+    try {
+      await this.relationDb.insert(AGENT_TABLE, insertFields);
+    } catch {
+      // 容错降级：若内存表未包含 agent_purpose 列则去掉该字段重新插入
+      const fallbackFields = insertFields.filter(f => f.field !== 'agent_purpose');
+      await this.relationDb.insert(AGENT_TABLE, fallbackFields);
+    }
     output.agent_id = input.agent_id;
     return true;
   }
@@ -104,22 +116,11 @@ export class AgentLibraryService {
     if (candidates.length === 0) {
       output.agent_id = '';
       output.similarity_score = 0;
+      output.matched_by = '';
       return true;
     }
 
-    const promptTemplateId = config?.prompt_template_id ?? '';
-    if (promptTemplateId) {
-      const llmMatched = await this.llmMatchAgent(input.task_signature, candidates, promptTemplateId);
-      if (llmMatched && llmMatched.score >= threshold) {
-        const found = candidates.find((c) => c.agent_id === llmMatched.agent_id && toBool(c.enable));
-        if (found) {
-          output.agent_id = found.agent_id;
-          output.similarity_score = llmMatched.score;
-          return true;
-        }
-      }
-    }
-
+    // ===== 1. 第一层匹配：进行提问/特征文本相似度算法匹配 =====
     let bestScore = 0;
     let bestId = '';
     for (const c of candidates) {
@@ -129,13 +130,36 @@ export class AgentLibraryService {
         bestId = c.agent_id;
       }
     }
+
     if (bestScore >= threshold && bestId) {
       output.agent_id = bestId;
       output.similarity_score = bestScore;
-    } else {
-      output.agent_id = '';
-      output.similarity_score = bestScore;
+      output.matched_by = 'SIMILARITY';
+      return true;
     }
+
+    // ===== 2. 第二层匹配：提交给大模型，由 LLM 基于 Agent 列表用途/名称与提问进行评估打分 =====
+    const promptTemplateId = config?.prompt_template_id ?? '';
+    const llmMatched = await this.llmMatchAgent(
+      input.task_content || input.task_signature,
+      candidates,
+      promptTemplateId,
+    );
+
+    if (llmMatched && llmMatched.score >= threshold && llmMatched.agent_id) {
+      const found = candidates.find((c) => c.agent_id === llmMatched.agent_id && toBool(c.enable));
+      if (found) {
+        output.agent_id = found.agent_id;
+        output.similarity_score = llmMatched.score;
+        output.matched_by = 'LLM';
+        return true;
+      }
+    }
+
+    // ===== 3. 两层匹配得分均低于阈值，返回空 agent_id 触发生成新 Agent =====
+    output.agent_id = '';
+    output.similarity_score = Math.max(bestScore, llmMatched?.score ?? 0);
+    output.matched_by = '';
     return true;
   }
 
@@ -545,35 +569,59 @@ export class AgentLibraryService {
   }
 
   /**
-   * 使用候选 Agent 已绑定的 llm_id 调用 LLM 做匹配排序。
-   * Agent 层不自行挑选 llm_model；仅使用候选上已有的 llm_id（来自 Core matchLLM）。
+   * 第二层匹配：提交给大模型 (LLM)，依据 Agent 列表用途/名称与提问进行评估打分。
    */
   private async llmMatchAgent(
-    taskSig: string,
+    taskContent: string,
     candidates: AgentRecord[],
-    promptTemplateId: string,
+    promptTemplateId?: string,
   ): Promise<{ agent_id: string; score: number } | null> {
     const llmId = candidates.find((c) => c.llm_id)?.llm_id;
     if (!llmId) return null;
 
     const candidateList = candidates.map((c) => ({
       agent_id: c.agent_id,
-      signature: c.task_signature,
+      agent_name: c.agent_name,
+      agent_purpose: c.agent_purpose || c.task_signature || '通用任务代理',
+      agent_type: c.agent_type,
     }));
-    const promptOut = new ExecPromptOutput();
-    const okPrompt = await this.promptsAccess.execPrompt(
-      Object.assign(new ExecPromptInput(), {
-        id: promptTemplateId,
-        variables: { task_signature: taskSig, candidates: candidateList },
-      }),
-      new PromptContext(),
-      promptOut,
-    );
-    if (!okPrompt || !promptOut.prompt) return null;
+
+    let prompt = '';
+    if (promptTemplateId) {
+      try {
+        const promptOut = new ExecPromptOutput();
+        const okPrompt = await this.promptsAccess.execPrompt(
+          Object.assign(new ExecPromptInput(), {
+            id: promptTemplateId,
+            variables: { task_content: taskContent, candidates: candidateList },
+          }),
+          new PromptContext(),
+          promptOut,
+        );
+        if (okPrompt && promptOut.prompt) prompt = promptOut.prompt;
+      } catch { /* ignore prompt failure */ }
+    }
+
+    if (!prompt) {
+      prompt = `你是一个智能 Agent 匹配评估专家。请评估用户的提问，并对候选 Agent 列表逐一打分，判断是否有能够完美或高度胜任该任务的现有 Agent。
+
+【用户提问/任务内容】:
+${taskContent}
+
+【候选 Agent 列表 (包含用途描述 agent_purpose)】:
+${JSON.stringify(candidateList, null, 2)}
+
+评估标准：
+1. 比较 Agent 的用途 (agent_purpose) 与用户当前任务领域的契合度；
+2. 如果存在能完美或高度胜任的 Agent，选择最符合的 agent_id，并给出 0.0 到 1.0 之间的匹配得分 score；
+3. 如果无任何能胜任的 Agent，将 agent_id 设为空字符串 ""，score 设为 0.0。
+
+请严格仅输出 JSON 格式结果：{"agent_id": "选中的agent_id", "score": 匹配得分, "reason": "打分与评估说明"}`;
+    }
 
     const llmOut = new ExecLLMOutput();
     const okLlm = await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), { id: llmId, prompt: promptOut.prompt }),
+      Object.assign(new ExecLLMInput(), { id: llmId, prompt }),
       new LLMContext(),
       llmOut,
     );

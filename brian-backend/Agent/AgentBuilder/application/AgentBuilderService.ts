@@ -95,6 +95,7 @@ export class AgentBuilderService {
       await this.agentLibrary.matchAgent(
         Object.assign(new MatchAgentInput(), {
           task_signature: signature,
+          task_content: input.task_content,
           agent_type: 'WORKER',
         }),
         libCtx,
@@ -116,6 +117,7 @@ export class AgentBuilderService {
           await this.streamAccess.pushEvent(sessionId, 'agent_matched', 'AGENT_SPEC', {
             agent_id: matchOut.agent_id,
             reused: true,
+            matched_by: matchOut.matched_by || 'SIMILARITY',
           }, { work_id: workId, interact_id: interactId, agent_id: matchOut.agent_id });
         }
         return true;
@@ -188,6 +190,10 @@ export class AgentBuilderService {
       agentId,
     );
 
+    const agentPurpose = input.task_content
+      ? `负责 ${analysis.domain || '通用'} 领域任务处理: ${input.task_content.slice(0, 120)}`
+      : `负责 ${analysis.domain || '通用'} 领域相关工作`;
+
     const addOut = new AddAgentOutput();
     const ok = await this.agentLibrary.addAgent(
       Object.assign(new AddAgentInput(), {
@@ -198,6 +204,7 @@ export class AgentBuilderService {
         soul_id: soulOut.soul_id || '',
         task_signature: signature,
         agent_name: agentName,
+        agent_purpose: agentPurpose,
       }),
       libCtx,
       addOut,

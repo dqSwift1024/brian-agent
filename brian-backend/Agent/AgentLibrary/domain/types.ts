@@ -13,6 +13,7 @@ export interface AgentRecord {
   updated: number;
   agent_id: string;
   agent_name: string;
+  agent_purpose?: string;
   agent_type: string;
   strategy_id: string;
   llm_id: string;
@@ -59,6 +60,7 @@ export class AddAgentInput extends Input {
   soul_id!: string;
   task_signature!: string;
   agent_name!: string;
+  agent_purpose?: string;
 }
 
 export class AddAgentOutput extends Output {
@@ -67,6 +69,7 @@ export class AddAgentOutput extends Output {
 
 export class MatchAgentInput extends Input {
   task_signature!: string;
+  task_content?: string;
   agent_type?: string;
   similarity_threshold?: number;
 }
@@ -74,11 +77,13 @@ export class MatchAgentInput extends Input {
 export class MatchAgentOutput extends Output {
   agent_id = '';
   similarity_score = 0;
+  matched_by: 'SIMILARITY' | 'LLM' | '' = 'SIMILARITY';
 }
 
 export class UpdateAgentInput extends Input {
   agent_id!: string;
   agent_name?: string;
+  agent_purpose?: string;
   task_signature?: string;
   eval_score?: number;
   enable?: boolean;

@@ -129,7 +129,7 @@ export function initOrchestrationSchema(db: RelationDBAccess): void {
     // ===== Agent layer tables =====
     `CREATE TABLE IF NOT EXISTS "agent" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
-      "agent_id" TEXT NOT NULL, "agent_name" TEXT NOT NULL DEFAULT '',
+      "agent_id" TEXT NOT NULL, "agent_name" TEXT NOT NULL DEFAULT '', "agent_purpose" TEXT NOT NULL DEFAULT '',
       "agent_type" TEXT NOT NULL DEFAULT 'WORKER', "strategy_id" TEXT NOT NULL DEFAULT '',
       "llm_id" TEXT NOT NULL DEFAULT '', "soul_id" TEXT NOT NULL DEFAULT '',
       "task_signature" TEXT NOT NULL DEFAULT '', "usage_count" INTEGER NOT NULL DEFAULT 0,

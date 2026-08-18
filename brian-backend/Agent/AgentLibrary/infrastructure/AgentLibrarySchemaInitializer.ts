@@ -11,12 +11,15 @@ export class AgentLibrarySchemaInitializer {
     this.relationDb.executeRaw(
       `CREATE TABLE IF NOT EXISTS ${AGENT_TABLE} (
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,
-        agent_id TEXT NOT NULL UNIQUE, agent_name TEXT NOT NULL, agent_type TEXT NOT NULL,
+        agent_id TEXT NOT NULL UNIQUE, agent_name TEXT NOT NULL, agent_purpose TEXT DEFAULT '', agent_type TEXT NOT NULL,
         strategy_id TEXT NOT NULL, llm_id TEXT NOT NULL, soul_id TEXT NOT NULL,
         task_signature TEXT NOT NULL, usage_count INTEGER NOT NULL DEFAULT 0,
         eval_score INTEGER NOT NULL DEFAULT 50, enable INTEGER NOT NULL DEFAULT 1
       )`,
     );
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE ${AGENT_TABLE} ADD COLUMN agent_purpose TEXT DEFAULT ''`);
+    } catch { /* column already exists */ }
     this.relationDb.executeRaw(`CREATE INDEX IF NOT EXISTS idx_agent_created ON ${AGENT_TABLE}(created)`);
     this.relationDb.executeRaw(`CREATE INDEX IF NOT EXISTS idx_agent_updated ON ${AGENT_TABLE}(updated)`);
     this.relationDb.executeRaw(`CREATE INDEX IF NOT EXISTS idx_agent_type ON ${AGENT_TABLE}(agent_type)`);
