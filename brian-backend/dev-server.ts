@@ -1689,7 +1689,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         */
 
-        // ===== 修改后代码：精准关联各 Work 的 Agent 执行与 Trace 迭代步骤，完整解析上下文、Input、Output 与步骤 =====
+        // ===== 修改后代码：精准关联各 Work 的 Agent 执行与 Trace 迭代步骤，解析具名标题、多 Agent DAG 网络、上下文、Input、Output 与步骤 =====
         const rawMessages = (output.messages || []).filter(
           (m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE
         );
@@ -1699,14 +1699,72 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         );
 
         const workBlocksMap = new Map<string, any[]>();
+        const workDagMap = new Map<string, any>();
 
         if (responseWorkIds.length > 0) {
           try {
             const placeholders = responseWorkIds.map(() => '?').join(',');
+
+            // 预先查询 Work 对应的 Task/Agent DAG 关系记录
+            const dagRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
+              `SELECT r.plan_id, r.agent_dag_json, p.work_id, p.task_dag 
+               FROM orchestration_agent_dag_record r
+               LEFT JOIN agent_plan p ON r.plan_id = p.plan_id
+               WHERE p.work_id IN (${placeholders})`,
+              responseWorkIds,
+            );
+
+            const dagNodeInfoMap = new Map<string, { label: string; domain?: string; taskContent?: string }>();
+            
+            for (const dRow of dagRows) {
+              const wId = String(dRow.work_id ?? '');
+              let dagObj: any = undefined;
+              try { if (dRow.agent_dag_json) dagObj = JSON.parse(String(dRow.agent_dag_json)); } catch { /* ignore */ }
+
+              if (dagObj && Array.isArray(dagObj.agent_nodes)) {
+                for (let idx = 0; idx < dagObj.agent_nodes.length; idx++) {
+                  const node = dagObj.agent_nodes[idx];
+                  const agId = String(node.agent_id ?? '');
+                  const domain = String(node.task_domain || '');
+                  const content = String(node.task_content || '');
+                  const shortTitle = domain || (content ? content.slice(0, 16) : `子任务 #${idx + 1}`);
+                  const label = `任务 ${idx + 1}: ${shortTitle}`;
+
+                  if (agId) {
+                    dagNodeInfoMap.set(agId, { label, domain, taskContent: content });
+                  }
+                }
+
+                if (wId) {
+                  workDagMap.set(wId, {
+                    planId: dagObj.plan_id,
+                    totalCount: dagObj.total_agent_count || dagObj.agent_nodes.length,
+                    nodes: dagObj.agent_nodes.map((n: any, i: number) => {
+                      const domain = String(n.task_domain || '');
+                      const content = String(n.task_content || '');
+                      const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`);
+                      return {
+                        id: String(n.agent_id || `agent-${i}`),
+                        label: `任务 ${i + 1}: ${title}`,
+                        domain,
+                        content,
+                        status: n.status || 'COMPLETED',
+                      };
+                    }),
+                    edges: (dagObj.agent_edges || []).map((e: any) => ({
+                      source: String(e.from_agent_id || ''),
+                      target: String(e.to_agent_id || ''),
+                      label: String(e.data_dependency || ''),
+                    })),
+                  });
+                }
+              }
+            }
+
             const execRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
               `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
                       a.agent_name, a.agent_type, a.llm_id, a.soul_id,
-                      t.iterations_json
+                      t.iterations_json, t.total_token_usage
                FROM orchestration_agent_execution e
                LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
                LEFT JOIN agent_execution_trace t ON (e.trace_id IS NOT NULL AND e.trace_id != '' AND e.trace_id = t.trace_id)
@@ -1715,18 +1773,45 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               responseWorkIds,
             );
 
+            let agentIndexCounter = new Map<string, number>();
+
             for (const row of execRows) {
               const wid = String(row.work_id ?? '');
               if (!wid) continue;
 
               const agentId = String(row.agent_id ?? '');
-              const agentName = String(row.agent_name ?? row.agent_id ?? 'WorkAgent');
+              let rawAgentName = String(row.agent_name ?? '');
+
+              // 改进 Agent 具名展现：拒绝原生纯 UUID 名称，提取具名标题
+              let agentName = rawAgentName;
+              const isUuid = !agentName || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentName) || agentName === agentId;
+
+              if (isUuid) {
+                if (dagNodeInfoMap.has(agentId)) {
+                  agentName = dagNodeInfoMap.get(agentId)!.label;
+                } else {
+                  const currIdx = (agentIndexCounter.get(wid) ?? 0) + 1;
+                  agentIndexCounter.set(wid, currIdx);
+                  
+                  let domainFromTask = '';
+                  if (row.task_content) {
+                    try {
+                      const p = JSON.parse(String(row.task_content));
+                      if (p && p.task_domain) domainFromTask = String(p.task_domain);
+                      else if (p && p.user_query) domainFromTask = String(p.user_query).slice(0, 14);
+                    } catch { /* ignore */ }
+                  }
+
+                  agentName = domainFromTask ? `子任务 ${currIdx}: ${domainFromTask}` : `执行 Agent #${currIdx}`;
+                }
+              }
+
               const agentType = String(row.agent_type ?? 'WORKER');
               const llmId = row.llm_id ? String(row.llm_id) : undefined;
               const soulId = row.soul_id ? String(row.soul_id) : undefined;
 
               // 解析 task_content 作为 Input 与 Context
-              let inputQuery: string | undefined = row.task_content ? String(row.task_content) : undefined;
+              let inputQuery: string | undefined = undefined;
               let contextData: any = undefined;
 
               if (row.task_content) {
@@ -1735,27 +1820,39 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                   if (parsedTask && typeof parsedTask === 'object') {
                     if (parsedTask.user_query) {
                       inputQuery = String(parsedTask.user_query);
+                    } else if (parsedTask.task_content) {
+                      inputQuery = String(parsedTask.task_content);
+                    } else {
+                      inputQuery = String(row.task_content);
                     }
+
                     if (Array.isArray(parsedTask.session_context) && parsedTask.session_context.length > 0) {
                       contextData = {
                         citingMessages: parsedTask.session_context,
                       };
                     }
+                  } else {
+                    inputQuery = String(row.task_content);
                   }
-                } catch { /* ignore parse error */ }
+                } catch {
+                  inputQuery = String(row.task_content);
+                }
               }
 
               // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
               let iterJson = row.iterations_json;
+              let tokenUsage = row.total_token_usage ? Number(row.total_token_usage) : 0;
+
               if (!iterJson && agentId) {
                 try {
                   const fallbackTraceRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
-                    `SELECT iterations_json FROM agent_execution_trace 
+                    `SELECT iterations_json, total_token_usage FROM agent_execution_trace 
                      WHERE agent_id = ? ORDER BY ABS(created - ?) ASC LIMIT 1`,
                     [agentId, Number(row.created ?? Date.now())],
                   );
-                  if (fallbackTraceRows.length > 0 && fallbackTraceRows[0].iterations_json) {
-                    iterJson = fallbackTraceRows[0].iterations_json;
+                  if (fallbackTraceRows.length > 0) {
+                    if (fallbackTraceRows[0].iterations_json) iterJson = fallbackTraceRows[0].iterations_json;
+                    if (fallbackTraceRows[0].total_token_usage) tokenUsage = Number(fallbackTraceRows[0].total_token_usage);
                   }
                 } catch { /* ignore fallback error */ }
               }
@@ -1784,17 +1881,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                       }
                       if (iter.act) {
                         const toolName = String(iter.act.tool_type || iter.act.tool_id || 'Tool');
-                        steps.push({
-                          phase: 'ACT',
-                          iteration: iter.iteration_index ?? (steps.length + 1),
-                          toolCalls: [{
-                            toolName: toolName !== 'NONE' ? toolName : '系统思考',
-                            toolType: String(iter.act.tool_type || 'Tool'),
-                            params: iter.act.params,
-                            result: iter.act.result,
-                          }],
-                          elapsedMs: iter.iteration_elapsed_ms,
-                        });
+                        if (toolName !== 'NONE') {
+                          steps.push({
+                            phase: 'ACT',
+                            iteration: iter.iteration_index ?? (steps.length + 1),
+                            toolCalls: [{
+                              toolName: toolName,
+                              toolType: String(iter.act.tool_type || 'Tool'),
+                              params: iter.act.params,
+                              result: iter.act.result,
+                            }],
+                            elapsedMs: iter.iteration_elapsed_ms,
+                          });
+                        }
                       }
                       if (iter.reflect) {
                         steps.push({
@@ -1825,6 +1924,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                 content,
                 summary: '',
                 durationMs: Number(row.elapsed_ms ?? 0),
+                tokenUsage,
                 agentInfo: {
                   id: agentId,
                   name: agentName,
@@ -1847,6 +1947,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                 workBlocksMap.set(wid, []);
               }
               workBlocksMap.get(wid)!.push(block);
+
+              // 同步补全 workDagMap 中节点的输入输出和 token 统计
+              if (workDagMap.has(wid)) {
+                const dagData = workDagMap.get(wid);
+                const nodeInDag = dagData.nodes.find((n: any) => n.id === agentId);
+                if (nodeInDag) {
+                  nodeInDag.agentName = agentName;
+                  nodeInDag.input = inputQuery;
+                  nodeInDag.output = outputAnswer;
+                  nodeInDag.elapsedMs = Number(row.elapsed_ms ?? 0);
+                  nodeInDag.tokenUsage = tokenUsage;
+                }
+              }
             }
           } catch { /* degrade gracefully */ }
         }
@@ -1856,6 +1969,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const wid = m.work_id ? String(m.work_id) : '';
           const blocks = (isResponse && wid && workBlocksMap.has(wid))
             ? workBlocksMap.get(wid)!.map((b) => ({ ...b, msgId: m.info_id }))
+            : undefined;
+          const agentDag = (isResponse && wid && workDagMap.has(wid))
+            ? workDagMap.get(wid)
             : undefined;
 
           return {
@@ -1872,6 +1988,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             citedInfoIds: m.cited_info_ids ?? [],
             citingIds: m.cited_info_ids ?? [],
             blocks,
+            agentDag,
           };
         });
 

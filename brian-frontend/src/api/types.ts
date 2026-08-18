@@ -176,6 +176,7 @@ export interface ChatMessage {
   content: string
   timestamp: number
   blocks?: Block[]
+  agentDag?: any
   sessionId?: string
   workId?: string
   interactId?: string

@@ -62,6 +62,7 @@ import {
   Code
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
+import CanvasReActFlow from '../chat/CanvasReActFlow.vue'
 
 const props = defineProps<{ block: ThinkingBlock }>()
 const isExpanded = ref(false)
@@ -107,7 +108,7 @@ function formatJson(val: unknown): string {
 <template>
   <div class="py-1 select-text">
     <div class="block-card border-purple-200/80 dark:border-purple-800/60 bg-purple-50/40 dark:bg-purple-950/20 rounded-xl overflow-hidden shadow-sm">
-      <!-- Header Header 栏 -->
+      <!-- Header 标题栏 -->
       <button
         class="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-purple-100/40 dark:hover:bg-purple-900/30 transition-colors"
         @click="isExpanded = !isExpanded"
@@ -152,7 +153,35 @@ function formatJson(val: unknown): string {
 
       <!-- Expanded Detail 展开面板 -->
       <div v-if="isExpanded" class="border-t border-purple-100 dark:border-purple-900/40 bg-white/60 dark:bg-apple-gray-900/40 p-3.5 space-y-3">
-        <!-- Sub-Header Badges (Agent 规范: Soul, LLM, Skills) -->
+        
+        <!-- 1. 【最最最顶部置顶展示】Context 上下文信息环境 -->
+        <div v-if="hasContext" class="p-3 rounded-lg border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-r from-purple-50/80 to-blue-50/50 dark:from-purple-950/40 dark:to-blue-950/30 text-xs space-y-2">
+          <div class="flex items-center gap-1.5 font-bold text-purple-900 dark:text-purple-200 border-b pb-1">
+            <Database :size="13" class="text-purple-600 dark:text-purple-400" />
+            <span>对话与 Agent 运行上下文环境 (Context)</span>
+          </div>
+
+          <div v-if="block.context?.userProfile" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
+            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">用户画像 Profile:</span>
+            <pre class="mt-0.5 text-[10px] text-apple-gray-700 dark:text-apple-gray-300 overflow-x-auto">{{ formatJson(block.context.userProfile) }}</pre>
+          </div>
+
+          <div v-if="block.context?.citingMessages?.length" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
+            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">引用的历史上下文消息:</span>
+            <ul class="mt-1 space-y-1">
+              <li v-for="(msg, mIdx) in block.context.citingMessages" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300">
+                • {{ formatJson(msg) }}
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="block.context?.customContext" class="p-2 rounded bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
+            <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">相关知识/上下文背景:</span>
+            <p class="mt-0.5 text-[11px] text-apple-gray-600 dark:text-apple-gray-300 whitespace-pre-wrap">{{ block.context.customContext }}</p>
+          </div>
+        </div>
+
+        <!-- 2. Sub-Header Badges (Agent 规范: Soul, LLM, Skills) -->
         <div class="flex items-center gap-2 flex-wrap text-[11px] pb-2 border-b border-apple-gray-100 dark:border-apple-gray-800">
           <div v-if="block.agentInfo?.soulId" class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/50">
             <Sparkles :size="11" />
@@ -170,7 +199,14 @@ function formatJson(val: unknown): string {
           </div>
         </div>
 
-        <!-- Navigation Tabs (思维链 / 上下文 / 输入输出) -->
+        <!-- 3. Canvas ReAct / CoT 执行状态机流程图 -->
+        <CanvasReActFlow
+          :steps="block.steps || []"
+          :input="block.input"
+          :output="block.output"
+        />
+
+        <!-- 4. Navigation Tabs (思维链 / 输入输出) -->
         <div class="flex items-center gap-1 border-b border-apple-gray-100 dark:border-apple-gray-800 pb-1">
           <button
             class="px-2.5 py-1 text-xs font-medium rounded-lg transition-colors flex items-center gap-1"
@@ -182,23 +218,13 @@ function formatJson(val: unknown): string {
           </button>
 
           <button
-            v-if="hasContext"
-            class="px-2.5 py-1 text-xs font-medium rounded-lg transition-colors flex items-center gap-1"
-            :class="activeTab === 'context' ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200' : 'text-apple-gray-500 hover:text-purple-600'"
-            @click="activeTab = 'context'"
-          >
-            <Database :size="12" />
-            上下文 (Context)
-          </button>
-
-          <button
             v-if="hasIO"
             class="px-2.5 py-1 text-xs font-medium rounded-lg transition-colors flex items-center gap-1"
             :class="activeTab === 'io' ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200' : 'text-apple-gray-500 hover:text-purple-600'"
             @click="activeTab = 'io'"
           >
             <Code :size="12" />
-            输入与输出
+            任务输入与阶段输出
           </button>
         </div>
 
@@ -245,7 +271,7 @@ function formatJson(val: unknown): string {
                     <Wrench :size="12" />
                     <span>工具调用: {{ tc.toolName || tc.toolType || 'Tool' }}</span>
                   </div>
-                  <details v-if="tc.params" class="text-[11px] text-apple-gray-500">
+                  <details v-if="tc.params && Object.keys(tc.params).length > 0" class="text-[11px] text-apple-gray-500">
                     <summary class="cursor-pointer hover:underline text-apple-gray-600 dark:text-apple-gray-300">输入参数 (Params)</summary>
                     <pre class="mt-1 p-1.5 rounded bg-apple-gray-100 dark:bg-apple-gray-800 overflow-x-auto text-[10px]">{{ formatJson(tc.params) }}</pre>
                   </details>
@@ -278,29 +304,7 @@ function formatJson(val: unknown): string {
           </div>
         </div>
 
-        <!-- Tab 2: 上下文 (Context) -->
-        <div v-if="activeTab === 'context'" class="space-y-2 text-xs">
-          <div v-if="block.context?.userProfile" class="p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/30 bg-purple-50/20 dark:bg-purple-900/10">
-            <span class="font-semibold text-purple-900 dark:text-purple-300">用户画像 Context:</span>
-            <pre class="mt-1 text-[11px] text-apple-gray-700 dark:text-apple-gray-300 overflow-x-auto">{{ formatJson(block.context.userProfile) }}</pre>
-          </div>
-
-          <div v-if="block.context?.citingMessages?.length" class="p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/30 bg-purple-50/20 dark:bg-purple-900/10">
-            <span class="font-semibold text-purple-900 dark:text-purple-300">引用的历史消息:</span>
-            <ul class="mt-1 space-y-1">
-              <li v-for="(msg, mIdx) in block.context.citingMessages" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 truncate">
-                • {{ formatJson(msg) }}
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="block.context?.customContext" class="p-2.5 rounded-lg border border-apple-gray-200/60 dark:border-apple-gray-700/60 bg-apple-gray-50/50 dark:bg-apple-gray-800/40">
-            <span class="font-semibold text-apple-gray-800 dark:text-apple-gray-200">相关文本/记忆上下文:</span>
-            <p class="mt-1 text-[11px] text-apple-gray-600 dark:text-apple-gray-300 whitespace-pre-wrap">{{ block.context.customContext }}</p>
-          </div>
-        </div>
-
-        <!-- Tab 3: 输入与输出 (IO) -->
+        <!-- Tab 2: 输入与输出 (IO) -->
         <div v-if="activeTab === 'io'" class="space-y-2.5 text-xs">
           <div v-if="block.input" class="p-2.5 rounded-lg border border-blue-200/60 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20">
             <div class="flex items-center gap-1 text-blue-700 dark:text-blue-300 font-semibold mb-1">

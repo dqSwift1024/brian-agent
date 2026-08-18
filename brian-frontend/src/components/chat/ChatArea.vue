@@ -10,6 +10,7 @@ import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
 import MessageCard from './MessageCard.vue'
 import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
+import AgentDagFlow from './AgentDagFlow.vue'
 
 const sessionStore = useSessionStore()
 
@@ -490,25 +491,27 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const params = (payload.params as Record<string, unknown>) || {}
       const result = payload.result
 
-      thinkBlock.steps.push({
-        phase: 'ACT',
-        iteration: thinkBlock.steps.length + 1,
-        toolCalls: [{ toolName, toolType: String(payload.tool_type || toolName), params, result }],
-      })
-      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
+      if (toolName !== 'NONE') {
+        thinkBlock.steps.push({
+          phase: 'ACT',
+          iteration: thinkBlock.steps.length + 1,
+          toolCalls: [{ toolName, toolType: String(payload.tool_type || toolName), params, result }],
+        })
+        sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
 
-      // 同时添加独立 ToolInvocation Block (若需要)
-      const toolBlock: Block = {
-        id: `block-tool-${Date.now()}`,
-        msgId: botMsgId,
-        role: 'tool',
-        type: 'ToolInvocation',
-        toolName,
-        params,
-        result,
-        meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: serverTime, updatedAt: serverTime },
-      } as Block
-      sessionStore.addBlock(toolBlock)
+        // 仅在调用了真实外部工具时添加独立 ToolInvocation Block，过滤无用 NONE 卡片
+        const toolBlock: Block = {
+          id: `block-tool-${Date.now()}`,
+          msgId: botMsgId,
+          role: 'tool',
+          type: 'ToolInvocation',
+          toolName,
+          params,
+          result,
+          meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: serverTime, updatedAt: serverTime },
+        } as Block
+        sessionStore.addBlock(toolBlock)
+      }
       break
     }
 
@@ -648,6 +651,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
             :class="entry.message.role === 'user' ? 'ml-auto' : 'mr-auto'"
             :data-info-id="entry.message.id"
           >
+            <!-- 长程多 Agent 协同依赖 DAG 网络展现 -->
+            <AgentDagFlow v-if="entry.message.agentDag" :dag="entry.message.agentDag" />
+
             <MessageCard
               :id="entry.message.id"
               :info-id="entry.message.id"
