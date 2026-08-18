@@ -199,23 +199,24 @@ export class WriterAgentService {
       new RecordAgentUsageOutput(),
     );
 
-    if (ctx.session_id) {
-      try {
-        await this.infoCore.saveInfo(
-          Object.assign(new SaveInfoInput(), {
-            session_id: ctx.session_id,
-            work_id: input.work_id || ctx.work_id || '',
-            interact_id: input.interact_id || ctx.interact_id || '',
-            info_type: InfoType.RESPONSE,
-            info_creator_role: 'AGENT',
-            info_creator_id: buildOut.agent_id,
-            info: response,
-          }),
-          new InfoCoreContext(),
-          new SaveInfoOutput(),
-        );
-      } catch { /* best-effort */ }
-    }
+    // ===== 原始代码（保留参考）：WriterAgent 格式化生成的文本由编排引擎 SAVE_RESPONSE 节点写入 info_raw，此处避免重复写入 RESPONSE =====
+    // if (ctx.session_id) {
+    //   try {
+    //     await this.infoCore.saveInfo(
+    //       Object.assign(new SaveInfoInput(), {
+    //         session_id: ctx.session_id,
+    //         work_id: input.work_id || ctx.work_id || '',
+    //         interact_id: input.interact_id || ctx.interact_id || '',
+    //         info_type: InfoType.RESPONSE,
+    //         info_creator_role: 'AGENT',
+    //         info_creator_id: buildOut.agent_id,
+    //         info: response,
+    //       }),
+    //       new InfoCoreContext(),
+    //       new SaveInfoOutput(),
+    //     );
+    //   } catch { /* best-effort */ }
+    // }
 
     output.response = response;
     output.response_format = preferences.format || 'MARKDOWN';

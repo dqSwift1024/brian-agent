@@ -57,15 +57,13 @@
    e. 若 `iteration >= max_iterations`，强制终止循环，调用 Answer 接口生成当前状态下最优的答案；
 
 5. **后置处理**
-   a. 调用 AgentLibrary.recordAgentUsage 记录本次使用；
-   b. 调用 InfoCore.saveInfo 保存本次 Agent 的执行结果为 RES
+    a. 调用 AgentLibrary.recordAgentUsage 记录本次使用；
+    b. 将执行过程中的步骤与轨迹持久化到 `agent_execution_trace` 与 `info_raw`（`THINK`/`ACT`/`REFLECT`），中间 WorkAgent 结果经由 `agent_results` 传递给 Orchestration 编排层，由 WriterAgent 格式化汇总后由 `SAVE_RESPONSE` 节点统一写入 `info_raw`（`RESPONSE`），避免多回复混淆；
+    c. 将 answer、iterations、trace_id、elapsed_ms 写入 output 返回；
 
- 用；
-   c. 将 answer、iterations、trace_id、elapsed_ms 写入 output 返回；
-
-6. **异步触发优化（fire-and-forget）**
-   a. 通过 MQCore.startWorker 投递一条优化任务：EvolutorAgent 评估本次 Agent 执行结果；
-   b. 根据评估结果触发 AgentBuilder.optimizeAgent；
+6. **侧载评估说明（Sidecar Evaluation）**
+   a. 在 Orchestration 工作流中，侧载评估（Sidecar Evaluation）由编排引擎的 `EVAL_RESULT` 节点统一触发，对 WriterAgent 最终回复和 WorkAgent 节点输出进行综合评估；
+   b. 根据评估结果触发 AgentBuilder.optimizeAgent。
 
 ### 2.2. 异步执行 Agent（execAgentAsync）
 

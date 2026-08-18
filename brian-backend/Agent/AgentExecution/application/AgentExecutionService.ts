@@ -293,29 +293,29 @@ export class AgentExecutionService {
     });
     await this.persistTrace(traceId, input.agent_id, start, end, traceIterations, totalTokens, finalAnswer);
 
-    // 评估投递 MQ，由 Evolutor 消费（不直接回调）
-    try {
-      await this.mqAccess.sendMQ(
-        Object.assign(new SendMQInput(), {
-          data: {
-            queue: EVAL_QUEUE,
-            payload: {
-              type: 'eval_work_agent',
-              agent_id: input.agent_id,
-              work_id: input.work_id,
-              interact_id: input.interact_id,
-              task_content: input.task_content,
-              agent_output: finalAnswer,
-              trace_id: traceId,
-            },
-          },
-        }),
-        new MQContext(),
-        new SendMQOutput(),
-      );
-    } catch {
-      /* best-effort */
-    }
+    // ===== 原始代码（保留参考）：WorkAgent 评估由 Orchestration 编排层 EVAL_RESULT 节点统一侧载触发，避免双重评估 =====
+    // try {
+    //   await this.mqAccess.sendMQ(
+    //     Object.assign(new SendMQInput(), {
+    //       data: {
+    //         queue: EVAL_QUEUE,
+    //         payload: {
+    //           type: 'eval_work_agent',
+    //           agent_id: input.agent_id,
+    //           work_id: input.work_id,
+    //           interact_id: input.interact_id,
+    //           task_content: input.task_content,
+    //           agent_output: finalAnswer,
+    //           trace_id: traceId,
+    //         },
+    //       },
+    //     }),
+    //     new MQContext(),
+    //     new SendMQOutput(),
+    //   );
+    // } catch {
+    //   /* best-effort */
+    // }
 
     output.answer = finalAnswer;
     output.iterations = iteration || traceIterations.length;
@@ -576,25 +576,26 @@ export class AgentExecutionService {
     output.answer = llmOut.result || '';
     output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
-    if (ctx.session_id) {
-      try {
-        await this.infoCore.saveInfo(
-          Object.assign(new SaveInfoInput(), {
-            session_id: ctx.session_id,
-            work_id: ctx.work_id || '',
-            interact_id: ctx.interact_id || '',
-            info_type: InfoType.RESPONSE,
-            info_creator_role: 'AGENT',
-            info_creator_id: input.agent_id,
-            info: output.answer,
-          }),
-          new InfoCoreContext(),
-          new SaveInfoOutput(),
-        );
-      } catch {
-        /* best-effort */
-      }
-    }
+    // ===== 原始代码（保留参考）：WorkAgent 执行 answer() 时不应保存 final RESPONSE 消息，该消息由编排引擎的 SAVE_RESPONSE 节点保存 =====
+    // if (ctx.session_id) {
+    //   try {
+    //     await this.infoCore.saveInfo(
+    //       Object.assign(new SaveInfoInput(), {
+    //         session_id: ctx.session_id,
+    //         work_id: ctx.work_id || '',
+    //         interact_id: ctx.interact_id || '',
+    //         info_type: InfoType.RESPONSE,
+    //         info_creator_role: 'AGENT',
+    //         info_creator_id: input.agent_id,
+    //         info: output.answer,
+    //       }),
+    //       new InfoCoreContext(),
+    //       new SaveInfoOutput(),
+    //     );
+    //   } catch {
+    //     /* best-effort */
+    //   }
+    // }
     return true;
   }
 
