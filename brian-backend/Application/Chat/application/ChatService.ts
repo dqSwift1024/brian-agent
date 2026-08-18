@@ -715,6 +715,8 @@ export class ChatService {
         info: row.info,
         created: row.created,
         pin: row.pin === 1,
+        work_id: row.work_id,
+        interact_id: row.interact_id,
         citing_count: citingInfoIds.length,
         cited_count: citedInfoIds.length,
         citing_info_ids: [...new Set(citingInfoIds)],

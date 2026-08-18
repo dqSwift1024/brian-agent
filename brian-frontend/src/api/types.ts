@@ -119,6 +119,7 @@ export interface ChatMessage {
   sessionId?: string
   workId?: string
   interactId?: string
+  traceId?: string
   citingIds?: string[]
   citedCount?: number
   citingCount?: number

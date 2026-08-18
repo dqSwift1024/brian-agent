@@ -1665,6 +1665,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               content: m.info,
               timestamp: m.created,
               pin: m.pin,
+              workId: m.work_id,
+              traceId: m.work_id || m.interact_id || m.info_id,
               citingCount: m.citing_count ?? 0,
               citedCount: m.cited_count ?? 0,
               citingInfoIds: m.citing_info_ids ?? [],

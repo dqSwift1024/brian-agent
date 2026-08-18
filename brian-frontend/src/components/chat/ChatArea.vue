@@ -380,6 +380,8 @@ function handleStreamEvent(event: string, data: Record<string, unknown>, botMsgI
               :citing-count="getCitingCount(entry.message)"
               :cited-info-ids="getCitedIds(entry.message)"
               :citing-info-ids="getCitingIds(entry.message)"
+              :trace-id="entry.message.traceId || entry.message.workId"
+              :work-id="entry.message.workId"
               mode="timeline"
               :node-map="nodeMap"
               @toggle-select="sessionStore.toggleMsgSelection"

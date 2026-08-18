@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle } from '@lucide/vue'
+import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check } from '@lucide/vue'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +16,8 @@ const props = withDefaults(
     citingCount?: number
     citedInfoIds?: string[]
     citingInfoIds?: string[]
+    traceId?: string
+    workId?: string
     mode?: 'map' | 'timeline'
     active?: boolean
     nodeMap?: Map<string, { summary?: string; info?: string }>
@@ -30,6 +32,8 @@ const props = withDefaults(
     citingCount: 0,
     citedInfoIds: () => [],
     citingInfoIds: () => [],
+    traceId: '',
+    workId: '',
     mode: 'timeline',
     active: false,
     nodeMap: undefined,
@@ -45,11 +49,14 @@ const emit = defineEmits<{
 
 const expandedCiting = ref(false)
 const expandedCited = ref(false)
+const copied = ref(false)
 
 const targetId = computed(() => props.infoId || props.id)
 
 const isUser = computed(() => props.role === 'user' || props.role === 'USER' || props.role === 'REQUEST')
 const isError = computed(() => props.content.startsWith('[错误]') || props.summary.startsWith('[错误]'))
+
+const effectiveTraceId = computed(() => props.traceId || props.workId || '')
 
 const textLength = computed(() => props.content ? props.content.length : 0)
 
@@ -97,6 +104,16 @@ function handleJump(cid: string) {
   expandedCiting.value = false
   expandedCited.value = false
   emit('jumpTo', cid)
+}
+
+async function copyTraceId() {
+  const tid = effectiveTraceId.value
+  if (!tid) return
+  try {
+    await navigator.clipboard.writeText(tid)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch { /* ignore */ }
 }
 </script>
 
@@ -169,9 +186,9 @@ function handleJump(cid: string) {
       <p class="text-sm whitespace-pre-wrap break-words">{{ content }}</p>
     </div>
 
-    <!-- 底部栏：引用/被引用胶囊与字数统计 -->
+    <!-- 底部栏：引用/被引用胶囊、复制TraceId与字数统计 -->
     <div
-      class="flex items-center gap-1.5 mt-1.5"
+      class="flex items-center gap-1.5 mt-1.5 flex-wrap"
       :class="mode === 'map' ? 'px-2 pb-1.5' : ''"
     >
       <button
@@ -190,6 +207,17 @@ function handleJump(cid: string) {
       >
         被引用 {{ effectiveCitingCount }}
         <ChevronDown :size="10" :class="expandedCiting ? 'rotate-180' : ''" />
+      </button>
+
+      <button
+        v-if="effectiveTraceId"
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors"
+        :class="isUser && mode === 'timeline' ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700'"
+        :title="`复制 TraceId: ${effectiveTraceId}`"
+        @click.stop="copyTraceId"
+      >
+        <component :is="copied ? Check : Copy" :size="10" />
+        {{ copied ? '已复制' : '复制 TraceId' }}
       </button>
 
       <span class="ml-auto text-[10px]" :class="isUser && mode === 'timeline' ? 'text-white/60' : 'text-apple-gray-300'">

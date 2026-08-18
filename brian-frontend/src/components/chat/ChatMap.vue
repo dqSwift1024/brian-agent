@@ -293,6 +293,8 @@ watch(() => sessionStore.centerInfoId, async (id) => {
           :citing-count="n.citingCount"
           :cited-info-ids="n.citedInfoIds"
           :citing-info-ids="n.citingInfoIds"
+          :trace-id="n.workId || n.interactId || n.infoId"
+          :work-id="n.workId"
           mode="map"
           :active="activeNodeId === n.id"
           :node-map="nodeMap"
