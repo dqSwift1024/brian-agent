@@ -1269,7 +1269,6 @@ export class ConfigService {
       else if (prefix.startsWith('info_core.context_config.base_keyword_count')) input.base_keyword_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_random_count')) input.base_random_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.total')) input.total = Number(value);
-      else if (prefix.startsWith('info_core.context_config.max_context_items')) input.max_context_items = Number(value);
       else if (prefix.startsWith('info_core.context_config.enable_snapshot_persistence')) input.enable_snapshot_persistence = value ? 1 : 0;
       else if (prefix.startsWith('info_core.context_config.priority_order')) input.priority_order = String(value);
       const output: any = {};

@@ -1707,7 +1707,6 @@ export class InfoCoreService {
     assertNonNegativeInt(input.base_similarity_count, 'base_similarity_count');
     assertNonNegativeInt(input.base_keyword_count, 'base_keyword_count');
     assertNonNegativeInt(input.base_random_count, 'base_random_count');
-    assertNonNegativeInt(input.max_context_items, 'max_context_items');
     if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 1)) {
       throw new ValidationError('total 必须为 >= 1 的整数');
     }
@@ -1726,7 +1725,6 @@ export class InfoCoreService {
         base_keyword_count: 100,
         base_random_count: 50,
         total: 1000,
-        max_context_items: 200,
         enable_snapshot_persistence: 1,
         priority_order: 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM',
       },
@@ -2460,7 +2458,6 @@ export class InfoCoreService {
       base_keyword_count: Number(raw['base_keyword_count'] ?? 100),
       base_random_count: Number(raw['base_random_count'] ?? 50),
       total: Number(raw['total'] ?? 1000),
-      max_context_items: Number(raw['max_context_items'] ?? 200),
       enable_snapshot_persistence: Number(raw['enable_snapshot_persistence'] ?? 1),
       priority_order: String(raw['priority_order'] ?? 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'),
     };

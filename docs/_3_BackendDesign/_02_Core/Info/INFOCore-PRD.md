@@ -326,7 +326,7 @@
   - base_similarity_count：相似度基础数量（可选，须为 >= 0 的整数）
   - base_keyword_count：关键词基础数量（可选，须为 >= 0 的整数）
   - base_random_count：随机基础数量（可选，须为 >= 0 的整数）
-  - total：上下文总数限制（可选，须为 >= 1 的整数）
+  - total：上下文总数（可选，须为 >= 1 的整数）
 - context：UpdateInfoContextConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：UpdateInfoContextConfigOutput（继承 Output），承载返回内容
 **处理流程**：
@@ -758,8 +758,7 @@
 | base_similarity_count | 基于语义相似度的信息加载数量 | INT | N | | 默认 150 |
 | base_keyword_count | 基于关键词搜索的信息加载数量 | INT | N | | 默认100 |
 | base_random_count | 随机联想的信息加载数量 | INT | N | | 默认50 |
-| total | 总的消息量 | INT | N | | 默认为1000 |
-| max_context_items | 最大上下文条目数 | INT | N | | 默认200 |
+| total | 上下文总数 | INT | N | | 默认为1000 |
 | enable_snapshot_persistence | 启用上下文快照持久化 | INT | N | | 默认1 (true) |
 | priority_order | 维度优先级顺序 | TEXT | N | | 默认 PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM |
 

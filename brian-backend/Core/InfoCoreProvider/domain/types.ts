@@ -146,7 +146,6 @@ export interface InfoContextConfigRecord {
   base_keyword_count: number;
   base_random_count: number;
   total: number;
-  max_context_items: number;
   enable_snapshot_persistence: number;
   priority_order: string;
 }
@@ -470,7 +469,6 @@ export class UpdateInfoContextConfigInput extends Input {
   base_keyword_count?: number;
   base_random_count?: number;
   total?: number;
-  max_context_items?: number;
   enable_snapshot_persistence?: number | boolean;
   priority_order?: string;
 }
