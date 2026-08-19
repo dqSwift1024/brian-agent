@@ -24,7 +24,13 @@ import {
   ExecPromptOutput,
   McpInstallRecord,
 } from '@brian-agent/base';
-import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared/MatchCacheHelper';
+import {
+  simpleSimilarity,
+  shouldReuseByRegenRate,
+  checkMatchCache,
+  clearMatchCache,
+  persistMatchBinding,
+} from '../../shared';
 import {
   McpCoreContext,
   McpCoreConfigRecord,
@@ -48,6 +54,9 @@ export class MCPCoreService {
     private readonly promptsAccess: PromptsAccess,
   ) {}
 
+  /**
+   * 为 Agent 匹配 MCP（三层统一匹配/选择逻辑，第3层除外：MCP 没有匹配不可用 MCP）。
+   */
   async matchMCP(
     input: MatchMcpInput,
     _context: McpCoreContext,
@@ -55,31 +64,33 @@ export class MCPCoreService {
   ): Promise<boolean> {
     const config = await this.getConfig();
     const regenRate = config.regen_rate;
+    const similarityThreshold = config.similarity_threshold ?? 0.7;
 
+    const availableMcps = await this.getAvailableMcps();
+
+    // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
     const cacheResult = await checkMatchCache(
       this.relationDb, AGENT_MCP_TABLE, input.agent_id,
       regenRate, 'random', 'mcp_id',
     );
-    if (cacheResult.hit && cacheResult.entries) {
-      const mcpIds = cacheResult.entries.map(e => e.entity_id);
-      output.mcp_ids = mcpIds;
-      output.mcp_details = await this.getMcpDetails(mcpIds);
+    if (cacheResult.hit && cacheResult.entries && cacheResult.entries.length > 0) {
+      const boundIds = cacheResult.entries.map((e) => e.entity_id);
+      output.mcp_ids = boundIds;
+      output.mcp_details = availableMcps.length > 0 ? await this.getMcpDetails(boundIds) : [];
       return true;
     }
 
-    const availableMcps = await this.getAvailableMcps();
-    if (availableMcps.length === 0) {
-      output.mcp_ids = [];
-      output.mcp_details = [];
-      return true;
+    // ===== 第 2 层：LLM 打分推荐 =====
+    let rankedIds: string[] = [];
+    if (availableMcps.length > 0) {
+      rankedIds = await this.rankMcpsWithLLM(
+        availableMcps,
+        input,
+        config.prompt_template_id,
+      );
     }
 
-    const rankedIds = await this.rankMcpsWithLLM(
-      availableMcps,
-      input,
-      config.prompt_template_id,
-    );
-
+    // ===== 第 3 层：MCP 除外，没有匹配到可用的在线 MCP 则置空不可用 =====
     await clearMatchCache(this.relationDb, AGENT_MCP_TABLE, input.agent_id);
     for (const mcpId of rankedIds) {
       await persistMatchBinding(this.relationDb, AGENT_MCP_TABLE, input.agent_id, mcpId, 'mcp_id');
@@ -132,13 +143,19 @@ export class MCPCoreService {
     const existing = await this.getConfig();
     const now = IdGenerator.now();
 
-    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
+    if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
         if (input.regen_rate < 0 || input.regen_rate > 100) {
           throw new ValidationError('regen_rate 必须在 0-100 之间');
         }
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
+      }
+      if (input.similarity_threshold !== undefined) {
+        if (input.similarity_threshold < 0 || input.similarity_threshold > 1) {
+          throw new ValidationError('similarity_threshold 必须在 0.0-1.0 之间');
+        }
+        updateData.push({ field: 'similarity_threshold', value: input.similarity_threshold });
       }
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
@@ -184,6 +201,7 @@ export class MCPCoreService {
         created: Number(r.created),
         updated: Number(r.updated),
         regen_rate: Number(r.regen_rate),
+        similarity_threshold: Number(r.similarity_threshold ?? 0.7),
         prompt_template_id: String(r.prompt_template_id ?? ''),
       };
     }
@@ -192,6 +210,7 @@ export class MCPCoreService {
       created: 0,
       updated: 0,
       regen_rate: DEFAULT_REGENERATE_RATE,
+      similarity_threshold: 0.7,
       prompt_template_id: '',
     };
   }

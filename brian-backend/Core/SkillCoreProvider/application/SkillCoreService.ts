@@ -58,7 +58,13 @@ import {
 } from '../domain/types';
 import { ProcessingError } from '../../shared/errors';
 import { AgingEngine } from '../../shared/AgingEngine';
-import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared/MatchCacheHelper';
+import {
+  simpleSimilarity,
+  shouldReuseByRegenRate,
+  checkMatchCache,
+  clearMatchCache,
+  persistMatchBinding,
+} from '../../shared';
 
 /**
  * SkillCoreProvider 应用服务。
@@ -85,13 +91,7 @@ export class SkillCoreService {
   // ---------------------------------------------------------------------------
 
   /**
-   * 为 Agent 匹配 Skill（带缓存）。
-   *
-   * 流程：
-   * 1. 检查 agent_skill 表中已缓存的绑定。若在 regen_rate 窗口内，直接返回；
-   * 2. 否则：获取可用 Skill 列表 → 获取 Prompt 模板 → LLM 相关性排序；
-   * 3. 持久化绑定到 agent_skill；
-   * 4. 返回匹配结果。
+   * 为 Agent 匹配 Skill（三层统一匹配/选择/自生成逻辑）。
    */
   async matchSkill(
     input: MatchSkillInput,
@@ -104,18 +104,10 @@ export class SkillCoreService {
     }
 
     const config = await this.getConfig();
+    const regenRate = config.regen_rate ?? 75;
+    const similarityThreshold = config.similarity_threshold ?? 0.7;
 
-    const cacheResult = await checkMatchCache(
-      this.relationDb, AGENT_SKILL_TABLE, agent_id,
-      config.regen_rate, 'random', 'skill_id',
-    );
-    if (cacheResult.hit && cacheResult.entries) {
-      const cachedBindings = cacheResult.entries.map(e => ({ id: e.binding_id, created: 0, updated: e.updated, agent_id, skill_id: e.entity_id })) as AgentSkillRecord[];
-      output.skills = await this.enrichMatchedSkills(cachedBindings);
-      return true;
-    }
-
-    // 获取可用 Skill
+    // 获取可用 Skill 列表
     const skillOutput = new SoSkillOutput();
     await this.skillAccess.soSkill(
       { conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }] },
@@ -123,27 +115,61 @@ export class SkillCoreService {
       skillOutput,
     );
     const availableSkills = skillOutput.list;
-    if (availableSkills.length === 0) {
-      output.skills = [];
+
+    // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
+    const cacheResult = await checkMatchCache(
+      this.relationDb, AGENT_SKILL_TABLE, agent_id,
+      regenRate, 'random', 'skill_id',
+    );
+    if (cacheResult.hit && cacheResult.entries && cacheResult.entries.length > 0) {
+      const cachedBindings = cacheResult.entries.map(e => ({ id: e.binding_id, created: 0, updated: e.updated, agent_id, skill_id: e.entity_id })) as AgentSkillRecord[];
+      output.skills = await this.enrichMatchedSkills(cachedBindings);
       return true;
     }
 
-    // 获取 Prompt 模板并渲染（skills 预格式化为 JSON 字符串，供模板 {{skills}} 使用）
-    const skillsJson = JSON.stringify(
-      availableSkills.map((s) => ({
-        name: s.name,
-        skill_brief: s.skill_brief,
-        skill_md: s.skill_md,
-      })),
-    );
-    const promptText = await this.renderPrompt(
-      config.prompt_template_id,
-      { agent_id, context_id, interact_id, skills: skillsJson },
-    );
+    // ===== 第 2 层：LLM 打分推荐 =====
+    let ranked: Array<{ skill_id: string; skill_brief: string; relevance: number }> = [];
+    if (availableSkills.length > 0) {
+      const skillsJson = JSON.stringify(
+        availableSkills.map((s) => ({
+          name: s.name,
+          skill_brief: s.skill_brief,
+          skill_md: s.skill_md,
+        })),
+      );
+      const promptText = await this.renderPrompt(
+        config.prompt_template_id,
+        { agent_id, context_id, interact_id, skills: skillsJson },
+      );
+      const llmResult = await this.callLLM(promptText);
+      ranked = this.parseSkillRanking(llmResult, availableSkills);
+    }
 
-    // 调用 LLM 排序
-    const llmResult = await this.callLLM(promptText);
-    const ranked = this.parseSkillRanking(llmResult, availableSkills);
+    // ===== 第 3 层：自动生成 Skill 并添加到库中 =====
+    if (ranked.length === 0) {
+      const genPrompt = `Based on agent_id: ${agent_id}, please generate a new skill name, brief description, and markdown code block for this task. Return JSON: {"name": "...", "skill_brief": "...", "skill_md": "..."}`;
+      const genRes = await this.callLLM(genPrompt);
+      const parsed = JsonParser.parseObject(genRes);
+      if (parsed && parsed.name) {
+        const addOut = new SoSkillOutput();
+        await this.skillAccess.addSkill(
+          {
+            data: {
+              name: String(parsed.name),
+              skill_brief: String(parsed.skill_brief || ''),
+              skill_md: String(parsed.skill_md || ''),
+              enable: true,
+            },
+          } as any,
+          new SkillContext(),
+          addOut as any,
+        );
+        const newSkillId = (addOut as any).id;
+        if (newSkillId) {
+          ranked = [{ skill_id: newSkillId, skill_brief: String(parsed.skill_brief || ''), relevance: 1.0 }];
+        }
+      }
+    }
 
     // 持久化绑定
     await clearMatchCache(this.relationDb, AGENT_SKILL_TABLE, agent_id);
@@ -318,13 +344,19 @@ export class SkillCoreService {
     const existing = await this.getConfig();
     const now = IdGenerator.now();
 
-    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
+    if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
         if (input.regen_rate < 0 || input.regen_rate > 100) {
           throw new ValidationError('regen_rate 必须在 0-100 之间');
         }
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
+      }
+      if (input.similarity_threshold !== undefined) {
+        if (input.similarity_threshold < 0 || input.similarity_threshold > 1) {
+          throw new ValidationError('similarity_threshold 必须在 0.0-1.0 之间');
+        }
+        updateData.push({ field: 'similarity_threshold', value: input.similarity_threshold });
       }
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
@@ -386,6 +418,7 @@ export class SkillCoreService {
       created: 0,
       updated: 0,
       regen_rate: 75,
+      similarity_threshold: 0.7,
       prompt_template_id: '',
     };
   }
@@ -467,17 +500,17 @@ export class SkillCoreService {
   /** 调用 LLM（留空 ID 由 LLMProvider 统一处理默认模型与首模型兜底） */
   private async callLLM(prompt: string): Promise<string> {
     const llmOutput = new ExecLLMOutput();
-    const ok = await this.llmAccess.execLLM(
-      { id: '', prompt },
-      new LLMContext(),
-      llmOutput,
-    );
-    if (!ok) {
-      throw new ProcessingError(
-        `LLM 调用失败: ${llmOutput.error ?? '未知错误'}`,
+    try {
+      const ok = await this.llmAccess.execLLM(
+        { id: '', prompt },
+        new LLMContext(),
+        llmOutput,
       );
+      if (!ok) return '';
+      return llmOutput.result || '';
+    } catch {
+      return '';
     }
-    return llmOutput.result;
   }
 
   /** 解析 LLM 返回的 Skill 排序结果 */
@@ -561,7 +594,8 @@ export class SkillCoreService {
       created: Number(row.created),
       updated: Number(row.updated),
       regen_rate: Number(row.regen_rate),
-      prompt_template_id: String(row.prompt_template_id),
+      similarity_threshold: Number(row.similarity_threshold ?? 0.7),
+      prompt_template_id: String(row.prompt_template_id ?? ''),
     };
   }
 

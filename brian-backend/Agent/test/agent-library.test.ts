@@ -15,7 +15,11 @@ describe('AgentLibrary', () => {
 
   beforeAll(async () => {
     await setupAgentTestMocks();
-    service = new AgentLibraryService(await createTestDb(), NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
+    const db = await createTestDb();
+    try {
+      db.executeRaw('ALTER TABLE agent_library_config ADD COLUMN regen_rate INTEGER NOT NULL DEFAULT 75');
+    } catch {}
+    service = new AgentLibraryService(db, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
   });
 
   function aid() { return `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
@@ -93,6 +97,7 @@ describe('AgentLibrary', () => {
         task_signature: '[coding] write a function',
       }), new AgentLibraryContext(), new AddAgentOutput());
       const out = new MatchAgentOutput();
+      await service.configAgentLibrary(Object.assign(new ConfigAgentLibraryInput(), { regen_rate: 0 }), new AgentLibraryContext(), new ConfigAgentLibraryOutput());
       await service.matchAgent(Object.assign(new MatchAgentInput(), {
         task_signature: '[coding] write a function to sort', similarity_threshold: 0.3,
       }), new AgentLibraryContext(), out);
@@ -106,8 +111,9 @@ describe('AgentLibrary', () => {
         task_signature: '[cooking] make pasta',
       }), new AgentLibraryContext(), new AddAgentOutput());
       const out = new MatchAgentOutput();
+      await service.configAgentLibrary(Object.assign(new ConfigAgentLibraryInput(), { regen_rate: 0 }), new AgentLibraryContext(), new ConfigAgentLibraryOutput());
       await service.matchAgent(Object.assign(new MatchAgentInput(), {
-        task_signature: '[coding] write code', similarity_threshold: 0.8,
+        task_signature: '[general] 请问如何开发一个 Agent 助手框架？', similarity_threshold: 0.5,
       }), new AgentLibraryContext(), out);
       expect(out.agent_id).toBe('');
     });
@@ -120,6 +126,7 @@ describe('AgentLibrary', () => {
       }), new AgentLibraryContext(), new AddAgentOutput());
 
       const out = new MatchAgentOutput();
+      await service.configAgentLibrary(Object.assign(new ConfigAgentLibraryInput(), { regen_rate: 0 }), new AgentLibraryContext(), new ConfigAgentLibraryOutput());
       await service.matchAgent(Object.assign(new MatchAgentInput(), {
         task_signature: '[general] 如何开发一个个人Agent',
         similarity_threshold: 0.7,
@@ -141,6 +148,7 @@ describe('AgentLibrary', () => {
         task_signature: '[writing] write test',
       }), new AgentLibraryContext(), new AddAgentOutput());
       const out = new MatchAgentOutput();
+      await service.configAgentLibrary(Object.assign(new ConfigAgentLibraryInput(), { regen_rate: 0 }), new AgentLibraryContext(), new ConfigAgentLibraryOutput());
       await service.matchAgent(Object.assign(new MatchAgentInput(), {
         task_signature: '[writing] test', agent_type: 'WRITER', similarity_threshold: 0.1,
       }), new AgentLibraryContext(), out);

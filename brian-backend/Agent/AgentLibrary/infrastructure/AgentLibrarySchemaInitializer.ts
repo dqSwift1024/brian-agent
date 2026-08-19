@@ -48,9 +48,13 @@ export class AgentLibrarySchemaInitializer {
       `CREATE TABLE IF NOT EXISTS ${AGENT_LIBRARY_CONFIG_TABLE} (
         id TEXT PRIMARY KEY, created INTEGER NOT NULL, updated INTEGER NOT NULL,
         prompt_template_id TEXT NOT NULL, similarity_threshold REAL NOT NULL DEFAULT 0.7,
+        regen_rate INTEGER NOT NULL DEFAULT 75,
         max_agent_count INTEGER NOT NULL DEFAULT 100
       )`,
     );
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE ${AGENT_LIBRARY_CONFIG_TABLE} ADD COLUMN regen_rate INTEGER NOT NULL DEFAULT 75`);
+    } catch { /* column already exists */ }
 
     await this.insertDefaultConfig();
   }
@@ -65,6 +69,7 @@ export class AgentLibrarySchemaInitializer {
       { field: 'updated', value: now },
       { field: 'prompt_template_id', value: '' },
       { field: 'similarity_threshold', value: 0.7 },
+      { field: 'regen_rate', value: 75 },
       { field: 'max_agent_count', value: 100 },
     ]);
   }

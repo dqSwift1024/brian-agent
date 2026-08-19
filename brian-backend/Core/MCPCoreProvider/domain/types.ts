@@ -9,6 +9,7 @@ export interface McpCoreConfigRecord {
   created: number;
   updated: number;
   regen_rate: number;
+  similarity_threshold: number;
   prompt_template_id: string;
 }
 
@@ -37,6 +38,7 @@ export class OptMcpOutput extends Output {
 // --- configMCPCore ---
 export class ConfigMcpCoreInput extends Input {
   regen_rate?: number;
+  similarity_threshold?: number;
   prompt_template_id?: string;
 }
 export class ConfigMcpCoreOutput extends Output {

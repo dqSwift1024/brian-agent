@@ -166,6 +166,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // =========================================================================
 
   // --- LLMCoreProvider ---
+  core('llm_core', 'basic', 'similarity_threshold', 'LLM 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
   core('llm_core', 'basic', 'regen_rate', 'LLM 重新匹配概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
   core('llm_core', 'basic', 'prompt_template_id', 'LLM 匹配 Prompt', 'STRING', '', '用于 LLM 匹配排名'),
   core('llm_core', 'quota', 'quota_tokens_per_day', '每日 Token 限额', 'INT', 0, '0 为不限制'),
@@ -198,16 +199,19 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),
 
   // --- MCPCoreProvider ---
+  core('mcp_core', 'basic', 'similarity_threshold', 'MCP 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
   core('mcp_core', 'basic', 'regen_rate', 'MCP 重新匹配概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
   core('mcp_core', 'basic', 'prompt_template_id', 'MCP 匹配 Prompt', 'STRING', '', '用于 MCP 匹配排名'),
 
   // --- SkillCoreProvider ---
+  core('skill_core', 'basic', 'similarity_threshold', 'Skill 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
   core('skill_core', 'basic', 'regen_rate', 'Skill 重新生成概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
   core('skill_core', 'basic', 'prompt_template_id', 'Skill 匹配 Prompt', 'STRING', '', '用于 Skill 匹配排名'),
   core('skill_core', 'opt_rule', 'opt_rule.days', '优化规则观察天数', 'INT', 30, '技能淘汰/优化规则的观察窗口'),
   core('skill_core', 'opt_rule', 'opt_rule.min_usage_count', '优化规则最小使用次数', 'INT', 5, '低于此次数的技能可能被淘汰'),
 
   // --- SoulCoreProvider ---
+  core('soul_core', 'basic', 'similarity_threshold', 'Soul 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
   core('soul_core', 'basic', 'regen_rate', 'Soul 重新生成概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
   core('soul_core', 'basic', 'prompt_template_id', 'Soul 匹配 Prompt', 'STRING', '', '用于 Soul 匹配排名'),
   core('soul_core', 'basic', 'llm_id', 'Soul 匹配模型', 'STRING', '', '留空则使用系统默认模型'),
@@ -248,6 +252,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- AgentBuilder ---
   agent('agent_builder', 'basic', 'task_analysis_prompt_template_id', '任务分析 Prompt', 'STRING', '', '分析任务特征所用的 Prompt 模板'),
   agent('agent_builder', 'basic', 'auto_optimize', '自动优化构建', 'BOOLEAN', true, '是否在使用中自动优化 Agent 组装'),
+  agent('agent_builder', 'basic', 'regen_rate', 'Agent 重新评估概率（0-100）', 'INT', 75, '1-该值 为第1层算法匹配成功后的直接复用概率'),
 
   // --- AgentExecution ---
   agent('agent_execution', 'basic', 'think_prompt_template_id', 'Think Prompt', 'STRING', '', 'Worker Think 阶段 Prompt 模板'),

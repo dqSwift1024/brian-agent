@@ -147,6 +147,15 @@ describe('SoulCoreProvider', () => {
 
     it('should return from cache when binding exists', async () => {
       const now = IdGenerator.now();
+      await relationDb.insert('soul', [
+        { field: 'id', value: 'soul-cached' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'soul_content', value: 'Soul content' },
+        { field: 'soul_brief', value: 'agent-sc' },
+        { field: 'soul_usage', value: 'Soul usage' },
+        { field: 'enable', value: 1 },
+      ]);
       await relationDb.insert(AGENT_SOUL_TABLE, [
         { field: 'id', value: 'cache-soul-1' },
         { field: 'created', value: now },
@@ -160,6 +169,7 @@ describe('SoulCoreProvider', () => {
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'regen_rate', value: 0 },
+        { field: 'similarity_threshold', value: 0.0 },
         { field: 'prompt_template_id', value: null },
       ]);
 

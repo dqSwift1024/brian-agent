@@ -23,6 +23,10 @@ import {
   UpdateAgentRuleInput, UpdateAgentRuleOutput,
   ConfigAgentLibraryInput, ConfigAgentLibraryOutput,
 } from '../domain/types';
+import {
+  simpleSimilarity,
+  shouldReuseByRegenRate,
+} from '@brian-agent/core';
 import { parseJsonObject } from '../../shared/signature';
 
 function toBool(v: unknown): boolean {
@@ -120,22 +124,25 @@ export class AgentLibraryService {
       return true;
     }
 
-    // ===== 1. 第一层匹配：进行提问/特征文本相似度算法匹配 =====
+    // ===== 1. 第一层匹配：简单算法匹配 (simpleSimilarity) + 概率复用判定 =====
     let bestScore = 0;
     let bestId = '';
     for (const c of candidates) {
-      const score = this.simpleSimilarity(input.task_signature, c.task_signature);
+      const score = simpleSimilarity(input.task_signature, c.task_signature);
       if (score > bestScore) {
         bestScore = score;
         bestId = c.agent_id;
       }
     }
 
+    const regenRate = config?.regen_rate ?? 75;
     if (bestScore >= threshold && bestId) {
-      output.agent_id = bestId;
-      output.similarity_score = bestScore;
-      output.matched_by = 'SIMILARITY';
-      return true;
+      if (shouldReuseByRegenRate(regenRate)) {
+        output.agent_id = bestId;
+        output.similarity_score = bestScore;
+        output.matched_by = 'SIMILARITY';
+        return true;
+      }
     }
 
     // ===== 2. 第二层匹配：提交给大模型，由 LLM 基于 Agent 列表用途/名称与提问进行评估打分 =====
@@ -523,6 +530,12 @@ export class AgentLibraryService {
       }
       data.push({ field: 'similarity_threshold', value: input.similarity_threshold });
     }
+    if (input.regen_rate !== undefined) {
+      if (input.regen_rate < 0 || input.regen_rate > 100) {
+        throw new ValidationError('regen_rate 必须在 0-100');
+      }
+      data.push({ field: 'regen_rate', value: input.regen_rate });
+    }
     if (input.max_agent_count !== undefined) {
       if (!Number.isInteger(input.max_agent_count) || input.max_agent_count <= 0) {
         throw new ValidationError('max_agent_count 必须为正整数');
@@ -542,6 +555,7 @@ export class AgentLibraryService {
     const latest = await this.getConfig();
     output.prompt_template_id = latest?.prompt_template_id ?? '';
     output.similarity_threshold = latest?.similarity_threshold ?? 0.7;
+    output.regen_rate = latest?.regen_rate ?? 75;
     output.max_agent_count = latest?.max_agent_count ?? 100;
 
     if (input.max_agent_count !== undefined && latest) {
@@ -564,6 +578,7 @@ export class AgentLibraryService {
       updated: Number(row.updated),
       prompt_template_id: String(row.prompt_template_id ?? ''),
       similarity_threshold: Number(row.similarity_threshold ?? 0.7),
+      regen_rate: Number(row.regen_rate ?? 75),
       max_agent_count: Number(row.max_agent_count ?? 100),
     };
   }
@@ -633,52 +648,6 @@ ${JSON.stringify(candidateList, null, 2)}
     const score = Number(result.score ?? 0);
     if (!agentId) return null;
     return { agent_id: agentId, score };
-  }
-
-  private simpleSimilarity(a: string, b: string): number {
-    if (!a || !b) return 0;
-
-    // 提取 [domain] 领域标识
-    const domainA = a.match(/^\[(.*?)\]/)?.[1] || '';
-    const domainB = b.match(/^\[(.*?)\]/)?.[1] || '';
-
-    // 跨领域隔离：领域不同时不复用
-    if (domainA && domainB && domainA.trim() !== domainB.trim()) {
-      return 0;
-    }
-
-    // 去除领域括号前缀及标点符号归一化
-    const cleanA = a.replace(/^\[.*?\]/, '');
-    const cleanB = b.replace(/^\[.*?\]/, '');
-
-    const normA = cleanA.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, '');
-    const normB = cleanB.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, '');
-
-    if (!normA || !normB) return 0;
-    if (normA === normB) return 1.0;
-
-    // 字符 2-gram 特征提取，兼顾中文与英文词汇
-    const getCharNgrams = (text: string, n = 2): Set<string> => {
-      if (text.length <= n) return new Set([text]);
-      const ngrams = new Set<string>();
-      for (let i = 0; i <= text.length - n; i++) {
-        ngrams.add(text.slice(i, i + n));
-      }
-      return ngrams;
-    };
-
-    const setA = getCharNgrams(normA, 2);
-    const setB = getCharNgrams(normB, 2);
-
-    if (setA.size === 0 || setB.size === 0) return 0;
-
-    let intersection = 0;
-    for (const item of setA) {
-      if (setB.has(item)) intersection++;
-    }
-
-    const union = new Set([...setA, ...setB]).size;
-    return intersection / union;
   }
 
   private opDataToMap(data: unknown): Record<string, unknown> {

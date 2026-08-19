@@ -65,7 +65,13 @@ import {
 import { ProcessingError } from '../../shared/errors';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { AgingEngine } from '../../shared/AgingEngine';
-import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared/MatchCacheHelper';
+import {
+  simpleSimilarity,
+  shouldReuseByRegenRate,
+  checkMatchCache,
+  clearMatchCache,
+  persistMatchBinding,
+} from '../../shared';
 
 /**
  * SoulCoreProvider 应用服务。
@@ -104,14 +110,7 @@ export class SoulCoreService {
   // ---------------------------------------------------------------------------
 
   /**
-   * 为 Agent 匹配 Soul（persona）。
-   *
-   * 流程：
-   * 1. 查询 agent_soul 是否存在缓存绑定，若在 regen_rate 窗口内则返回缓存；
-   * 2. 否则获取可用 Soul 列表 → Prompt 模板 → LLM 相关性排序；
-   * 3. 若无任何 Soul 则 LLM 自生成一个，通过 SoulAccess.addSoul 添加并绑定；
-   * 4. 持久化到 agent_soul（Upsert）；
-   * 5. 返回匹配的 Soul ID 及详情。
+   * 为 Agent 匹配 Soul（persona，三层统一匹配/选择逻辑）。
    */
   async matchSoul(
     input: MatchSoulInput,
@@ -125,21 +124,9 @@ export class SoulCoreService {
 
     const config = await this.getCoreConfig();
     const regenRate = config?.regen_rate ?? 75;
+    const similarityThreshold = config?.similarity_threshold ?? 0.7;
 
-    // 1. 检查 agent_soul 缓存
-    const cacheResult = await checkMatchCache(
-      this.relationDb, AGENT_SOUL_TABLE, agent_id,
-      regenRate, 'random', 'soul_id',
-    );
-    if (cacheResult.hit && cacheResult.entries?.[0]) {
-      const soulRecord = await this.getSoulById(cacheResult.entries[0].entity_id);
-      output.soul_id = cacheResult.entries[0].entity_id;
-      output.soul = soulRecord;
-      output.from_cache = true;
-      return true;
-    }
-
-    // 2. 获取可用 Soul 列表
+    // 获取可用 Soul 列表
     const soOutput = new SoSoulOutput();
     await this.soulAccess.soSoul(
       { conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }] },
@@ -148,28 +135,36 @@ export class SoulCoreService {
     );
     const availableSouls = soOutput.list;
 
-    // 3. 无 Soul：自生成
-    if (availableSouls.length === 0) {
-      const generatedId = await this.generateAndAddSoul(agent_id, context_id, interact_id);
-      await clearMatchCache(this.relationDb, AGENT_SOUL_TABLE, agent_id);
-      await persistMatchBinding(this.relationDb, AGENT_SOUL_TABLE, agent_id, generatedId, 'soul_id');
-      const soulRecord = await this.getSoulById(generatedId);
-      output.soul_id = generatedId;
+    // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
+    const cacheResult = await checkMatchCache(
+      this.relationDb, AGENT_SOUL_TABLE, agent_id,
+      regenRate, 'random', 'soul_id',
+    );
+    if (cacheResult.hit && cacheResult.entries?.[0]) {
+      const boundId = cacheResult.entries[0].entity_id;
+      const soulRecord = await this.getSoulById(boundId);
+      output.soul_id = boundId;
       output.soul = soulRecord;
-      output.from_cache = false;
+      output.from_cache = true;
       return true;
     }
 
-    // 4. LLM 排名
-    const selectedSoulId = await this.rankSoulsByLLM(
-      agent_id, context_id, interact_id, availableSouls, config,
-    );
+    // ===== 第 2 层：LLM 打分推荐 =====
+    let selectedSoulId = '';
+    if (availableSouls.length > 0) {
+      selectedSoulId = await this.rankSoulsByLLM(
+        agent_id, context_id, interact_id, availableSouls, config,
+      );
+    }
 
-    // 5. 持久化
+    // ===== 第 3 层：自生成全新的 Persona (Soul) =====
+    if (!selectedSoulId) {
+      selectedSoulId = await this.generateAndAddSoul(agent_id, context_id, interact_id);
+    }
+
     await clearMatchCache(this.relationDb, AGENT_SOUL_TABLE, agent_id);
     await persistMatchBinding(this.relationDb, AGENT_SOUL_TABLE, agent_id, selectedSoulId, 'soul_id');
 
-    // 6. 返回详情
     const soulRecord = await this.getSoulById(selectedSoulId);
     output.soul_id = selectedSoulId;
     output.soul = soulRecord;
@@ -434,13 +429,19 @@ export class SoulCoreService {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
 
-    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined || input.llm_id !== undefined) {
+    if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined || input.llm_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
         if (input.regen_rate < 0 || input.regen_rate > 100) {
           throw new ValidationError('regen_rate 必须在 0-100 之间');
         }
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
+      }
+      if (input.similarity_threshold !== undefined) {
+        if (input.similarity_threshold < 0 || input.similarity_threshold > 1) {
+          throw new ValidationError('similarity_threshold 必须在 0.0-1.0 之间');
+        }
+        updateData.push({ field: 'similarity_threshold', value: input.similarity_threshold });
       }
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
@@ -581,11 +582,16 @@ export class SoulCoreService {
     let lastError = '未知错误';
     for (let attempt = 0; attempt < 3; attempt++) {
       const llmOutput = new ExecLLMOutput();
-      const ok = await this.llmAccess.execLLM(
-        { id: llmId, prompt: generationPrompt },
-        new LLMContext(),
-        llmOutput,
-      );
+      let ok = false;
+      try {
+        ok = await this.llmAccess.execLLM(
+          { id: llmId, prompt: generationPrompt },
+          new LLMContext(),
+          llmOutput,
+        );
+      } catch {
+        break;
+      }
       if (!ok) {
         lastError = llmOutput.error ?? '未知错误';
         continue;
@@ -681,18 +687,23 @@ export class SoulCoreService {
 
     const llmId = config?.llm_id || '';
     const execLLMOutput = new ExecLLMOutput();
-    const ok = await this.llmAccess.execLLM(
-      {
-        id: llmId,
-        prompt: selectionPrompt,
-        temperature: 0.1,
-        max_tokens: 256,
-      } as ExecLLMInput,
-      new LLMContext(),
-      execLLMOutput,
-    );
-    if (!ok) {
-      throw new ProcessingError(`Soul 排名失败: ${execLLMOutput.error ?? '未找到可用 LLM'}`);
+    let ok = false;
+    try {
+      ok = await this.llmAccess.execLLM(
+        {
+          id: llmId,
+          prompt: selectionPrompt,
+          temperature: 0.1,
+          max_tokens: 256,
+        } as ExecLLMInput,
+        new LLMContext(),
+        execLLMOutput,
+      );
+    } catch {
+      ok = false;
+    }
+    if (!ok || !execLLMOutput.result) {
+      return availableSouls[0].id;
     }
 
     return this.parseSoulSelectionResult(execLLMOutput.result, availableSouls);
@@ -833,6 +844,7 @@ export class SoulCoreService {
       created: raw['created'] as number,
       updated: raw['updated'] as number,
       regen_rate: (raw['regen_rate'] as number) ?? 75,
+      similarity_threshold: Number(raw['similarity_threshold'] ?? 0.7),
       prompt_template_id: (raw['prompt_template_id'] as string) || null,
       llm_id: (raw['llm_id'] as string) || null,
     };

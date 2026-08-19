@@ -570,3 +570,9 @@ export interface AgentTrace {
   steps: AgentTraceStep[]
   final_answer?: Record<string, unknown>
 }
+
+export interface ComponentMatchConfig {
+  regen_rate: number
+  similarity_threshold: number
+  prompt_template_id?: string
+}

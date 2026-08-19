@@ -12,11 +12,12 @@ export class MCPCoreSchemaInitializer {
   init(): void {
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS "${MCP_CORE_CONFIG_TABLE}" (
-        "id"                  TEXT    NOT NULL PRIMARY KEY,
-        "created"             INTEGER NOT NULL,
-        "updated"             INTEGER NOT NULL,
+        "id"                   TEXT    NOT NULL PRIMARY KEY,
+        "created"              INTEGER NOT NULL,
+        "updated"              INTEGER NOT NULL,
         "regen_rate"           INTEGER NOT NULL DEFAULT ${DEFAULT_REGENERATE_RATE},
-        "prompt_template_id"  TEXT
+        "similarity_threshold" REAL    NOT NULL DEFAULT 0.7,
+        "prompt_template_id"   TEXT
       )
     `);
 

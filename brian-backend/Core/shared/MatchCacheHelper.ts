@@ -57,6 +57,8 @@ export async function checkMatchCache(
   }));
 
   if (mode === 'random') {
+    if (regenRate === 0) return { hit: true, entries };
+    if (regenRate >= 100) return { hit: false };
     const roll = Math.floor(Math.random() * 100);
     if (roll < regenRate) {
       return { hit: false };

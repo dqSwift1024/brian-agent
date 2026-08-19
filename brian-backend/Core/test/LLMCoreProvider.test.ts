@@ -68,6 +68,16 @@ describe('LLMCoreProvider', () => {
 
     it('should return from cache when available and regen allows', async () => {
       const now = IdGenerator.now();
+      await relationDb.insert('llm_available', [
+        { field: 'id', value: 'llm-1' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'llm_provider_id', value: 'provider-1' },
+        { field: 'llm_title', value: 'agent-cached' },
+        { field: 'llm_brief', value: 'brief' },
+        { field: 'llm_type', value: 'CHAT' },
+        { field: 'enable', value: 1 },
+      ]);
       await relationDb.insert(AGENT_LLM_TABLE, [
         { field: 'id', value: 'cache-1' },
         { field: 'created', value: now },
@@ -81,6 +91,7 @@ describe('LLMCoreProvider', () => {
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'regen_rate', value: 0 },
+        { field: 'similarity_threshold', value: 0.0 },
         { field: 'prompt_template_id', value: null },
       ]);
 

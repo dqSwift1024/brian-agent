@@ -31,11 +31,12 @@ export class LLMCoreSchemaInitializer {
     // llm_core_config 配置表
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS "${LLM_CORE_CONFIG_TABLE}" (
-        "id"                  TEXT    NOT NULL PRIMARY KEY,
-        "created"             INTEGER NOT NULL,
-        "updated"             INTEGER NOT NULL,
-        "regen_rate"          INTEGER NOT NULL DEFAULT 75,
-        "prompt_template_id"  TEXT
+        "id"                   TEXT    NOT NULL PRIMARY KEY,
+        "created"              INTEGER NOT NULL,
+        "updated"              INTEGER NOT NULL,
+        "regen_rate"           INTEGER NOT NULL DEFAULT 75,
+        "similarity_threshold" REAL    NOT NULL DEFAULT 0.7,
+        "prompt_template_id"   TEXT
       )
     `);
 

@@ -49,6 +49,7 @@ export interface AgentLibraryConfigRecord {
   updated: number;
   prompt_template_id: string;
   similarity_threshold: number;
+  regen_rate: number;
   max_agent_count: number;
 }
 
@@ -156,12 +157,14 @@ export class UpdateAgentRuleOutput extends Output {}
 export class ConfigAgentLibraryInput extends Input {
   prompt_template_id?: string;
   similarity_threshold?: number;
+  regen_rate?: number;
   max_agent_count?: number;
 }
 
 export class ConfigAgentLibraryOutput extends Output {
   prompt_template_id = '';
   similarity_threshold = 0.7;
+  regen_rate = 75;
   max_agent_count = 100;
 }
 

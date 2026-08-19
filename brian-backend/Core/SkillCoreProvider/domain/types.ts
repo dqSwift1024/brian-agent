@@ -26,6 +26,7 @@ export interface SkillCoreConfigRecord {
   created: number;
   updated: number;
   regen_rate: number;
+  similarity_threshold: number;
   prompt_template_id: string;
 }
 
@@ -160,6 +161,8 @@ export class UpdateSkillRuleOutput extends Output {}
 export class ConfigSkillCoreInput extends Input {
   /** 重新匹配概率（0-100） */
   regen_rate?: number;
+  /** 相似度阈值（0.0 - 1.0） */
+  similarity_threshold?: number;
   /** Prompt 模板 ID */
   prompt_template_id?: string;
 }

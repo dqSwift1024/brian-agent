@@ -145,8 +145,22 @@ describe('MCPCoreProvider', () => {
 
     it('should use cached binding when regen allows', async () => {
       const now = IdGenerator.now();
+      await relationDb.insert('mcp_install', [
+        { field: 'id', value: 'mcp-1' },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'mcp_provider_id', value: 'provider-1' },
+        { field: 'mcp_title', value: 'agent-cached' },
+        { field: 'mcp_brief', value: 'Brief' },
+        { field: 'mcp_install_cmd', value: 'cmd' },
+        { field: 'mcp_start_cmd', value: 'cmd' },
+        { field: 'mcp_stop_cmd', value: 'cmd' },
+        { field: 'mcp_uninstall_cmd', value: 'cmd' },
+        { field: 'enable', value: 1 },
+        { field: 'status', value: 'running' },
+      ]);
       await relationDb.insert(AGENT_MCP_TABLE, [
-        { field: 'id', value: IdGenerator.generate() },
+        { field: 'id', value: 'cache-1' },
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'agent_id', value: 'agent-cached' },
@@ -158,6 +172,7 @@ describe('MCPCoreProvider', () => {
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'regen_rate', value: 0 },
+        { field: 'similarity_threshold', value: 0.0 },
         { field: 'prompt_template_id', value: '' },
       ]);
 

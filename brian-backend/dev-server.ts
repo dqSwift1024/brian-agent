@@ -683,6 +683,287 @@ function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
   return true;
 }
 
+// ===== 从数据表采集思考过程：根据 work_id 列表重建各 Agent 的 ThinkingChain Blocks =====
+// 数据来源：orchestration_agent_dag_record / agent_plan / orchestration_agent_execution /
+//          agent / agent_execution_trace 五张表；由 /api/chat/history 原始内联逻辑抽取而来。
+async function buildThinkingBlocksAndDag(
+  relationDb: any,
+  workIds: string[],
+): Promise<{ workBlocksMap: Map<string, any[]>; workDagMap: Map<string, any> }> {
+  const workBlocksMap = new Map<string, any[]>();
+  const workDagMap = new Map<string, any>();
+
+  if (!workIds || workIds.length === 0) return { workBlocksMap, workDagMap };
+
+  try {
+    const placeholders = workIds.map(() => '?').join(',');
+
+    // 预先查询 Work 对应的 Task/Agent DAG 关系记录
+    const dagRows = relationDb.queryRaw<Record<string, unknown>>(
+      `SELECT r.plan_id, r.agent_dag_json, p.work_id, p.task_dag 
+       FROM orchestration_agent_dag_record r
+       LEFT JOIN agent_plan p ON r.plan_id = p.plan_id
+       WHERE p.work_id IN (${placeholders})`,
+      workIds,
+    );
+
+    const dagNodeInfoMap = new Map<string, { label: string; domain?: string; taskContent?: string }>();
+    
+    for (const dRow of dagRows) {
+      const wId = String(dRow.work_id ?? '');
+      let dagObj: any = undefined;
+      try { if (dRow.agent_dag_json) dagObj = JSON.parse(String(dRow.agent_dag_json)); } catch { /* ignore */ }
+
+      if (dagObj && Array.isArray(dagObj.agent_nodes)) {
+        for (let idx = 0; idx < dagObj.agent_nodes.length; idx++) {
+          const node = dagObj.agent_nodes[idx];
+          const agId = String(node.agent_id ?? '');
+          const domain = String(node.task_domain || '');
+          const content = String(node.task_content || '');
+          const shortTitle = domain || (content ? content.slice(0, 16) : `子任务 #${idx + 1}`);
+          const label = `任务 ${idx + 1}: ${shortTitle}`;
+
+          if (agId) {
+            dagNodeInfoMap.set(agId, { label, domain, taskContent: content });
+          }
+        }
+
+        if (wId) {
+          workDagMap.set(wId, {
+            planId: dagObj.plan_id,
+            totalCount: dagObj.total_agent_count || dagObj.agent_nodes.length,
+            nodes: dagObj.agent_nodes.map((n: any, i: number) => {
+              const domain = String(n.task_domain || '');
+              const content = String(n.task_content || '');
+              const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`);
+              return {
+                id: String(n.agent_id || `agent-${i}`),
+                label: `任务 ${i + 1}: ${title}`,
+                domain,
+                content,
+                status: n.status || 'COMPLETED',
+              };
+            }),
+            edges: (dagObj.agent_edges || []).map((e: any) => ({
+              source: String(e.from_agent_id || ''),
+              target: String(e.to_agent_id || ''),
+              label: String(e.data_dependency || ''),
+            })),
+          });
+        }
+      }
+    }
+
+    const execRows = relationDb.queryRaw<Record<string, unknown>>(
+      `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
+              a.agent_name, a.agent_type, a.llm_id, a.soul_id,
+              t.iterations_json, t.total_token_usage
+       FROM orchestration_agent_execution e
+       LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
+       LEFT JOIN agent_execution_trace t ON (e.trace_id IS NOT NULL AND e.trace_id != '' AND e.trace_id = t.trace_id)
+       WHERE e.work_id IN (${placeholders})
+       ORDER BY e.created ASC`,
+      workIds,
+    );
+
+    let agentIndexCounter = new Map<string, number>();
+
+    for (const row of execRows) {
+      const wid = String(row.work_id ?? '');
+      if (!wid) continue;
+
+      const agentId = String(row.agent_id ?? '');
+      let rawAgentName = String(row.agent_name ?? '');
+
+      // 优先使用数据库记录的具有业务特性的 agent_name，严格消除 UUID
+      let agentName = rawAgentName;
+      const isUuid = !agentName || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentName) || agentName === agentId;
+
+      if (isUuid) {
+        if (dagNodeInfoMap.has(agentId)) {
+          agentName = dagNodeInfoMap.get(agentId)!.label;
+        } else {
+          const currIdx = (agentIndexCounter.get(wid) ?? 0) + 1;
+          agentIndexCounter.set(wid, currIdx);
+          
+          let domainFromTask = '';
+          if (row.task_content) {
+            try {
+              const p = JSON.parse(String(row.task_content));
+              if (p && p.task_domain) domainFromTask = String(p.task_domain);
+              else if (p && p.user_query) domainFromTask = String(p.user_query).slice(0, 16);
+            } catch { /* ignore */ }
+          }
+
+          agentName = domainFromTask ? `执行 Agent ${currIdx}: ${domainFromTask}` : `执行 Agent #${currIdx}`;
+        }
+      }
+
+      const agentType = String(row.agent_type ?? 'WORKER');
+      const llmId = row.llm_id ? String(row.llm_id) : undefined;
+      const soulId = row.soul_id ? String(row.soul_id) : undefined;
+
+      // 解析 task_content 构造完整的 Input 与 Context 数据
+      let inputQuery: string | undefined = undefined;
+      let contextData: any = {
+        strategy: isUuid ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)',
+        userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
+        citingMessages: [],
+      };
+
+      if (row.task_content) {
+        try {
+          const parsedTask = JSON.parse(String(row.task_content));
+          if (parsedTask && typeof parsedTask === 'object') {
+            if (parsedTask.user_query) {
+              inputQuery = String(parsedTask.user_query);
+            } else if (parsedTask.task_content) {
+              inputQuery = String(parsedTask.task_content);
+            } else {
+              inputQuery = String(row.task_content);
+            }
+
+            if (Array.isArray(parsedTask.session_context)) {
+              contextData.citingMessages = parsedTask.session_context;
+            }
+            if (parsedTask.user_profile) {
+              contextData.userProfile = parsedTask.user_profile;
+            }
+          } else {
+            inputQuery = String(row.task_content);
+          }
+        } catch {
+          inputQuery = String(row.task_content);
+        }
+      }
+
+      // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
+      let iterJson = row.iterations_json;
+      let tokenUsage = row.total_token_usage ? Number(row.total_token_usage) : 0;
+
+      if (!iterJson && agentId) {
+        try {
+          const fallbackTraceRows = relationDb.queryRaw<Record<string, unknown>>(
+            `SELECT iterations_json, total_token_usage FROM agent_execution_trace 
+             WHERE agent_id = ? ORDER BY ABS(created - ?) ASC LIMIT 1`,
+            [agentId, Number(row.created ?? Date.now())],
+          );
+          if (fallbackTraceRows.length > 0) {
+            if (fallbackTraceRows[0].iterations_json) iterJson = fallbackTraceRows[0].iterations_json;
+            if (fallbackTraceRows[0].total_token_usage) tokenUsage = Number(fallbackTraceRows[0].total_token_usage);
+          }
+        } catch { /* ignore fallback error */ }
+      }
+
+      const steps: any[] = [];
+      let content = '';
+      let outputAnswer = row.answer ? String(row.answer) : undefined;
+
+      if (iterJson) {
+        try {
+          const iters = JSON.parse(String(iterJson));
+          if (Array.isArray(iters)) {
+            for (const iter of iters) {
+              if (iter.think) {
+                const reasoning = String(iter.think.reasoning ?? '');
+                if (reasoning) {
+                  content += (content ? '\n' : '') + reasoning;
+                  steps.push({
+                    phase: 'THINK',
+                    iteration: iter.iteration_index ?? (steps.length + 1),
+                    content: reasoning,
+                    tokenUsage: iter.think.token_usage,
+                    elapsedMs: iter.iteration_elapsed_ms,
+                  });
+                }
+              }
+              if (iter.act) {
+                const toolName = String(iter.act.tool_type || iter.act.tool_id || 'Tool');
+                if (toolName !== 'NONE') {
+                  steps.push({
+                    phase: 'ACT',
+                    iteration: iter.iteration_index ?? (steps.length + 1),
+                    toolCalls: [{
+                      toolName: toolName,
+                      toolType: String(iter.act.tool_type || 'Tool'),
+                      params: iter.act.params,
+                      result: iter.act.result,
+                    }],
+                    elapsedMs: iter.iteration_elapsed_ms,
+                  });
+                }
+              }
+              if (iter.reflect) {
+                steps.push({
+                  phase: 'REFLECT',
+                  iteration: iter.iteration_index ?? (steps.length + 1),
+                  reflection: String(iter.reflect.reflection ?? ''),
+                  passed: iter.reflect.should_continue === false,
+                  elapsedMs: iter.iteration_elapsed_ms,
+                });
+              }
+              if (iter.answer && iter.answer.answer && !outputAnswer) {
+                outputAnswer = String(iter.answer.answer);
+              }
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!content && inputQuery) {
+        content = inputQuery;
+      }
+
+      const block = {
+        id: `block-think-${wid}-${agentId}`,
+        msgId: '',
+        role: 'assistant',
+        type: 'ThinkingChain',
+        content,
+        summary: '',
+        durationMs: Number(row.elapsed_ms ?? 0),
+        tokenUsage,
+        agentInfo: {
+          id: agentId,
+          name: agentName,
+          type: agentType,
+          llmId,
+          soulId,
+        },
+        context: contextData,
+        input: inputQuery,
+        output: outputAnswer,
+        steps,
+        meta: {
+          status: 'done',
+          createdAt: Number(row.created ?? Date.now()),
+          updatedAt: Number(row.created ?? Date.now()),
+        },
+      };
+
+      if (!workBlocksMap.has(wid)) {
+        workBlocksMap.set(wid, []);
+      }
+      workBlocksMap.get(wid)!.push(block);
+
+      // 同步补全 workDagMap 中节点的输入输出和 token 统计
+      if (workDagMap.has(wid)) {
+        const dagData = workDagMap.get(wid);
+        const nodeInDag = dagData.nodes.find((n: any) => n.id === agentId);
+        if (nodeInDag) {
+          nodeInDag.agentName = agentName;
+          nodeInDag.input = inputQuery;
+          nodeInDag.output = outputAnswer;
+          nodeInDag.elapsedMs = Number(row.elapsed_ms ?? 0);
+          nodeInDag.tokenUsage = tokenUsage;
+        }
+      }
+    }
+  } catch { /* degrade gracefully */ }
+
+  return { workBlocksMap, workDagMap };
+}
+
 function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Server {
   return http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { sendJson(res, 204, ''); return; }
@@ -1698,276 +1979,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           new Set(rawMessages.filter((m) => m.info_type === InfoType.RESPONSE && m.work_id).map((m) => String(m.work_id)))
         );
 
-        const workBlocksMap = new Map<string, any[]>();
-        const workDagMap = new Map<string, any>();
-
-        if (responseWorkIds.length > 0) {
-          try {
-            const placeholders = responseWorkIds.map(() => '?').join(',');
-
-            // 预先查询 Work 对应的 Task/Agent DAG 关系记录
-            const dagRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
-              `SELECT r.plan_id, r.agent_dag_json, p.work_id, p.task_dag 
-               FROM orchestration_agent_dag_record r
-               LEFT JOIN agent_plan p ON r.plan_id = p.plan_id
-               WHERE p.work_id IN (${placeholders})`,
-              responseWorkIds,
-            );
-
-            const dagNodeInfoMap = new Map<string, { label: string; domain?: string; taskContent?: string }>();
-            
-            for (const dRow of dagRows) {
-              const wId = String(dRow.work_id ?? '');
-              let dagObj: any = undefined;
-              try { if (dRow.agent_dag_json) dagObj = JSON.parse(String(dRow.agent_dag_json)); } catch { /* ignore */ }
-
-              if (dagObj && Array.isArray(dagObj.agent_nodes)) {
-                for (let idx = 0; idx < dagObj.agent_nodes.length; idx++) {
-                  const node = dagObj.agent_nodes[idx];
-                  const agId = String(node.agent_id ?? '');
-                  const domain = String(node.task_domain || '');
-                  const content = String(node.task_content || '');
-                  const shortTitle = domain || (content ? content.slice(0, 16) : `子任务 #${idx + 1}`);
-                  const label = `任务 ${idx + 1}: ${shortTitle}`;
-
-                  if (agId) {
-                    dagNodeInfoMap.set(agId, { label, domain, taskContent: content });
-                  }
-                }
-
-                if (wId) {
-                  workDagMap.set(wId, {
-                    planId: dagObj.plan_id,
-                    totalCount: dagObj.total_agent_count || dagObj.agent_nodes.length,
-                    nodes: dagObj.agent_nodes.map((n: any, i: number) => {
-                      const domain = String(n.task_domain || '');
-                      const content = String(n.task_content || '');
-                      const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`);
-                      return {
-                        id: String(n.agent_id || `agent-${i}`),
-                        label: `任务 ${i + 1}: ${title}`,
-                        domain,
-                        content,
-                        status: n.status || 'COMPLETED',
-                      };
-                    }),
-                    edges: (dagObj.agent_edges || []).map((e: any) => ({
-                      source: String(e.from_agent_id || ''),
-                      target: String(e.to_agent_id || ''),
-                      label: String(e.data_dependency || ''),
-                    })),
-                  });
-                }
-              }
-            }
-
-            const execRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
-              `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
-                      a.agent_name, a.agent_type, a.llm_id, a.soul_id,
-                      t.iterations_json, t.total_token_usage
-               FROM orchestration_agent_execution e
-               LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
-               LEFT JOIN agent_execution_trace t ON (e.trace_id IS NOT NULL AND e.trace_id != '' AND e.trace_id = t.trace_id)
-               WHERE e.work_id IN (${placeholders})
-               ORDER BY e.created ASC`,
-              responseWorkIds,
-            );
-
-            let agentIndexCounter = new Map<string, number>();
-
-            for (const row of execRows) {
-              const wid = String(row.work_id ?? '');
-              if (!wid) continue;
-
-              const agentId = String(row.agent_id ?? '');
-              let rawAgentName = String(row.agent_name ?? '');
-
-              // 优先使用数据库记录的具有业务特性的 agent_name，严格消除 UUID
-              let agentName = rawAgentName;
-              const isUuid = !agentName || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentName) || agentName === agentId;
-
-              if (isUuid) {
-                if (dagNodeInfoMap.has(agentId)) {
-                  agentName = dagNodeInfoMap.get(agentId)!.label;
-                } else {
-                  const currIdx = (agentIndexCounter.get(wid) ?? 0) + 1;
-                  agentIndexCounter.set(wid, currIdx);
-                  
-                  let domainFromTask = '';
-                  if (row.task_content) {
-                    try {
-                      const p = JSON.parse(String(row.task_content));
-                      if (p && p.task_domain) domainFromTask = String(p.task_domain);
-                      else if (p && p.user_query) domainFromTask = String(p.user_query).slice(0, 16);
-                    } catch { /* ignore */ }
-                  }
-
-                  agentName = domainFromTask ? `执行 Agent ${currIdx}: ${domainFromTask}` : `执行 Agent #${currIdx}`;
-                }
-              }
-
-              const agentType = String(row.agent_type ?? 'WORKER');
-              const llmId = row.llm_id ? String(row.llm_id) : undefined;
-              const soulId = row.soul_id ? String(row.soul_id) : undefined;
-
-              // 解析 task_content 构造完整的 Input 与 Context 数据
-              let inputQuery: string | undefined = undefined;
-              let contextData: any = {
-                strategy: isUuid ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)',
-                userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
-                citingMessages: [],
-              };
-
-              if (row.task_content) {
-                try {
-                  const parsedTask = JSON.parse(String(row.task_content));
-                  if (parsedTask && typeof parsedTask === 'object') {
-                    if (parsedTask.user_query) {
-                      inputQuery = String(parsedTask.user_query);
-                    } else if (parsedTask.task_content) {
-                      inputQuery = String(parsedTask.task_content);
-                    } else {
-                      inputQuery = String(row.task_content);
-                    }
-
-                    if (Array.isArray(parsedTask.session_context)) {
-                      contextData.citingMessages = parsedTask.session_context;
-                    }
-                    if (parsedTask.user_profile) {
-                      contextData.userProfile = parsedTask.user_profile;
-                    }
-                  } else {
-                    inputQuery = String(row.task_content);
-                  }
-                } catch {
-                  inputQuery = String(row.task_content);
-                }
-              }
-
-              // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
-              let iterJson = row.iterations_json;
-              let tokenUsage = row.total_token_usage ? Number(row.total_token_usage) : 0;
-
-              if (!iterJson && agentId) {
-                try {
-                  const fallbackTraceRows = ctx.relationDb.queryRaw<Record<string, unknown>>(
-                    `SELECT iterations_json, total_token_usage FROM agent_execution_trace 
-                     WHERE agent_id = ? ORDER BY ABS(created - ?) ASC LIMIT 1`,
-                    [agentId, Number(row.created ?? Date.now())],
-                  );
-                  if (fallbackTraceRows.length > 0) {
-                    if (fallbackTraceRows[0].iterations_json) iterJson = fallbackTraceRows[0].iterations_json;
-                    if (fallbackTraceRows[0].total_token_usage) tokenUsage = Number(fallbackTraceRows[0].total_token_usage);
-                  }
-                } catch { /* ignore fallback error */ }
-              }
-
-              const steps: any[] = [];
-              let content = '';
-              let outputAnswer = row.answer ? String(row.answer) : undefined;
-
-              if (iterJson) {
-                try {
-                  const iters = JSON.parse(String(iterJson));
-                  if (Array.isArray(iters)) {
-                    for (const iter of iters) {
-                      if (iter.think) {
-                        const reasoning = String(iter.think.reasoning ?? '');
-                        if (reasoning) {
-                          content += (content ? '\n' : '') + reasoning;
-                          steps.push({
-                            phase: 'THINK',
-                            iteration: iter.iteration_index ?? (steps.length + 1),
-                            content: reasoning,
-                            tokenUsage: iter.think.token_usage,
-                            elapsedMs: iter.iteration_elapsed_ms,
-                          });
-                        }
-                      }
-                      if (iter.act) {
-                        const toolName = String(iter.act.tool_type || iter.act.tool_id || 'Tool');
-                        if (toolName !== 'NONE') {
-                          steps.push({
-                            phase: 'ACT',
-                            iteration: iter.iteration_index ?? (steps.length + 1),
-                            toolCalls: [{
-                              toolName: toolName,
-                              toolType: String(iter.act.tool_type || 'Tool'),
-                              params: iter.act.params,
-                              result: iter.act.result,
-                            }],
-                            elapsedMs: iter.iteration_elapsed_ms,
-                          });
-                        }
-                      }
-                      if (iter.reflect) {
-                        steps.push({
-                          phase: 'REFLECT',
-                          iteration: iter.iteration_index ?? (steps.length + 1),
-                          reflection: String(iter.reflect.reflection ?? ''),
-                          passed: iter.reflect.should_continue === false,
-                          elapsedMs: iter.iteration_elapsed_ms,
-                        });
-                      }
-                      if (iter.answer && iter.answer.answer && !outputAnswer) {
-                        outputAnswer = String(iter.answer.answer);
-                      }
-                    }
-                  }
-                } catch { /* ignore */ }
-              }
-
-              if (!content && inputQuery) {
-                content = inputQuery;
-              }
-
-              const block = {
-                id: `block-think-${wid}-${agentId}`,
-                msgId: '',
-                role: 'assistant',
-                type: 'ThinkingChain',
-                content,
-                summary: '',
-                durationMs: Number(row.elapsed_ms ?? 0),
-                tokenUsage,
-                agentInfo: {
-                  id: agentId,
-                  name: agentName,
-                  type: agentType,
-                  llmId,
-                  soulId,
-                },
-                context: contextData,
-                input: inputQuery,
-                output: outputAnswer,
-                steps,
-                meta: {
-                  status: 'done',
-                  createdAt: Number(row.created ?? Date.now()),
-                  updatedAt: Number(row.created ?? Date.now()),
-                },
-              };
-
-              if (!workBlocksMap.has(wid)) {
-                workBlocksMap.set(wid, []);
-              }
-              workBlocksMap.get(wid)!.push(block);
-
-              // 同步补全 workDagMap 中节点的输入输出和 token 统计
-              if (workDagMap.has(wid)) {
-                const dagData = workDagMap.get(wid);
-                const nodeInDag = dagData.nodes.find((n: any) => n.id === agentId);
-                if (nodeInDag) {
-                  nodeInDag.agentName = agentName;
-                  nodeInDag.input = inputQuery;
-                  nodeInDag.output = outputAnswer;
-                  nodeInDag.elapsedMs = Number(row.elapsed_ms ?? 0);
-                  nodeInDag.tokenUsage = tokenUsage;
-                }
-              }
-            }
-          } catch { /* degrade gracefully */ }
-        }
+        // ===== 原始内联实现（保留参考）：思考过程重建逻辑已抽取为顶层函数 buildThinkingBlocksAndDag，
+        //      该函数完整保留原有从数据表采集重建 ThinkingChain Blocks 的逻辑，供 history 与 thinking 接口复用 =====
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, responseWorkIds);
 
         const messages = rawMessages.map((m) => {
           const isResponse = m.info_type === InfoType.RESPONSE;
@@ -1998,6 +2012,38 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
 
         sendJson(res, 200, { messages });
+
+      } else if (method === 'GET' && pathname === '/api/chat/thinking') {
+        // 思考过程采集接口：从数据表重建指定消息 / 工作 / 交互的思考过程（ThinkingChain Blocks）
+        // 数据来源：orchestration_agent_execution / agent / agent_execution_trace / orchestration_agent_dag_record / agent_plan
+        const infoId = String(params.get('info_id') ?? '');
+        const interactId = String(params.get('interact_id') ?? '');
+        let workId = String(params.get('work_id') ?? '');
+
+        if (!workId && !infoId && !interactId) {
+          sendJson(res, 400, { error: '请至少提供 work_id / info_id / interact_id 中的一个参数' });
+          return;
+        }
+
+        // 未显式提供 work_id 时，按 info_id / interact_id 反查 info_raw 得到 work_id
+        if (!workId && (infoId || interactId)) {
+          try {
+            const conds: string[] = [];
+            const args: string[] = [];
+            if (infoId) { conds.push('"info_id" = ?'); args.push(infoId); }
+            if (interactId) { conds.push('"interact_id" = ?'); args.push(interactId); }
+            const rows = ctx.relationDb.queryRaw<{ work_id: string }>(
+              `SELECT "work_id" FROM "info_raw" WHERE ${conds.join(' AND ')} LIMIT 1`,
+              args,
+            );
+            if (rows.length > 0) workId = String(rows[0].work_id ?? '');
+          } catch { /* degrade gracefully */ }
+        }
+
+        // 有参数但反查不到 work_id 时，返回空结果（而非 400）
+        const { workBlocksMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
+        const blocks = workBlocksMap.get(workId) ?? [];
+        sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];

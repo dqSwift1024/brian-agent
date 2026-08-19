@@ -13,3 +13,4 @@ export {
   type MatchCacheCheckResult,
   type RegenMode,
 } from './MatchCacheHelper';
+export { simpleSimilarity, shouldReuseByRegenRate } from './SimilarityHelper';

@@ -36,28 +36,25 @@
 
 ### 2.2. 匹配 Agent（matchAgent）
 
-**功能**：根据任务特征匹配已存在的 Agent，实现复用
+**功能**：根据任务特征匹配已存在的 Agent，实现复用（标准 3 层匹配逻辑）
 **入参**：
 - input：MatchAgentInput（继承 Input），包含以下字段：
   - task_signature：任务特征签名（内容摘要、复杂度评分、领域标签等）
-  - agent_type：期望的 Agent 类型（可选，不传则不限类型）
+  - agent_type：期望的 Agent 类型（可选，不传则不限类型；注意：PLANNER / WRITER / EVOLUTOR 等固定内置系统 Agent 不走动态选择/自生成逻辑）
   - similarity_threshold：相似度阈值（0-1，默认 0.7）
 - context：MatchAgentContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：MatchAgentOutput（继承 Output），承载返回内容：
   - agent_id：匹配到的 Agent ID（未匹配到则为空）
   - similarity_score：相似度分数
+  - matched_by：匹配来源（`SIMILARITY` / `LLM` / 空）
 
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `agent_library_config` 表获取 `prompt_template_id` 和 `similarity_threshold`；
-2. 调用 RelationDBProvider.selectDB 从 `agent` 表加载所有启用（enable=true）的 Agent，获取各 Agent 的 ID、agent_type、task_signature、usage_count 和 eval_score；
-3. 若入参 `agent_type` 非空，过滤仅保留匹配类型的 Agent；
-4. 若符合条件的 Agent 列表为空，返回 agent_id 为空（表示需要新建 Agent）；
-5. 调用 PromptsProvider.execPrompt 使用 `agent_library_config` 中的 `prompt_template_id` 构建 Agent 匹配 prompt，将 `task_signature` 与候选 Agent 的 `task_signature` 列表一并提交；
-6. 调用 LLMProvider.execLLM 由模型评估任务特征与各候选 Agent 的匹配度，返回最匹配的 agent_id 和 similarity_score（LLM 输出 JSON `{ "agent_id": "...", "score": 0.85 }`）；
-7. 若 similarity_score >= similarity_threshold 且 agent_id 有效：调用 RelationDBProvider.selectOneDB 校验 agent_id 对应的 Agent 仍处于启用状态，若 Agent 已被禁用则视为未匹配到；校验通过后返回 agent_id 及 similarity_score；
-8. 若 similarity_score < similarity_threshold 或 agent_id 无效/已被禁用：返回 agent_id 为空，表示需要调用 AgentBuilder 创建新 Agent；
-9. 返回匹配结果写入 output；
+1. 调用 RelationDBProvider 从 `agent_library_config` 表加载 `similarity_threshold` 与 `regen_rate`（默认 75）；
+2. 从 `agent` 表加载启用的 Worker Candidate 候选列表（排除禁用节点）；
+3. **第 1 层算法匹配 (simpleSimilarity)**：针对候选 Worker Agents，计算 `task_signature` 的跨领域 2-gram 字符特征相似度。若得分 $\ge \text{similarity\_threshold}$，且随机概率命中复用（$Roll \ge \text{regen\_rate}$），直接复用该 Agent 并返回 `matched_by = 'SIMILARITY'`；
+4. **第 2 层 LLM 打分评估**：若第 1 层未命中，将候选 Agent 列表通过 Prompt 提交 LLM 评估，得分 $\ge \text{similarity\_threshold}$ 时选用并返回 `matched_by = 'LLM'`；
+5. **第 3 层自生成**：若前两层均未匹配，返回空 `agent_id`，触发 `AgentBuilder.buildAgent` 构建新的 Worker Agent；
 
 ### 2.3. 更新 Agent（updateAgent）
 

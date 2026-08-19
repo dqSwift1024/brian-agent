@@ -894,15 +894,10 @@ export class ConfigService {
       await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, {} as McpCoreContext, out);
       return this.extractConfigValue(out, 'mcp_core', configKey);
     }
-    if (configKey.startsWith('skill_core.regen_rate')) {
+    if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.similarity_threshold') || configKey.startsWith('skill_core.prompt_template_id')) {
       const out = new ConfigSkillCoreOutput();
       await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
-      return out.regen_rate;
-    }
-    if (configKey.startsWith('skill_core.prompt_template_id')) {
-      const out = new ConfigSkillCoreOutput();
-      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
-      return out.prompt_template_id;
+      return this.extractConfigValue(out, 'skill_core', configKey);
     }
     if (configKey.startsWith('skill_core.opt_rule')) {
       const out = new SoSkillRuleOutput();
@@ -912,7 +907,7 @@ export class ConfigService {
       const key = configKey.split('skill_core.opt_rule.')[1];
       return (first as unknown as Record<string, unknown>)[key] ?? null;
     }
-    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.prompt_template_id') || configKey.startsWith('soul_core.llm_id')) {
+    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.similarity_threshold') || configKey.startsWith('soul_core.prompt_template_id') || configKey.startsWith('soul_core.llm_id')) {
       const out = new ConfigSoulCoreOutput();
       await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, {} as SoulCoreContext, out);
       return this.extractConfigValue(out, 'soul_core', configKey);
@@ -1145,9 +1140,10 @@ export class ConfigService {
       return;
     }
 
-    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.prompt_template_id')) {
+    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith('llm_core.prompt_template_id')) {
       const input: any = {};
       if (prefix.startsWith('llm_core.regen_rate')) input.regen_rate = value;
+      if (prefix.startsWith('llm_core.similarity_threshold')) input.similarity_threshold = value;
       if (prefix.startsWith('llm_core.prompt_template_id')) input.prompt_template_id = value as string;
       const output: any = {};
       await this.llmCore.configLLMCore(input, {} as any, output);
@@ -1162,14 +1158,16 @@ export class ConfigService {
     if (prefix.startsWith('mcp_core.')) {
       const input: any = {};
       if (prefix.startsWith('mcp_core.regen_rate')) input.regen_rate = value;
+      if (prefix.startsWith('mcp_core.similarity_threshold')) input.similarity_threshold = value;
       if (prefix.startsWith('mcp_core.prompt_template_id')) input.prompt_template_id = value as string;
       const output: any = {};
       await this.mcpCore.configMCPCore(input, {} as any, output);
       return;
     }
-    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.prompt_template_id')) {
+    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith('skill_core.prompt_template_id')) {
       const input: any = {};
       if (prefix.startsWith('skill_core.regen_rate')) input.regen_rate = value;
+      if (prefix.startsWith('skill_core.similarity_threshold')) input.similarity_threshold = value;
       if (prefix.startsWith('skill_core.prompt_template_id')) input.prompt_template_id = value as string;
       const output: any = {};
       await this.skillCore.configSkillCore(input, {} as any, output);
@@ -1198,9 +1196,10 @@ export class ConfigService {
       }
       return;
     }
-    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.prompt_template_id') || prefix.startsWith('soul_core.llm_id')) {
+    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith('soul_core.prompt_template_id') || prefix.startsWith('soul_core.llm_id')) {
       const input: any = {};
       if (prefix.startsWith('soul_core.regen_rate')) input.regen_rate = value;
+      if (prefix.startsWith('soul_core.similarity_threshold')) input.similarity_threshold = value;
       if (prefix.startsWith('soul_core.prompt_template_id')) input.prompt_template_id = value as string;
       if (prefix.startsWith('soul_core.llm_id')) input.llm_id = value as string;
       const output: any = {};

@@ -15,10 +15,12 @@ import {
 } from '../../shared/errors';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import {
+  simpleSimilarity,
+  shouldReuseByRegenRate,
   checkMatchCache,
   clearMatchCache,
   persistMatchBinding,
-} from '../../shared/MatchCacheHelper';
+} from '../../shared';
 import type { LLMProviderQuotaRecord, LLMCoreConfigRecord } from '../domain/types';
 import {
   LLMCoreContext,
@@ -88,12 +90,7 @@ export class LLMCoreService {
   // ---------------------------------------------------------------------------
 
   /**
-   * 为指定 Agent 匹配合适的 LLM 提供商。
-   *
-   * 流程：
-   * 1. 查询 agent_llm 表是否存在缓存绑定
-   * 2. 若命中缓存，根据 regen_rate 概率决定是否重用
-   * 3. 否则搜索可用 LLM、构建 Prompt、调用 LLM 排名，结果写入 agent_llm
+   * 为指定 Agent 匹配合适的 LLM 提供商（三层统一匹配/选择逻辑）。
    */
   async matchLLM(
     input: MatchLLMInput,
@@ -104,24 +101,29 @@ export class LLMCoreService {
       throw new ValidationError('matchLLM 需要提供 agent_id');
     }
 
-    // 1. 检查 agent_llm 缓存
     const config = await this.getCoreConfig();
+    const regenRate = config?.regen_rate ?? 75;
+    const similarityThreshold = config?.similarity_threshold ?? 0.7;
+
+    // 搜索可用 LLM
+    const soOutput = new SoLLMOutput();
+    await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), soOutput);
+    const availableLLMs = soOutput.list;
+
+    // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
     const cacheResult = await checkMatchCache(
       this.relationDb, AGENT_LLM_TABLE, input.agent_id,
-      config?.regen_rate ?? 75, 'random', 'llm_id',
+      regenRate, 'random', 'llm_id',
     );
     if (cacheResult.hit && cacheResult.entries?.[0]) {
-      const llmRecord = await this.getLLMById(cacheResult.entries[0].entity_id);
-      output.llm_id = cacheResult.entries[0].entity_id;
+      const boundId = cacheResult.entries[0].entity_id;
+      const boundLLM = availableLLMs.find((l) => l.id === boundId);
+      const llmRecord = boundLLM ? await this.getLLMById(boundId) : { id: boundId, llm_title: boundId, enable: true };
+      output.llm_id = boundId;
       output.llm = llmRecord;
       output.from_cache = true;
       return true;
     }
-
-    // 2. 搜索可用 LLM
-    const soOutput = new SoLLMOutput();
-    await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), soOutput);
-    const availableLLMs = soOutput.list;
 
     if (availableLLMs.length === 0) {
       throw new NotFoundError('可用 LLM', 'any');
@@ -135,11 +137,9 @@ export class LLMCoreService {
       return true;
     }
 
-    // 3. 获取 Prompt 模板并渲染
+    // ===== 第 2 层：LLM 智能打分评估 =====
     let selectionPrompt: string;
-
     if (config?.prompt_template_id) {
-      // 使用配置的 Prompt 模板
       const getPromptOutput = new GetPromptOutput();
       await this.promptsAccess.getPrompt(
         { id: config.prompt_template_id } as GetPromptInput,
@@ -166,17 +166,12 @@ export class LLMCoreService {
         );
         selectionPrompt = execPromptOutput.prompt;
       } else {
-        selectionPrompt = this.buildDefaultSelectionPrompt(
-          input, availableLLMs,
-        );
+        selectionPrompt = this.buildDefaultSelectionPrompt(input, availableLLMs);
       }
     } else {
-      selectionPrompt = this.buildDefaultSelectionPrompt(
-        input, availableLLMs,
-      );
+      selectionPrompt = this.buildDefaultSelectionPrompt(input, availableLLMs);
     }
 
-    // 4. 调用 LLM 进行排名：优先使用默认模型，否则使用第一个可用 LLM
     const rankerLLM = availableLLMs.find((l) => l.is_default) ?? availableLLMs[0];
     const execLLMOutput = new ExecLLMOutput();
     await this.llmAccess.execLLM(
@@ -190,17 +185,19 @@ export class LLMCoreService {
       execLLMOutput,
     );
 
-    // 5. 解析排名结果
-    const selectedLLMId = this.parseSelectionResult(
+    let selectedLLMId = this.parseSelectionResult(
       execLLMOutput.result,
       availableLLMs,
     );
 
-    // 6. 持久化到 agent_llm
+    // ===== 第 3 层：模型自适应生成/系统默认兜底（LLM 不可凭空生成代词代码） =====
+    if (!selectedLLMId) {
+      selectedLLMId = rankerLLM.id;
+    }
+
     await clearMatchCache(this.relationDb, AGENT_LLM_TABLE, input.agent_id);
     await persistMatchBinding(this.relationDb, AGENT_LLM_TABLE, input.agent_id, selectedLLMId, 'llm_id');
 
-    // 7. 获取 LLM 详情返回
     const llmRecord = await this.getLLMById(selectedLLMId);
     output.llm_id = selectedLLMId;
     output.llm = llmRecord;
@@ -338,13 +335,19 @@ export class LLMCoreService {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
 
-    if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
+    if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
         if (input.regen_rate < 0 || input.regen_rate > 100) {
           throw new ValidationError('regen_rate 必须在 0-100 之间');
         }
         updateData.push({ field: 'regen_rate', value: input.regen_rate });
+      }
+      if (input.similarity_threshold !== undefined) {
+        if (input.similarity_threshold < 0 || input.similarity_threshold > 1) {
+          throw new ValidationError('similarity_threshold 必须在 0.0-1.0 之间');
+        }
+        updateData.push({ field: 'similarity_threshold', value: input.similarity_threshold });
       }
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
@@ -448,6 +451,7 @@ export class LLMCoreService {
       created: raw['created'] as number,
       updated: raw['updated'] as number,
       regen_rate: (raw['regen_rate'] as number) ?? 75,
+      similarity_threshold: Number(raw['similarity_threshold'] ?? 0.7),
       prompt_template_id: (raw['prompt_template_id'] as string) || null,
     };
   }

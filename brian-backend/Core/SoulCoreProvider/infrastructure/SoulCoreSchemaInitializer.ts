@@ -35,6 +35,7 @@ export class SoulCoreSchemaInitializer {
         "created"             INTEGER NOT NULL,
         "updated"             INTEGER NOT NULL,
         "regen_rate"          INTEGER NOT NULL DEFAULT 75,
+        "similarity_threshold" REAL   NOT NULL DEFAULT 0.7,
         "prompt_template_id"  TEXT,
         "llm_id"              TEXT
       )

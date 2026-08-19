@@ -19,6 +19,10 @@ export const useSessionStore = defineStore('session', () => {
   // ChatMap 与对话列表双向定位：focusInfoId 由 ChatMap 触发滚动列表，centerInfoId 由列表触发平移 ChatMap
   const focusInfoId = ref<string | null>(null)
   const centerInfoId = ref<string | null>(null)
+  // 思考过程弹窗：targetMsgId 为空时展示当前流式思考，否则展示后端接口采集的指定消息思考过程
+  const thinkingModalVisible = ref(false)
+  const thinkingTargetMsgId = ref<string | null>(null)
+  const thinkingBlocks = ref<Block[]>([])
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -271,14 +275,27 @@ export const useSessionStore = defineStore('session', () => {
     isStreaming.value = false
   }
 
+  function openThinkingModal(msgId: string | null = null, blocks: Block[] = []) {
+    thinkingTargetMsgId.value = msgId
+    thinkingBlocks.value = blocks
+    thinkingModalVisible.value = true
+  }
+
+  function closeThinkingModal() {
+    thinkingModalVisible.value = false
+    thinkingTargetMsgId.value = null
+    thinkingBlocks.value = []
+  }
+
   return {
     currentSessionId, messages, blocks, chatList, chatMapNodes, chatMapEdges,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
-    focusInfoId, centerInfoId,
+    focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
-    setStreaming, setCancelController, cancelCurrentTask
+    setStreaming, setCancelController, cancelCurrentTask,
+    openThinkingModal, closeThinkingModal
   }
 })

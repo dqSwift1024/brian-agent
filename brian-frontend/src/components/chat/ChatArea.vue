@@ -3,14 +3,18 @@ import { ref, computed, watch, nextTick } from 'vue'
 import {
   MessageCircle,
   Loader2,
+  Brain,
+  UserRound,
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
+import { chatApi } from '@/api'
 import type { ChatMessage, Block, TextBlock, ThinkingBlock } from '@/api/types'
 import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
 import MessageCard from './MessageCard.vue'
 import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
 import AgentDagFlow from './AgentDagFlow.vue'
+import ThinkingModal from './ThinkingModal.vue'
 
 const sessionStore = useSessionStore()
 
@@ -83,6 +87,17 @@ function togglePin(id: string) {
 
 function jumpTo(id: string) {
   scrollListTo(id)
+}
+
+// 思考过程按钮：先从后端接口采集思考过程数据，再打开弹窗展示
+async function showThinking(id: string) {
+  sessionStore.openThinkingModal(id)
+  try {
+    const res = await chatApi.thinking(id)
+    sessionStore.openThinkingModal(id, res.blocks)
+  } catch {
+    sessionStore.openThinkingModal(id, [])
+  }
 }
 
 type TimelineEntry =
@@ -205,6 +220,8 @@ async function handleSend(content: string, citingIds: string[]) {
   textBlockId = null
 
   sessionStore.setStreaming(true)
+  // 用户发送消息 → 自动弹出思考过程弹窗（流式展示）
+  sessionStore.openThinkingModal(null)
   try {
     const abortCtrl = new AbortController()
     sessionStore.setCancelController(abortCtrl)
@@ -260,6 +277,7 @@ async function handleSend(content: string, citingIds: string[]) {
       } as Block
       sessionStore.addBlock(errBlock)
     }
+    sessionStore.closeThinkingModal()
   } finally {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
@@ -642,6 +660,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     case 'done': {
       sessionStore.finalizeBlocks(botMsgId)
+      // 系统最终回复流式输出完成（done 事件）→ 自动关闭思考弹窗
+      sessionStore.closeThinkingModal()
       const feedbackBlock: Block = {
         id: `block-fb-${Date.now()}`,
         msgId: botMsgId,
@@ -668,6 +688,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         meta: { status: 'error', createdAt: serverTime, updatedAt: serverTime },
       } as Block
       sessionStore.addBlock(errBlock)
+      sessionStore.closeThinkingModal()
       break
     }
   }
@@ -701,37 +722,52 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         <template v-for="entry in timeline" :key="entry.key">
           <div
             v-if="entry.kind === 'message'"
-            class="max-w-[85%]"
-            :class="entry.message.role === 'user' ? 'ml-auto' : 'mr-auto'"
+            class="flex items-start gap-2"
+            :class="entry.message.role === 'user' ? 'justify-start' : 'justify-end'"
             :data-info-id="entry.message.id"
           >
-            <!-- 长程多 Agent 协同依赖 DAG 网络展现 -->
-            <AgentDagFlow v-if="entry.message.agentDag" :dag="entry.message.agentDag" />
+            <!-- 用户消息：靠左，头像在消息框左侧 -->
+            <div v-if="entry.message.role === 'user'" class="flex-shrink-0 w-8 h-8 rounded-full bg-brian-blue/15 text-brian-blue flex items-center justify-center mt-1">
+              <UserRound :size="16" />
+            </div>
 
-            <MessageCard
-              :id="entry.message.id"
-              :info-id="entry.message.id"
-              :role="entry.message.role"
-              :content="entry.message.content"
-              :timestamp="entry.message.timestamp"
-              :pin="nodeOf(entry.message)?.pin ?? entry.message.pin"
-              :selected="sessionStore.selectedMsgIds.has(entry.message.id)"
-              :cited-count="getCitedCount(entry.message)"
-              :citing-count="getCitingCount(entry.message)"
-              :cited-info-ids="getCitedIds(entry.message)"
-              :citing-info-ids="getCitingIds(entry.message)"
-              :trace-id="entry.message.traceId || entry.message.workId"
-              :work-id="entry.message.workId"
-              mode="timeline"
-              :node-map="nodeMap"
-              @toggle-select="sessionStore.toggleMsgSelection"
-              @toggle-pin="togglePin"
-              @click-card="centerMapOn"
-              @jump-to="jumpTo"
-            />
+            <div class="max-w-[85%] min-w-0">
+              <!-- 长程多 Agent 协同依赖 DAG 网络展现 -->
+              <AgentDagFlow v-if="entry.message.agentDag" :dag="entry.message.agentDag" />
+
+              <MessageCard
+                :id="entry.message.id"
+                :info-id="entry.message.id"
+                :role="entry.message.role"
+                :content="entry.message.content"
+                :summary="nodeOf(entry.message)?.summary || ''"
+                :timestamp="entry.message.timestamp"
+                :pin="nodeOf(entry.message)?.pin ?? entry.message.pin"
+                :selected="sessionStore.selectedMsgIds.has(entry.message.id)"
+                :cited-count="getCitedCount(entry.message)"
+                :citing-count="getCitingCount(entry.message)"
+                :cited-info-ids="getCitedIds(entry.message)"
+                :citing-info-ids="getCitingIds(entry.message)"
+                :trace-id="entry.message.traceId || entry.message.workId"
+                :work-id="entry.message.workId"
+                mode="timeline"
+                :node-map="nodeMap"
+                @toggle-select="sessionStore.toggleMsgSelection"
+                @toggle-pin="togglePin"
+                @click-card="centerMapOn"
+                @jump-to="jumpTo"
+                @show-thinking="showThinking"
+              />
+            </div>
+
+            <!-- 系统回复：靠右，大脑头像在消息框右侧 -->
+            <div v-if="entry.message.role !== 'user'" class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 flex items-center justify-center mt-1">
+              <Brain :size="16" />
+            </div>
           </div>
 
-          <div v-else class="max-w-[85%]" :class="entry.block.role === 'user' ? 'ml-auto' : 'mr-auto'">
+          <!-- 思考过程不展示在对话区（以弹窗形式展示），其余块正常渲染 -->
+          <div v-else-if="entry.block.type !== 'ThinkingChain'" class="max-w-[85%]" :class="entry.block.role === 'user' ? 'ml-auto' : 'mr-auto'">
             <BlockRenderer :block="entry.block" />
           </div>
         </template>
@@ -755,5 +791,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         />
       </div>
     </div>
+
+    <!-- 思考过程弹窗 -->
+    <ThinkingModal />
   </div>
 </template>

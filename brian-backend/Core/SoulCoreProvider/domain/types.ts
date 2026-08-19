@@ -25,6 +25,7 @@ export interface SoulCoreConfigRecord {
   created: number;
   updated: number;
   regen_rate: number;
+  similarity_threshold: number;
   prompt_template_id: string | null;
   llm_id: string | null;
 }
@@ -167,10 +168,12 @@ export class UpdateSoulRuleOutput extends Output {}
 export class ConfigSoulCoreInput extends Input {
   /** 重新匹配概率（0-100） */
   regen_rate?: number;
+  /** 相似度阈值（0.0 - 1.0） */
+  similarity_threshold?: number;
   /** Prompt 模板 ID */
   prompt_template_id?: string;
-  /** Soul 匹配与评估所使用的 LLM ID（为空则自动回退系统默认模型） */
-  llm_id?: string | null;
+  /** 指定匹配用 LLM */
+  llm_id?: string;
 }
 
 /** configSoulCore 出参 */

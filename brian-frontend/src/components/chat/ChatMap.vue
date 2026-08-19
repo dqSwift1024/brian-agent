@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { chatApi } from '@/api'
 import type { ChatMapNode } from '@/api/types'
 import MessageCard from './MessageCard.vue'
 
@@ -198,6 +199,17 @@ function jumpTo(infoId: string) {
   sessionStore.triggerFocus(infoId)
 }
 
+// 思考过程按钮：先从后端接口采集思考过程数据，再打开弹窗展示
+async function showThinking(infoId: string) {
+  sessionStore.openThinkingModal(infoId)
+  try {
+    const res = await chatApi.thinking(infoId)
+    sessionStore.openThinkingModal(infoId, res.blocks)
+  } catch {
+    sessionStore.openThinkingModal(infoId, [])
+  }
+}
+
 // 列表点击消息 -> 平移 ChatMap 使该消息居中并高亮
 watch(() => sessionStore.centerInfoId, async (id) => {
   if (!id) return
@@ -302,6 +314,7 @@ watch(() => sessionStore.centerInfoId, async (id) => {
           @toggle-pin="togglePin(n)"
           @click-card="onNodeClick(n)"
           @jump-to="jumpTo"
+          @show-thinking="showThinking"
         />
       </div>
     </div>
