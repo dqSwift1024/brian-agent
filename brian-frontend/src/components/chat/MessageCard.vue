@@ -329,7 +329,7 @@ async function copyTraceId() {
       <p v-if="!citingInfoIds?.length" class="text-[10px] opacity-60">无被引用记录</p>
     </div>
 
-    <!-- Timeline 模式下的引用消息胶囊快捷展示 -->
+    <!-- ===== 原始代码（保留作为参考）：Timeline 模式下的引用消息胶囊快捷展示（与上方"引用"折叠按钮重复，已移除）=====
     <div v-if="mode === 'timeline' && citedInfoIds?.length" class="mt-1.5 flex flex-wrap gap-1" @click.stop>
       <span
         v-for="cid in citedInfoIds"
@@ -341,6 +341,7 @@ async function copyTraceId() {
         引用: {{ getSummary(cid) }}
       </span>
     </div>
+    -->
   </div>
 </template>
 
