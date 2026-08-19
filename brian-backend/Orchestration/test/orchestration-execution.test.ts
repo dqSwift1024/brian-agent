@@ -208,6 +208,74 @@ describe('OrchestrationExecution', () => {
       expect(result).toBe(true);
       expect(output.agent_dag.agent_nodes[0].status).toBe('BUILD_FAILED');
     });
+
+    it('TC-BAD-012: 跨 plan 复用同一对 Agent 的边不冲突（回归：原全局唯一索引触发 UNIQUE constraint）', async () => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+        const content = (_i as { task_content?: string }).task_content ?? '';
+        o.agent_id = `agent-${content}`;
+        return true;
+      });
+      const taskDag: TaskDAG = {
+        nodes: [
+          { task_id: 't1', task_content: 'A', task_complexity: 30, task_domain: 'general', priority: 1 },
+          { task_id: 't2', task_content: 'B', task_complexity: 40, task_domain: 'general', priority: 1 },
+        ],
+        edges: [{ from_task_id: 't1', to_task_id: 't2' }],
+      };
+
+      const outA = new BuildAgentDAGOutput();
+      const okA = await exec.buildAgentDAG(
+        Object.assign(new BuildAgentDAGInput(), { plan_id: 'pa', task_dag: taskDag, interact_id: 'ia' }),
+        new OrchestrationExecutionContext(), outA,
+      );
+      expect(okA).toBe(true);
+      expect(outA.agent_dag.agent_edges).toHaveLength(1);
+
+      const outB = new BuildAgentDAGOutput();
+      const okB = await exec.buildAgentDAG(
+        Object.assign(new BuildAgentDAGInput(), { plan_id: 'pb', task_dag: taskDag, interact_id: 'ib' }),
+        new OrchestrationExecutionContext(), outB,
+      );
+      expect(okB).toBe(true);
+      expect(outB.agent_dag.agent_edges).toHaveLength(1);
+
+      const rows = db.queryRaw<{ plan_id: string; from_agent_id: string; to_agent_id: string }>(
+        'SELECT plan_id, from_agent_id, to_agent_id FROM orchestration_agent_dag WHERE plan_id IN (?, ?)',
+        ['pa', 'pb'],
+      );
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.plan_id))).toEqual(new Set(['pa', 'pb']));
+    });
+
+    it('TC-BAD-013: 同一 plan 内重复边自动去重', async () => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+        const content = (_i as { task_content?: string }).task_content ?? '';
+        o.agent_id = `agent-${content}`;
+        return true;
+      });
+      const taskDag: TaskDAG = {
+        nodes: [
+          { task_id: 't1', task_content: 'A', task_complexity: 30, task_domain: 'general', priority: 1 },
+          { task_id: 't2', task_content: 'B', task_complexity: 40, task_domain: 'general', priority: 1 },
+        ],
+        edges: [
+          { from_task_id: 't1', to_task_id: 't2' },
+          { from_task_id: 't1', to_task_id: 't2' },
+        ],
+      };
+      const out = new BuildAgentDAGOutput();
+      const ok = await exec.buildAgentDAG(
+        Object.assign(new BuildAgentDAGInput(), { plan_id: 'pc', task_dag: taskDag, interact_id: 'ic' }),
+        new OrchestrationExecutionContext(), out,
+      );
+      expect(ok).toBe(true);
+      expect(out.agent_dag.agent_edges).toHaveLength(1);
+      const count = db.queryRaw<{ c: number }>(
+        'SELECT COUNT(*) AS c FROM orchestration_agent_dag WHERE plan_id = ?',
+        ['pc'],
+      );
+      expect(count[0].c).toBe(1);
+    });
   });
 
   // =========================================================================

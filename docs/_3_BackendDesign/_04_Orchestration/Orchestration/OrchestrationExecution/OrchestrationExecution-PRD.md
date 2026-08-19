@@ -75,12 +75,13 @@
 
 3. **转换依赖关系**
    a. 初始化 `agent_edges = []`；
-   b. 遍历 task_dag.edges 中的每条边：
+   b. 先查询当前 `plan_id` 已存在的 `orchestration_agent_dag` 边，构建去重集合，防止同一 plan 重复落边；
+   c. 遍历 task_dag.edges 中的每条边：
       - 根据 task_agent_map 查找 from_task_id 和 to_task_id 对应的 from_agent_id、to_agent_id；
-      - 若映射存在，生成 agent_edge：
+      - 若映射存在且 `(from_agent_id, to_agent_id)` 不在去重集合中，生成 agent_edge：
         `{ from_agent_id, to_agent_id, data_dependency: "task_{from_task_id} → task_{to_task_id}" }`；
-      - 将 agent_edge 加入 agent_edges；
-   c. 对每条 agent_edge 调用 RelationDBProvider.insertDB 写入 `orchestration_agent_dag` 表 `{ plan_id, from_agent_id, to_agent_id }`；
+      - 将 agent_edge 加入 agent_edges，并把 `(from_agent_id, to_agent_id)` 加入去重集合（跳过重复边）；
+   d. 对每条 agent_edge 调用 RelationDBProvider.insertDB 写入 `orchestration_agent_dag` 表 `{ plan_id, from_agent_id, to_agent_id }`；
 
 4. **保存 Agent DAG**
    a. 将完整的 agent_dag JSON 调用 RelationDBProvider.insertDB 写入 `orchestration_agent_dag_record` 表：`{ plan_id, total_agent_count, agent_dag_json }`；
@@ -314,7 +315,7 @@
 | from_agent_id | 上游 Agent ID | UUID | N | 普通索引 | |
 | to_agent_id | 下游 Agent ID | UUID | N | 普通索引 | |
 
-注意：from_agent_id + to_agent_id 构成联合唯一索引防止重复边。
+注意：plan_id + from_agent_id + to_agent_id 构成按 plan 作用域的联合唯一索引（idx_agent_dag_edge_plan），同一 plan 内防止重复边；不同 plan 可复用同一对 Agent（允许跨 plan 存在相同依赖边）。
 
 ### 3.3. Agent DAG 快照记录表
 
@@ -362,3 +363,33 @@
 5. **超时控制**：DAG 总执行时间超过 `dag_timeout_ms` 时，取消所有未完成的 Agent 节点，标记 work 为 FAILED。
 6. **DB 操作**：所有 CRUD 经 RelationDBProvider，禁止直接操作。
 7. **AOP**：所有方法经 AopProxy.wrap 生成代理。
+
+## 代码变更记录
+
+### [2026-08-19] 修复 orchestration_agent_dag 唯一索引跨 plan 冲突
+
+**变更原因**：`orchestration_agent_dag` 原唯一索引 `idx_agent_dag_edge(from_agent_id, to_agent_id)` 作用域为全局。由于 Work Agent 会按任务匹配跨 work 复用，两次相似请求（如重复提问"如何开发一个Agent项目"）会为不同 plan 生成同一对 `(from_agent_id, to_agent_id)` 的边，第二次插入即触发 `UNIQUE constraint failed: orchestration_agent_dag.from_agent_id, orchestration_agent_dag.to_agent_id`，导致 BUILD_AGENT_DAG 节点失败、整个 work 标记 FAILED。
+
+**修改的方法**：
+- `OrchestrationExecutionSchemaInitializer.init()` — 唯一索引改为按 plan 作用域：
+  ```sql
+  -- 原：
+  CREATE UNIQUE INDEX idx_agent_dag_edge ON orchestration_agent_dag(from_agent_id, to_agent_id);
+  -- 改：
+  DROP INDEX IF EXISTS idx_agent_dag_edge;
+  CREATE UNIQUE INDEX idx_agent_dag_edge_plan ON orchestration_agent_dag(plan_id, from_agent_id, to_agent_id);
+  ```
+- `OrchestrationExecutionService.buildAgentDAG()` — 落边前先查询当前 plan 已存在的边，构建去重集合；同一 plan 内重复边跳过，避免唯一索引冲突。原始实现注释保留在方法内。
+- `test/test-helpers.ts` — 测试库 schema 同步为 `idx_agent_dag_edge_plan`。
+
+**新增测试用例**：
+- `TC-BAD-012`：跨 plan 复用同一对 Agent 的边不再冲突（回归原报错场景）。
+- `TC-BAD-013`：同一 plan 内重复边自动去重。
+
+**影响的端点**：
+- `POST /api/chat`（Planning 策略）— BUILD_AGENT_DAG 节点不再因唯一索引抛错，work 可正常进入执行阶段。
+- 服务启动 Schema 初始化 — 自动迁移存量库：删除旧全局唯一索引，重建按 plan 唯一索引。
+
+**可能存在的问题**：
+- 存量库中若存在历史脏数据（全局重复边）需先清理；当前生产库无 (plan_id, from, to) 重复，迁移安全。
+- 若历史 work 已被标记 FAILED（如本次 fb50e6af-6954-49c9-8409-9aa7b40335dd），修复后需用户重新发起相同请求才会按新逻辑成功执行。

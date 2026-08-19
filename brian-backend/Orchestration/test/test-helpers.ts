@@ -96,7 +96,7 @@ export function initOrchestrationSchema(db: RelationDBAccess): void {
     `CREATE INDEX IF NOT EXISTS idx_agent_dag_plan_id ON orchestration_agent_dag(plan_id)`,
     `CREATE INDEX IF NOT EXISTS idx_agent_dag_from ON orchestration_agent_dag(from_agent_id)`,
     `CREATE INDEX IF NOT EXISTS idx_agent_dag_to ON orchestration_agent_dag(to_agent_id)`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_dag_edge ON orchestration_agent_dag(from_agent_id, to_agent_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_dag_edge_plan ON orchestration_agent_dag(plan_id, from_agent_id, to_agent_id)`,
     `CREATE TABLE IF NOT EXISTS orchestration_agent_dag_record (
       id TEXT PRIMARY KEY NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,
       plan_id TEXT NOT NULL UNIQUE, total_agent_count INTEGER NOT NULL,

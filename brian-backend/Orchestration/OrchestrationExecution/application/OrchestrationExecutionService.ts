@@ -175,33 +175,76 @@ export class OrchestrationExecutionService {
       }
     }
 
+    // ===== 原始实现（保留参考）：直接插入所有边，跨 plan 复用同一对 Agent 时可能触发唯一索引冲突 =====
+    // const agentEdges: AgentEdge[] = [];
+    // for (const edge of edges) {
+    //   const fromAgentId = taskAgentMap[edge.from_task_id];
+    //   const toAgentId = taskAgentMap[edge.to_task_id];
+    //   if (fromAgentId && toAgentId) {
+    //     const edgeId = IdGenerator.generate();
+    //     const edgeNow = IdGenerator.now();
+    //
+    //     const insInput = Object.assign(new InsertDBInput(), {
+    //       table: ORCHESTRATION_AGENT_DAG_TABLE,
+    //       data: [
+    //         { field: 'id', value: edgeId },
+    //         { field: 'created', value: edgeNow },
+    //         { field: 'updated', value: edgeNow },
+    //         { field: 'plan_id', value: plan_id },
+    //         { field: 'from_agent_id', value: fromAgentId },
+    //         { field: 'to_agent_id', value: toAgentId },
+    //       ] as DataObject[],
+    //     });
+    //     await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    //
+    //     agentEdges.push({
+    //       from_agent_id: fromAgentId,
+    //       to_agent_id: toAgentId,
+    //       data_dependency: `task_${edge.from_task_id} → task_${edge.to_task_id}`,
+    //     });
+    //   }
+    // }
+
+    // ===== 修改后实现：按 plan 去重后再落库，同一 plan 内重复边跳过，避免唯一索引冲突 =====
+    const existingEdgeRows = this.relationDb.queryRaw<{ from_agent_id: string; to_agent_id: string }>(
+      `SELECT from_agent_id, to_agent_id FROM ${ORCHESTRATION_AGENT_DAG_TABLE} WHERE plan_id = ?`,
+      [plan_id],
+    );
+    const existingEdgeSet = new Set<string>(
+      existingEdgeRows.map((r) => `${r.from_agent_id}->${r.to_agent_id}`),
+    );
+
     const agentEdges: AgentEdge[] = [];
     for (const edge of edges) {
       const fromAgentId = taskAgentMap[edge.from_task_id];
       const toAgentId = taskAgentMap[edge.to_task_id];
-      if (fromAgentId && toAgentId) {
-        const edgeId = IdGenerator.generate();
-        const edgeNow = IdGenerator.now();
+      if (!fromAgentId || !toAgentId) continue;
 
-        const insInput = Object.assign(new InsertDBInput(), {
-          table: ORCHESTRATION_AGENT_DAG_TABLE,
-          data: [
-            { field: 'id', value: edgeId },
-            { field: 'created', value: edgeNow },
-            { field: 'updated', value: edgeNow },
-            { field: 'plan_id', value: plan_id },
-            { field: 'from_agent_id', value: fromAgentId },
-            { field: 'to_agent_id', value: toAgentId },
-          ] as DataObject[],
-        });
-        await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+      const edgeKey = `${fromAgentId}->${toAgentId}`;
+      if (existingEdgeSet.has(edgeKey)) continue;
+      existingEdgeSet.add(edgeKey);
 
-        agentEdges.push({
-          from_agent_id: fromAgentId,
-          to_agent_id: toAgentId,
-          data_dependency: `task_${edge.from_task_id} → task_${edge.to_task_id}`,
-        });
-      }
+      const edgeId = IdGenerator.generate();
+      const edgeNow = IdGenerator.now();
+
+      const insInput = Object.assign(new InsertDBInput(), {
+        table: ORCHESTRATION_AGENT_DAG_TABLE,
+        data: [
+          { field: 'id', value: edgeId },
+          { field: 'created', value: edgeNow },
+          { field: 'updated', value: edgeNow },
+          { field: 'plan_id', value: plan_id },
+          { field: 'from_agent_id', value: fromAgentId },
+          { field: 'to_agent_id', value: toAgentId },
+        ] as DataObject[],
+      });
+      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+
+      agentEdges.push({
+        from_agent_id: fromAgentId,
+        to_agent_id: toAgentId,
+        data_dependency: `task_${edge.from_task_id} → task_${edge.to_task_id}`,
+      });
     }
 
     const agentDag: AgentDAG = {

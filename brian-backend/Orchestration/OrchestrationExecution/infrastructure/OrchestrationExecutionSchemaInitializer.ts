@@ -52,8 +52,11 @@ export class OrchestrationExecutionSchemaInitializer {
       'CREATE INDEX IF NOT EXISTS idx_agent_dag_to ON orchestration_agent_dag(to_agent_id)',
     );
 
+    // 迁移：原全局唯一索引 (from_agent_id, to_agent_id) 在跨 plan 复用同一对 Agent 时
+    // 插入边会触发 UNIQUE constraint，现改为按 plan 作用域 (plan_id, from_agent_id, to_agent_id)。
+    this.relationDb.executeRaw('DROP INDEX IF EXISTS idx_agent_dag_edge');
     this.relationDb.executeRaw(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_dag_edge ON orchestration_agent_dag(from_agent_id, to_agent_id)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_dag_edge_plan ON orchestration_agent_dag(plan_id, from_agent_id, to_agent_id)',
     );
 
     this.relationDb.executeRaw(`
