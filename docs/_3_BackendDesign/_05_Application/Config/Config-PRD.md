@@ -532,3 +532,21 @@ Config Application 同时作为 Base 层资源（LLM、Soul、Skill、MCP、Prom
 | Skill 管理 | Skill 管理代理接口 | 增删改查 Skill |
 | MCP 管理 | MCP 管理代理接口 | 安装/启停/卸载 MCP |
 | Prompt 模板管理 | Prompt 模板管理代理接口 | 增删改查 Prompt 模板 |
+
+## 7. 变更记录
+
+### [2026-08-19] 修复「Agent 重新评估概率」配置归属（agent_builder → agent_library）
+
+**变更原因**：配置中心「Agent 配置 > 构建参数」中的 `agent_builder.regen_rate` 是无效配置——`agent_builder_config` 表无 `regen_rate` 列、`configAgentBuilder` 与 `routeUpdateConfig` 均不处理该字段（保存被静默丢弃），且 AgentBuilder 业务层从不读取。实际生效的"直接复用概率"由 `AgentLibraryService.matchAgent` 读取 `agent_library_config` 表的 `regen_rate`。
+
+**修改的方法**：
+- `configRegistrations.ts` — 删除 `agent_builder.regen_rate` 注册；新增 `agent_library.regen_rate` / `agent_library.similarity_threshold` / `agent_library.prompt_template_id` / `agent_library.max_agent_count` 注册。
+- `ConfigService.routeUpdateConfig()` — 原始代码：`agent_library.` 分支透传 `{ config_key, value }`，与 `configAgentLibrary` 的字段（`regen_rate` 等）不匹配导致更新无效；改为：按前缀将 `config_key` 映射为对应 input 字段后调用 `configAgentLibrary`。
+
+**影响的端点**：
+- `PUT /api/config`（`agent_library.regen_rate` 等）— 之前静默无效，现在可正常持久化并校验 0-100。
+- `GET /api/config` 配置树 — `agent_builder.regen_rate` 条目移除，新增 `agent_library.*` 条目。
+
+**可能存在的问题**：
+- 已存在的 `config_registry` 历史数据不受影响（注册表为内存静态定义，不写表）。
+- 前端新增「Agent 库参数」页承载 `agent_library.*`（`ConfigView.vue` 导航）。

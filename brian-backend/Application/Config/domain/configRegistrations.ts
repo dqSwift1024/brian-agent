@@ -257,7 +257,14 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- AgentBuilder ---
   agent('agent_builder', 'basic', 'task_analysis_prompt_template_id', '任务分析 Prompt', 'STRING', '', '分析任务特征所用的 Prompt 模板'),
   agent('agent_builder', 'basic', 'auto_optimize', '自动优化构建', 'BOOLEAN', true, '是否在使用中自动优化 Agent 组装'),
-  agent('agent_builder', 'basic', 'regen_rate', 'Agent 重新评估概率（0-100）', 'INT', 75, '1-该值 为第1层算法匹配成功后的直接复用概率'),
+
+  // --- AgentLibrary ---
+  // 注意：Agent 复用/重新评估概率属于 AgentLibrary（agent_library_config 表），
+  // 由 AgentLibraryService.matchAgent 的第一层算法匹配复用判定读取，勿挂到 agent_builder。
+  agent('agent_library', 'basic', 'regen_rate', 'Agent 重新评估概率（0-100）', 'INT', 75, '1-该值 为第1层算法匹配成功后的直接复用概率'),
+  agent('agent_library', 'basic', 'similarity_threshold', 'Agent 复用相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
+  agent('agent_library', 'basic', 'prompt_template_id', 'Agent 匹配 Prompt', 'STRING', '', '用于 Agent 匹配排名'),
+  agent('agent_library', 'basic', 'max_agent_count', '最大 Agent 保留数量', 'INT', 100, '超过此数量后触发老化淘汰'),
 
   // --- AgentExecution ---
   agent('agent_execution', 'basic', 'think_prompt_template_id', 'Think Prompt', 'STRING', '', 'Worker Think 阶段 Prompt 模板'),

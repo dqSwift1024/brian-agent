@@ -1326,7 +1326,11 @@ export class ConfigService {
       return;
     }
     if (prefix.startsWith('agent_library.')) {
-      const input = { config_key: configKey, value } as any;
+      const input: any = {};
+      if (prefix.startsWith('agent_library.regen_rate')) input.regen_rate = value;
+      else if (prefix.startsWith('agent_library.similarity_threshold')) input.similarity_threshold = value;
+      else if (prefix.startsWith('agent_library.prompt_template_id')) input.prompt_template_id = value as string;
+      else if (prefix.startsWith('agent_library.max_agent_count')) input.max_agent_count = value as number;
       const output: any = {};
       await this.agentLibrary.configAgentLibrary(input, {} as any, output);
       return;

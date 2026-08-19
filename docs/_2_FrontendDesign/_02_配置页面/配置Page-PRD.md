@@ -200,7 +200,20 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 | 任务分析 Prompt 模板 | Ref | — | 分析任务特征所用的 Prompt 模板 |
 | 自动优化构建 | BOOLEAN | true | 是否在使用中自动优化 Agent 组装（实际优化由 EvolutorAgent 评估后触发） |
 
-### 3.4 Agent 执行
+### 3.4 Agent 库（复用参数）
+
+Agent 库负责任务与历史 Agent 的匹配复用（`AgentLibraryService.matchAgent`），"重新评估概率"等参数归属此处。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| Agent 重新评估概率 | INT | 75 | 0-100；1-该值 为第 1 层算法匹配成功后的直接复用概率，值越大越倾向于重新评估 |
+| Agent 复用相似度阈值 | DOUBLE | 0.7 | 第 1 层算法匹配与第 2 层 LLM 打分阈值（0.0-1.0） |
+| Agent 匹配 Prompt | Ref | — | 用于 Agent 匹配排名的 Prompt 模板 |
+| 最大 Agent 保留数量 | INT | 100 | 超过此数量后触发老化淘汰 |
+
+> 注：该参数原误挂在 `agent_builder.regen_rate`（构建参数页），但 AgentBuilder 模块无对应列且业务不读取，已移除；正确的归属为 `agent_library.regen_rate`。
+
+### 3.5 Agent 执行
 
 控制 Agent 运行时的行为参数。
 
@@ -212,7 +225,7 @@ Agent 构建器负责根据任务自动分析并组装 Agent。
 | 默认最大迭代次数 | INT | 3 | 单次 Agent 执行的最大思考-行动循环数 |
 | 异步 Worker 轮询间隔 | INT | 1000 | 毫秒 |
 
-### 3.5 专用 Agent 配置
+### 3.6 专用 Agent 配置
 
 #### Planner Agent（规划）
 
@@ -697,6 +710,7 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 │   ├── Agent 实例
 │   ├── 执行策略
 │   ├── 构建参数
+│   ├── Agent 库参数
 │   ├── 执行参数
 │   ├── Planner Agent
 │   ├── Writer Agent

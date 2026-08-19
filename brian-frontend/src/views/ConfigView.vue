@@ -61,6 +61,7 @@ const navSections: NavSection[] = [
       { key: 'agent-instance', label: 'Agent 实例', icon: Library, type: 'entity', entityType: 'agent' },
       { key: 'agent-strategy', label: '执行策略', icon: GitBranch, type: 'entity', entityType: 'strategy' },
       { key: 'agent-builder', label: '构建参数', icon: Briefcase, type: 'params', configModule: 'agent_builder', configCategories: ['basic'] },
+      { key: 'agent-library', label: 'Agent 库参数', icon: Library, type: 'params', configModule: 'agent_library', configCategories: ['basic'] },
       { key: 'agent-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'agent_execution', configCategories: ['basic'] },
       { key: 'agent-planner', label: 'Planner Agent', icon: ClipboardList, type: 'params', configModule: 'planner_agent', configCategories: ['basic'] },
       { key: 'agent-writer', label: 'Writer Agent', icon: PenLine, type: 'params', configModule: 'writer_agent', configCategories: ['basic'] },

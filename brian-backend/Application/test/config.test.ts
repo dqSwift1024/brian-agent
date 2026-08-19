@@ -588,6 +588,29 @@ describe('ConfigService', () => {
       expect(llmCore.configLLMCore).toHaveBeenCalled();
     });
 
+    it('TC-CFG-097b: agent_library.regen_rate routes to configAgentLibrary and persists', async () => {
+      const updInput = new UpdateConfigInput();
+      updInput.config_key = 'agent_library.regen_rate';
+      updInput.value = 50;
+      const result = await service.updateConfig(updInput, ctx(), new UpdateConfigOutput());
+      expect(result).toBe(true);
+
+      const getInput = new GetConfigItemInput();
+      getInput.config_key = 'agent_library.regen_rate';
+      const getOutput = new GetConfigItemOutput();
+      await service.getConfigItem(getInput, ctx(), getOutput);
+      expect(getOutput.config_item.config_name).toBe('Agent 重新评估概率（0-100）');
+      expect((getOutput.config_item.current_value as any)?.regen_rate).toBe(50);
+    });
+
+    it('TC-CFG-097c: agent_library.regen_rate out-of-range value is rejected', async () => {
+      const updInput = new UpdateConfigInput();
+      updInput.config_key = 'agent_library.regen_rate';
+      updInput.value = 150;
+      await expect(service.updateConfig(updInput, ctx(), new UpdateConfigOutput()))
+        .rejects.toThrow(ValidationError);
+    });
+
     it('TC-CFG-098: writer_agent. prefix routes to writerAgent.configWriterAgent', async () => {
       vi.spyOn(writerAgent, 'configWriterAgent').mockResolvedValue(true);
       const key = 'writer_agent.default_style';
