@@ -53,6 +53,8 @@ export class ChatService {
     private readonly streamAccess?: StreamAccess,
   ) {}
 
+  // ===== 原始 submitWork 与 openChatStream 实现（保留作为参考） =====
+  /*
   async submitWork(
     input: SubmitWorkInput,
     context: ChatContext,
@@ -73,6 +75,104 @@ export class ChatService {
     if (overflowOutput.is_overflowed) {
       throw new ValidationError(`Session ${input.session_id} has exceeded message limit`);
     }
+
+    const workId = IdGenerator.generate();
+    const interactId = IdGenerator.generate();
+
+    let userProfile: Record<string, unknown> | undefined;
+    try {
+      const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
+      await this.writerAgent.getUserProfile(
+        Object.assign(new (await this.getWriterProfileInputClass())(), {
+          session_id: input.session_id,
+        }),
+        new (await this.getWriterAgentContextClass())(),
+        profileOut,
+      );
+      userProfile = profileOut.user_profile;
+    } catch {
+      / * best-effort * /
+    }
+
+    const citingMsgIds = Array.from(new Set([
+      ...(input.citing_msg_ids ?? []),
+      ...(input.selected_msg_ids ?? []),
+    ]));
+
+    const rwInput = Object.assign(new ReceiveWorkInput(), {
+      session_id: input.session_id,
+      user_query: input.msg_content,
+      force_orchestration_strategy: input.force_orchestration_strategy,
+      user_profile: userProfile,
+      citing_msg_ids: citingMsgIds,
+      selected_msg_ids: input.selected_msg_ids ?? [],
+    });
+    const rwOutput = new ReceiveWorkOutput();
+    const rwContext = Object.assign(new OrchestrationEntryContext(), {
+      session_id: input.session_id,
+      work_id: workId,
+      interact_id: interactId,
+    });
+
+    let workOk = false;
+    try {
+      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
+    } catch (err: unknown) {
+      this.logger?.error?.('submitWork: orchestration failed', {
+        session_id: input.session_id,
+        work_id: workId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      output.work_id = workId;
+      output.interact_id = interactId;
+      return false;
+    }
+
+    const finalResponse = rwOutput.final_response || '';
+
+    try {
+      const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
+      await this.evolutorAgent.getEvaluation(
+        Object.assign(new (await this.getEvalInputClass())(), {
+          conditions: [{ field: 'work_id', operator: 'EQ', value: workId }],
+        }),
+        new (await this.getEvolutorAgentContextClass())(),
+        evalOut,
+      );
+    } catch {
+      / * best-effort * /
+    }
+
+    output.work_id = workId;
+    output.interact_id = interactId;
+    return workOk;
+  }
+  */
+
+  // ===== 修改后的 submitWork 与 openChatStream 实现：增加第一条消息自动生成会话名称（50字截断，若已有名称则不覆盖） =====
+  async submitWork(
+    input: SubmitWorkInput,
+    context: ChatContext,
+    output: SubmitWorkOutput,
+  ): Promise<boolean> {
+    if (!input.session_id) {
+      throw new ValidationError('session_id is required');
+    }
+    if (!input.msg_content || input.msg_content.trim() === '') {
+      throw new ValidationError('msg_content cannot be empty');
+    }
+
+    const overflowInput = Object.assign(new CheckSessionOverflowInput(), {
+      session_id: input.session_id,
+    });
+    const overflowOutput = new CheckSessionOverflowOutput();
+    await this.checkSessionOverflow(overflowInput, context, overflowOutput);
+    if (overflowOutput.is_overflowed) {
+      throw new ValidationError(`Session ${input.session_id} has exceeded message limit`);
+    }
+
+    // 自动判断并生成会话名称（若尚未有特定名称，以第一条消息做50字符截断）
+    await this.autoGenerateSessionTitleIfEmpty(input.session_id, input.msg_content);
 
     const workId = IdGenerator.generate();
     const interactId = IdGenerator.generate();
@@ -177,6 +277,9 @@ export class ChatService {
       output.events = [errEvent];
       return true;
     }
+
+    // 自动判断并生成会话名称（若尚未有特定名称，以第一条消息做50字符截断）
+    await this.autoGenerateSessionTitleIfEmpty(input.session_id, input.msg_content);
 
     const events: SSEEvent[] = [];
     const emit = (event: string, data: Record<string, unknown>) => {
@@ -1017,6 +1120,37 @@ export class ChatService {
 
     output.config = outConfig;
     return true;
+  }
+
+  private async autoGenerateSessionTitleIfEmpty(sessionId: string, msgContent: string): Promise<void> {
+    try {
+      const selInput = Object.assign(new SelectOneDBInput(), {
+        query_param: {
+          table: 'chat_session',
+          conditions: [
+            { field: 'session_id', operator: Operator.EQ, value: sessionId },
+          ] as Condition[],
+        },
+      });
+      const selOutput = Object.assign(new SelectOneDBOutput(), {});
+      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+
+      if (selOutput.row) {
+        const currentTitle = (selOutput.row.session_title as string) ?? '';
+        if (!currentTitle || currentTitle.trim() === '' || currentTitle.trim() === '新会话') {
+          const autoTitle = msgContent.trim().slice(0, 50);
+          if (autoTitle) {
+            const updInput = Object.assign(new UpdateSessionTitleInput(), {
+              session_id: sessionId,
+              session_title: autoTitle,
+            });
+            await this.updateSessionTitle(updInput, new ChatContext(), new UpdateSessionTitleOutput());
+          }
+        }
+      }
+    } catch {
+      /* best effort */
+    }
   }
 
   private async checkSessionExists(sessionId: string): Promise<boolean> {

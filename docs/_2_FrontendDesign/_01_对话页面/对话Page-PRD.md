@@ -147,9 +147,10 @@
 
 -   **触发方式**：右上角按钮 Hover 显示，Click 展开（宽度 300px，右侧滑入覆盖层）。
 -   **核心操作**：
-    -   搜索：调用 `searchSession(keyword)`，支持模糊匹配。
+    -   搜索：调用 `searchSession(keyword)`，支持模糊匹配（匹配会话名称 `sessionTitle` 与消息内容）。
     -   新建：调用 `createSession()`，成功后自动切换并关闭面板。
     -   删除：单条删除或批量勾选删除，需二次确认。
+    -   重命名：会话条目提供编辑按钮（Edit3 图标），点击进入内联编辑，回车或点击确认（Check）调用 `chatApi.updateTitle`（`PUT /api/chat/session/:sessionId/title`）保存，X 取消。名称优先展示 `sessionTitle`，为空回退 `lastMessage` 或「新会话」。
 -   **溢出保护**：切换会话前调用 `checkSessionOverflow()`，超限则 Toast 提示并阻断操作。
 -   **会话切换清理**：切换会话时，清空当前 Block 列表并重新初始化流解析器，避免跨会话 Block 状态污染。
 -   **刷新恢复**：页面挂载（onMounted）时，若 localStorage 存在当前会话 ID，自动调用 `getChatHistory` / `getAgentChain` / `loadExchanges` 恢复历史消息与 ChatMap，刷新后不丢失对话。

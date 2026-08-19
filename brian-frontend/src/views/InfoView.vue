@@ -8,6 +8,7 @@ import {
   Search, Trash2, Plus, ChevronRight, ArrowLeft,
   Folder, X, CheckSquare, Square, FileText,
   UserRound, History, RefreshCw, Sparkles, Loader2,
+  Edit3, Check,
 } from '@lucide/vue'
 import { chatApi, memoryApi, libraryApi, userProfileApi, visualizationApi } from '@/api'
 import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData, MessageGraphNode, MessageGraphEdge } from '@/api/types'
@@ -54,6 +55,28 @@ const historyEndTime = ref('')
 const chatList = ref<ChatSession[]>([])
 const loadingHistory = ref(false)
 const selectedSessions = ref<Set<string>>(new Set())
+const editingSessionId = ref<string | null>(null)
+const editingTitle = ref('')
+
+function startEditTitle(session: ChatSession) {
+  editingSessionId.value = session.sessionId
+  editingTitle.value = session.sessionTitle || session.lastMessage || '新会话'
+}
+
+async function saveSessionTitle(sessionId: string) {
+  const newTitle = editingTitle.value.trim()
+  if (!newTitle) return
+  try {
+    const res = await chatApi.updateTitle(sessionId, newTitle)
+    const found = chatList.value.find(c => c.sessionId === sessionId)
+    if (found) {
+      found.sessionTitle = res.session_title
+    }
+  } catch { /* ignore */ }
+  finally {
+    editingSessionId.value = null
+  }
+}
 
 async function loadHistory() {
   loadingHistory.value = true
@@ -1166,8 +1189,26 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
               </button>
               <div class="flex-1 min-w-0">
                 <span class="text-xs text-apple-gray-400">{{ formatTime(item.lastTime) }}</span>
-                <p class="text-sm font-medium truncate mt-1">{{ item.lastMessage || '新会话' }}</p>
-                <p class="text-xs text-apple-gray-400 mt-1 truncate">{{ (item.lastMessage || '').slice(0, 50) }}</p>
+                <div v-if="editingSessionId === item.sessionId" class="flex items-center gap-2 mt-1" @click.stop>
+                  <input
+                    v-model="editingTitle"
+                    class="px-2 py-1 text-sm rounded bg-white dark:bg-apple-gray-800 border border-brian-blue focus:outline-none focus:ring-1 focus:ring-brian-blue"
+                    @keyup.enter="saveSessionTitle(item.sessionId)"
+                  />
+                  <button class="p-1 rounded text-brian-blue hover:bg-brian-blue/10" title="保存" @click="saveSessionTitle(item.sessionId)">
+                    <Check :size="14" />
+                  </button>
+                  <button class="p-1 rounded text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" title="取消" @click="editingSessionId = null">
+                    <X :size="14" />
+                  </button>
+                </div>
+                <div v-else class="flex items-center gap-2 mt-1 group">
+                  <p class="text-sm font-medium truncate flex-1">{{ item.sessionTitle || item.lastMessage || '新会话' }}</p>
+                  <button class="p-1 rounded text-apple-gray-400 opacity-80 hover:opacity-100 hover:text-brian-blue hover:bg-brian-blue/10 transition-all" title="修改会话名称" @click.stop="startEditTitle(item)">
+                    <Edit3 :size="14" />
+                  </button>
+                </div>
+                <p v-if="item.lastMessage && item.lastMessage !== item.sessionTitle" class="text-xs text-apple-gray-400 mt-1 truncate">{{ item.lastMessage }}</p>
               </div>
             </div>
             <button class="ml-3 p-1.5 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" @click.stop="requestDeleteSession(item.sessionId)">

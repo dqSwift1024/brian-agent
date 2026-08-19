@@ -121,12 +121,18 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 
 **功能**：创建一个新的会话
 
-**URL**：`POST /api/chat/session`
+**URL**：`POST /api/chat/create-session`
 
 **入参**：
 - input：CreateSessionInput（继承 Input），包含以下字段：
   - session_title（STRING，可选）：会话标题，不传则默认为"新会话"
 - context：CreateSessionContext（继承 Context）
+
+#### 3.3.1.1. 会话名称自动生成与手动修改规则
+
+1. **自动生成**：当用户在某个会话中发送第一条消息时，若当前会话名称为默认占位名（如"新会话"或为空），系统会自动将会话的第一条消息截断前 50 个字符，作为本会话的名称。
+2. **手动修改**：支持用户通过 `PUT /api/chat/session/:sessionId/title` 接口手动修改会话名称。
+3. **保持规则**：当会话已存在自定义或自动生成的特定名称时，后续消息发送时系统不会自动再去生成或覆盖会话名称。
 - output：CreateSessionOutput（继承 Output），承载返回内容：
   - session_id：新创建的会话 ID
   - session_title：会话标题

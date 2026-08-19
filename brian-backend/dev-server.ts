@@ -1940,6 +1940,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
 
       // ===== Chat Routes =====
+      // ===== 原始代码（保留作为参考）：未显式透传 sessionTitle 字段 =====
+      /*
       } else if (method === 'GET' && pathname === '/api/chat/list') {
         const input = Object.assign(new SearchSessionInput(), {
           keyword: params.get('keyword') || undefined,
@@ -1949,10 +1951,32 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new SearchSessionOutput();
         const context = new ChatContext();
         await ctx.chatAccess.searchSession(input, context, output);
-        // 后端 searchSession 返回 snake_case，前端 ChatSession 类型使用 camelCase，此处统一转换。
         sendJson(res, 200, {
           sessions: (output.sessions || []).map((s) => ({
             sessionId: s.session_id,
+            lastMessage: s.last_message || s.session_title || '',
+            lastTime: s.last_message_time,
+            messageCount: s.message_count,
+          })),
+          total: output.total,
+        });
+      */
+      // ===== 修改后代码：增加透传 sessionTitle 字段供前端统一使用会话名称 =====
+      } else if (method === 'GET' && pathname === '/api/chat/list') {
+        const input = Object.assign(new SearchSessionInput(), {
+          keyword: params.get('keyword') || undefined,
+          start_time: params.get('start_time') ? parseInt(params.get('start_time')!, 10) : undefined,
+          end_time: params.get('end_time') ? parseInt(params.get('end_time')!, 10) : undefined,
+        });
+        const output = new SearchSessionOutput();
+        const context = new ChatContext();
+        await ctx.chatAccess.searchSession(input, context, output);
+        sendJson(res, 200, {
+          sessions: (output.sessions || []).map((s) => ({
+            sessionId: s.session_id,
+            session_id: s.session_id,
+            sessionTitle: s.session_title || '',
+            session_title: s.session_title || '',
             lastMessage: s.last_message || s.session_title || '',
             lastTime: s.last_message_time,
             messageCount: s.message_count,
@@ -2232,6 +2256,15 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
         await ctx.chatAccess.createSession(input, context, output);
         sendJson(res, 200, { session_id: output.session_id, session_title: output.session_title, created: output.created });
+
+      } else if ((method === 'PUT' || method === 'POST') && /\/api\/chat\/session\/[^/]+\/title$/.test(pathname)) {
+        const sid = pathname.split('/api/chat/session/')[1].split('/')[0];
+        const newTitle = body.title || body.session_title || '';
+        const input = Object.assign(new UpdateSessionTitleInput(), { session_id: sid, session_title: newTitle });
+        const output = new UpdateSessionTitleOutput();
+        const context = new ChatContext();
+        await ctx.chatAccess.updateSessionTitle(input, context, output);
+        sendJson(res, 200, { success: true, session_id: sid, session_title: newTitle });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/dag')) {
         const sessionId = params.get('sessionId') || params.get('session_id') || '';

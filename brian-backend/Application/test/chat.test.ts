@@ -1047,6 +1047,51 @@ describe('ChatService', () => {
 
       await expect(service.updateSessionTitle(input, new ChatContext(), output)).rejects.toThrow(NotFoundError);
     });
+
+    it('TC-CHAT-078: First message automatically sets session_title with max 50 chars truncation', async () => {
+      const createOut = new CreateSessionOutput();
+      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+
+      const longMsg = '这是一个超过五十个字符测试消息的超级长的文本输入内容，用来测试系统是否能够自动截断为前五十个字符并成功设置为会话名称！后面还有很多很多废话内容……';
+      const submitIn = Object.assign(new SubmitWorkInput(), {
+        session_id: createOut.session_id,
+        msg_content: longMsg,
+      });
+      const submitOut = new SubmitWorkOutput();
+      await service.submitWork(submitIn, new ChatContext(), submitOut);
+
+      const detailIn = Object.assign(new GetSessionDetailInput(), { session_id: createOut.session_id });
+      const detailOut = new GetSessionDetailOutput();
+      await service.getSessionDetail(detailIn, new ChatContext(), detailOut);
+
+      expect(detailOut.session.session_title).toBe(longMsg.slice(0, 50));
+      expect(detailOut.session.session_title.length).toBe(50);
+    });
+
+    it('TC-CHAT-079: Subsequent messages do not overwrite existing session_title', async () => {
+      const createOut = new CreateSessionOutput();
+      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+
+      const firstMsg = '第一条消息';
+      await service.submitWork(
+        Object.assign(new SubmitWorkInput(), { session_id: createOut.session_id, msg_content: firstMsg }),
+        new ChatContext(),
+        new SubmitWorkOutput(),
+      );
+
+      const secondMsg = '第二条消息不应该覆盖标题';
+      await service.submitWork(
+        Object.assign(new SubmitWorkInput(), { session_id: createOut.session_id, msg_content: secondMsg }),
+        new ChatContext(),
+        new SubmitWorkOutput(),
+      );
+
+      const detailIn = Object.assign(new GetSessionDetailInput(), { session_id: createOut.session_id });
+      const detailOut = new GetSessionDetailOutput();
+      await service.getSessionDetail(detailIn, new ChatContext(), detailOut);
+
+      expect(detailOut.session.session_title).toBe('第一条消息');
+    });
   });
 
   describe('checkSessionOverflow', () => {

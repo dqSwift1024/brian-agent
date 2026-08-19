@@ -52,6 +52,11 @@ export const chatApi = {
     request<{ session: { session_id: string } }>(`/chat/session/${encodeURIComponent(sessionId)}`),
   deleteSession: (sessionId: string) =>
     request<void>(`/chat/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+  updateTitle: (sessionId: string, title: string) =>
+    request<{ success: boolean; session_id: string; session_title: string }>(`/chat/session/${encodeURIComponent(sessionId)}/title`, {
+      method: 'PUT',
+      body: JSON.stringify({ title }),
+    }),
   search: (keyword: string) =>
     request<{ sessions: ChatSession[] }>(`/chat/search?keyword=${encodeURIComponent(keyword)}`).then(r => r.sessions),
   pinMessage: (infoId: string) =>

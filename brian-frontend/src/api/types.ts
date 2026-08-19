@@ -192,6 +192,7 @@ export interface ChatMessage {
 
 export interface ChatSession {
   sessionId: string
+  sessionTitle?: string
   lastMessage: string
   lastTime: number
   messageCount: number

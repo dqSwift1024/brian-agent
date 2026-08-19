@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare } from '@lucide/vue'
+import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare, Edit3, Check } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
 import { useSessionStore } from '@/stores/session'
+import { chatApi } from '@/api'
+import type { ChatSession } from '@/api/types'
 
 const sessionStore = useSessionStore()
 const showSidebar = ref(false)
@@ -13,6 +15,28 @@ const showSearch = ref(false)
 const searchQuery = ref('')
 const selectedSessions = ref<Set<string>>(new Set())
 const overflowWarning = ref(false)
+const editingSessionId = ref<string | null>(null)
+const editingTitle = ref('')
+
+function startEditTitle(chat: ChatSession) {
+  editingSessionId.value = chat.sessionId
+  editingTitle.value = chat.sessionTitle || chat.lastMessage || '新会话'
+}
+
+async function saveSessionTitle(sessionId: string) {
+  const newTitle = editingTitle.value.trim()
+  if (!newTitle) return
+  try {
+    const res = await chatApi.updateTitle(sessionId, newTitle)
+    const found = sessionStore.chatList.find(c => c.sessionId === sessionId)
+    if (found) {
+      found.sessionTitle = res.session_title
+    }
+  } catch { /* ignore */ }
+  finally {
+    editingSessionId.value = null
+  }
+}
 
 onMounted(async () => {
   const sid = sessionStore.currentSessionId
@@ -39,6 +63,7 @@ const filteredChatList = computed(() => {
   if (!searchQuery.value) return sortedChatList.value
   const q = searchQuery.value.toLowerCase()
   return sortedChatList.value.filter(c =>
+    (c.sessionTitle || '').toLowerCase().includes(q) ||
     (c.lastMessage || '').toLowerCase().includes(q)
   )
 })
@@ -179,8 +204,26 @@ function formatTime(ts: number) {
                   </button>
                 </div>
                 <div class="flex items-center justify-between">
-                  <p class="text-sm truncate flex-1">{{ chat.lastMessage || '新会话' }}</p>
-                  <button class="ml-2 p-1 rounded text-apple-gray-300 hover:text-error-red hover:bg-error-red/10 transition-colors flex-shrink-0" @click.stop="handleDeleteSession(chat.sessionId)">
+                  <div v-if="editingSessionId === chat.sessionId" class="flex items-center gap-1 flex-1 min-w-0 mr-2" @click.stop>
+                    <input
+                      v-model="editingTitle"
+                      class="px-2 py-0.5 text-xs rounded bg-white dark:bg-apple-gray-800 border border-brian-blue focus:outline-none w-full"
+                      @keyup.enter="saveSessionTitle(chat.sessionId)"
+                    />
+                    <button class="p-1 rounded text-brian-blue hover:bg-brian-blue/10 flex-shrink-0" title="保存" @click="saveSessionTitle(chat.sessionId)">
+                      <Check :size="12" />
+                    </button>
+                    <button class="p-1 rounded text-apple-gray-400 hover:bg-apple-gray-100 flex-shrink-0" title="取消" @click="editingSessionId = null">
+                      <X :size="12" />
+                    </button>
+                  </div>
+                  <div v-else class="flex items-center justify-between flex-1 min-w-0 mr-2">
+                    <p class="text-sm truncate flex-1">{{ chat.sessionTitle || chat.lastMessage || '新会话' }}</p>
+                    <button class="p-1 rounded text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10 flex-shrink-0 ml-1" title="修改名称" @click.stop="startEditTitle(chat)">
+                      <Edit3 :size="12" />
+                    </button>
+                  </div>
+                  <button class="ml-1 p-1 rounded text-apple-gray-300 hover:text-error-red hover:bg-error-red/10 transition-colors flex-shrink-0" title="删除会话" @click.stop="handleDeleteSession(chat.sessionId)">
                     <Trash2 :size="14" />
                   </button>
                 </div>

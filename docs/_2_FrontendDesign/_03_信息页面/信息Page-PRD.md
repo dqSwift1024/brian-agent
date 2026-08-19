@@ -136,9 +136,16 @@
 ### 7.1 展示
 
 - 数据来源：`GET /api/chat/list?userId=...&keyword=...&start_time=...&end_time=...`（后端 `ChatService.searchSession`），按 `lastTime`（最后一条消息时间戳）倒序渲染。
-- 每条会话展示：最后消息时间（`lastTime`）、最后一条消息内容预览（`lastMessage`）、消息数（`messageCount`）。
-- 后端返回字段为 camelCase（`sessionId / lastMessage / lastTime / messageCount`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
+- 每条会话展示：最后消息时间（`lastTime`）、会话名称（`sessionTitle`）、最后一条消息内容预览（`lastMessage`）、消息数（`messageCount`）。
+- 后端返回字段为 camelCase（`sessionId / sessionTitle / lastMessage / lastTime / messageCount`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
 - 「历史」页签以**会话（session）**为单位展示，会话内容来自 `info_raw` 表中的消息记录（`info_type` 含 REQUEST / RESPONSE / THINK / SKILL / MCP / ACT / REFLECT，其中用户问答即 REQUEST + RESPONSE）；「记忆」页签则以**单条 info** 为单位展示。
+
+### 7.1.1 会话名称（自动生成 + 手动修改）
+
+- **自动生成**：用户在某会话发送第一条消息时，若该会话名称为默认占位名（空或「新会话」），后端自动将第一条消息截断前 50 个字符作为会话名称。
+- **锁名规则**：会话已存在特定名称（自动生成或用户手动设置）时，后续消息不会自动覆盖或重新生成名称。
+- **手动修改**：历史 Tab 每条会话卡片提供编辑按钮（Edit3 图标），点击进入内联编辑输入框，回车或点击确认（Check）调用 `PUT /api/chat/session/:sessionId/title` 保存；提供取消（X）退出编辑。
+- **展示优先级**：名称优先显示 `sessionTitle`，为空时回退显示 `lastMessage` 或「新会话」；会话名称下另行展示最后一条消息内容摘要。
 
 ### 7.2 搜索
 
@@ -158,6 +165,25 @@
 ---
 
 ## 8. 变更记录
+
+### [2026-08-19] 历史会话 Tab：会话名称自动生成（50 字截断）与手动修改
+
+**变更原因**：使每个会话能以第一条消息前 50 个字符作为初始名称，支持用户手动修改会话名称，且已有名称时系统不再自动覆盖生成。
+
+**修改的方法**：
+- `ChatService.submitWork` / `ChatService.openChatStream` — 用户提交首条消息后触发 `autoGenerateSessionTitleIfEmpty`：仅当 `session_title` 为空或「新会话」时，取 `msgContent.trim().slice(0, 50)` 更新；已有名称不覆盖。
+- `dev-server.ts` — `GET /api/chat/list` 透传 `sessionTitle`（及 `session_title`）字段；新增 `PUT/POST /api/chat/session/:sessionId/title` 路由，调用 `chatAccess.updateSessionTitle`。
+- 前端 `InfoView.vue` — 历史 Tab 会话卡片展示会话名称（`sessionTitle` 优先，回退 `lastMessage`/「新会话」），新增内联编辑（Edit3 图标）与保存（Check）/取消（X）。
+- 前端 `ChatView.vue` — 会话管理侧边栏支持同一套名称展示与内联重命名。
+- 前端 `api/types.ts` — `ChatSession` 增加 `sessionTitle?` 字段；`api/index.ts` 增加 `chatApi.updateTitle`。
+
+**影响的端点**：
+- `GET /api/chat/list` — 返回新增 `sessionTitle` 字段。
+- `POST /api/chat/send` / `POST /api/chat/stream` — 首条消息时自动设置会话名称。
+- `PUT /api/chat/session/:sessionId/title` — 新增修改会话名称接口。
+
+**可能存在的问题**：
+- 自动命名以用户消息原文截断，不含 AI 提炼摘要，长句截断处可能不完整。
 
 ### [2026-08-17] 历史会话 Tab：搜索与删除增强
 

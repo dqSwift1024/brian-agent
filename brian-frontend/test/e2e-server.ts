@@ -291,7 +291,21 @@ export function createE2ETestServer(ctx: E2ETestContext): http.Server {
         const output: any = {};
         const context: any = {};
         await ctx.chatAccess.searchSession(input, context, output);
-        sendJson(res, 200, { sessions: output.sessions || [], total: output.total });
+        sendJson(res, 200, {
+          sessions: (output.sessions || []).map((s: any) => ({
+            sessionId: s.session_id,
+            session_id: s.session_id,
+            sessionTitle: s.session_title || '',
+            session_title: s.session_title || '',
+            lastMessage: s.last_message || s.session_title || '',
+            last_message: s.last_message || s.session_title || '',
+            lastTime: s.last_message_time,
+            last_message_time: s.last_message_time,
+            messageCount: s.message_count,
+            message_count: s.message_count,
+          })),
+          total: output.total,
+        });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/history/')) {
         const sessionId = pathname.split('/api/chat/history/')[1];
@@ -351,6 +365,15 @@ export function createE2ETestServer(ctx: E2ETestContext): http.Server {
         const context: any = {};
         await ctx.chatAccess.createSession(input, context, output);
         sendJson(res, 200, { session_id: output.session_id, session_title: output.session_title, created: output.created });
+
+      } else if ((method === 'PUT' || method === 'POST') && /\/api\/chat\/session\/[^/]+\/title$/.test(pathname)) {
+        const sid = pathname.split('/api/chat/session/')[1].split('/')[0];
+        const newTitle = body.title || body.session_title || '';
+        const input: any = { session_id: sid, session_title: newTitle };
+        const output: any = {};
+        const context: any = {};
+        await ctx.chatAccess.updateSessionTitle(input, context, output);
+        sendJson(res, 200, { success: true, session_id: sid, session_title: newTitle });
 
       // ---- Memory Routes ----
       } else if (method === 'GET' && pathname === '/api/memory/list') {
