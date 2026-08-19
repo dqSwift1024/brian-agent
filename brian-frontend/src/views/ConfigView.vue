@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Cpu, Bot, Workflow, AppWindow, Server, Database, Boxes, Table2,
   Heart, Wand2, GitBranch, Brain, GraduationCap, HardDrive,
-  Lightbulb, Library, RefreshCw, ClipboardList, Briefcase, PenLine,
+  Lightbulb, Library, RefreshCw, ClipboardList, Briefcase, PenLine, List,
   Settings, FileText, Network, User, MessageCircle, Sparkles,
   ChevronRight, Trash2, Loader2, Check, AlertCircle,
   CheckSquare, Square,
@@ -12,7 +12,7 @@ import {
   Globe, Key, Plus, Pencil, Download, ExternalLink,
   Eye, EyeOff,
   Search, Monitor, Terminal, MessageSquare, Send,
-  BarChart3, Zap, Plug, Radio, Clock,
+  BarChart3, Zap, Plug, Radio, Clock, GripVertical,
 } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
@@ -398,6 +398,18 @@ const INFO_CREATOR_LABELS: Record<string, string> = {
   SKILL: '技能',
   MCP: 'MCP',
 }
+
+// 上下文构建维度（采集来源）
+const COLLECTION_SOURCE_LABELS: Record<string, string> = {
+  PINNED: '钉住消息',
+  TIMELINE: '时间线消息',
+  TAG_RELATIVE: '标签相关消息',
+  SIMILARITY: '向量相似度消息',
+  KEYWORD: '关键词相关消息',
+  RANDOM: '随机关联消息',
+}
+
+const COLLECTION_SOURCE_OPTIONS = ['PINNED', 'TIMELINE', 'TAG_RELATIVE', 'SIMILARITY', 'KEYWORD', 'RANDOM']
 
 function infoTypeLabel(t: string): string {
   return INFO_TYPE_LABELS[t] ?? t
@@ -835,6 +847,14 @@ function isCronConfig(key: string): boolean {
   return key.endsWith('_cron')
 }
 
+function isInfoTypesConfig(key: string): boolean {
+  return key.endsWith('.info_types')
+}
+
+function isPriorityOrderConfig(key: string): boolean {
+  return key.endsWith('.priority_order')
+}
+
 function isSecondsConfig(key: string): boolean {
   return SECONDS_SUFFIXES.some((s) => key.endsWith(s))
 }
@@ -1004,6 +1024,9 @@ function getConfigDisplayValue(item: ParamItem): string {
   if (item.config_key.endsWith('strategy_id')) {
     return val ? getOrchStrategyLabel(String(val)) : '选择策略'
   }
+  if (isPriorityOrderConfig(item.config_key)) {
+    return formatPriorityOrderValue(val)
+  }
   if (item.config_type === 'ENUM' && val !== undefined && val !== null) {
     return enumLabel(item.config_key, String(val))
   }
@@ -1055,6 +1078,14 @@ function startEditParam(item: ParamItem) {
     cronModalVisible.value = true
     return
   }
+  if (isInfoTypesConfig(item.config_key)) {
+    openInfoTypesModal(item)
+    return
+  }
+  if (isPriorityOrderConfig(item.config_key)) {
+    openPriorityOrderModal(item)
+    return
+  }
   editingParam.value = item
   const val = getConfigPrimitiveValue(item)
   editingParamValue.value = val !== undefined && val !== null ? String(val) : ''
@@ -1080,6 +1111,155 @@ async function saveCronConfig(cron: string) {
   } finally {
     cronModalVisible.value = false
     editingCronItem.value = null
+  }
+}
+
+// ===== 摘要生成信息类型列表弹窗 =====
+const infoTypesModalVisible = ref(false)
+const editingInfoTypesItem = ref<ParamItem | null>(null)
+const infoTypesList = ref<string[]>([])
+const infoTypesSaving = ref(false)
+
+const INFO_TYPE_OPTIONS = Object.keys(INFO_TYPE_LABELS)
+
+function formatInfoTypesValue(value: unknown): string {
+  const raw = value !== undefined && value !== null ? String(value) : ''
+  const types = raw.split(',').map(s => s.trim()).filter(Boolean)
+  if (types.length === 0) return '配置信息类型'
+  return types.map(t => infoTypeLabel(t)).join('、')
+}
+
+function availableInfoTypesFor(currentIndex: number): string[] {
+  const selected = new Set(infoTypesList.value.filter((_, i) => i !== currentIndex))
+  return INFO_TYPE_OPTIONS.filter(t => !selected.has(t))
+}
+
+function openInfoTypesModal(item: ParamItem) {
+  editingInfoTypesItem.value = item
+  const val = getConfigPrimitiveValue(item)
+  const raw = val !== undefined && val !== null ? String(val) : ''
+  const parsed = raw.split(',').map(s => s.trim()).filter(s => s && INFO_TYPE_OPTIONS.includes(s))
+  infoTypesList.value = parsed.length > 0 ? parsed : ['']
+  infoTypesModalVisible.value = true
+}
+
+function closeInfoTypesModal() {
+  infoTypesModalVisible.value = false
+  editingInfoTypesItem.value = null
+  infoTypesList.value = []
+}
+
+function addInfoType() {
+  if (infoTypesList.value.length >= INFO_TYPE_OPTIONS.length) return
+  infoTypesList.value.push('')
+}
+
+function removeInfoType(index: number) {
+  infoTypesList.value.splice(index, 1)
+  if (infoTypesList.value.length === 0) infoTypesList.value = ['']
+}
+
+async function saveInfoTypes() {
+  if (!editingInfoTypesItem.value) return
+  const values = infoTypesList.value.map(s => s.trim()).filter(Boolean)
+  infoTypesSaving.value = true
+  try {
+    await configApi.configItem.update(editingInfoTypesItem.value.config_key, values.join(','))
+    showToast('配置已保存', 'success')
+    closeInfoTypesModal()
+    await loadConfigTree()
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '保存失败')
+  } finally {
+    infoTypesSaving.value = false
+  }
+}
+
+// ===== 维度优先级顺序弹窗（上下文构建） =====
+const priorityOrderModalVisible = ref(false)
+const editingPriorityOrderItem = ref<ParamItem | null>(null)
+const priorityOrderList = ref<Array<{ source: string; enabled: boolean }>>([])
+const priorityOrderSaving = ref(false)
+const priorityDragIndex = ref<number | null>(null)
+const priorityDragOverIndex = ref<number | null>(null)
+
+function formatPriorityOrderValue(value: unknown): string {
+  const raw = value !== undefined && value !== null ? String(value) : ''
+  const sources = raw.split(',').map(s => s.trim()).filter(Boolean)
+  if (sources.length === 0) return '配置采集维度'
+  return sources.map(s => COLLECTION_SOURCE_LABELS[s] ?? s).join(' → ')
+}
+
+function openPriorityOrderModal(item: ParamItem) {
+  editingPriorityOrderItem.value = item
+  const val = getConfigPrimitiveValue(item)
+  const raw = val !== undefined && val !== null ? String(val) : ''
+  const enabledSet = new Set(
+    raw.split(',').map(s => s.trim().toUpperCase()).filter(s => COLLECTION_SOURCE_OPTIONS.includes(s)),
+  )
+  priorityOrderList.value = COLLECTION_SOURCE_OPTIONS.map(source => ({
+    source,
+    enabled: enabledSet.has(source),
+  }))
+  priorityDragIndex.value = null
+  priorityDragOverIndex.value = null
+  priorityOrderModalVisible.value = true
+}
+
+function closePriorityOrderModal() {
+  priorityOrderModalVisible.value = false
+  editingPriorityOrderItem.value = null
+  priorityOrderList.value = []
+  priorityDragIndex.value = null
+  priorityDragOverIndex.value = null
+}
+
+function togglePrioritySource(source: string) {
+  const row = priorityOrderList.value.find(r => r.source === source)
+  if (row) row.enabled = !row.enabled
+}
+
+function movePriorityItem(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= priorityOrderList.value.length || to >= priorityOrderList.value.length) return
+  const list = [...priorityOrderList.value]
+  const [moved] = list.splice(from, 1)
+  list.splice(to, 0, moved)
+  priorityOrderList.value = list
+}
+
+function onPriorityDragStart(index: number) {
+  priorityDragIndex.value = index
+}
+
+function onPriorityDragOver(index: number) {
+  priorityDragOverIndex.value = index
+}
+
+function onPriorityDrop(index: number) {
+  if (priorityDragIndex.value === null || priorityDragIndex.value === index) return
+  movePriorityItem(priorityDragIndex.value, index)
+  priorityDragIndex.value = null
+  priorityDragOverIndex.value = null
+}
+
+function onPriorityDragEnd() {
+  priorityDragIndex.value = null
+  priorityDragOverIndex.value = null
+}
+
+async function savePriorityOrder() {
+  if (!editingPriorityOrderItem.value) return
+  const enabled = priorityOrderList.value.filter(r => r.enabled).map(r => r.source)
+  priorityOrderSaving.value = true
+  try {
+    await configApi.configItem.update(editingPriorityOrderItem.value.config_key, enabled.join(','))
+    showToast('配置已保存', 'success')
+    closePriorityOrderModal()
+    await loadConfigTree()
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '保存失败')
+  } finally {
+    priorityOrderSaving.value = false
   }
 }
 
@@ -4063,6 +4243,24 @@ watch(activeSubSection, async (val) => {
                           <span class="truncate">{{ cardValues[item.config_key] || '配置定时时间' }}</span>
                           <Clock :size="13" class="text-brian-blue shrink-0" />
                         </button>
+                        <button
+                          v-else-if="isInfoTypesConfig(item.config_key)"
+                          class="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-apple-gray-200 dark:border-apple-gray-600 bg-transparent text-xs text-apple-gray-700 dark:text-apple-gray-300 hover:border-brian-blue/40 transition-colors"
+                          :disabled="item.writable === false"
+                          @click="openInfoTypesModal(item)"
+                        >
+                          <span class="truncate">{{ formatInfoTypesValue(getConfigPrimitiveValue(item)) }}</span>
+                          <List :size="13" class="text-brian-blue shrink-0" />
+                        </button>
+                        <button
+                          v-else-if="isPriorityOrderConfig(item.config_key)"
+                          class="w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-apple-gray-200 dark:border-apple-gray-600 bg-transparent text-xs text-apple-gray-700 dark:text-apple-gray-300 hover:border-brian-blue/40 transition-colors"
+                          :disabled="item.writable === false"
+                          @click="openPriorityOrderModal(item)"
+                        >
+                          <span class="truncate">{{ formatPriorityOrderValue(getConfigPrimitiveValue(item)) }}</span>
+                          <GripVertical :size="13" class="text-brian-blue shrink-0" />
+                        </button>
                         <input
                           v-else
                           v-model="cardValues[item.config_key]"
@@ -6066,6 +6264,127 @@ watch(activeSubSection, async (val) => {
       @close="cronModalVisible = false; editingCronItem = null"
       @save="saveCronConfig"
     />
+
+    <!-- ═══════════════ 摘要生成信息类型弹窗 ═══════════════ -->
+    <Transition name="modal">
+      <div v-if="infoTypesModalVisible" class="fixed inset-0 z-[95] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeInfoTypesModal" />
+        <div class="relative w-full max-w-md max-h-[85vh] flex flex-col bg-white dark:bg-apple-gray-800 rounded-2xl shadow-xl border border-apple-gray-200 dark:border-apple-gray-700">
+          <div class="flex items-start justify-between px-5 py-4 border-b border-apple-gray-200 dark:border-apple-gray-700">
+            <div>
+              <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">摘要生成信息类型</h3>
+              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mt-0.5">选择需要生成摘要的信息类型，同一类型不可重复选择</p>
+            </div>
+            <button class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="closeInfoTypesModal"><X :size="18" /></button>
+          </div>
+          <div class="px-5 py-4 overflow-y-auto space-y-3">
+            <div v-for="(_, i) in infoTypesList" :key="i" class="flex items-center gap-2">
+              <select
+                v-model="infoTypesList[i]"
+                :class="inputClass + ' !py-1.5'"
+              >
+                <option value="" disabled>请选择信息类型</option>
+                <option
+                  v-for="t in availableInfoTypesFor(i)"
+                  :key="t"
+                  :value="t"
+                >{{ infoTypeLabel(t) }}</option>
+              </select>
+              <button
+                class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-error-red/10 hover:text-error-red transition-colors shrink-0"
+                :disabled="infoTypesList.length <= 1"
+                title="删除"
+                @click="removeInfoType(i)"
+              >
+                <Trash2 :size="15" />
+              </button>
+            </div>
+            <button
+              class="flex items-center justify-center gap-1.5 w-full px-3 py-2 text-sm font-medium rounded-lg border border-dashed border-apple-gray-300 dark:border-apple-gray-600 text-apple-gray-500 dark:text-apple-gray-400 hover:border-brian-blue/50 hover:text-brian-blue transition-colors"
+              :disabled="infoTypesList.length >= INFO_TYPE_OPTIONS.length"
+              @click="addInfoType"
+            >
+              <Plus :size="15" />
+              添加信息类型
+            </button>
+          </div>
+          <div class="flex justify-end gap-2 px-5 py-4 border-t border-apple-gray-200 dark:border-apple-gray-700">
+            <button class="px-4 py-2 text-sm font-medium rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="closeInfoTypesModal">取消</button>
+            <button
+              class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
+              :disabled="infoTypesSaving || infoTypesList.every(v => !v.trim())"
+              @click="saveInfoTypes"
+            >
+              <Loader2 v-if="infoTypesSaving" :size="14" class="animate-spin" />
+              <Save v-else :size="14" />
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ═══════════════ 维度优先级顺序弹窗 ═══════════════ -->
+    <Transition name="modal">
+      <div v-if="priorityOrderModalVisible" class="fixed inset-0 z-[95] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closePriorityOrderModal" />
+        <div class="relative w-full max-w-md max-h-[85vh] flex flex-col bg-white dark:bg-apple-gray-800 rounded-2xl shadow-xl border border-apple-gray-200 dark:border-apple-gray-700">
+          <div class="flex items-start justify-between px-5 py-4 border-b border-apple-gray-200 dark:border-apple-gray-700">
+            <div>
+              <h3 class="font-semibold text-apple-gray-900 dark:text-apple-gray-50">维度优先级顺序</h3>
+              <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mt-0.5">开关控制采集哪些维度，拖动调整维度编排顺序</p>
+            </div>
+            <button class="p-1.5 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="closePriorityOrderModal"><X :size="18" /></button>
+          </div>
+          <div class="px-5 py-4 overflow-y-auto space-y-2">
+            <div
+              v-for="(row, i) in priorityOrderList"
+              :key="row.source"
+              class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-colors"
+              :class="[
+                priorityDragOverIndex === i && priorityDragIndex !== null && priorityDragIndex !== i
+                  ? 'border-brian-blue/60 bg-brian-blue/5'
+                  : 'border-apple-gray-200 dark:border-apple-gray-700 bg-apple-gray-50/50 dark:bg-apple-gray-900/30',
+                row.enabled ? '' : 'opacity-50',
+              ]"
+              draggable="true"
+              @dragstart="onPriorityDragStart(i)"
+              @dragover.prevent="onPriorityDragOver(i)"
+              @drop.prevent="onPriorityDrop(i)"
+              @dragend="onPriorityDragEnd"
+            >
+              <span class="text-apple-gray-400 dark:text-apple-gray-500 cursor-grab shrink-0">
+                <GripVertical :size="16" />
+              </span>
+              <span class="text-xs font-mono text-apple-gray-400 dark:text-apple-gray-500 w-6 shrink-0">{{ i + 1 }}</span>
+              <span class="flex-1 text-sm text-apple-gray-800 dark:text-apple-gray-100">{{ COLLECTION_SOURCE_LABELS[row.source] ?? row.source }}</span>
+              <span class="text-[10px] font-mono text-apple-gray-400 dark:text-apple-gray-500">{{ row.source }}</span>
+              <button
+                class="relative w-10 h-6 rounded-full transition-colors duration-200 shrink-0"
+                :class="row.enabled ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'"
+                title="采集开关"
+                @click="togglePrioritySource(row.source)"
+              >
+                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                  :class="row.enabled ? 'translate-x-4' : ''" />
+              </button>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 px-5 py-4 border-t border-apple-gray-200 dark:border-apple-gray-700">
+            <button class="px-4 py-2 text-sm font-medium rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="closePriorityOrderModal">取消</button>
+            <button
+              class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
+              :disabled="priorityOrderSaving || !priorityOrderList.some(r => r.enabled)"
+              @click="savePriorityOrder"
+            >
+              <Loader2 v-if="priorityOrderSaving" :size="14" class="animate-spin" />
+              <Save v-else :size="14" />
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 

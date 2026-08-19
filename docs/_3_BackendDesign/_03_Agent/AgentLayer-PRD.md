@@ -29,8 +29,10 @@ docs/_03_Agent/
 │   └── PlannerAgent-PRD.md
 ├── WriterAgent/               # 写作 Agent：信息汇总与人性化展示
 │   └── WriterAgent-PRD.md
-└── EvolutorAgent/             # 进化 Agent：评估、打分与模型优化
-    └── EvolutorAgent-PRD.md
+├── EvolutorAgent/             # 进化 Agent：评估、打分与模型优化
+│   └── EvolutorAgent-PRD.md
+└── SummaryAgent/              # 摘要 Agent：系统响应摘要生成（内置）
+    └── SummaryAgent-PRD.md
 ```
 
 ## 3. 模块职责矩阵
@@ -45,6 +47,7 @@ docs/_03_Agent/
 | PlannerAgent | 复杂任务识别、拆解为子任务、建立 DAG | LLMProvider, PromptsProvider | InfoCore, AgentContext |
 | WriterAgent | 信息汇总、人性化输出、用户画像集成 | LLMProvider, PromptsProvider | InfoCore, AgentContext |
 | EvolutorAgent | 响应评估打分、Agent 性能评估、优化建议 | LLMProvider, PromptsProvider, MQProvider | InfoCore, AgentContext |
+| SummaryAgent | 系统响应摘要生成（阈值/信息类型过滤，内置不可变） | LLMProvider, PromptsProvider, SoulProvider | InfoCore |
 
 > Agent 与 LLM/Skill/MCP/Soul 的 1-to-many 绑定关系（agent_llm、agent_skill、agent_mcp、agent_soul 表）由 Core 层统一管理，Agent 层不重复维护这些绑定表。Agent 层的 `agent` 表仅持有 1-to-1 的外键引用（llm_id、soul_id、strategy_id）。
 

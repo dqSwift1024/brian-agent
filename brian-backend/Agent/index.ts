@@ -7,3 +7,4 @@ export * from './AgentExecution';
 export * from './PlannerAgent';
 export * from './WriterAgent';
 export * from './EvolutorAgent';
+export * from './SummaryAgent';

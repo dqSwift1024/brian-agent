@@ -458,6 +458,7 @@ export class AgentBuilderService {
     PLANNER: { strategyLabel: 'Plan-and-Solve', signatureKey: 'planner' },
     WRITER: { strategyLabel: 'CoT', signatureKey: 'writer' },
     EVOLUTOR: { strategyLabel: 'ReAct', signatureKey: 'evolutor' },
+    SUMMARY: { strategyLabel: 'CoT', signatureKey: 'summary' },
   };
 
   async buildSystemAgent(
@@ -501,16 +502,20 @@ export class AgentBuilderService {
 
     const agentId = IdGenerator.generate();
     const llmId = await this.matchLlmForAgent(agentId, ctx.interact_id || '');
-    const soulOut = new MatchSoulOutput();
-    await this.soulCore.matchSoul(
-      Object.assign(new MatchSoulInput(), {
-        agent_id: agentId,
-        context_id: ctx.session_id || '',
-        interact_id: ctx.interact_id || '',
-      }),
-      new SoulCoreContext(),
-      soulOut,
-    );
+    let soulId = '';
+    if (agentType !== 'SUMMARY') {
+      const soulOut = new MatchSoulOutput();
+      await this.soulCore.matchSoul(
+        Object.assign(new MatchSoulInput(), {
+          agent_id: agentId,
+          context_id: ctx.session_id || '',
+          interact_id: ctx.interact_id || '',
+        }),
+        new SoulCoreContext(),
+        soulOut,
+      );
+      soulId = soulOut.soul_id || '';
+    }
 
     const strategyId = await this.getStrategyIdByLabel(config.strategyLabel);
     if (!strategyId) throw new ValidationError(`strategy not found: ${config.strategyLabel}`);
@@ -522,7 +527,7 @@ export class AgentBuilderService {
         agent_type: agentType,
         strategy_id: strategyId,
         llm_id: llmId,
-        soul_id: soulOut.soul_id || '',
+        soul_id: soulId,
         task_signature: buildTaskSignature(config.signatureKey, agentType.toLowerCase()),
         agent_name: `系统-${agentType.charAt(0)}${agentType.slice(1).toLowerCase()}`,
       }),
@@ -530,13 +535,13 @@ export class AgentBuilderService {
       addOut,
     );
     if (!ok) throw new ValidationError(`addAgent failed for ${agentType}`);
-    if (soulOut.soul_id) {
+    if (soulId) {
       await this.soulCore.optSoul(
         Object.assign(new OptSoulInput(), {
           agent_id: agentId,
           context_id: '',
           interact_id: '',
-          soul_id: soulOut.soul_id,
+          soul_id: soulId,
         }),
         new SoulCoreContext(),
         new OptSoulOutput(),

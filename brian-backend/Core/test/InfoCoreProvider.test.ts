@@ -105,6 +105,7 @@ describe('InfoCoreProvider', () => {
     input.info_creator_role = overrides?.info_creator_role ?? 'user';
     input.info = overrides?.info ?? '这是一条测试信息 This is a test information message for testing purposes';
     input.parent_info_ids = overrides?.parent_info_ids;
+    input.summary = overrides?.summary;
     return input;
   }
 
@@ -171,6 +172,28 @@ describe('InfoCoreProvider', () => {
       const output = new SaveInfoOutput();
       await infoCore.saveInfo(makeSaveInput(), new InfoCoreContext(), output);
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should persist summary when provided', async () => {
+      const input = makeSaveInput({ summary: '这是预生成的摘要' });
+      const output = new SaveInfoOutput();
+      await infoCore.saveInfo(input, new InfoCoreContext(), output);
+
+      const rows = await relationDb.select('info_summary', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: output.info_id }],
+      });
+      expect(rows.length).toBe(1);
+      expect(rows[0].summary).toBe('这是预生成的摘要');
+    });
+
+    it('should not create summary when summary not provided', async () => {
+      const output = new SaveInfoOutput();
+      await infoCore.saveInfo(makeSaveInput(), new InfoCoreContext(), output);
+
+      const rows = await relationDb.select('info_summary', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: output.info_id }],
+      });
+      expect(rows.length).toBe(0);
     });
   });
 
@@ -308,6 +331,23 @@ describe('InfoCoreProvider', () => {
       await expect(
         infoCore.summaryInfo(input, new InfoCoreContext(), new SummaryInfoOutput()),
       ).rejects.toThrow(ValidationError);
+    });
+
+    it('should use raw info as summary when content within threshold', async () => {
+      const saveOut = new SaveInfoOutput();
+      await infoCore.saveInfo(makeSaveInput({ info: '短内容' }), new InfoCoreContext(), saveOut);
+
+      const input = new ProcessInfoInput();
+      input.info_id = saveOut.info_id;
+      const output = new SummaryInfoOutput();
+      await infoCore.summaryInfo(input, new InfoCoreContext(), output);
+      expect(output.summary_id).toBeTruthy();
+
+      const rows = await relationDb.select('info_summary', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: saveOut.info_id }],
+      });
+      expect(rows.length).toBe(1);
+      expect(rows[0].summary).toBe('短内容');
     });
   });
 
@@ -721,6 +761,35 @@ describe('InfoCoreProvider', () => {
       expect(found).toBeDefined();
       expect(found?.collection_source).toBe(CollectionSource.PINNED);
       expect(found?.source).toBe(CollectionSource.PINNED);
+    });
+
+    it('should only collect dimensions listed in priority_order', async () => {
+      const sessionId = 'subset-priority-session';
+      for (let i = 0; i < 3; i++) {
+        const out = new SaveInfoOutput();
+        await infoCore.saveInfo(makeSaveInput({ session_id: sessionId, info: `Subset ${i}` }), new InfoCoreContext(), out);
+      }
+
+      // 仅保留 PINNED，排除 TIMELINE 等其它维度
+      const cfgIn = new UpdateInfoContextConfigInput();
+      cfgIn.priority_order = 'PINNED';
+      await infoCore.updateInfoContextConfig(cfgIn, new InfoCoreContext(), new UpdateInfoContextConfigOutput());
+
+      try {
+        const input = new ContextInfoInput();
+        input.session_id = sessionId;
+        const output = new ContextInfoOutput();
+        await infoCore.context(input, new InfoCoreContext(), output);
+
+        // 未钉住任何消息，且 TIMELINE 维度被关闭，故不应收集到任何消息
+        expect(output.list.length).toBe(0);
+        expect(output.categories?.timeline.length).toBe(0);
+      } finally {
+        // 恢复默认优先级顺序，避免影响后续用例
+        const resetIn = new UpdateInfoContextConfigInput();
+        resetIn.priority_order = 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
+        await infoCore.updateInfoContextConfig(resetIn, new InfoCoreContext(), new UpdateInfoContextConfigOutput());
+      }
     });
   });
 

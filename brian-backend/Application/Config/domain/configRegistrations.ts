@@ -189,6 +189,8 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'summary_config', 'summary_config.llm_id', '摘要生成 LLM', 'STRING', ''),
   core('info_core', 'summary_config', 'summary_config.prompt_template_id', '摘要生成 Prompt', 'STRING', ''),
   core('info_core', 'summary_config', 'summary_config.enable', '摘要生成启用', 'BOOLEAN', true),
+  core('info_core', 'summary_config', 'summary_config.threshold', '摘要生成阈值', 'INT', 100, '内容不超过该字符数时直接以原文作为摘要，超过则调用 SummaryAgent 生成'),
+  core('info_core', 'summary_config', 'summary_config.info_types', '摘要生成信息类型', 'STRING', 'RESPONSE', '需要生成摘要的信息类型白名单（逗号分隔）'),
   core('info_core', 'vector_config', 'vector_config.llm_id', '向量化 LLM', 'STRING', ''),
   core('info_core', 'vector_config', 'vector_config.dimension', '向量维度', 'INT', 1536, '向量维度须与向量数据库表维度一致（默认 1536，OpenAI text-embedding 常用）'),
   core('info_core', 'vector_config', 'vector_config.enable', '向量化启用', 'BOOLEAN', true),

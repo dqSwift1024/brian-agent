@@ -175,7 +175,9 @@ export class InfoCoreSchemaInitializer {
         "updated"             INTEGER NOT NULL,
         "llm_id"              TEXT    NOT NULL,
         "prompt_template_id"  TEXT    NOT NULL,
-        "enable"              INTEGER NOT NULL DEFAULT 1
+        "enable"              INTEGER NOT NULL DEFAULT 1,
+        "threshold"           INTEGER NOT NULL DEFAULT 100,
+        "info_types"          TEXT    NOT NULL DEFAULT 'RESPONSE'
       )
     `);
 
@@ -223,6 +225,8 @@ export class InfoCoreSchemaInitializer {
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "max_context_items" INTEGER NOT NULL DEFAULT 200`,
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "enable_snapshot_persistence" INTEGER NOT NULL DEFAULT 1`,
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "priority_order" TEXT NOT NULL DEFAULT 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'`,
+      `ALTER TABLE "${INFO_SUMMARY_CONFIG_TABLE}" ADD COLUMN "threshold" INTEGER NOT NULL DEFAULT 100`,
+      `ALTER TABLE "${INFO_SUMMARY_CONFIG_TABLE}" ADD COLUMN "info_types" TEXT NOT NULL DEFAULT 'RESPONSE'`,
     ]) {
       try {
         this.relationDb.executeRaw(col);

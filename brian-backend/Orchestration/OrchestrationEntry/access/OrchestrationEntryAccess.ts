@@ -1,7 +1,7 @@
 import type { RelationDBAccess, PromptsAccess, LLMAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import type { WriterAgentAccess } from '@brian-agent/agent';
+import type { WriterAgentAccess, SummaryAgentAccess } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
 import { OrchestrationEntrySchemaInitializer } from '../infrastructure/OrchestrationEntrySchemaInitializer';
@@ -32,9 +32,10 @@ export class OrchestrationEntryAccess {
     mqAccess?: any,
     mqCore?: any,
     logger?: Logger,
+    summaryAgent?: SummaryAgentAccess,
   ) {
     this.initPromise = new OrchestrationEntrySchemaInitializer(relationDb).init();
-    const raw = new OrchestrationEntryService(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger);
+    const raw = new OrchestrationEntryService(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent);
     this.service = AopProxy.wrap(raw, { logger });
   }
 

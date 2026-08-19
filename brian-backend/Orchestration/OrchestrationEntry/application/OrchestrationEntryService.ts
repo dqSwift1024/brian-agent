@@ -10,8 +10,8 @@ import {
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput } from '@brian-agent/core';
-import type { WriterAgentAccess } from '@brian-agent/agent';
-import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext } from '@brian-agent/agent';
+import type { WriterAgentAccess, SummaryAgentAccess } from '@brian-agent/agent';
+import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, GenerateSummaryInput, GenerateSummaryOutput, SummaryAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
 import type { StartOrchestrationInput, StartOrchestrationOutput } from '../../OrchestrationStrategy/domain/types';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
@@ -43,6 +43,7 @@ export class OrchestrationEntryService {
     private readonly mqAccess?: any,
     private readonly mqCore?: any,
     private readonly logger?: Logger,
+    private readonly summaryAgent?: SummaryAgentAccess,
   ) {}
 
   async receiveWork(
@@ -148,6 +149,7 @@ export class OrchestrationEntryService {
         });
         const reqId = reqRows.length > 0 ? (reqRows[0].info_id as string) : '';
         const parentInfoIds = reqId ? [reqId] : [];
+        const errResponse = `[错误] ${errMsg}`;
         const saveIn = Object.assign(new SaveInfoInput(), {
           session_id: input.session_id,
           work_id: workId,
@@ -155,8 +157,9 @@ export class OrchestrationEntryService {
           info_type: InfoType.RESPONSE,
           info_creator_role: 'AGENT',
           info_creator_id: workId,
-          info: `[错误] ${errMsg}`,
+          info: errResponse,
           parent_info_ids: parentInfoIds,
+          summary: await this.generateResponseSummary(InfoType.RESPONSE, errResponse, input.session_id, workId, interactId),
         });
         await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
       } catch { /* best-effort */ }
@@ -684,6 +687,27 @@ export class OrchestrationEntryService {
       return (row?.[field] as number) ?? defaultValue;
     } catch {
       return defaultValue;
+    }
+  }
+
+  private async generateResponseSummary(
+    infoType: string,
+    info: string,
+    sessionId: string,
+    workId: string,
+    interactId: string,
+  ): Promise<string | undefined> {
+    if (!this.summaryAgent) return undefined;
+    try {
+      const out = new GenerateSummaryOutput();
+      await this.summaryAgent.generateSummary(
+        Object.assign(new GenerateSummaryInput(), { info_type: infoType, info }),
+        Object.assign(new SummaryAgentContext(), { session_id: sessionId, work_id: workId, interact_id: interactId }),
+        out,
+      );
+      return out.summary || undefined;
+    } catch {
+      return undefined;
     }
   }
 }

@@ -118,11 +118,14 @@
   - summary：信息摘要
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectOneDB 查询 `info_summary_config` 表获取配置（enable, llm_id, prompt_template_id）；如果 enable=false 或缺少 llm_id 或 prompt_template_id，直接返回 true（跳过摘要压缩）；
+1. 调用 RelationDBProvider.selectOneDB 查询 `info_summary_config` 表获取配置（enable, llm_id, prompt_template_id, threshold）；如果 enable=false 或缺少 llm_id 或 prompt_template_id，直接返回 true（跳过摘要压缩）；
 2. 根据 info_id 调用 RelationDBProvider.selectOneDB 查询 `info_raw` 表获取信息内容（info 字段）；
-3. 将信息内容和 prompt_template_id 调用 PromptsProvider.execPrompt 生成 prompt；
-4. 将 llm_id 和 prompt 调用 LLMProvider.execLLM 生成信息的摘要文本（建议 temperature=0.3，max_tokens 根据内容长度动态设置）；
-5. 调用 RelationDBProvider.insertDB 将 `{ info_id, summary: 摘要文本 }` 保存到 `info_summary` 表（upsert 语义：若 info_id 已存在则更新摘要）；
+3. **阈值判断**：若信息内容字符数不超过 `threshold`（默认 100），直接以原文作为摘要（无需调用 LLM）；否则进入下一步；
+4. 将信息内容和 prompt_template_id 调用 PromptsProvider.execPrompt 生成 prompt；
+5. 将 llm_id 和 prompt 调用 LLMProvider.execLLM 生成信息的摘要文本（建议 temperature=0.3，max_tokens 根据内容长度动态设置）；
+6. 调用 RelationDBProvider.insertDB 将 `{ info_id, summary: 摘要文本 }` 保存到 `info_summary` 表（upsert 语义：若 info_id 已存在则更新摘要）；
+
+> **摘要生成方式变更**：系统响应（RESPONSE）等信息的摘要主要由上层编排调用内置 **SummaryAgent** 生成后，经 `saveInfo.input.summary` 传入并落库，`saveInfo` 内部不再异步触发 `summaryInfo`；`summaryInfo` 仍作为对已存在信息独立触发摘要压缩的入口（含阈值短路逻辑）。
 
 #### 2.3.5. 对信息进行keyword（keywordInfo）
 
@@ -191,12 +194,12 @@
 - input：GetInfoSummaryConfigInput（继承 Input）
 - context：GetInfoSummaryConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：GetInfoSummaryConfigOutput（继承 Output），承载返回内容：
-  - config：摘要配置信息（llm_id, prompt_template_id, enable）
+  - config：摘要配置信息（llm_id, prompt_template_id, enable, threshold, info_types）
 **处理流程**：
 
 1. 调用 RelationDBProvider.selectOneDB 查询 `info_summary_config` 表，获取唯一配置记录；
-2. 将查询到的配置（llm_id, prompt_template_id, enable）写入 output 返回；
-3. 若配置表为空（首次使用），返回默认值：enable=true, llm_id 和 prompt_template_id 为空；
+2. 将查询到的配置（llm_id, prompt_template_id, enable, threshold, info_types）写入 output 返回；
+3. 若配置表为空（首次使用），返回默认值：enable=true, llm_id 和 prompt_template_id 为空, threshold=100, info_types='RESPONSE'；
 
 **返回**：Boolean，表示查询是否完成
 
@@ -208,6 +211,8 @@
   - llm_id：LLM ID（可选，须为 text 类型模型）
   - prompt_template_id：Prompt模板ID（可选）
   - enable：是否启用（可选）
+  - threshold：摘要生成阈值（可选，内容字符数不超过该值时直接以原文作为摘要）
+  - info_types：需要生成摘要的信息类型白名单（可选，逗号分隔）
 - context：UpdateInfoSummaryConfigContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：UpdateInfoSummaryConfigOutput（继承 Output），承载返回内容
 **处理流程**：
@@ -216,7 +221,8 @@
 2. 若 `enable` 非空，更新 enable 字段；
 3. 若 `llm_id` 非空：校验 LLMProvider.soLLM 中是否存在该 llm_id，且其 `llm_type` 必须为 `text`（摘要生成是文本生成任务），存在且类型正确则更新，否则返回 false 并记录错误日志；
 4. 若 `prompt_template_id` 非空：校验 PromptsProvider.soPrompt 中是否存在该 prompt_template_id，存在则更新，否则返回 false 并记录错误日志；
-5. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_summary_config` 表；
+5. 若 `threshold` 非空，更新 threshold 字段；若 `info_types` 非空，更新 info_types 字段；
+6. 调用 RelationDBProvider.updateDB 将变更后的配置写入 `info_summary_config` 表；
 
 **返回**：Boolean，表示更新是否完成
 
@@ -501,7 +507,7 @@
       - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索 `base_keyword_count` 条；
       - **随机关联消息（全系统）**：从全系统中随机抽样 `base_random_count` 条；
       - **钉住消息（会话内）**：查询当前 session 下所有 `pin=1` 的消息；
-   c. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；
+   c. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
    d. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；
    e. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
    f. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回。
@@ -684,6 +690,8 @@
 | llm_id | LLM ID | UUID | N | 普通索引 | |
 | prompt_template_id | 信息压缩prompt模板ID | UUID | N | | |
 | enable | 启用/禁用信息压缩 | BOOL | N | | 默认打开 |
+| threshold | 摘要生成阈值（内容字符数不超过该值时直接以原文作为摘要） | INT | N | | 默认 100 |
+| info_types | 需要生成摘要的信息类型白名单（逗号分隔） | TEXT | N | | 默认 RESPONSE |
 
 ### 3.8. INFO配置表（SQLite）
 

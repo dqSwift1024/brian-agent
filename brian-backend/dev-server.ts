@@ -58,6 +58,7 @@ import { AgentContextAccess } from './Agent/AgentContext';
 import { PlannerAgentAccess } from './Agent/PlannerAgent';
 import { WriterAgentAccess } from './Agent/WriterAgent';
 import { EvolutorAgentAccess } from './Agent/EvolutorAgent';
+import { SummaryAgentAccess, SummaryAgentContext } from './Agent/SummaryAgent';
 import { OrchestrationEntryAccess } from './Orchestration/OrchestrationEntry';
 import { OrchestrationStrategyAccess } from './Orchestration/OrchestrationStrategy';
 import { OrchestrationExecutionAccess } from './Orchestration/OrchestrationExecution';
@@ -416,6 +417,8 @@ async function buildContext() {
   await plannerAgent.initialize();
   const evolutorAgent = new EvolutorAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, mqAccess, mqCore, agentBuilder, agentLibrary, agentExecution, logger);
   await evolutorAgent.initialize();
+  const summaryAgent = new SummaryAgentAccess(relationDb, llmAccess, promptsAccess, soulAccess, agentBuilder, agentLibrary, infoCore, logger);
+  await summaryAgent.initialize();
 
   // ---- Pre-build system agents (ensure they appear in agent list on first page load) ----
   try {
@@ -430,16 +433,23 @@ async function buildContext() {
     logger.warn('preBuildSystemAgents', 'failed to pre-build some system agents', String(e));
   }
 
+  // ---- Pre-build SummaryAgent（内置不可变 Agent，同步生成内置 Soul 与 Prompt） ----
+  try {
+    await summaryAgent.ensureBuiltin(new SummaryAgentContext());
+  } catch (e) {
+    logger.warn('preBuildSummaryAgent', 'failed to pre-build SummaryAgent', String(e));
+  }
+
   // ---- Orchestration ----
   const orchestrationExecution = new OrchestrationExecutionAccess(relationDb, agentBuilder, agentExecution, agentLibrary, infoCore, mqAccess, mqCore, logger);
   await orchestrationExecution.initialize();
   const orchestrationVisualization = new OrchestrationVisualizationAccess(relationDb, agentLibrary, agentExecution, logger);
   await orchestrationVisualization.initialize();
-  const jsonNode = new JSONNodeAccess(relationDb, infoCore, agentBuilder, writerAgent, plannerAgent, evolutorAgent, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, streamAccess);
+  const jsonNode = new JSONNodeAccess(relationDb, infoCore, agentBuilder, writerAgent, plannerAgent, evolutorAgent, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, streamAccess, summaryAgent);
   await jsonNode.initialize();
   const orchestrationStrategy = new OrchestrationStrategyAccess(relationDb, agentBuilder, plannerAgent, writerAgent, evolutorAgent, orchestrationExecution, jsonNode, mqCore, logger);
   await orchestrationStrategy.initialize();
-  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger);
+  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent);
   await orchestrationEntry.initialize();
 
   // ---- Application Layer ----

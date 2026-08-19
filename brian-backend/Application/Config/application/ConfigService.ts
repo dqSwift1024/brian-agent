@@ -1246,6 +1246,8 @@ export class ConfigService {
       if (prefix.startsWith('info_core.summary_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith('info_core.summary_config.prompt_template_id')) input.prompt_template_id = value as string;
       else if (prefix.startsWith('info_core.summary_config.enable')) input.enable = value ? 1 : 0;
+      else if (prefix.startsWith('info_core.summary_config.threshold')) input.threshold = Number(value);
+      else if (prefix.startsWith('info_core.summary_config.info_types')) input.info_types = value as string;
       const output: any = {};
       await this.infoCore.updateInfoSummaryConfig(input, {} as any, output);
       return;

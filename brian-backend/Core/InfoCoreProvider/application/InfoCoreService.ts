@@ -234,7 +234,8 @@ export class InfoCoreService {
    * 流程：
    * 1. 插入 info_raw 表。
    * 2. 若 parent_info_ids 存在，创建 info_graph 边。
-   * 3. 异步触发处理：vectorInfo / tagInfo / summaryInfo / keywordInfo。
+   * 3. 若 input.summary 存在，写入 info_summary 表（摘要由上层编排调用 SummaryAgent 生成后传入）。
+   * 4. 异步触发处理：vectorInfo / tagInfo / keywordInfo（摘要生成不在本方法内触发）。
    */
   async saveInfo(
     input: SaveInfoInput,
@@ -272,6 +273,18 @@ export class InfoCoreService {
 
     output.info_id = infoId;
 
+    // 摘要生成规则由上层编排控制：saveInfo 仅负责保存，摘要经 input.summary 传入后落库
+    if (input.summary) {
+      const summaryId = IdGenerator.generate();
+      await this.relationDb.insert(INFO_SUMMARY_TABLE, [
+        { field: 'id', value: summaryId },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'info_id', value: infoId },
+        { field: 'summary', value: input.summary },
+      ]);
+    }
+
     // 异步触发处理（不阻塞保存）
     const processInput = new ProcessInfoInput();
     processInput.info_id = infoId;
@@ -280,7 +293,7 @@ export class InfoCoreService {
         await Promise.all([
           this.vectorInfo(processInput, _context, new VectorInfoOutput()),
           this.tagInfo(processInput, _context, new TagInfoOutput()),
-          this.summaryInfo(processInput, _context, new SummaryInfoOutput()),
+          // this.summaryInfo(processInput, _context, new SummaryInfoOutput()),  // 摘要改由上层 SummaryAgent 生成后经 input.summary 传入
           this.keywordInfo(processInput, _context, new KeywordInfoOutput()),
         ]);
       } catch (err) {
@@ -460,7 +473,13 @@ export class InfoCoreService {
       throw new NotFoundError('信息', input.info_id);
     }
 
-    const summary = await this.generateSummary(infoRow.info, summaryConfig);
+    // 内容未超过阈值时直接以原文作为摘要；否则调用 LLM 生成
+    let summary: string;
+    if (infoRow.info.length <= (summaryConfig.threshold ?? 100)) {
+      summary = infoRow.info;
+    } else {
+      summary = await this.generateSummary(infoRow.info, summaryConfig);
+    }
     if (!summary) {
       return true;
     }
@@ -1430,11 +1449,13 @@ export class InfoCoreService {
         priorityList.push(src);
       }
     }
-    for (const src of validSources) {
-      if (!priorityList.includes(src)) {
-        priorityList.push(src);
-      }
-    }
+    // ===== 原始逻辑（保留作为参考）：未出现在 priority_order 中的维度会被自动补全，
+    // 即始终采集全部维度。现已改为以 priority_order 为准，未列出的维度不再采集。=====
+    // for (const src of validSources) {
+    //   if (!priorityList.includes(src)) {
+    //     priorityList.push(src);
+    //   }
+    // }
 
     // 2.4 按优先级依次收集去重
     const seenIds = new Set<string>();
@@ -1578,6 +1599,8 @@ export class InfoCoreService {
         llm_id: '',
         prompt_template_id: '',
         enable: 1,
+        threshold: 100,
+        info_types: 'RESPONSE',
       },
     });
     return true;
@@ -2226,7 +2249,7 @@ export class InfoCoreService {
     );
     await this.ensureDefaultConfigRow(
       INFO_SUMMARY_CONFIG_TABLE,
-      { llm_id: '', prompt_template_id: '', enable: 1 },
+      { llm_id: '', prompt_template_id: '', enable: 1, threshold: 100, info_types: 'RESPONSE' },
     );
     await this.ensureDefaultConfigRow(
       INFO_CONTEXT_CONFIG_TABLE,
@@ -2401,6 +2424,8 @@ export class InfoCoreService {
       llm_id: raw['llm_id'] as string,
       prompt_template_id: raw['prompt_template_id'] as string,
       enable: raw['enable'] as number,
+      threshold: Number(raw['threshold'] ?? 100),
+      info_types: String(raw['info_types'] ?? 'RESPONSE'),
     };
   }
 

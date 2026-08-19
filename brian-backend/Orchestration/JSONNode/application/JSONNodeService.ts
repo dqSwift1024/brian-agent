@@ -16,6 +16,7 @@ import {
 import type {
   AgentBuilderAccess, WriterAgentAccess,
   PlannerAgentAccess, EvolutorAgentAccess,
+  SummaryAgentAccess,
 } from '@brian-agent/agent';
 import {
   BuildAgentInput, BuildAgentOutput,
@@ -29,6 +30,8 @@ import {
   StartEvalScheduleInput, StartEvalScheduleOutput,
   EvolutorAgentContext,
   GetUserProfileInput, GetUserProfileOutput,
+  GenerateSummaryInput, GenerateSummaryOutput,
+  SummaryAgentContext,
 } from '@brian-agent/agent';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
 import {
@@ -69,6 +72,7 @@ export class JSONNodeService {
     private readonly mqCore?: any,
     private readonly logger?: Logger,
     private readonly streamAccess?: StreamAccess,
+    private readonly summaryAgent?: SummaryAgentAccess,
   ) {}
 
   getNodeTypeRegistry(): Map<string, NodeHandler> {
@@ -1014,6 +1018,7 @@ export class JSONNodeService {
       info_creator_id: workId,
       info: finalResponse,
       parent_info_ids: parentInfoIds,
+      summary: await this.generateResponseSummary(InfoType.RESPONSE, finalResponse, sessionId, workId, interactId),
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1073,6 +1078,7 @@ export class JSONNodeService {
       info_creator_id: workId,
       info: responseText,
       parent_info_ids: parentInfoIds,
+      summary: await this.generateResponseSummary(InfoType.RESPONSE, responseText, sessionId, workId, interactId),
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1099,6 +1105,27 @@ export class JSONNodeService {
         ] as Condition[],
       });
       await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    }
+  }
+
+  private async generateResponseSummary(
+    infoType: string,
+    info: string,
+    sessionId: string,
+    workId: string,
+    interactId: string,
+  ): Promise<string | undefined> {
+    if (!this.summaryAgent) return undefined;
+    try {
+      const out = new GenerateSummaryOutput();
+      await this.summaryAgent.generateSummary(
+        Object.assign(new GenerateSummaryInput(), { info_type: infoType, info }),
+        Object.assign(new SummaryAgentContext(), { session_id: sessionId, work_id: workId, interact_id: interactId }),
+        out,
+      );
+      return out.summary || undefined;
+    } catch {
+      return undefined;
     }
   }
 

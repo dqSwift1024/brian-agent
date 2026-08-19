@@ -173,5 +173,5 @@ export const AGENT_USAGE_TABLE = 'agent_usage';
 export const AGENT_OPT_RULE_TABLE = 'agent_opt_rule';
 export const AGENT_LIBRARY_CONFIG_TABLE = 'agent_library_config';
 
-export const VALID_AGENT_TYPES = ['WORKER', 'PLANNER', 'WRITER', 'EVOLUTOR'] as const;
-export const SYSTEM_AGENT_TYPES = ['PLANNER', 'WRITER', 'EVOLUTOR'] as const;
+export const VALID_AGENT_TYPES = ['WORKER', 'PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY'] as const;
+export const SYSTEM_AGENT_TYPES = ['PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY'] as const;

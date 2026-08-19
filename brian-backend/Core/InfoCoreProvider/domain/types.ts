@@ -111,6 +111,10 @@ export interface InfoSummaryConfigRecord {
   llm_id: string;
   prompt_template_id: string;
   enable: number;
+  /** 摘要生成阈值：内容字符数不超过该值时直接以原文作为摘要，超过则调用摘要生成 */
+  threshold: number;
+  /** 需要生成摘要的信息类型白名单（逗号分隔） */
+  info_types: string;
 }
 
 /** info_config 表记录 */
@@ -161,6 +165,8 @@ export class SaveInfoInput extends Input {
   info_creator_id?: string;
   info!: string;
   parent_info_ids?: string[];
+  /** 预生成的摘要（由上层编排调用 SummaryAgent 生成后传入；为空则不为该 info 生成摘要） */
+  summary?: string;
 }
 
 /** saveInfo 出参 */
@@ -413,6 +419,8 @@ export class UpdateInfoSummaryConfigInput extends Input {
   llm_id?: string;
   prompt_template_id?: string;
   enable?: number;
+  threshold?: number;
+  info_types?: string;
 }
 /** updateInfoSummaryConfig 出参 */
 export class UpdateInfoSummaryConfigOutput extends Output {}
@@ -518,6 +526,8 @@ export const INFO_CONTEXT_CONFIG_TABLE = 'info_context_config';
 export const DEFAULT_TAG_TOP_K = 5;
 export const DEFAULT_ALIVE_MAX_DAYS = 30;
 export const DEFAULT_VECTOR_DIMENSION = 1536;
+export const DEFAULT_SUMMARY_THRESHOLD = 100;
+export const DEFAULT_SUMMARY_INFO_TYPES = 'RESPONSE';
 export const DEFAULT_BASE_TIMELINE_COUNT = 500;
 export const DEFAULT_BASE_TAG_RELATIVE_COUNT = 200;
 export const DEFAULT_BASE_SIMILARITY_COUNT = 150;
