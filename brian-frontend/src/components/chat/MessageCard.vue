@@ -55,6 +55,18 @@ const expandedCiting = ref(false)
 const expandedCited = ref(false)
 const copied = ref(false)
 
+// 摘要/原文折叠状态：默认态由 mode 决定（Map 展开摘要折叠原文，Timeline 展开原文折叠摘要），用户可手动切换
+const summaryOpen = ref(props.mode === 'map')
+const contentOpen = ref(props.mode === 'timeline')
+
+function onSummaryToggle(e: Event) {
+  summaryOpen.value = (e.target as HTMLDetailsElement).open
+}
+
+function onContentToggle(e: Event) {
+  contentOpen.value = (e.target as HTMLDetailsElement).open
+}
+
 const targetId = computed(() => props.infoId || props.id)
 
 const isUser = computed(() => props.role === 'user' || props.role === 'USER' || props.role === 'REQUEST')
@@ -64,6 +76,13 @@ const isError = computed(() => props.content.startsWith('[错误]') || props.sum
 const renderedContent = computed(() => {
   const raw = props.content || ''
   if (!raw.trim()) return ''
+  return DOMPurify.sanitize(marked.parse(raw) as string)
+})
+
+// 摘要按 Markdown 渲染（无摘要时回退原文）
+const renderedSummary = computed(() => {
+  const raw = props.summary || props.content || ''
+  if (!raw.trim()) return '(无内容)'
   return DOMPurify.sanitize(marked.parse(raw) as string)
 })
 
@@ -178,31 +197,46 @@ async function copyTraceId() {
       </div>
     </div>
 
-    <!-- 内容展示：摘要 + 详情双区（Map 与 Timeline 结构一致）。Map 默认展开摘要折叠详情；Timeline 默认展开详情折叠摘要 -->
+    <!-- 内容展示：摘要 + 原文双区（结构统一，均支持折叠/展开，均渲染 Markdown）。
+         Map 模式：默认展开摘要、折叠原文；Timeline 模式：默认展开原文、折叠摘要。差异仅由 mode 样式覆盖区分。 -->
     <div class="space-y-0.5">
-      <!-- 摘要区：Map 模式默认展开，Timeline 模式折叠 -->
-      <div
-        v-if="mode === 'map'"
-        class="px-2 py-0.5 truncate font-medium"
-        :class="isError ? 'text-error-red' : 'text-apple-gray-700 dark:text-apple-gray-200'"
-        :title="summary || content"
+      <!-- 摘要区 -->
+      <details
+        class="px-2 py-0.5"
+        :class="isError ? 'text-error-red' : 'text-apple-gray-500 dark:text-apple-gray-400'"
+        :open="summaryOpen"
+        @toggle="onSummaryToggle"
+        @click.stop
       >
-        {{ summary || content || '(无内容)' }}
-      </div>
-      <details v-else-if="summary" class="px-2 text-apple-gray-500 dark:text-apple-gray-400" @click.stop>
-        <summary class="cursor-pointer text-[10px] font-medium">摘要</summary>
-        <div class="whitespace-pre-wrap break-all text-[11px] max-h-20 overflow-y-auto text-apple-gray-600 dark:text-apple-gray-300">
-          {{ summary }}
-        </div>
+        <summary class="cursor-pointer text-[10px] font-medium select-none">
+          <span class="inline-block transition-transform duration-150" :class="summaryOpen ? 'rotate-90' : ''">▸</span>
+          摘要
+        </summary>
+        <div
+          class="markdown-body break-words max-h-20 overflow-y-auto"
+          :class="mode === 'map'
+            ? 'text-xs text-apple-gray-700 dark:text-apple-gray-200'
+            : 'text-[11px] text-apple-gray-600 dark:text-apple-gray-300'"
+          v-html="renderedSummary"
+        />
       </details>
 
-      <!-- 详情区：Timeline 模式默认展开，Map 模式折叠 -->
-      <div v-if="mode === 'timeline'" class="my-1">
-        <div class="markdown-body text-sm break-words" v-html="renderedContent" />
-      </div>
-      <details v-else class="px-2 pb-0.5 text-apple-gray-500 dark:text-apple-gray-400" @click.stop>
-        <summary class="cursor-pointer text-[10px] font-medium">原文</summary>
-        <p class="whitespace-pre-wrap break-all text-[11px] max-h-20 overflow-y-auto">{{ content }}</p>
+      <!-- 原文区 -->
+      <details
+        class="px-2 py-0.5"
+        :open="contentOpen"
+        @toggle="onContentToggle"
+        @click.stop
+      >
+        <summary class="cursor-pointer text-[10px] font-medium select-none">
+          <span class="inline-block transition-transform duration-150" :class="contentOpen ? 'rotate-90' : ''">▸</span>
+          原文
+        </summary>
+        <div
+          class="markdown-body break-words overflow-y-auto"
+          :class="mode === 'map' ? 'text-[11px] max-h-20' : 'text-sm'"
+          v-html="renderedContent"
+        />
       </details>
     </div>
 
@@ -311,6 +345,8 @@ async function copyTraceId() {
 </template>
 
 <style scoped>
+details summary::-webkit-details-marker { display: none; }
+details summary::marker { content: ''; }
 .markdown-body :deep(h1) { font-size: 1.4em; font-weight: 700; margin: 0.6em 0 0.4em; }
 .markdown-body :deep(h2) { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.4em; }
 .markdown-body :deep(h3) { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.3em; }
