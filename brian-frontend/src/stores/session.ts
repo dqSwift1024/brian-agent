@@ -137,7 +137,10 @@ export const useSessionStore = defineStore('session', () => {
         infoId: String(n.info_id ?? n.id ?? ''),
         infoType: String(n.info_type ?? ''),
         role: String(n.info_creator_role ?? ''),
-        summary: String(n.info_summary ?? '').slice(0, 20),
+        // ===== 原始代码（保留作为参考） =====
+        // summary: String(n.info_summary ?? '').slice(0, 20),
+        // ===== 修改后的代码：保留完整摘要（不做 20 字截断） =====
+        summary: String(n.info_summary ?? ''),
         info: String(n.info ?? ''),
         infoLength: Number(n.info_length ?? 0),
         created: Number(n.created ?? 0),

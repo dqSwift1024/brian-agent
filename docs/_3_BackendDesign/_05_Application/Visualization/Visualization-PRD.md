@@ -359,7 +359,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
         "info_id": "info_uuid",
         "info_type": "REQUEST",
         "info_creator_role": "USER",
-        "info_summary": "用户消息摘要（前50字）",
+        "info_summary": "消息真实摘要（从 info_summary 表读取完整的真实摘要，无截断；未生成时为空，由前端回退显示原文）",
         "created": "2026-07-30T10:00:00.000Z",
         "pin": false,
         "work_id": "work_uuid_1",

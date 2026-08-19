@@ -473,12 +473,22 @@ export class InfoCoreService {
       throw new NotFoundError('信息', input.info_id);
     }
 
+    // ===== 原始代码（保留作为参考） =====
+    /*
     // 内容未超过阈值时直接以原文作为摘要；否则调用 LLM 生成
     let summary: string;
     if (infoRow.info.length <= (summaryConfig.threshold ?? 100)) {
       summary = infoRow.info;
     } else {
       summary = await this.generateSummary(infoRow.info, summaryConfig);
+    }
+    */
+    // ===== 修改后的代码：统一摘要生成逻辑，InfoCore 不再自行调用 LLM 生成摘要（由 SummaryAgent 统一生成） =====
+    let summary: string;
+    if (infoRow.info.length <= (summaryConfig.threshold ?? 100)) {
+      summary = infoRow.info;
+    } else {
+      return true;
     }
     if (!summary) {
       return true;
@@ -2013,6 +2023,8 @@ export class InfoCoreService {
     }
   }
 
+  // ===== 原始代码（保留作为参考，已停用：摘要生成统一由 SummaryAgent 负责） =====
+  /*
   private async generateSummary(
     text: string,
     summaryConfig: InfoSummaryConfigRecord,
@@ -2048,6 +2060,7 @@ export class InfoCoreService {
       return '';
     }
   }
+  */
 
   // =========================================================================
   // Private: Keyword extraction

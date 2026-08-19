@@ -125,7 +125,7 @@
 5. 将 llm_id 和 prompt 调用 LLMProvider.execLLM 生成信息的摘要文本（建议 temperature=0.3，max_tokens 根据内容长度动态设置）；
 6. 调用 RelationDBProvider.insertDB 将 `{ info_id, summary: 摘要文本 }` 保存到 `info_summary` 表（upsert 语义：若 info_id 已存在则更新摘要）；
 
-> **摘要生成方式变更**：系统响应（RESPONSE）等信息的摘要主要由上层编排调用内置 **SummaryAgent** 生成后，经 `saveInfo.input.summary` 传入并落库，`saveInfo` 内部不再异步触发 `summaryInfo`；`summaryInfo` 仍作为对已存在信息独立触发摘要压缩的入口（含阈值短路逻辑）。
+> **摘要生成方式变更**：所有 LLM 摘要生成逻辑统一由上层编排调用内置 **SummaryAgent** 负责（经 `saveInfo.input.summary` 传入落库）。`InfoCoreService.summaryInfo` 仅保留字符数不超过 `threshold`（默认 100）的短内容原文落库功能，内部不再独立调用 LLM 避免出现两套不一致的摘要生成逻辑。
 
 #### 2.3.5. 对信息进行keyword（keywordInfo）
 

@@ -502,11 +502,22 @@ export class VisualizationService {
 
     const nodes: Array<Record<string, unknown>> = [];
     const nodeSet = new Set<string>();
+    const nodeRows: Array<Record<string, unknown>> = [];
 
     for (const row of rawRows) {
       const infoId = String(row.info_id ?? '');
       if (!infoId || nodeSet.has(infoId)) continue;
       nodeSet.add(infoId);
+      nodeRows.push(row);
+      if (nodeRows.length >= maxNodes) break;
+    }
+
+    const infoIds = nodeRows.map((r) => String(r.info_id ?? '')).filter(Boolean);
+    const summaryMap = await this.buildSummaryMap(infoIds);
+
+    for (const row of nodeRows) {
+      const infoId = String(row.info_id ?? '');
+      const storedSummary = summaryMap.get(infoId);
 
       nodes.push({
         id: infoId,
@@ -516,14 +527,15 @@ export class VisualizationService {
         interact_id: String(row.interact_id ?? ''),
         info_type: String(row.info_type ?? ''),
         info_creator_role: String(row.info_creator_role ?? ''),
-        info_summary: this.truncate(String(row.info ?? ''), summaryLength),
+        // ===== 原始代码（保留作为参考） =====
+        // info_summary: this.truncate(String(row.info ?? ''), summaryLength),
+        // ===== 修改后的代码：使用 info_summary 表的完整摘要 =====
+        info_summary: storedSummary ?? '',
         info: String(row.info ?? ''),
         info_length: Number(row.info_length ?? 0),
         created: Number(row.created ?? 0),
         pin: Number(row.pin ?? 0) === 1,
       });
-
-      if (nodes.length >= maxNodes) break;
     }
 
     // 补充引用/被引用关系（计数与 info_id 列表）
