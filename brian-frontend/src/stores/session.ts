@@ -115,8 +115,24 @@ export const useSessionStore = defineStore('session', () => {
         })
       }
 
+      // ===== 原始布局（保留参考）=====
+      /*
       // 布局：时间纵向（回复关系向下）、引用层级横向（引用关系从左到右）
-      const nodes: ChatMapNode[] = msgNodes.map((n, idx) => ({
+      const nodes: ChatMapNode[] = msgNodes.map((n, idx) => ({ ... x: 0, y: idx * 190 + 120 }))
+      // 引用层级：引用方位于被引用方右侧
+      const level = new Map<string, number>()
+      ... 仅对 CITATION 边传播层级 ...
+      for (const n of nodes) { n.x = (level.get(n.id) ?? 0) * 260 }
+      */
+
+      // ===== 修改后的布局 =====
+      // 规则1：对用户提问的系统回答放在提问正下方（问答同列，回答位于提问下方一行）
+      // 规则2：引用方与被引用方的最下面的一个消息框处于相同的纵坐标（引用两边对齐底部行）
+      const NODE_MAP_ROW_H = 190
+      const NODE_MAP_COL_W = 260
+      const NODE_MAP_BASE_Y = 120
+
+      const nodes: ChatMapNode[] = msgNodes.map((n) => ({
         id: String(n.info_id ?? n.id ?? ''),
         infoId: String(n.info_id ?? n.id ?? ''),
         infoType: String(n.info_type ?? ''),
@@ -133,10 +149,10 @@ export const useSessionStore = defineStore('session', () => {
         workId: n.work_id ? String(n.work_id) : undefined,
         interactId: n.interact_id ? String(n.interact_id) : undefined,
         x: 0,
-        y: idx * 190 + 120,
+        y: 0,
       }))
 
-      // 引用层级：引用方位于被引用方右侧（连线从被引用方右侧指向引用方左侧）
+      // 列（x）：问答回复关系同列（回答位于提问正下方）；引用层级向右展开（引用方位于被引用方右侧）
       const level = new Map<string, number>()
       for (const n of nodes) level.set(n.id, 0)
       let changed = true
@@ -144,17 +160,106 @@ export const useSessionStore = defineStore('session', () => {
       while (changed && guard++ < nodes.length + 2) {
         changed = false
         for (const e of edges) {
-          if (e.edgeType !== 'CITATION') continue
-          const srcLevel = level.get(e.source) ?? 0
-          const tgtLevel = level.get(e.target) ?? 0
-          if (srcLevel + 1 > tgtLevel) {
-            level.set(e.target, srcLevel + 1)
-            changed = true
+          if (e.edgeType === 'QUESTION_ANSWER') {
+            const srcLevel = level.get(e.source) ?? 0
+            const tgtLevel = level.get(e.target) ?? 0
+            if (tgtLevel !== srcLevel) {
+              level.set(e.target, srcLevel)
+              changed = true
+            }
+          } else if (e.edgeType === 'CITATION') {
+            const srcLevel = level.get(e.source) ?? 0
+            const tgtLevel = level.get(e.target) ?? 0
+            if (srcLevel + 1 > tgtLevel) {
+              level.set(e.target, srcLevel + 1)
+              changed = true
+            }
           }
         }
       }
+
+      // 行（y）：
+      // 1) 问答边连接的 REQUEST+RESPONSE 归为同一个「消息列」（party），回答放在提问正下方
+      const ufParent = new Map<string, string>()
+      const find = (id: string): string => {
+        let root = ufParent.get(id) ?? id
+        if (root !== id) {
+          ufParent.set(id, find(root))
+          root = ufParent.get(id) ?? id
+        }
+        return root
+      }
+      const union = (a: string, b: string) => {
+        const ra = find(a)
+        const rb = find(b)
+        if (ra !== rb) ufParent.set(rb, ra)
+      }
+      for (const n of nodes) ufParent.set(n.id, n.id)
+      for (const e of edges) {
+        if (e.edgeType === 'QUESTION_ANSWER') union(e.source, e.target)
+      }
+
+      const partyNodes = new Map<string, ChatMapNode[]>()
       for (const n of nodes) {
-        n.x = (level.get(n.id) ?? 0) * 260
+        const root = find(n.id)
+        if (!partyNodes.has(root)) partyNodes.set(root, [])
+        partyNodes.get(root)!.push(n)
+      }
+
+      // 2) 引用边将引用方与被引用方的消息列归入同一个「行带」，行带内所有消息列共享底部行
+      const bandParent = new Map<string, string>()
+      const bandFind = (root: string): string => {
+        let band = bandParent.get(root) ?? root
+        if (band !== root) {
+          bandParent.set(root, bandFind(band))
+          band = bandParent.get(root) ?? root
+        }
+        return band
+      }
+      const bandUnion = (a: string, b: string) => {
+        const ra = bandFind(a)
+        const rb = bandFind(b)
+        if (ra !== rb) bandParent.set(rb, ra)
+      }
+      for (const root of partyNodes.keys()) bandParent.set(root, root)
+      for (const e of edges) {
+        if (e.edgeType !== 'CITATION') continue
+        bandUnion(find(e.source), find(e.target))
+      }
+
+      // 3) 行带按时间先后排序，依次分配底部行索引（行带之间留一行间距）
+      const bandNodes = new Map<string, ChatMapNode[]>()
+      for (const [root, list] of partyNodes) {
+        const band = bandFind(root)
+        if (!bandNodes.has(band)) bandNodes.set(band, [])
+        for (const n of list) bandNodes.get(band)!.push(n)
+      }
+      const nodeIndex = new Map<string, number>()
+      nodes.forEach((n, i) => nodeIndex.set(n.id, i))
+      const bands = [...bandNodes.entries()].sort((a, b) => {
+        const aEarliest = a[1].reduce((x, y) => (y.created < x.created ? y : x))
+        const bEarliest = b[1].reduce((x, y) => (y.created < x.created ? y : x))
+        if (aEarliest.created !== bEarliest.created) return aEarliest.created - bEarliest.created
+        return (nodeIndex.get(aEarliest.id) ?? 0) - (nodeIndex.get(bEarliest.id) ?? 0)
+      })
+      const bandBottomRow = new Map<string, number>()
+      let nextTopRow = 0
+      for (const [band, list] of bands) {
+        const hasStack = list.some((n) => n.infoType === 'RESPONSE') && list.some((n) => n.infoType === 'REQUEST')
+        const bottomRow = nextTopRow + (hasStack ? 1 : 0)
+        bandBottomRow.set(band, bottomRow)
+        nextTopRow = bottomRow + 2
+      }
+
+      // 4) 计算每个节点坐标：回答位于提问正下方；行带内最下面的消息框纵坐标一致
+      for (const [root, list] of partyNodes) {
+        const bottomRow = bandBottomRow.get(bandFind(root)) ?? 0
+        const hasResponse = list.some((n) => n.infoType === 'RESPONSE')
+        for (const n of list) {
+          n.x = (level.get(n.id) ?? 0) * NODE_MAP_COL_W
+          const row = n.infoType === 'RESPONSE' ? bottomRow : (hasResponse ? bottomRow - 1 : bottomRow)
+          n.y = row * NODE_MAP_ROW_H + NODE_MAP_BASE_Y
+        }
       }
 
       chatMapNodes.value = nodes
