@@ -94,6 +94,73 @@ export interface ToolCallBlock extends BlockBase {
   relatedBlockId?: string
 }
 
+// ============================================================
+// Planning 策略拆解（Task DAG / Agent DAG / 编排执行步骤）
+// ============================================================
+
+export interface TaskDagNode {
+  id: string
+  label: string
+  domain?: string
+  content?: string
+  complexity?: number
+  priority?: number
+  dependencies?: string[]
+}
+
+export interface TaskDagEdge {
+  source: string
+  target: string
+}
+
+export interface TaskDagData {
+  nodes: TaskDagNode[]
+  edges: TaskDagEdge[]
+}
+
+export interface DagNodeItem {
+  id: string
+  label: string
+  domain?: string
+  content?: string
+  status?: string
+  agentName?: string
+  input?: string
+  output?: string
+  elapsedMs?: number
+  tokenUsage?: number
+}
+
+export interface DagEdgeItem {
+  source: string
+  target: string
+  label?: string
+}
+
+export interface AgentDagData {
+  planId?: string
+  totalCount?: number
+  taskDag?: TaskDagData
+  nodes: DagNodeItem[]
+  edges: DagEdgeItem[]
+}
+
+export interface DagExecutionStep {
+  node_id: string
+  node_type: string
+  status: 'RUNNING' | 'SUCCESS' | 'ERROR' | string
+  elapsed_ms?: number
+  error?: string
+}
+
+export interface PlanningData {
+  planId?: string
+  taskDag?: TaskDagData
+  agentDag?: AgentDagData
+  executionSteps?: DagExecutionStep[]
+  status: 'idle' | 'streaming' | 'done'
+}
+
 export interface ArtifactBlock extends BlockBase {
   type: 'ArtifactPreview'
   title: string

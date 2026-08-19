@@ -116,6 +116,10 @@
 | :--- | :--- | :--- |
 | `connected` | Update(ConnectionState) | 确认 SSE 链路已建立 |
 | `loading` | Insert(StatusBlock, state=loading) | 插入加载状态块，后续被实际内容块替换 |
+| `plan_created` | Update(PlanningData.task_dag) | Planning 策略下 PlannerAgent 完成任务级拆解（Task DAG），弹窗展示子任务清单（领域/复杂度/优先级/依赖） |
+| `agent_dag_created` | Update(PlanningData.agent_dag) | 任务级拆解映射为 Agent DAG（agent_nodes / agent_edges），弹窗内复用 AgentDagFlow 渲染工作节点网络 |
+| `dag_node_start` | Update(PlanningData.execution_steps) | JSONNode 编排节点开始执行，追加 RUNNING 步骤 |
+| `dag_node_end` | Update(PlanningData.execution_steps) | JSONNode 编排节点执行结束，更新步骤状态与耗时 |
 | `agent_building` | Update(AgentSpec) | 提示 Agent 正在分析与装配 |
 | `agent_built` | Update(ThinkingChainBlock, meta.agent_info) | 更新思维链块的 Agent 名称与类型元数据 |
 | `agent_thinking` | Append(ThinkingChainBlock, content) | 向思维链块追加思考内容（以 2-5 字符打字机 chunk 渲染） |
@@ -127,8 +131,9 @@
 #### 4.3.6 块级交互与反馈
 -   **思考过程弹窗**：对话区与 ChatMap 区每条消息框底部提供「思考过程」按钮（紫色胶囊 + 大脑图标）。点击后：
     1. 立即打开 `ThinkingModal` 弹窗（含流式场景下 target 为空时实时展示当前流式思考块）；
-    2. 并行调用 `GET /api/chat/thinking?info_id=...` 从后端采集该消息对应 Work 的 Agent 执行轨迹（ThinkingChain Blocks），返回后弹窗切换到历史思考块；
+    2. 并行调用 `GET /api/chat/thinking?info_id=...` 从后端采集该消息对应 Work 的 Agent 执行轨迹（ThinkingChain Blocks 与 Planning 策略拆解 Task/Agent DAG），返回后弹窗切换到历史思考块；
     3. 采集失败或反查不到 work_id 时展示「暂无思考过程」空态，不阻断弹窗关闭。
+    弹窗顶部优先展示 **Planning 策略拆解**（`PlanningBreakdown`）：任务级拆解子任务清单（领域/复杂度/优先级/依赖）、任务→Agent 映射 DAG（复用 `AgentDagFlow`）、JSONNode 编排执行步骤（状态/耗时）；下方逐 Agent 展示思考块。流式期间拆解数据随 `plan_created` / `agent_dag_created` / `dag_node_start` / `dag_node_end` 事件实时填充。
     弹窗支持点击遮罩 / 右上角 X 关闭；流式对话进行中（`done` 事件前）弹窗自动弹出并实时展示思考块，`done`/`error` 事件后自动关闭。
 -   **悬浮工具栏**：鼠标悬停 Block 区域 300ms 后浮现轻量操作栏（复制、引用、反馈）；移出后延迟 200ms 消失；移动端改为长按触发底部面板。
 -   **本地视觉状态**：折叠/展开、详情展开等状态由独立本地状态管理，不与数据层混合，页面刷新后重置。
@@ -184,6 +189,26 @@
 -   **移动端适配**：针对触摸操作、横向溢出、工具栏触发方式做专项适配。
 
 ## 7. 变更记录
+
+### [2026-08-19] 对话区不展示 Planning 策略拆解
+- **变更原因**：用户要求对话区只保留 REQUEST/RESPONSE 消息的清爽展示，"Planning 策略拆解"卡片不应混入消息流。
+- **功能变更**：`ChatArea.vue` 对话区消息流移除 `AgentDagFlow` 渲染（原代码注释保留为参考），长程多 Agent DAG 网络不再在对话区展示；Planning 策略拆解仅保留在"思考过程"弹窗（`PlanningBreakdown`）内展示。
+- **行为差异**：
+  - 修改前：RESPONSE 消息上方渲染"Planning 策略拆解"DAG 网络卡片（`AgentDagFlow`）。
+  - 修改后：对话区仅展示 REQUEST/RESPONSE 消息卡片与交互块，不再展示拆解 DAG 卡片；拆解详情通过消息框底部「思考过程」按钮在弹窗内查看。
+- **新增边界条件**：无（纯前端展示移除，`/api/chat/history` 仍返回 `agentDag` 字段，兼容弹窗/信息页后续消费）。
+
+### [2026-08-19] Planning 策略拆解加入"思考过程"弹窗
+- **变更原因**：此前"思考过程"弹窗仅展示各 Agent 的 ThinkingChain 思考块，未包含 Planning 策略下的任务分解与 Agent DAG，复杂任务看不到"如何被拆解"的全貌。
+- **功能变更**：
+  1. **后端数据采集**：`dev-server.ts` 的 `buildThinkingBlocksAndDag` 解析 `agent_plan.task_dag` 得到 Planner 任务级拆解（Task DAG），随 `workDagMap` 一并下发；`GET /api/chat/thinking` 响应新增 `dag` 字段（`planId` / `totalCount` / `taskDag` / `nodes` / `edges`）。
+  2. **流式实时拆解**：`ChatArea.vue` 的 `handleStreamEvent` 新增 `plan_created`（记录 Task DAG）、`agent_dag_created`（记录 Agent DAG）、`dag_node_start` / `dag_node_end`（记录 JSONNode 编排执行步骤）四个事件处理，实时写入 `sessionStore.planning`。
+  3. **弹窗展示**：新增 `PlanningBreakdown.vue`，弹窗顶部展示任务拆解清单（领域/复杂度/优先级/依赖）、任务→Agent 映射 DAG（复用 `AgentDagFlow`）、编排执行步骤（状态/耗时）；`ThinkingModal.vue` 依据 target 是否为流式自动选择实时拆解或接口采集拆解数据。
+  4. **前端类型**：`types.ts` 新增 `TaskDagNode` / `TaskDagEdge` / `TaskDagData` / `DagNodeItem` / `DagEdgeItem` / `AgentDagData` / `DagExecutionStep` / `PlanningData`；`session.ts` 新增 `planning` / `thinkingDag` 状态及 `resetPlanning` / `updatePlanning` 操作。
+- **行为差异**：
+  - 修改前：弹窗仅显示 Agent 思考块；点击"思考过程"仅返回 ThinkingChain Blocks。
+  - 修改后：弹窗顶部展示 Planning 策略拆解（任务拆解 → Agent DAG → 编排执行步骤），流式期间实时填充，历史消息点击按钮从后端采集完整拆解数据。
+- **新增边界条件**：Simple 策略或无拆解数据时不渲染拆解区块；接口反查不到 task_dag / agent_dag 时 `dag` 为 `null`，弹窗仅展示思考块。
 
 ### [2026-08-19] ChatMap 布局：回答正下方 + 引用底部对齐
 - **变更原因**：用户提出 ChatMap 区两条布局要求——① 系统回答应放在提问的正下方；② 引用方与被引用方的最下面的一个消息框纵坐标一致。

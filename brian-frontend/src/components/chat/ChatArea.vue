@@ -8,12 +8,13 @@ import {
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
 import { chatApi } from '@/api'
-import type { ChatMessage, Block, TextBlock, ThinkingBlock } from '@/api/types'
+import type { ChatMessage, Block, TextBlock, ThinkingBlock, DagExecutionStep } from '@/api/types'
 import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
 import MessageCard from './MessageCard.vue'
 import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
-import AgentDagFlow from './AgentDagFlow.vue'
+// ===== 原始导入（保留参考）：对话区渲染 Planning 策略拆解（AgentDagFlow）时使用，现已在对话区移除 =====
+// import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingModal from './ThinkingModal.vue'
 
 const sessionStore = useSessionStore()
@@ -94,9 +95,10 @@ async function showThinking(id: string) {
   sessionStore.openThinkingModal(id)
   try {
     const res = await chatApi.thinking(id)
-    sessionStore.openThinkingModal(id, res.blocks)
+    // 同时下发 Planning 策略拆解（Task DAG / Agent DAG）到弹窗
+    sessionStore.openThinkingModal(id, res.blocks, res.dag ?? null)
   } catch {
-    sessionStore.openThinkingModal(id, [])
+    sessionStore.openThinkingModal(id, [], null)
   }
 }
 
@@ -220,6 +222,8 @@ async function handleSend(content: string, citingIds: string[]) {
   textBlockId = null
 
   sessionStore.setStreaming(true)
+  // 重置本轮 Planning 策略拆解数据（流式期间实时填充）
+  sessionStore.resetPlanning()
   // 用户发送消息 → 自动弹出思考过程弹窗（流式展示）
   sessionStore.openThinkingModal(null)
   try {
@@ -505,6 +509,107 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       break
     }
 
+    // ===== Planning 策略拆解事件 =====
+    case 'plan_created': {
+      // PlannerAgent 完成任务级拆解：记录 Task DAG 并更新弹窗
+      const taskDag = (payload.task_dag as { nodes?: unknown[]; edges?: unknown[] }) || {}
+      const taskNodes = Array.isArray(taskDag.nodes)
+        ? (taskDag.nodes as Record<string, unknown>[]).map((t, i) => {
+            const content = String(t.task_content ?? '')
+            const domain = String(t.task_domain ?? '')
+            return {
+              id: String(t.task_id ?? `task-${i}`),
+              label: domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`),
+              domain,
+              content,
+              complexity: Number(t.task_complexity ?? 0),
+              priority: Number(t.priority ?? 0),
+              dependencies: Array.isArray(t.dependencies) ? t.dependencies.map(String) : [],
+            }
+          })
+        : []
+      const taskEdges = Array.isArray(taskDag.edges)
+        ? (taskDag.edges as Record<string, unknown>[]).map((e) => ({
+            source: String(e.from_task_id ?? ''),
+            target: String(e.to_task_id ?? ''),
+          }))
+        : []
+      sessionStore.updatePlanning({
+        planId: typeof payload.plan_id === 'string' ? payload.plan_id : undefined,
+        taskDag: taskNodes.length > 0 ? { nodes: taskNodes, edges: taskEdges } : undefined,
+        status: 'streaming',
+      })
+      break
+    }
+
+    case 'agent_dag_created': {
+      // 任务级拆解映射为 Agent DAG：记录 Agent 级 DAG 并更新弹窗
+      const agentDag = (payload.agent_dag as Record<string, unknown>) || {}
+      const agentNodes = Array.isArray(agentDag.agent_nodes) ? agentDag.agent_nodes : []
+      sessionStore.updatePlanning({
+        planId: typeof agentDag.plan_id === 'string' ? agentDag.plan_id : undefined,
+        agentDag: {
+          planId: typeof agentDag.plan_id === 'string' ? agentDag.plan_id : undefined,
+          totalCount: Number(agentDag.total_agent_count ?? agentNodes.length),
+          nodes: agentNodes.map((n: Record<string, unknown>, i: number) => {
+            const domain = String(n.task_domain ?? '')
+            const content = String(n.task_content ?? '')
+            const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`)
+            return {
+              id: String(n.agent_id ?? `agent-${i}`),
+              label: `任务 ${i + 1}: ${title}`,
+              domain,
+              content,
+              status: String(n.status ?? 'PENDING'),
+            }
+          }),
+          edges: Array.isArray(agentDag.agent_edges)
+            ? agentDag.agent_edges.map((e: Record<string, unknown>) => ({
+                source: String(e.from_agent_id ?? ''),
+                target: String(e.to_agent_id ?? ''),
+                label: String(e.data_dependency ?? ''),
+              }))
+            : [],
+        },
+        status: 'streaming',
+      })
+      break
+    }
+
+    case 'dag_node_start': {
+      // JSONNode 编排节点开始执行：追加 RUNNING 步骤
+      const nodeId = String(payload.node_id ?? '')
+      const nodeType = String(payload.node_type ?? '')
+      const existingSteps = sessionStore.planning.executionSteps || []
+      const step: DagExecutionStep = { node_id: nodeId, node_type: nodeType, status: 'RUNNING' }
+      const idx = existingSteps.findIndex((s) => s.node_id === nodeId && s.node_type === nodeType)
+      const next = [...existingSteps]
+      if (idx >= 0) next[idx] = step
+      else next.push(step)
+      sessionStore.updatePlanning({ executionSteps: next, status: 'streaming' })
+      break
+    }
+
+    case 'dag_node_end': {
+      // JSONNode 编排节点执行结束：更新步骤状态与耗时
+      const nodeId = String(payload.node_id ?? '')
+      const nodeType = String(payload.node_type ?? '')
+      const existingSteps = sessionStore.planning.executionSteps || []
+      const next = [...existingSteps]
+      const idx = next.findIndex((s) => s.node_id === nodeId && s.node_type === nodeType)
+      const completed: DagExecutionStep = {
+        node_id: nodeId,
+        node_type: nodeType,
+        status: String(payload.status ?? 'SUCCESS'),
+        elapsed_ms: Number(payload.elapsed_ms ?? 0),
+        error: typeof payload.error === 'string' ? payload.error : undefined,
+      }
+      if (idx >= 0) next[idx] = completed
+      else next.push(completed)
+      sessionStore.updatePlanning({ executionSteps: next, status: 'streaming' })
+      break
+    }
+
     case 'agent_building':
     case 'agent_built': {
       const agentName = String(payload.agent_name || payload.agent_id || agentId || 'WorkAgent')
@@ -660,6 +765,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     case 'done': {
       sessionStore.finalizeBlocks(botMsgId)
+      // Planning 拆解完成标记
+      sessionStore.updatePlanning({ status: 'done' })
       // 系统最终回复流式输出完成（done 事件）→ 自动关闭思考弹窗
       sessionStore.closeThinkingModal()
       const feedbackBlock: Block = {
@@ -732,8 +839,11 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
             </div>
 
             <div class="max-w-[85%] min-w-0">
-              <!-- 长程多 Agent 协同依赖 DAG 网络展现 -->
+              <!-- ===== 原始展示（保留参考）：对话区消息上方渲染长程多 Agent 协同依赖 DAG 网络（Planning 策略拆解卡片） =====
               <AgentDagFlow v-if="entry.message.agentDag" :dag="entry.message.agentDag" />
+              -->
+
+              <!-- ===== 修改后：对话区不展示 Planning 策略拆解（AgentDagFlow），拆解仅在"思考过程"弹窗内展示 ===== -->
 
               <MessageCard
                 :id="entry.message.id"

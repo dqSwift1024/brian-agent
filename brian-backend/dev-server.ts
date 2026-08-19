@@ -733,6 +733,37 @@ async function buildThinkingBlocksAndDag(
       let dagObj: any = undefined;
       try { if (dRow.agent_dag_json) dagObj = JSON.parse(String(dRow.agent_dag_json)); } catch { /* ignore */ }
 
+      // ===== 原始 task_dag 解析（保留参考）：仅用于节点命名 =====
+      // /*
+      // let taskDagObj: any = undefined;
+      // try { if (dRow.task_dag) taskDagObj = JSON.parse(String(dRow.task_dag)); } catch { /* ignore */ }
+      // */
+
+      // ===== 修改后：解析 agent_plan.task_dag 得到 Planner 的任务级拆解（Task DAG），
+      //      并随 workDagMap 一起下发供"思考过程"弹窗展示 Planning 策略拆解 =====
+      let taskDagObj: any = undefined;
+      try { if (dRow.task_dag) taskDagObj = JSON.parse(String(dRow.task_dag)); } catch { /* ignore */ }
+
+      const taskDagNodes = (taskDagObj && Array.isArray(taskDagObj.nodes) ? taskDagObj.nodes : [])
+        .map((t: any, i: number) => {
+          const content = String(t.task_content ?? '');
+          const domain = String(t.task_domain ?? '');
+          return {
+            id: String(t.task_id ?? `task-${i}`),
+            label: domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`),
+            domain,
+            content,
+            complexity: Number(t.task_complexity ?? 0),
+            priority: Number(t.priority ?? 0),
+            dependencies: Array.isArray(t.dependencies) ? t.dependencies.map(String) : [],
+          };
+        });
+      const taskDagEdges = (taskDagObj && Array.isArray(taskDagObj.edges) ? taskDagObj.edges : [])
+        .map((e: any) => ({
+          source: String(e.from_task_id ?? ''),
+          target: String(e.to_task_id ?? ''),
+        }));
+
       if (dagObj && Array.isArray(dagObj.agent_nodes)) {
         for (let idx = 0; idx < dagObj.agent_nodes.length; idx++) {
           const node = dagObj.agent_nodes[idx];
@@ -751,6 +782,9 @@ async function buildThinkingBlocksAndDag(
           workDagMap.set(wId, {
             planId: dagObj.plan_id,
             totalCount: dagObj.total_agent_count || dagObj.agent_nodes.length,
+            taskDag: taskDagNodes.length > 0
+              ? { nodes: taskDagNodes, edges: taskDagEdges }
+              : undefined,
             nodes: dagObj.agent_nodes.map((n: any, i: number) => {
               const domain = String(n.task_domain || '');
               const content = String(n.task_content || '');
@@ -2085,9 +2119,16 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
 
         // 有参数但反查不到 work_id 时，返回空结果（而非 400）
-        const { workBlocksMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
+        // ===== 原始实现（保留参考）：仅返回 ThinkingChain Blocks =====
+        // const { workBlocksMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
+        // const blocks = workBlocksMap.get(workId) ?? [];
+        // sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks });
+
+        // ===== 修改后：同时下发 Planning 策略拆解（Task DAG / Agent DAG），供"思考过程"弹窗展示 =====
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
         const blocks = workBlocksMap.get(workId) ?? [];
-        sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks });
+        const dag = workDagMap.get(workId);
+        sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks, dag: dag ?? null });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];

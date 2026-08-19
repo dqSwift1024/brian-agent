@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { X, Brain, Loader2 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
 import ThinkingBlockView from '@/components/blocks/ThinkingBlock.vue'
-import type { ThinkingBlock } from '@/api/types'
+import PlanningBreakdown from './PlanningBreakdown.vue'
+import type { ThinkingBlock, PlanningData } from '@/api/types'
 
 const sessionStore = useSessionStore()
 
@@ -18,6 +19,23 @@ const thinkingBlocks = computed<ThinkingBlock[]>(() => {
   return sessionStore.blocks.filter(
     (b): b is ThinkingBlock => b.type === 'ThinkingChain' && b.meta.status === 'streaming',
   )
+})
+
+// Planning 策略拆解：指定消息 → 接口采集的 Task/Agent DAG；流式期间 → 实时拆解数据
+const planningData = computed<PlanningData | null>(() => {
+  if (targetMsgId.value) {
+    const dag = sessionStore.thinkingDag
+    if (!dag || (!dag.nodes.length && !dag.taskDag)) return null
+    return {
+      planId: dag.planId,
+      taskDag: dag.taskDag,
+      agentDag: { planId: dag.planId, totalCount: dag.totalCount, nodes: dag.nodes, edges: dag.edges },
+      status: 'done',
+    }
+  }
+  const p = sessionStore.planning
+  if (!p.taskDag && !p.agentDag && !(p.executionSteps && p.executionSteps.length > 0)) return null
+  return p
 })
 
 const isStreaming = computed(() => thinkingBlocks.value.some((b) => b.meta.status === 'streaming'))
@@ -47,10 +65,13 @@ function close() {
         </div>
 
         <div class="px-5 py-4 flex-1 overflow-y-auto space-y-2">
+          <!-- Planning 策略拆解（Task DAG / Agent DAG / 编排执行步骤） -->
+          <PlanningBreakdown v-if="planningData" :planning="planningData" />
+
           <template v-if="thinkingBlocks.length > 0">
             <ThinkingBlockView v-for="block in thinkingBlocks" :key="block.id" :block="block" />
           </template>
-          <div v-else class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
+          <div v-else-if="!planningData" class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
             <Brain :size="32" class="mb-3 text-apple-gray-300" />
             <p>暂无思考过程</p>
           </div>

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
-import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block } from '@/api/types'
+import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block, PlanningData, AgentDagData } from '@/api/types'
 import { chatApi, visualizationApi } from '@/api'
 
 export const useSessionStore = defineStore('session', () => {
@@ -23,6 +23,9 @@ export const useSessionStore = defineStore('session', () => {
   const thinkingModalVisible = ref(false)
   const thinkingTargetMsgId = ref<string | null>(null)
   const thinkingBlocks = ref<Block[]>([])
+  // Planning 策略拆解：planning 为流式期间的实时拆解数据，thinkingDag 为指定消息接口采集的拆解数据
+  const planning = ref<PlanningData>({ status: 'idle' })
+  const thinkingDag = ref<AgentDagData | null>(null)
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -300,6 +303,8 @@ export const useSessionStore = defineStore('session', () => {
     currentSessionId.value = ''
     selectedMsgIds.value = new Set()
     citingMode.value = false
+    resetPlanning()
+    thinkingDag.value = null
     localStorage.removeItem('chat-current-session-id')
   }
 
@@ -383,6 +388,8 @@ export const useSessionStore = defineStore('session', () => {
     isStreaming.value = false
   }
 
+  // ===== 原始 openThinkingModal / closeThinkingModal（保留参考） =====
+  /*
   function openThinkingModal(msgId: string | null = null, blocks: Block[] = []) {
     thinkingTargetMsgId.value = msgId
     thinkingBlocks.value = blocks
@@ -394,16 +401,43 @@ export const useSessionStore = defineStore('session', () => {
     thinkingTargetMsgId.value = null
     thinkingBlocks.value = []
   }
+  */
+
+  // ===== 修改后的 openThinkingModal：额外接收 Planning 策略拆解数据（dag） =====
+  function openThinkingModal(msgId: string | null = null, blocks: Block[] = [], dag: AgentDagData | null = null) {
+    thinkingTargetMsgId.value = msgId
+    thinkingBlocks.value = blocks
+    thinkingDag.value = dag
+    thinkingModalVisible.value = true
+  }
+
+  function closeThinkingModal() {
+    thinkingModalVisible.value = false
+    thinkingTargetMsgId.value = null
+    thinkingBlocks.value = []
+    thinkingDag.value = null
+    resetPlanning()
+  }
+
+  // Planning 拆解状态管理（流式期间实时更新）
+  function resetPlanning() {
+    planning.value = { status: 'idle' }
+  }
+
+  function updatePlanning(patch: Partial<PlanningData>) {
+    planning.value = { ...planning.value, ...patch } as PlanningData
+  }
 
   return {
     currentSessionId, messages, blocks, chatList, chatMapNodes, chatMapEdges,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
+    planning, thinkingDag,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask,
-    openThinkingModal, closeThinkingModal
+    openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning
   }
 })

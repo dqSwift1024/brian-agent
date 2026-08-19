@@ -424,6 +424,7 @@ Chat 模块的配置通过 Config Application 统一管理（`/api/config/update
 | 消息引用 | submitWork（citing_msg_ids） | 提交时携带引用消息 ID |
 | 回复气泡流式显示 | openChatStream（text 事件） | WriterAgent 逐块推送文本 |
 | Thinking 消息展示 | openChatStream（agent_thinking 事件） | Agent 思考过程 |
+| Planning 策略拆解展示 | openChatStream（plan_created / agent_dag_created / dag_node_start / dag_node_end 事件） | 任务拆解 / Agent DAG / 编排执行步骤；`GET /api/chat/thinking` 响应含 `dag` 字段 |
 | 反馈按钮 | 见 Feedback Application（本文档暂不涉及） | 评分/点赞/点踩 |
 | 会话列表 | searchSession | 搜索会话列表 |
 | 会话创建 | createSession | 创建新会话 |

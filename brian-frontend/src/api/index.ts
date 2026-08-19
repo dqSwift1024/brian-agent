@@ -7,7 +7,7 @@ import type {
   UserProfileData, ProfileVersionData, ProfileHistoryItem,
   VisualizedMessage, MessageGraphNode, MessageGraphEdge, AgentDAG, AgentTrace,
   McpUsageRecord,
-  Block,
+  Block, AgentDagData,
 } from './types'
 
 const API_BASE = '/api'
@@ -62,7 +62,7 @@ export const chatApi = {
   pinMessage: (infoId: string) =>
     request<{ pin: boolean }>(`/chat/message/${encodeURIComponent(infoId)}/pin`, { method: 'POST' }),
   thinking: (infoId: string) =>
-    request<{ work_id: string; interact_id: string; count: number; blocks: Block[] }>(`/chat/thinking?info_id=${encodeURIComponent(infoId)}`).then(r => r),
+    request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null }>(`/chat/thinking?info_id=${encodeURIComponent(infoId)}`).then(r => r),
   agentChain: (exchangeId: string) =>
     request<{ nodes: AgentChainNode[] }>(`/chat/agent-chain/${encodeURIComponent(exchangeId)}`).then(r => r.nodes),
   cancelTask: (exchangeId: string) =>
