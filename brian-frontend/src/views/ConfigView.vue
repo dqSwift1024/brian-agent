@@ -122,8 +122,9 @@ const navSections: NavSection[] = [
     subsections: [
       { key: 'infra-log', label: '日志', icon: Terminal, type: 'params', configModule: 'log_provider', configCategories: ['basic'] },
       { key: 'infra-mq', label: '消息队列', icon: Radio, type: 'params', configModule: 'mq_provider', configCategories: ['basic'] },
-        { key: 'infra-graphdb', label: '图数据库', icon: Database, type: 'params', configModule: 'graphdb_provider', configCategories: ['basic', 'aging', 'weight'] },
+      { key: 'infra-graphdb', label: '图数据库', icon: Database, type: 'params', configModule: 'graphdb_provider', configCategories: ['basic', 'aging', 'weight'] },
       { key: 'infra-vectordb', label: '向量数据库', icon: Table2, type: 'params', configModule: 'vectordb_provider', configCategories: ['basic'] },
+      { key: 'infra-tool', label: 'HTTP / 工具', icon: Globe, type: 'params', configModule: 'tool_provider', configCategories: ['basic'] },
     ],
   },
   {

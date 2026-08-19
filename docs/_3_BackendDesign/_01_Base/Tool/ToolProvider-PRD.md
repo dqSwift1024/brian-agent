@@ -13,8 +13,12 @@
 brian-backend/Base/ToolProvider/
 ├── index.ts                # 统一导出
 ├── access/ToolAccess.ts    # 对外入口（工具业务用例）
+├── access/HttpAccess.ts    # 对外 HTTP 请求统一入口（代理/超时）
 ├── application/ToolService.ts  # 工具业务逻辑
+├── application/HttpService.ts  # HTTP 请求业务逻辑（代理/超时/本地直连）
 ├── domain/types.ts         # 返回类型定义
+├── domain/HttpTypes.ts     # HttpRequest / HttpResponse 类型定义
+├── infrastructure/ToolSchemaInitializer.ts  # tool_config 表结构初始化
 ├── IdGenerator.ts          # UUID / 时间 / 日期
 ├── JsonParser.ts           # JSON 解析 / 提取 / 检查 / 格式化 / 压缩
 └── XmlParser.ts            # XML 解析 / 提取 / 检查 / 格式化 / 压缩
@@ -23,7 +27,7 @@ brian-backend/Base/ToolProvider/
 通过 `@brian-agent/base` 导出：
 
 ```typescript
-import { ToolAccess, IdGenerator, JsonParser, XmlParser } from '@brian-agent/base';
+import { ToolAccess, HttpAccess, ToolSchemaInitializer, IdGenerator, JsonParser, XmlParser } from '@brian-agent/base';
 ```
 
 ## 3. 接口
@@ -82,6 +86,31 @@ import { ToolAccess, IdGenerator, JsonParser, XmlParser } from '@brian-agent/bas
 | `cronParse(expr)` | `ToolCronParseResult` | 解析表达式为字段 |
 | `cronNext(expr, fromMs)` | `ToolCronNextResult` | 计算下次执行时间 |
 
+### HttpAccess（对外 HTTP 请求入口）
+
+统一对外 HTTP 请求能力，将代理 / 超时 / 错误处理逻辑收敛到 ToolProvider，供 LLM / MCP / 编排等各层复用，禁止各层自行实现 `fetch` + `AbortController` 超时逻辑。
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `request(req: HttpRequest)` | `HttpResponse` | 发起 HTTP 请求，内部统一处理代理与超时 |
+
+**请求参数（HttpRequest）**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `url` | `string` | 请求地址（必填） |
+| `method` | `string` | HTTP 方法，默认 GET |
+| `headers` | `Record<string, string>` | 请求头 |
+| `body` | `string \| Buffer` | 请求体 |
+| `timeoutMs` | `number` | 超时时间（毫秒），优先级最高 |
+| `signal` | `AbortSignal` | 外部取消信号 |
+
+**响应（HttpResponse）**：`{ ok, status, statusText, headers, bodyText }`（bodyText 为响应体文本，业务侧自行 `JSON.parse`）。
+
+**默认超时**：请求级 `timeoutMs` > 配置中心 `tool_provider.http_timeout_ms`（`tool_config` 表）> 硬编码 60s。
+
+**代理支持**：通过 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 环境变量，外部地址走 `https-proxy-agent` / `http-proxy-agent`；本地地址（localhost / 127.0.0.1 / ::1 / 0.0.0.0）直连。
+
 ## 4. HTTP 路由
 
 | 方法 | 路径 | 入参 | 说明 |
@@ -108,7 +137,8 @@ import { ToolAccess, IdGenerator, JsonParser, XmlParser } from '@brian-agent/bas
 
 ## 6. 重要内容
 
-1. ToolProvider 为**无状态纯工具模块**，不依赖数据库，无 SchemaInitializer，无需 `initialize()`；
-2. 所有方法为静态方法或简单实例方法，不经过 AopProxy（纯工具函数，避免日志打印长文本）；
-3. `JsonParser.parse` 的解析顺序：剥离围栏后直接 parse → 正则提取对象 → 正则提取数组，全部失败返回 null；
-4. 正则匹配后端执行时对非法 pattern / flags 做了 try-catch 容错，返回 `valid: false` 而非抛异常。
+1. ToolProvider 的**工具能力**（IdGenerator / JsonParser / XmlParser / ToolAccess）为无状态纯工具模块，不依赖数据库，方法为静态方法或简单实例方法，不经过 AopProxy（纯工具函数，避免日志打印长文本）；
+2. **HTTP 子模块（HttpAccess / HttpService）例外**：依赖 `tool_config` 配置表（经 `ToolSchemaInitializer` 建表），存储 `http_timeout_ms` 等全局 HTTP 配置，由各层 Provider（LLM / MCP 等）在启动时注入；
+3. 外部 HTTP 请求统一经 `HttpAccess.request` 发起，禁止各层自行实现 `fetch` + `AbortController` 超时 / 代理分叉逻辑；
+4. `JsonParser.parse` 的解析顺序：剥离围栏后直接 parse → 正则提取对象 → 正则提取数组，全部失败返回 null；
+5. 正则匹配后端执行时对非法 pattern / flags 做了 try-catch 容错，返回 `valid: false` 而非抛异常。

@@ -416,6 +416,8 @@ export class ExecLLMInput extends Input {
   max_tokens?: number;
   /** 其他透传参数（可选），原样进入请求体 */
   extra?: Record<string, unknown>;
+  /** 禁止模型降级回退（可选），true 时仅调用指定模型，不尝试其他候选模型 */
+  no_fallback?: boolean;
 }
 
 /** execLLM 出参 */

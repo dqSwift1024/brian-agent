@@ -44,6 +44,7 @@ Config Application 是系统配置的统一管理入口，采用"静态定义 + 
 | Base | GraphDBProvider | enableGraphDB / closeGraphDB / visualizedGraph | 代理管理 GraphDB |
 | Base | VectorDBProvider | enableVectorDB / closeVectorDB / visualizedVector | 代理管理 VectorDB |
 | Base | RelationDBProvider | enableDB / closeDB / visualizedDB | 代理管理 RelationDB |
+| Base | ToolProvider | http_timeout_ms（写 tool_config 表） | 代理管理 HTTP 超时配置 |
 | Base | MQProvider | enableMQ / closeMQ / getQueueStats | 代理管理 MQ |
 | Base | LogProvider | - | 日志记录 |
 
@@ -349,6 +350,7 @@ effective_writable(node) = parent.effective_writable AND node.writable
 | BASE | VectorDBProvider | vectordb_provider.enabled | enableVectorDB | enable |
 | BASE | VectorDBProvider | vectordb_provider.default_top_k / default_similarity_threshold / default_distance_metric | 写 vectordb_config 表 | 对应字段 |
 | BASE | RelationDBProvider | relationdb_provider.enabled | enableDB | enable |
+| BASE | ToolProvider | tool_provider.http_timeout_ms | 写 tool_config 表 | http_timeout_ms |
 | BASE | LLMProvider | llm_provider.* | addLLMProvider / updateLLMProvider / delLLMProvider 等 | 根据操作类型 |
 | BASE | SoulProvider | soul.* | addSoul / updateSoul / delSoul 等 | 根据操作类型 |
 | BASE | SkillProvider | skill.* | addSkill / updateSkill / delSkill 等 | 根据操作类型 |

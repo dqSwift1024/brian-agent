@@ -11,6 +11,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
 
 /** MCP 通信方式 */
 export type McpTransportType = 'stdio' | 'streamable-http' | 'http-sse' | 'rest';
@@ -90,16 +91,8 @@ function unwrapRpcResult(response: unknown): unknown {
   return response;
 }
 
-/** 带超时的 fetch */
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
+/** 统一 HTTP 请求入口（由 ToolProvider 集中处理代理/超时） */
+const http = new HttpAccess();
 
 // ---------------------------------------------------------------------------
 // stdio 客户端（长驻进程 + JSON-RPC 请求/响应关联）
@@ -265,10 +258,10 @@ export async function callToolOverHttp(
     method: 'tools/call',
     params: { name: toolName, arguments: args },
   });
-  const res = await fetchWithTimeout(config.url, { method: 'POST', headers, body }, timeoutMs);
-  const text = await res.text();
+  const res = await http.request({ url: config.url, method: 'POST', headers, body, timeoutMs });
+  const text = res.bodyText;
   if (!res.ok) throw new Error(`MCP HTTP 调用失败: HTTP ${res.status} ${text}`);
-  const contentType = res.headers.get('content-type') || '';
+  const contentType = res.headers['content-type'] || '';
   let result: unknown;
   if (contentType.includes('text/event-stream')) {
     result = unwrapRpcResult(parseSseResponse(text));
@@ -303,8 +296,8 @@ export async function callToolOverRest(
   };
   if (config.auth_token) headers.Authorization = `Bearer ${config.auth_token}`;
   const body = JSON.stringify({ tool: toolName, ...args });
-  const res = await fetchWithTimeout(config.url, { method, headers, body }, timeoutMs);
-  const text = await res.text();
+  const res = await http.request({ url: config.url, method, headers, body, timeoutMs });
+  const text = res.bodyText;
   if (!res.ok) throw new Error(`MCP REST 调用失败: HTTP ${res.status} ${text}`);
   let result: unknown = text;
   try {

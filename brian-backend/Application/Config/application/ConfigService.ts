@@ -23,6 +23,7 @@ import {
   GRAPHDB_CONFIG_TABLE,
   VECTORDB_CONFIG_TABLE,
   RELATIONDB_CONFIG_TABLE,
+  TOOL_CONFIG_TABLE,
 } from '@brian-agent/base';
 
 import type { LLMCoreAccess, InfoCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess } from '@brian-agent/core';
@@ -228,6 +229,7 @@ export class ConfigService {
     graphdb_provider: GRAPHDB_CONFIG_TABLE,
     vectordb_provider: VECTORDB_CONFIG_TABLE,
     relationdb_provider: RELATIONDB_CONFIG_TABLE,
+    tool_provider: TOOL_CONFIG_TABLE,
   };
 
   constructor(

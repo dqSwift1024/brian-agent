@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess, InfoType, CollectionSource, ContextSource } from './Base';
+import { IdGenerator, ToolAccess, HttpAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource } from './Base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -365,6 +365,13 @@ async function buildContext() {
   // Bookmark
   const bookmarkAccess = new BookmarkAccess(relationDb, logger);
   const toolAccess = new ToolAccess();
+  // 初始化 tool_config 表并创建 HTTP 请求入口（含可配置超时）
+  new ToolSchemaInitializer(relationDb).init();
+  const toolConfigService = new ConfigService(relationDb, TOOL_CONFIG_TABLE);
+  await toolConfigService.initDefaults([
+    { config_key: 'http_timeout_ms', config_value: '60000', value_type: 'INT', description: 'HTTP 请求默认超时时间（毫秒）' },
+  ]);
+  const httpAccess = new HttpAccess(toolConfigService);
   const streamAccess = new StreamAccess(relationDb, logger);
 
   // ---- Core Providers ----
@@ -608,6 +615,7 @@ async function buildContext() {
     graphDBAccess, mqAccess, logAccess, vectorDBAccess,
     cdtAccess, bookmarkAccess,
     toolAccess,
+    httpAccess,
     cronAccess,
     streamAccess,
     infoCore, llmCore, mcpCore, skillCore, soulCore, mqCore,
@@ -1208,6 +1216,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             temperature: typeof body.temperature === 'number' ? body.temperature : 0.7,
             // 显式限制输出 token，避免模型表里存的是上下文窗口（如 1048576）导致请求被提供商拒绝
             max_tokens: typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : 2048,
+            // 模拟测试仅调用当前指定模型，不走模型降级逻辑
+            no_fallback: true,
           });
           const execOutput = new ExecLLMOutput();
           await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);
@@ -1369,15 +1379,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
         try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 15000);
-          const resp = await fetch(url, {
-            method: 'POST', headers,
+          const resp = await httpAccess.request({
+            url,
+            method: 'POST',
+            headers,
             body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 }),
-            signal: controller.signal,
+            timeoutMs: 15000,
           });
-          clearTimeout(timer);
-          const text = await resp.text();
+          const text = resp.bodyText;
           sendJson(res, resp.ok ? 200 : 502, {
             ok: resp.ok,
             status: resp.status,
@@ -1556,22 +1565,22 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const start = Date.now();
           if (provId === 'github') {
-            const r = await fetch('https://registry.npmjs.org/-/v1/search?text=keywords:mcp&size=1');
+            const r = await httpAccess.request({ url: 'https://registry.npmjs.org/-/v1/search?text=keywords:mcp&size=1' });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'npm registry 可达' : `HTTP ${r.status}`;
           } else if (provId === 'smithery') {
-            const r = await fetch('https://api.smithery.ai/servers?pageSize=1');
+            const r = await httpAccess.request({ url: 'https://api.smithery.ai/servers?pageSize=1' });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'Smithery API 可达' : `HTTP ${r.status}`;
           } else if (provId === 'aliyun_bailian') {
-            const r = await fetch('https://dashscope.aliyuncs.com', { signal: AbortSignal.timeout(5000) });
+            const r = await httpAccess.request({ url: 'https://dashscope.aliyuncs.com', timeoutMs: 5000 });
             latency = Date.now() - start;
             ok = true;
             statusMsg = 'DashScope API 可达';
           } else if (provId === 'modelscope') {
-            const r = await fetch('https://modelscope.cn', { signal: AbortSignal.timeout(5000) });
+            const r = await httpAccess.request({ url: 'https://modelscope.cn', timeoutMs: 5000 });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'ModelScope 可达' : `HTTP ${r.status}`;
@@ -1595,9 +1604,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           if (provId === 'github') {
             const searchTerm = q ? `keywords:mcp+${encodeURIComponent(q)}` : 'keywords:mcp+server';
-            const npmRes = await fetch(`https://registry.npmjs.org/-/v1/search?text=${searchTerm}&size=${pageSize}&from=${(page - 1) * pageSize}`);
+            const npmRes = await httpAccess.request({ url: `https://registry.npmjs.org/-/v1/search?text=${searchTerm}&size=${pageSize}&from=${(page - 1) * pageSize}` });
             if (!npmRes.ok) throw new Error(`npm 请求失败 HTTP ${npmRes.status}`);
-            const data = await npmRes.json() as { objects: Array<{ package: { name: string; description: string; version: string; links?: { npm?: string } } }>; total: number };
+            const data = JSON.parse(npmRes.bodyText) as { objects: Array<{ package: { name: string; description: string; version: string; links?: { npm?: string } } }>; total: number };
             tools = (data.objects || []).map(obj => ({
               id: obj.package.name,
               title: obj.package.name,
@@ -1618,9 +1627,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             params.set('pageSize', String(Math.min(pageSize, 100)));
             params.set('page', String(page));
             if (q) params.set('q', q);
-            const smRes = await fetch(`https://api.smithery.ai/servers?${params.toString()}`);
+            const smRes = await httpAccess.request({ url: `https://api.smithery.ai/servers?${params.toString()}` });
             if (!smRes.ok) throw new Error(`Smithery 请求失败 HTTP ${smRes.status}`);
-            const data = await smRes.json() as { servers: Array<{ id: string; qualifiedName: string; displayName: string; description: string; remote?: boolean }>; pagination: { totalCount: number } };
+            const data = JSON.parse(smRes.bodyText) as { servers: Array<{ id: string; qualifiedName: string; displayName: string; description: string; remote?: boolean }>; pagination: { totalCount: number } };
             tools = (data.servers || []).map(s => ({
               id: s.qualifiedName || s.id,
               title: s.displayName || s.qualifiedName || s.id,
@@ -1653,9 +1662,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           // GitHub: fetch npm package info and install directly
           if (provId === 'github') {
-            const pkgRes = await fetch(`https://registry.npmjs.org/${toolId}/latest`);
+            const pkgRes = await httpAccess.request({ url: `https://registry.npmjs.org/${toolId}/latest` });
             if (!pkgRes.ok) { sendJson(res, 400, { error: `npm 包 ${toolId} 不存在` }); return; }
-            const pkg = await pkgRes.json() as { name: string; description: string; bin?: Record<string, string>; version?: string };
+            const pkg = JSON.parse(pkgRes.bodyText) as { name: string; description: string; bin?: Record<string, string>; version?: string };
             // 校验：不能重复安装
             const dup = ctx.relationDb.queryRaw<{ id: string }>(
               'SELECT "id" FROM "mcp_install" WHERE "mcp_provider_id"=? AND "mcp_title"=?',

@@ -6,9 +6,13 @@
  * - JsonParser：JSON 解析 / 提取 / 检查 / 格式化 / 压缩
  * - XmlParser：XML 解析 / 提取 / 检查 / 格式化 / 压缩
  * - ToolAccess：工具业务用例对外入口（含正则表达式匹配）
+ * - HttpAccess：统一对外 HTTP 请求入口（含代理/超时处理）
  */
 
 export { ToolAccess } from './access/ToolAccess';
+export { HttpAccess } from './access/HttpAccess';
+export type { HttpRequest, HttpResponse } from './domain/HttpTypes';
+export { ToolSchemaInitializer } from './infrastructure/ToolSchemaInitializer';
 export { IdGenerator } from './IdGenerator';
 export { JsonParser } from './JsonParser';
 export { XmlParser } from './XmlParser';

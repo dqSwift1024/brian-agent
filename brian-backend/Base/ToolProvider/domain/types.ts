@@ -79,3 +79,6 @@ export interface ToolCronNextResult {
   /** 下次执行时间戳（毫秒），无匹配为 null */
   next_time: number | null;
 }
+
+/** ToolProvider 配置表名 */
+export const TOOL_CONFIG_TABLE = 'tool_config';

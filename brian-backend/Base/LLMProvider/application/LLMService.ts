@@ -10,14 +10,14 @@
  *
  * LLMProvider 是 LLM 的唯一操作入口，上层不可直接调用 LLM 提供商 API。
  * 对外 API 调用采用 OpenAI 兼容协议（/v1/models、/v1/chat/completions），
- * 通过 Node.js 全局 fetch 实现。
+ * 通过 HttpAccess 统一发起 HTTP 请求（代理/超时由 ToolProvider 集中处理）。
  */
 
-import http from 'node:http';
-import https from 'node:https';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { Logger } from '../../shared/aop/AopProxy';
 import { ConfigService } from '../../shared/config/ConfigService';
+import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
+import { TOOL_CONFIG_TABLE } from '../../ToolProvider/domain/types';
 import {
   ComponentDisabledError,
   ValidationError,
@@ -105,6 +105,7 @@ export class LLMService {
   private closed = false;
 
   private readonly config: ConfigService;
+  private readonly http: HttpAccess;
 
   /**
    * @param relationDb RelationDBProvider 接入层
@@ -115,6 +116,7 @@ export class LLMService {
     private readonly logger?: Logger,
   ) {
     this.config = new ConfigService(relationDb, LLM_CONFIG_TABLE);
+    this.http = new HttpAccess(new ConfigService(relationDb, TOOL_CONFIG_TABLE));
   }
 
   // -------------------------------------------------------------------------
@@ -161,159 +163,6 @@ export class LLMService {
    */
   private buildEndpoint(baseUrl: string, apiPath: string): string {
     return `${baseUrl.replace(/\/+$/, '')}/${apiPath.replace(/^\/+/, '')}`;
-  }
-
-  /**
-   * 带超时的 fetch 请求。
-   *
-   * 使用 AbortController 实现超时控制，超时后中止请求并抛出错误。
-   *
-   * @param url 请求地址
-   * @param options fetch 选项
-   * @param timeoutMs 超时时间（毫秒）
-   * @returns fetch 响应
-   */
-  private async fetchWithTimeout(
-    url: string,
-    options: RequestInit,
-    timeoutMs: number,
-  ): Promise<Response> {
-    const proxy =
-      process.env.HTTPS_PROXY ||
-      process.env.https_proxy ||
-      process.env.HTTP_PROXY ||
-      process.env.http_proxy ||
-      process.env.ALL_PROXY ||
-      process.env.all_proxy;
-
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      parsedUrl = new URL(url, 'http://localhost');
-    }
-
-    const isLocalhost =
-      parsedUrl.hostname === '127.0.0.1' ||
-      parsedUrl.hostname === 'localhost' ||
-      parsedUrl.hostname === '::1' ||
-      parsedUrl.hostname === '0.0.0.0';
-
-    if (!proxy || isLocalhost) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        return await fetch(url, { ...options, signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-
-    // 存在代理且为外部地址时：使用代理 Agent 发起 HTTP/HTTPS 请求
-    return new Promise((resolve, reject) => {
-      let isSettled = false;
-      const isHttps = parsedUrl.protocol === 'https:';
-      const lib = isHttps ? https : http;
-
-      let agent: any = undefined;
-      try {
-        if (isHttps) {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { HttpsProxyAgent } = require('https-proxy-agent');
-          agent = new HttpsProxyAgent(proxy);
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { HttpProxyAgent } = require('http-proxy-agent');
-          agent = new HttpProxyAgent(proxy);
-        }
-      } catch {
-        // 缺少 agent 库时降级为直接直连
-      }
-
-      const headers: Record<string, string> = {};
-      if (options.headers) {
-        if (Array.isArray(options.headers)) {
-          for (const [k, v] of options.headers) headers[k] = String(v);
-        } else if (typeof (options.headers as any).entries === 'function') {
-          for (const [k, v] of (options.headers as any).entries()) headers[k] = String(v);
-        } else {
-          for (const [k, v] of Object.entries(options.headers as Record<string, string>)) {
-            if (v !== undefined) headers[k] = String(v);
-          }
-        }
-      }
-
-      const reqOptions: https.RequestOptions = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port ? Number(parsedUrl.port) : (isHttps ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method || 'GET',
-        headers,
-        timeout: timeoutMs,
-      };
-      if (agent) {
-        reqOptions.agent = agent;
-      }
-
-      const timer = setTimeout(() => {
-        if (!isSettled) {
-          isSettled = true;
-          req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
-
-      const req = lib.request(reqOptions, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-        res.on('end', () => {
-          if (isSettled) return;
-          isSettled = true;
-          clearTimeout(timer);
-          const bodyBuffer = Buffer.concat(chunks);
-          const bodyText = bodyBuffer.toString('utf-8');
-          const responseObj = {
-            ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
-            status: res.statusCode || 200,
-            statusText: res.statusMessage || '',
-            headers: new Headers(res.headers as Record<string, string>),
-            text: async () => bodyText,
-            json: async () => JSON.parse(bodyText),
-          } as unknown as Response;
-          resolve(responseObj);
-        });
-      });
-
-      req.on('error', (err) => {
-        if (!isSettled) {
-          isSettled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
-      });
-
-      req.on('timeout', () => {
-        if (!isSettled) {
-          isSettled = true;
-          clearTimeout(timer);
-          req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
-        }
-      });
-
-      if (options.signal) {
-        options.signal.addEventListener('abort', () => {
-          if (!isSettled) {
-            isSettled = true;
-            clearTimeout(timer);
-            req.destroy(new Error('Request aborted'));
-          }
-        });
-      }
-
-      if (options.body) {
-        req.write(typeof options.body === 'string' ? options.body : JSON.stringify(options.body));
-      }
-      req.end();
-    });
   }
 
   /**
@@ -688,11 +537,13 @@ export class LLMService {
     const req = strategy.buildTestRequest(provider);
 
     try {
-      const res = await this.fetchWithTimeout(
-        req.url,
-        { method: req.method, headers: req.headers, body: req.body },
-        TEST_TIMEOUT_MS,
-      );
+      const res = await this.http.request({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        timeoutMs: TEST_TIMEOUT_MS,
+      });
       output.response_time_ms = Date.now() - start;
       output.status_code = res.status;
       // 只要收到 HTTP 响应即视为连通（即使状态码非 2xx）
@@ -907,15 +758,17 @@ export class LLMService {
     }> = [];
 
     try {
-      const res = await this.fetchWithTimeout(
-        req.url,
-        { method: req.method, headers: req.headers, body: req.body },
-        LIST_TIMEOUT_MS,
-      );
+      const res = await this.http.request({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        timeoutMs: LIST_TIMEOUT_MS,
+      });
       if (!res.ok) {
         let errDetail = `HTTP ${res.status}`;
         try {
-          const errJson = (await res.json()) as { error?: { message?: string } };
+          const errJson = JSON.parse(res.bodyText) as { error?: { message?: string } };
           if (errJson.error?.message) errDetail += ` - ${errJson.error.message}`;
         } catch {
           /* ignore */
@@ -925,7 +778,7 @@ export class LLMService {
         // 请求失败时不写入/更新缓存时间戳
         return false;
       }
-      const rawText = await res.text();
+      const rawText = res.bodyText;
       let json: unknown = {};
       try {
         json = JSON.parse(rawText);
@@ -1396,6 +1249,7 @@ export class LLMService {
   // }
 
   // ===== 修改后的方法：支持模型故障自动降级回退（指定模型 -> 默认模型 -> 启用模型1 -> 启用模型2 ...） =====
+  // 当 input.no_fallback 为 true 时，仅尝试指定模型，不降级到其他模型
   async execLLM(
     input: ExecLLMInput,
     _context: LLMContext,
@@ -1420,7 +1274,10 @@ export class LLMService {
     let lastError = '';
     let lastErrorCode = '';
 
-    for (let i = 0; i < candidateIds.length; i++) {
+    // no_fallback 模式：仅尝试第一个候选模型（即指定的模型），不降级
+    const maxAttempts = input.no_fallback ? 1 : candidateIds.length;
+
+    for (let i = 0; i < maxAttempts; i++) {
       const currentId = candidateIds[i];
       const singleOutput = new ExecLLMOutput();
       const ok = await this.executeSingleLLM(currentId, input, startTime, singleOutput);
@@ -1458,7 +1315,7 @@ export class LLMService {
       throw new ValidationError(lastError);
     }
 
-    output.error = `所有可用模型均调用失败 (尝试了 ${candidateIds.length} 个模型): ${lastError}`;
+    output.error = `所有可用模型均调用失败 (尝试了 ${maxAttempts} 个模型): ${lastError}`;
     output.error_code = lastErrorCode || 'ALL_MODELS_FAILED';
     output.duration_ms = Date.now() - startTime;
     return false;
@@ -1588,23 +1445,21 @@ export class LLMService {
     const req = strategy.buildChatRequest(provider, llm, input);
 
     try {
-      const res = await this.fetchWithTimeout(
-        req.url,
-        {
-          method: req.method,
-          headers: req.headers,
-          body: req.body,
-        },
-        EXEC_TIMEOUT_MS,
-      );
+      const res = await this.http.request({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        timeoutMs: EXEC_TIMEOUT_MS,
+      });
       if (!res.ok) {
-        const text = await res.text();
+        const text = res.bodyText;
         output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
         output.error_code = 'REMOTE_ERROR';
         output.duration_ms = Date.now() - startTime;
         return false;
       }
-      const rawText = await res.text();
+      const rawText = res.bodyText;
       output.raw_response = rawText;
       let json: unknown = {};
       try {
@@ -1695,23 +1550,21 @@ export class LLMService {
     const req = strategy.buildEmbedRequest(provider, llm, input);
 
     try {
-      const res = await this.fetchWithTimeout(
-        req.url,
-        {
-          method: req.method,
-          headers: req.headers,
-          body: req.body,
-        },
-        EXEC_TIMEOUT_MS,
-      );
+      const res = await this.http.request({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        timeoutMs: EXEC_TIMEOUT_MS,
+      });
       if (!res.ok) {
-        const errText = await res.text();
+        const errText = res.bodyText;
         output.error = `向量化调用失败: HTTP ${res.status} ${errText}`;
         output.error_code = 'REMOTE_ERROR';
         output.duration_ms = Date.now() - startTime;
         return false;
       }
-      const rawText = await res.text();
+      const rawText = res.bodyText;
       output.raw_response = rawText;
       let json: unknown = {};
       try {

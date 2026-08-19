@@ -50,6 +50,7 @@ export const MODULE_LABELS: Record<string, { label: string; desc: string }> = {
   graphdb_provider: { label: 'GraphDB Provider', desc: '图数据库后端配置' },
   vectordb_provider: { label: 'VectorDB Provider', desc: '向量数据库配置' },
   relationdb_provider: { label: 'RelationDB Provider', desc: '关系型数据库配置' },
+  tool_provider: { label: 'Tool Provider', desc: '工具与 HTTP 请求配置' },
   llm_core: { label: 'LLM Core', desc: 'LLM 调用核心' },
   info_core: { label: 'Info Core', desc: '信息/记忆核心' },
   mcp_core: { label: 'MCP Core', desc: 'MCP 调用核心' },
@@ -160,6 +161,9 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
 
   // --- RelationDBProvider ---
   base('relationdb_provider', 'basic', 'enabled', '关系数据库启用', 'BOOLEAN', true, '关系数据库是否启用'),
+
+  // --- ToolProvider ---
+  base('tool_provider', 'basic', 'http_timeout_ms', 'HTTP 请求超时 (ms)', 'INT', 60000, '全局 HTTP 请求默认超时时间，单位毫秒'),
 
   // =========================================================================
   // CORE layer

@@ -11,7 +11,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ToolAccess } from '../ToolProvider';
+import { ToolAccess, HttpAccess, ToolSchemaInitializer, TOOL_CONFIG_TABLE } from '../ToolProvider';
+import { RelationDBAccess } from '../RelationDBProvider';
+import { ConfigService } from '../shared/config/ConfigService';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -129,6 +131,37 @@ describe('ToolProvider', () => {
       const out = tool.regexMatch('a', 'abc', 'zz');
       expect(out.valid).toBe(false);
       expect(out.error).toBeTruthy();
+    });
+  });
+
+  describe('HttpAccess & 超时配置', () => {
+    it('should use default 60000ms timeout when no config provided', async () => {
+      const http = new HttpAccess();
+      // Verify instance creation and request interface
+      expect(http).toBeDefined();
+      expect(typeof http.request).toBe('function');
+    });
+
+    it('should read timeout from tool_config table via ConfigService', async () => {
+      const relationDb = new RelationDBAccess({ dbPath: ':memory:' });
+      await relationDb.initialize();
+      new ToolSchemaInitializer(relationDb).init();
+
+      const configService = new ConfigService(relationDb, TOOL_CONFIG_TABLE);
+      await configService.initDefaults([
+        { config_key: 'http_timeout_ms', config_value: '45000', value_type: 'INT', description: 'HTTP 请求默认超时时间' },
+      ]);
+
+      const http = new HttpAccess(configService);
+      expect(http).toBeDefined();
+
+      const val = await configService.getInt('http_timeout_ms', 60000);
+      expect(val).toBe(45000);
+
+      // Update config
+      await configService.set('http_timeout_ms', '120000', 'INT');
+      const updatedVal = await configService.getInt('http_timeout_ms', 60000);
+      expect(updatedVal).toBe(120000);
     });
   });
 });

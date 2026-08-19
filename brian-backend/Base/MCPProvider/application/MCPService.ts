@@ -7,6 +7,8 @@
 
 import { execSync } from 'child_process';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
+import { TOOL_CONFIG_TABLE } from '../../ToolProvider/domain/types';
 import {
   StdioMcpClient,
   callToolOverHttp,
@@ -78,9 +80,11 @@ export class MCPService {
   private enabled = true;
   private readonly config: ConfigService;
   private readonly runningMcps = new Map<string, StdioMcpClient>();
+  private readonly http: HttpAccess;
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, MCP_CONFIG_TABLE);
+    this.http = new HttpAccess(new ConfigService(relationDb, TOOL_CONFIG_TABLE));
   }
 
   /** 校验组件是否启用 */
@@ -368,14 +372,7 @@ export class MCPService {
     }
     const start = Date.now();
     try {
-      // 使用 fetch 测试连通性
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      await fetch(String(provider.mcp_provider_url), {
-        method: 'GET',
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+      await this.http.request({ url: String(provider.mcp_provider_url), method: 'GET', timeoutMs: 10000 });
       output.connected = true;
     } catch {
       output.connected = false;
@@ -420,14 +417,9 @@ export class MCPService {
 
     let mcpList: Array<{ title: string; brief: string; installCmd: string }> = [];
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-      const resp = await fetch(`${String(provider.mcp_provider_url)}/mcps`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+      const resp = await this.http.request({ url: `${String(provider.mcp_provider_url)}/mcps`, timeoutMs: 30000 });
       if (resp.ok) {
-        const data = (await resp.json()) as Array<{
+        const data = JSON.parse(resp.bodyText) as Array<{
           title?: string;
           brief?: string;
           install_cmd?: string;
