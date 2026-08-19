@@ -171,6 +171,7 @@ import {
   PinMessageInput, PinMessageOutput,
   CancelWorkInput, CancelWorkOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
+  UpdateSessionTitleInput, UpdateSessionTitleOutput,
 } from './Application/Chat/domain/types';
 
 import { AopProxy } from './Base/shared/aop/AopProxy';
