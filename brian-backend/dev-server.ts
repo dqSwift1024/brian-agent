@@ -1575,7 +1575,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/config/provider/')) {
         const id = pathname.split('/api/config/provider/')[1];
-        const input = Object.assign(new DelLLMProviderInput(), { provider_ids: [id] });
+        const input = Object.assign(new DelLLMProviderInput(), { ids: [id] });
         const output = new DelLLMProviderOutput();
         const context = new LLMContext();
         await ctx.configAccess.delLLMProvider(input, context, output);
