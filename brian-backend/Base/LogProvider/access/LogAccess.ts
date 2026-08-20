@@ -8,7 +8,8 @@
  * 避免 AOP 代理与日志切面之间产生递归调用。
  */
 
-import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import type { SQLiteRelationDBOptions } from '../../RelationDBProvider/infrastructure/SQLiteRelationDBRepository';
 import { LogSchemaInitializer } from '../infrastructure/LogSchemaInitializer';
 import { LogService } from '../application/LogService';
 import {
@@ -38,10 +39,39 @@ export class LogAccess {
   /** AOP 包装后的 Service */
   private readonly service: LogService;
 
-  constructor(relationDb: RelationDBAccess, logger?: Logger) {
-    new LogSchemaInitializer(relationDb).init();
-    this.rawService = new LogService(relationDb);
+  /** 专用于日志的 RelationDB 实例 */
+  private readonly relationDb: RelationDBAccess;
+
+  // ===== 原始构造函数（保留作为参考）=====
+  // constructor(relationDb: RelationDBAccess, logger?: Logger) {
+  //   new LogSchemaInitializer(relationDb).init();
+  //   this.rawService = new LogService(relationDb);
+  //   this.service = AopProxy.wrap(this.rawService, { logger });
+  // }
+
+  // ===== 修改后的构造函数 =====
+  constructor(
+    relationDbOrOptions?: RelationDBAccess | SQLiteRelationDBOptions | string,
+    logger?: Logger,
+  ) {
+    if (relationDbOrOptions && typeof relationDbOrOptions === 'object' && 'executeRaw' in relationDbOrOptions) {
+      this.relationDb = relationDbOrOptions as RelationDBAccess;
+    } else if (typeof relationDbOrOptions === 'string') {
+      this.relationDb = new RelationDBAccess({ dbPath: relationDbOrOptions, wal: true, autoCreateConfigTable: true });
+    } else if (relationDbOrOptions && typeof relationDbOrOptions === 'object') {
+      this.relationDb = new RelationDBAccess(relationDbOrOptions as SQLiteRelationDBOptions);
+    } else {
+      this.relationDb = new RelationDBAccess({ dbPath: './data/brian_log.db', wal: true, autoCreateConfigTable: true });
+    }
+
+    new LogSchemaInitializer(this.relationDb).init();
+    this.rawService = new LogService(this.relationDb);
     this.service = AopProxy.wrap(this.rawService, { logger });
+  }
+
+  /** 获取日志模块底层的 RelationDBAccess 实例 */
+  getRelationDb(): RelationDBAccess {
+    return this.relationDb;
   }
 
   /** 初始化组件 */

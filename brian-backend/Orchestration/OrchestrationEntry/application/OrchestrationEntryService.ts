@@ -10,8 +10,8 @@ import {
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput } from '@brian-agent/core';
-import type { WriterAgentAccess, SummaryAgentAccess } from '@brian-agent/agent';
-import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, GenerateSummaryInput, GenerateSummaryOutput, SummaryAgentContext } from '@brian-agent/agent';
+import type { WriterAgentAccess, SummaryAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
+import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, GenerateSummaryInput, GenerateSummaryOutput, SummaryAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
 import type { StartOrchestrationInput, StartOrchestrationOutput } from '../../OrchestrationStrategy/domain/types';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
@@ -27,6 +27,7 @@ import {
   BuildWorkContextInput, BuildWorkContextOutput,
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from '../domain/types';
 import { selectOrchestrationStrategy as sharedSelectStrategy } from '../../shared/strategySelector';
@@ -44,6 +45,8 @@ export class OrchestrationEntryService {
     private readonly mqCore?: any,
     private readonly logger?: Logger,
     private readonly summaryAgent?: SummaryAgentAccess,
+    private readonly intentAgent?: IntentAgentAccess,
+    private readonly streamAccess?: any,
   ) {}
 
   async receiveWork(
@@ -79,6 +82,105 @@ export class OrchestrationEntryService {
       data: workData,
     });
     await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+
+    // --- 需求理解 Agent (IntentAgent) 前置执行 ---
+    if (this.intentAgent && !input.skip_intent_check) {
+      const intentIn = Object.assign(new UnderstandRequirementInput(), {
+        session_id: input.session_id,
+        user_query: input.user_query,
+        citing_msg_ids: input.citing_msg_ids ?? [],
+        selected_msg_ids: input.selected_msg_ids ?? [],
+        interact_id: interactId,
+      });
+      const intentOut = new UnderstandRequirementOutput();
+      try {
+        await this.intentAgent.understandRequirement(intentIn, new IntentAgentContext(), intentOut);
+
+        // 推送 IntentAgent 需求理解结果到前端（"思考过程"弹窗展示）
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+          await this.streamAccess.pushEvent(input.session_id, 'intent_agent_result', 'AGENT_SPEC', {
+            work_id: workId,
+            interact_id: interactId,
+            agent_type: 'INTENT',
+            agent_name: '需求理解 Agent (Intent)',
+            understood_requirement: intentOut.understood_requirement,
+            match_score: intentOut.match_score,
+            threshold_score: intentOut.threshold_score,
+            reasoning: intentOut.reasoning,
+            should_modify_query: intentOut.should_modify_query,
+          });
+        }
+
+        // 持久化 IntentAgent 结果到 orchestration_work.metadata 供历史查询
+        const intentMeta = {
+          trace_id: input.trace_id ?? '',
+          intent_agent: {
+            understood_requirement: intentOut.understood_requirement,
+            match_score: intentOut.match_score,
+            threshold_score: intentOut.threshold_score,
+            reasoning: intentOut.reasoning,
+            should_modify_query: intentOut.should_modify_query,
+          },
+        };
+        const intentMetaData: DataObject[] = [
+          { field: 'metadata', value: JSON.stringify(intentMeta) },
+          { field: 'updated', value: IdGenerator.now() },
+        ];
+        await this.relationDb.updateDB(
+          Object.assign(new UpdateDBInput(), {
+            table: 'orchestration_work',
+            data: intentMetaData,
+            conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }],
+          }),
+          new DBContext(),
+          new UpdateDBOutput(),
+        );
+
+        if (intentOut.should_modify_query) {
+          if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+            await this.streamAccess.pushEvent(input.session_id, 'intent_confirmation_required', 'CONTROL', {
+              work_id: workId,
+              interact_id: interactId,
+              original_query: input.user_query,
+              understood_requirement: intentOut.understood_requirement,
+              match_score: intentOut.match_score,
+              threshold_score: intentOut.threshold_score,
+              reasoning: intentOut.reasoning,
+            });
+          }
+          const pauseData: DataObject[] = [
+            { field: 'status', value: 'PAUSED_WAITING_CONFIRMATION' },
+            { field: 'updated', value: IdGenerator.now() },
+            { field: 'metadata', value: JSON.stringify({
+              trace_id: input.trace_id ?? '',
+              understood_requirement: intentOut.understood_requirement,
+              match_score: intentOut.match_score,
+              threshold_score: intentOut.threshold_score,
+            })},
+          ];
+          await this.relationDb.updateDB(
+            Object.assign(new UpdateDBInput(), {
+              table: 'orchestration_work',
+              data: pauseData,
+              conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }],
+            }),
+            new DBContext(),
+            new UpdateDBOutput(),
+          );
+          output.work_id = workId;
+          output.interact_id = interactId;
+          output.final_response = JSON.stringify({
+            status: 'PAUSED_WAITING_CONFIRMATION',
+            message: '需求理解得分低于配置阈值，已推送确认弹窗',
+            understood_requirement: intentOut.understood_requirement,
+            match_score: intentOut.match_score,
+          });
+          return true;
+        }
+      } catch (err) {
+        this.logger?.error?.('receiveWork: IntentAgent failed, falling back to original user query', { error: String(err) });
+      }
+    }
 
     let strategy: string;
     if (input.force_orchestration_strategy) {
@@ -658,6 +760,79 @@ export class OrchestrationEntryService {
 
     output.config = current;
     return true;
+  }
+
+  async confirmIntent(
+    input: ConfirmIntentInput,
+    context: OrchestrationEntryContext,
+    output: ConfirmIntentOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) throw new ValidationError('work_id is required');
+    if (!input.action) throw new ValidationError('action is required');
+
+    const selectIn = Object.assign(new SelectOneDBInput(), {
+      table: 'orchestration_work',
+      conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+    });
+    const selectOut = new SelectOneDBOutput();
+    await this.relationDb.selectOneDB(selectIn, new DBContext(), selectOut);
+    if (!selectOut.row) throw new NotFoundError('orchestration_work', input.work_id);
+
+    const record = selectOut.row as Record<string, unknown>;
+    let metadata: Record<string, unknown> = {};
+    try {
+      metadata = JSON.parse(String(record.metadata ?? '{}'));
+    } catch {}
+
+    if (input.action === 'CANCEL') {
+      const updData: DataObject[] = [
+        { field: 'status', value: 'CANCELLED' },
+        { field: 'cancel_reason', value: 'User cancelled intent confirmation' },
+        { field: 'updated', value: IdGenerator.now() },
+      ];
+      await this.relationDb.updateDB(
+        Object.assign(new UpdateDBInput(), {
+          table: 'orchestration_work',
+          data: updData,
+          conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+        }),
+        new DBContext(),
+        new UpdateDBOutput(),
+      );
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+        await this.streamAccess.pushEvent(String(record.session_id), 'cancelled', 'CONTROL', {
+          work_id: input.work_id,
+          reason: 'User cancelled intent confirmation',
+        });
+      }
+      output.success = true;
+      output.action_applied = 'CANCEL';
+      output.next_status = 'CANCELLED';
+      return true;
+    }
+
+    let finalQuery = String(record.user_query);
+    if (input.action === 'APPROVE') {
+      finalQuery = input.understood_requirement || String(metadata.understood_requirement || record.user_query);
+    }
+
+    const rwInput = Object.assign(new ReceiveWorkInput(), {
+      session_id: String(record.session_id),
+      user_query: finalQuery,
+      skip_intent_check: true,
+    });
+    const rwOutput = new ReceiveWorkOutput();
+    const rwCtx = Object.assign(new OrchestrationEntryContext(), {
+      session_id: String(record.session_id),
+      work_id: input.work_id,
+      interact_id: String(record.interact_id),
+    });
+
+    const ok = await this.receiveWork(rwInput, rwCtx, rwOutput);
+    output.success = ok;
+    output.action_applied = input.action;
+    output.next_status = 'PROCESSING';
+    return ok;
   }
 
   private async markWorkFailed(workId: string, errorMsg: string): Promise<void> {

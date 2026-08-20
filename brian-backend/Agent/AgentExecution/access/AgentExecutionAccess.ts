@@ -2,7 +2,7 @@ import type {
   RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess, StreamAccess, Logger,
 } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
-import type { InfoCoreAccess, MCPCoreAccess, MQCoreAccess, SkillCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, MCPCoreAccess, MQCoreAccess, SkillCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentStrategyAccess } from '../../AgentStrategy/access/AgentStrategyAccess';
 import { AgentExecutionSchemaInitializer } from '../infrastructure/AgentExecutionSchemaInitializer';
@@ -38,13 +38,14 @@ export class AgentExecutionAccess {
     mqCore: MQCoreAccess,
     skillCore: SkillCoreAccess,
     mcpCore: MCPCoreAccess,
+    llmCore: LLMCoreAccess,
     logger?: Logger,
     streamAccess?: StreamAccess,
   ) {
     this.initPromise = new AgentExecutionSchemaInitializer(relationDb).init();
     const raw = new AgentExecutionService(
       relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess,
-      mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore,
+      mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, llmCore,
       logger, streamAccess,
     );
     this.service = AopProxy.wrap(raw, { logger });

@@ -31,6 +31,7 @@ import {
   JsonParser,
   ValidationError,
   NotFoundError,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
 import type { DataObject } from '@brian-agent/base';
 import {
@@ -474,27 +475,20 @@ export class SkillCoreService {
     templateId: string,
     variables: Record<string, unknown>,
   ): Promise<string> {
-    if (!templateId) {
-      const skillDescriptions = String(variables.skills ?? '(无可用 Skill)');
-      return [
-        '你是一个 Skill 匹配助手。请根据以下可用 Skill 列表，按照相关性从高到低排序，',
-        '输出 Skill 的 skill_brief 和 relevance（0~1 小数）。以 JSON 数组格式输出：',
-        '[{"skill_brief": "...", "relevance": 0.95}]',
-        '',
-        '可用 Skill:',
-        skillDescriptions,
-        '',
-        `Agent ID: ${variables.agent_id}`,
-      ].join('\n');
+    const id = templateId || PROMPT_IDS.skillMatch;
+    try {
+      const promptOutput = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        { id, variables },
+        new PromptContext(),
+        promptOutput,
+      );
+      if (promptOutput.prompt) return promptOutput.prompt;
+    } catch {
+      /* fallback */
     }
-
-    const promptOutput = new ExecPromptOutput();
-    await this.promptsAccess.execPrompt(
-      { id: templateId, variables },
-      new PromptContext(),
-      promptOutput,
-    );
-    return promptOutput.prompt;
+    const tpl = getBuiltinTemplate(PROMPT_IDS.skillMatch);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   /** 调用 LLM（留空 ID 由 LLMProvider 统一处理默认模型与首模型兜底） */

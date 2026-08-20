@@ -593,7 +593,6 @@ export class OrchestrationVisualizationService {
       if (getAgentOutput.agents.length > 0) {
         const agent: AgentRecord = getAgentOutput.agents[0];
         refs.strategy_id = agent.strategy_id ?? null;
-        refs.llm_id = agent.llm_id ?? null;
         refs.soul_id = agent.soul_id ?? null;
         refs.agent_name = agent.agent_name ?? '';
         refs.agent_type = agent.agent_type ?? '';

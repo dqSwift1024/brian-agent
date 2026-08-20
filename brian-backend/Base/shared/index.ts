@@ -57,3 +57,7 @@ export type { ConfigItem, IConfigStorage } from './config/ConfigService';
 // 跨平台原生模块加载器
 export { NativeLoader } from './native/NativeLoader';
 export type { PlatformInfo, LoadResult } from './native/NativeLoader';
+
+// Prompt 模板配置键常量
+export { PROMPT_SLOTS } from './prompt/PromptConfigKeys';
+export type { PromptSlot } from './prompt/PromptConfigKeys';

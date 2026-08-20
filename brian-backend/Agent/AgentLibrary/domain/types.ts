@@ -16,7 +16,6 @@ export interface AgentRecord {
   agent_purpose?: string;
   agent_type: string;
   strategy_id: string;
-  llm_id: string;
   soul_id: string;
   task_signature: string;
   usage_count: number;
@@ -32,6 +31,15 @@ export interface AgentUsageRecord {
   work_id: string;
   interact_id: string;
   usage_context: string;
+}
+
+export interface AgentUsageDailyRecord {
+  id: string;
+  created: number;
+  updated: number;
+  agent_id: string;
+  usage_date: string;
+  usage_count: number;
 }
 
 export interface AgentOptRuleRecord {
@@ -57,7 +65,6 @@ export class AddAgentInput extends Input {
   agent_id!: string;
   agent_type!: string;
   strategy_id!: string;
-  llm_id!: string;
   soul_id!: string;
   task_signature!: string;
   agent_name!: string;
@@ -89,7 +96,6 @@ export class UpdateAgentInput extends Input {
   eval_score?: number;
   enable?: boolean;
   strategy_id?: string;
-  llm_id?: string;
   soul_id?: string;
 }
 
@@ -170,8 +176,9 @@ export class ConfigAgentLibraryOutput extends Output {
 
 export const AGENT_TABLE = 'agent';
 export const AGENT_USAGE_TABLE = 'agent_usage';
+export const AGENT_USAGE_DAILY_TABLE = 'agent_usage_daily';
 export const AGENT_OPT_RULE_TABLE = 'agent_opt_rule';
 export const AGENT_LIBRARY_CONFIG_TABLE = 'agent_library_config';
 
-export const VALID_AGENT_TYPES = ['WORKER', 'PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY'] as const;
-export const SYSTEM_AGENT_TYPES = ['PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY'] as const;
+export const VALID_AGENT_TYPES = ['WORKER', 'PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY', 'INTENT'] as const;
+export const SYSTEM_AGENT_TYPES = ['PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY', 'INTENT'] as const;

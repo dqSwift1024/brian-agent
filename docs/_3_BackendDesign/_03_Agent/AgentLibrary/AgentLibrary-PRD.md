@@ -58,11 +58,12 @@
 
 ### 2.3. 更新 Agent（updateAgent）
 
-**功能**：更新 `agent` 表的元数据字段（名称、任务特征签名、评估分数、启用状态、策略 ID、llm_id、soul_id）。Skill/MCP 1-to-many 绑定仍由 Core 管理；llm_id/soul_id 的 1-to-1 外键可由 Evolutor 触发的 optimizeAgent 写回。
+**功能**：更新 `agent` 表的元数据字段（名称、用途描述 agent_purpose、任务特征签名、评估分数、启用状态、策略 ID、llm_id、soul_id）。Skill/MCP 1-to-many 绑定仍由 Core 管理；llm_id/soul_id 的 1-to-1 外键可由 Evolutor 触发的 optimizeAgent 写回。
 **入参**：
 - input：UpdateAgentInput（继承 Input），包含以下字段：
   - agent_id：Agent ID
   - agent_name：Agent 名称（可选）
+  - agent_purpose：Agent 用途/描述（可选，对应"配置中心 > Agent 配置 > Agent 实例"页面的"描述"字段，参与 Agent 复用匹配的 LLM 评估）
   - task_signature：任务特征签名（可选）
   - eval_score：评估分数（可选，0-100）
   - enable：启用/禁用（可选）
@@ -93,8 +94,11 @@
 **处理流程**：
 
 1. 调用 RelationDBProvider.insertDB 向 `agent_usage` 表写入使用记录 `{ agent_id, work_id, interact_id, usage_context }`；
-2. 调用 RelationDBProvider 更新 `agent` 表的 `usage_count` 字段自增 1（UPDATE agent SET usage_count = usage_count + 1, updated = now() WHERE agent_id = ...）；
-3. 返回 true；
+2. 按日统计 upsert：以 `IdGenerator.today()`（YYYY-MM-DD）为键，对 `agent_usage_daily` 表执行 upsert——当天已有记录则 `usage_count + 1`，否则新增 `{ agent_id, usage_date, usage_count: 1 }`；
+3. 调用 RelationDBProvider 更新 `agent` 表的 `usage_count` 字段自增 1（UPDATE agent SET usage_count = usage_count + 1, updated = now() WHERE agent_id = ...）；
+4. 返回 true；
+
+> 三层口径：`agent_usage`（带时间戳的明细，可追溯单次使用）→ `agent_usage_daily`（按日聚合，供老化按日期窗口统计）→ `agent.usage_count`（累计快照，供 Evolutor 评分加权平均）。
 
 ### 2.5. 查看 Agent（getAgent / soAgent）
 
@@ -133,7 +137,8 @@
 2. **ALL-rules 语义**：对每个启用中的非系统 Agent，当且仅当「每一条规则」都同时满足  
    `窗口内 usage_count < min_usage_count` **且** `eval_score < min_eval_score` 时，才将该 Agent 老化；  
    任一条规则不满足（使用足够多或评分足够高）则保留；
-3. 时间窗口使用毫秒：`IdGenerator.now() - days * 24 * 60 * 60 * 1000`；
+3. 时间窗口按日期统计：截止日期 `cutoffDate = IdGenerator.dateOf(now - days * 24 * 60 * 60 * 1000)`（YYYY-MM-DD），  
+   窗口内使用量 = `SUM(agent_usage_daily.usage_count) WHERE agent_id = ? AND usage_date >= cutoffDate`；
 4. 排除 `PLANNER` / `WRITER` / `EVOLUTOR` 系统 Agent；
 5. 对通过 ALL-rules 判定的 agent_id 调用 RelationDBAccess.update 将 `enable=0`；
 6. 将老化数量写入 output；
@@ -279,6 +284,24 @@
 | interact_id | 交互 ID | UUID | N | | |
 | usage_context | 使用上下文摘要 | TEXT | Y | | |
 
+### 3.2.1. Agent 按日使用统计表
+
+- 表名：agent_usage_daily
+- 库名：agent
+
+| 字段名 | 含义 | 类型 | 是否可以为空（Y可以为空/N不能为空） | 索引类型 | 备注 |
+| ------ | ----- | ----- | ----- | ----- | ----- |
+| id | 数据唯一标识 | UUID | N | 主键 | |
+| created | 创建时间 | timestamp | N | 普通索引 | |
+| updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| agent_id | Agent ID | UUID | N | 普通索引 | |
+| usage_date | 使用日期 | TEXT | N | 普通索引 | YYYY-MM-DD，本地时区 |
+| usage_count | 当日使用次数 | INT | N | | 默认 0 |
+
+> 唯一约束：`UNIQUE(agent_id, usage_date)`。由 `recordAgentUsage` 实时维护（当天 upsert）；
+> 历史数据在 Schema 初始化时从 `agent_usage` 明细表按 `(agent_id, usage_date)` 幂等回填（仅当日历表为空时执行一次）。
+> 老化 `ageAgent` 直接按 `usage_date >= cutoffDate` 对 `usage_count` 求和，无需再扫描明细表。
+
 ### 3.3. Agent 老化规则表
 
 - 表名：agent_opt_rule
@@ -306,3 +329,64 @@
 | prompt_template_id | Agent 匹配 prompt 模板 ID | UUID | N | | |
 | similarity_threshold | 复用相似度阈值 | FLOAT | N | | 默认 0.7 |
 | max_agent_count | 最大 Agent 保留数量 | INT | N | | 默认 100 |
+
+---
+
+## 6. 代码变更记录
+
+### [2026-08-19] Agent 实例全量检查与最佳配置生成
+**变更原因**："配置中心 > Agent 配置 > Agent 实例"页面所有 Agent 参数（描述 / 任务签名 / 执行策略）需生成并落地最佳配置；同时发现该页面创建与编辑保存为桩实现，无法持久化，且"描述"字段未打通前后端。
+**修改的方法**：
+  - `updateAgent(UpdateAgentInput, AgentLibraryContext, UpdateAgentOutput)` — 原始代码：不持久化 `agent_purpose`（前端"描述"字段提交后丢失）。修改后：新增 `agent_purpose` 字段持久化。
+    ```
+    原始代码（updateAgent 内）：
+    const data: DataObject[] = [{ field: 'updated', value: IdGenerator.now() }];
+    if (input.agent_name !== undefined) data.push({ field: 'agent_name', value: input.agent_name });
+    if (input.task_signature !== undefined) data.push({ field: 'task_signature', value: input.task_signature });
+    ...（不含 agent_purpose）
+    ```
+  - `dev-server.ts` 中 `POST /api/agent` — 原始桩实现直接返回假 ID；修改后真实调用 `agentLibrary.addAgent` 创建（校验 agent_type，缺省策略取 `agent_strategy_config.default_strategy_id`，缺省 LLM 取 `llm_available.is_default=1`）。
+  - `dev-server.ts` 中 `PUT /api/agent/{id}` — 原始桩实现直接返回 success；修改后按行主键 `id` 解析出 `agent_id` 并调用 `agentLibrary.updateAgent` 持久化 name/description(agent_purpose)/task_signature/strategy_id/llm_id/soul_id。
+  - `AgentLibrary/index.ts` — 导出 `VALID_AGENT_TYPES` 供 dev-server 创建时校验。
+  - `ConfigView.vue` — Agent 卡片展示与编辑弹窗打通 `agent_purpose`（描述）；执行策略下拉/标签改用 `/api/agent/strategy`（Agent 执行策略 CoT/ReAct/Plan-and-Solve），原误用编排策略 `/api/orchestration/strategies`。
+**影响的端点**：
+  - `GET /api/agent` — 返回数据不变，新增 agent_purpose 已正确填充，前端卡片展示"描述"。
+  - `POST /api/agent` — 从桩实现改为真实创建（修复页面"创建 Agent"按钮）。
+  - `PUT /api/agent/{id}` — 从桩实现改为真实更新（修复页面"保存"按钮）。
+  - `DELETE /api/agent/{id}`、`POST /api/agent/{id}/toggle` — 不变。
+  - 定时任务 / 学习链路 — 不受影响。
+**可能存在的问题**：
+  - 手工通过 API 创建 Agent 时不会自动绑定 Skill/MCP（与 AgentBuilder 动态构建流程不同），仅写 agent 表元数据；如需完整绑定请走构建链路。
+  - 系统 Agent（PLANNER/WRITER/EVOLUTOR/SUMMARY）的 task_signature 已由精简签名（如 `[writer] writer`）改为关键字丰富签名，可提升 `simpleSimilarity` 复用命中率，但不会改变执行行为。
+  - 4 个 WORKER Agent 原先指向已不存在的 LLM ID（4a6bada6-...），现统一指向默认文本模型 gemini-3.7-flash（574cca78-...），消除每次调用先失败再降级的日志噪音。
+
+### [2026-08-19] 全部 15 个 Agent 最佳配置落地
+- 描述（agent_purpose）：4 个系统 Agent 由空补全为职责描述；11 个 WORKER Agent 细化领域职责描述。
+- 任务签名（task_signature）：4 个系统 Agent 由极简签名改写为关键字丰富签名；WORKER 保持领域签名。
+- 执行策略（strategy_id）：`planning-规划筹备助手` 由 ReAct 调整为 Plan-and-Solve（规划类任务典型为复杂多步骤）。
+- LLM：全部 Agent 统一为 gemini-3.7-flash（574cca78-ee61-4c58-ba91-82f5d7485089），清理悬空 ID。
+- Soul：EvolutorAgent 调整为"严苛导师"（0f8c432e-...）以契合严格评估角色；Summary 保持"摘要生成专家"；其余保持"专业编码与研究助手"。
+
+### [2026-08-19] usage_count 改造：新增按日统计表 agent_usage_daily
+**变更原因**：原老化统计直接对 `agent_usage` 明细表按 `created` 毫秒时间窗 COUNT，明细表越大扫描越重；需要按日期维度统计每日使用量，方便老化按过期日期窗口精确计数。
+**修改的方法**：
+  - `recordAgentUsage(RecordAgentUsageInput, AgentLibraryContext, RecordAgentUsageOutput)` — 原始代码：仅写 `agent_usage` 明细 + `agent.usage_count` 累计。修改后：新增对 `agent_usage_daily` 按 `IdGenerator.today()`（YYYY-MM-DD）upsert 当天计数。
+    ```
+    原始代码（recordAgentUsage 内）：
+    await this.relationDb.insert(AGENT_USAGE_TABLE, [ ...明细... ]);
+    const usageCount = Number(existing.usage_count ?? 0) + 1;
+    await this.relationDb.update(AGENT_TABLE, [ usage_count... ], ...);
+    ```
+  - `ageAgent(AgeAgentInput, AgentLibraryContext, AgeAgentOutput)` — 原始代码：`count(agent_usage WHERE created >= now - days*86400000)` 扫描明细表。修改后：`SUM(agent_usage_daily.usage_count) WHERE usage_date >= dateOf(now - days*86400000)` 按日期窗口求和。
+  - `AgentLibrarySchemaInitializer.init()` — 新增 `agent_usage_daily` 表（UNIQUE(agent_id, usage_date)）+ 索引；新增私有方法 `backfillDailyUsage()` 从 `agent_usage` 幂等回填（仅当日历表为空时执行）。
+  - `Base/ToolProvider/IdGenerator` — 新增 `dateOf(ts)`：将毫秒时间戳格式化为本地 YYYY-MM-DD，与 `today()` 同口径，供回填与老化截止日期计算。
+  - `Agent/domain/types.ts` — 新增 `AgentUsageDailyRecord` 接口与 `AGENT_USAGE_DAILY_TABLE` 常量。
+  - `Agent/test/test-helpers.ts` — 内存测试库新增 `agent_usage_daily` 表。
+  - `Agent/test/agent-library.test.ts` — 新增 TC-AL-029b：按日统计当天计数自增校验。
+**影响的端点**：
+  - 使用统计链路（AgentExecution / WriterAgent / AgentBuilder 复用命中 / OrchestrationExecution 触发 recordAgentUsage）— 行为不变，仅新增按日统计写。
+  - 老化定时任务 `ageAgent`（由 SelfLearning 触发）— 统计口径从明细时间窗改为按日表日期窗，结果等价且更高效。
+  - `agent.usage_count` 累计快照保留，Evolutor 评分加权平均逻辑不变。
+**可能存在的问题**：
+  - `agent_usage_daily` 是新增表，旧库首次启动自动建表+回填；若 `agent_usage` 数据量极大，首次回填会占用一些启动时间（本项目当前 85 行，可忽略）。
+  - 时区口径：`usage_date` 使用本地时区（`IdGenerator.today()` / `dateOf()` 均为本地），跨时区部署时历史回填与实时写入保持一致（都走本地）。

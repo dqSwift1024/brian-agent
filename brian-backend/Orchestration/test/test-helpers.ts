@@ -604,7 +604,8 @@ export function createMockPromptsAccess() {
   return {
     execPrompt: vi.fn().mockImplementation(async (i: any, _c: any, o: any) => {
       const vars = (i?.variables ?? {}) as Record<string, unknown>;
-      o.prompt = `You are a strategy selector. Analyze the complexity of the user query.\nUser query: ${String(vars.user_query ?? '')}\nThreshold: ${String(vars.threshold ?? 50)}`;
+      const userQuery = vars.task_content ?? vars.user_query ?? '';
+      o.prompt = `You are a strategy selector. Analyze the complexity of the user query.\nUser query: ${String(userQuery)}\nThreshold: ${String(vars.threshold ?? 50)}`;
       return true;
     }),
     soPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.prompts = []; return true; }),

@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef } from 'vue'
-import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block, PlanningData, AgentDagData } from '@/api/types'
+import { ref, shallowRef, triggerRef } from 'vue'
+import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block, PlanningData, AgentDagData, AgentExecutionStatus, AgentRuntimeInfo } from '@/api/types'
 import { chatApi, visualizationApi } from '@/api'
 
 export const useSessionStore = defineStore('session', () => {
   const currentSessionId = ref(localStorage.getItem('chat-current-session-id') || '')
   const messages = shallowRef<ChatMessage[]>([])
-  const blocks = ref<Block[]>([])
+  const blocks = shallowRef<Block[]>([])
   const chatList = ref<ChatSession[]>([])
   const chatMapNodes = ref<ChatMapNode[]>([])
   const chatMapEdges = ref<ChatMapEdge[]>([])
@@ -26,6 +26,8 @@ export const useSessionStore = defineStore('session', () => {
   // Planning 策略拆解：planning 为流式期间的实时拆解数据，thinkingDag 为指定消息接口采集的拆解数据
   const planning = ref<PlanningData>({ status: 'idle' })
   const thinkingDag = ref<AgentDagData | null>(null)
+  // 每个 Agent 独立的执行运行时状态（思考中/成功/失败），key = agent_id
+  const agentExecutions = ref<Record<string, AgentRuntimeInfo>>({})
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -75,9 +77,20 @@ export const useSessionStore = defineStore('session', () => {
         for (const b of msg.blocks) {
           loadedBlocks.push(b)
         }
+      } else if (msg.role === 'assistant' && msg.content) {
+        // 兜底：如果 blocks 为空但 content 存在，构造一个 TextParagraph 块
+        loadedBlocks.push({
+          id: `block-text-${msg.id}`,
+          msgId: msg.id,
+          role: 'assistant',
+          type: 'TextParagraph',
+          content: msg.content,
+          meta: { status: 'done', createdAt: msg.timestamp || Date.now(), updatedAt: Date.now() },
+        } as Block)
       }
     }
     blocks.value = loadedBlocks
+    triggerRef(blocks)
   }
 
   async function loadExchanges(sessionId: string, userId: string) {
@@ -297,6 +310,7 @@ export const useSessionStore = defineStore('session', () => {
   function clearMessages() {
     messages.value = []
     blocks.value = []
+    triggerRef(blocks)
     chatMapNodes.value = []
     chatMapEdges.value = []
     agentChain.value = []
@@ -305,6 +319,7 @@ export const useSessionStore = defineStore('session', () => {
     citingMode.value = false
     resetPlanning()
     thinkingDag.value = null
+    agentExecutions.value = {}
     localStorage.removeItem('chat-current-session-id')
   }
 
@@ -316,17 +331,17 @@ export const useSessionStore = defineStore('session', () => {
     const existing = blocks.value.findIndex(b => b.id === block.id)
     if (existing >= 0) {
       blocks.value[existing] = block
-      blocks.value = [...blocks.value]
     } else {
-      blocks.value = [...blocks.value, block]
+      blocks.value.push(block)
     }
+    triggerRef(blocks)
   }
 
   function updateBlock(blockId: string, updates: Partial<Block>) {
     const idx = blocks.value.findIndex(b => b.id === blockId)
     if (idx >= 0) {
       blocks.value[idx] = { ...blocks.value[idx], ...updates } as Block
-      blocks.value = [...blocks.value]
+      triggerRef(blocks)
     }
   }
 
@@ -336,19 +351,27 @@ export const useSessionStore = defineStore('session', () => {
       const block = blocks.value[idx]
       if ('content' in block) {
         (block as { content: string }).content += text
-        blocks.value = [...blocks.value]
+        triggerRef(blocks)
       }
     }
   }
 
   function finalizeBlocks(msgId: string) {
-    blocks.value = blocks.value.map(b =>
-      b.msgId === msgId ? { ...b, meta: { ...b.meta, status: 'done' as const } } as Block : b
-    )
+    for (let i = 0; i < blocks.value.length; i++) {
+      if (blocks.value[i].msgId === msgId) {
+        blocks.value[i] = { ...blocks.value[i], meta: { ...blocks.value[i].meta, status: 'done' as const } } as Block
+      }
+    }
+    triggerRef(blocks)
   }
 
   function cleanupTransientTextBlocks(msgId: string) {
-    blocks.value = blocks.value.filter(b => !(b.msgId === msgId && b.type === 'TextParagraph'))
+    const filtered = blocks.value.filter(b => !(b.msgId === msgId && b.type === 'TextParagraph'))
+    if (filtered.length !== blocks.value.length) {
+      blocks.value.length = 0
+      blocks.value.push(...filtered)
+      triggerRef(blocks)
+    }
   }
 
   function toggleMsgSelection(msgId: string) {
@@ -417,6 +440,7 @@ export const useSessionStore = defineStore('session', () => {
     thinkingBlocks.value = []
     thinkingDag.value = null
     resetPlanning()
+    resetAgentStatus()
   }
 
   // Planning 拆解状态管理（流式期间实时更新）
@@ -428,16 +452,58 @@ export const useSessionStore = defineStore('session', () => {
     planning.value = { ...planning.value, ...patch } as PlanningData
   }
 
+  // ===== Agent 执行运行时状态管理（每个 Agent 独立的"思考中"状态） =====
+  const NODE_STATUS_MAP: Record<AgentExecutionStatus, string> = {
+    PENDING: 'PENDING',
+    RUNNING: 'RUNNING',
+    SUCCESS: 'COMPLETED',
+    ERROR: 'EXEC_FAILED',
+  }
+
+  // 记录某 Agent 的执行状态，并同步到 AgentDAG 节点（供"思考过程"弹窗 AgentDAG 状态着色与执行联动）
+  function setAgentStatus(agentId: string, status: AgentExecutionStatus, agentName?: string) {
+    if (!agentId) return
+    agentExecutions.value = {
+      ...agentExecutions.value,
+      [agentId]: {
+        status,
+        agentName: agentName ?? agentExecutions.value[agentId]?.agentName,
+        updatedAt: Date.now(),
+      },
+    }
+
+    const dag = planning.value.agentDag
+    if (dag && dag.nodes.length > 0) {
+      const idx = dag.nodes.findIndex((n) => n.id === agentId)
+      if (idx >= 0) {
+        const node = dag.nodes[idx]
+        if (agentName) {
+          node.agentName = agentName
+          if (!node.label || node.label.startsWith('任务 ') || node.label.startsWith('Task ')) {
+            node.label = agentName
+          }
+        }
+        node.status = NODE_STATUS_MAP[status]
+        planning.value = { ...planning.value, agentDag: { ...dag, nodes: [...dag.nodes] } }
+      }
+    }
+  }
+
+  function resetAgentStatus() {
+    agentExecutions.value = {}
+  }
+
   return {
     currentSessionId, messages, blocks, chatList, chatMapNodes, chatMapEdges,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
-    planning, thinkingDag,
+    planning, thinkingDag, agentExecutions,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask,
-    openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning
+    openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning,
+    setAgentStatus, resetAgentStatus
   }
 })

@@ -495,6 +495,31 @@ describe('OrchestrationExecution', () => {
       expect(output.agent_results.length).toBe(1);
       expect(output.agent_results[0].status).toBe('COMPLETED');
     });
+
+    it('TC-ED-021: 多个任务复用同一个 Agent 且含自环边时，应正确完成所有 Task 的执行', async () => {
+      await seedOrchestrationWork('w12-multitask', 's12', 'i12-ed021', 'PROCESSING');
+      const agentDag: AgentDAG = {
+        plan_id: 'p-multi',
+        total_agent_count: 2,
+        agent_nodes: [
+          { agent_id: 'same-agent-1', task_id: 'task_1', task_content: 'Task 1', task_complexity: 30, task_domain: 'general', task_priority: 1, status: 'PENDING' },
+          { agent_id: 'same-agent-1', task_id: 'task_2', task_content: 'Task 2', task_complexity: 30, task_domain: 'general', task_priority: 2, status: 'PENDING' },
+        ],
+        agent_edges: [
+          { from_agent_id: 'same-agent-1', to_agent_id: 'same-agent-1', data_dependency: 'task_1 -> task_2' },
+        ],
+      };
+      const input = Object.assign(new ExecDAGInput(), { work_id: 'w12-multitask', agent_dag: agentDag });
+      const output = new ExecDAGOutput();
+      const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i12-ed021' });
+
+      const result = await exec.execDAG(input, ctx, output);
+      expect(result).toBe(true);
+      expect(Array.isArray(output.agent_results)).toBe(true);
+      expect(output.agent_results.length).toBe(2);
+      expect(output.agent_results[0].status).toBe('COMPLETED');
+      expect(output.agent_results[1].status).toBe('COMPLETED');
+    });
   });
 
   // =========================================================================

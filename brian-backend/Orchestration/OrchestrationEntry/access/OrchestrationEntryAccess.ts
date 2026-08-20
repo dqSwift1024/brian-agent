@@ -1,7 +1,7 @@
-import type { RelationDBAccess, PromptsAccess, LLMAccess, Logger } from '@brian-agent/base';
+import type { RelationDBAccess, PromptsAccess, LLMAccess, Logger, StreamAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import type { WriterAgentAccess, SummaryAgentAccess } from '@brian-agent/agent';
+import type { WriterAgentAccess, SummaryAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
 import { OrchestrationEntrySchemaInitializer } from '../infrastructure/OrchestrationEntrySchemaInitializer';
@@ -14,6 +14,7 @@ import {
   BuildWorkContextInput, BuildWorkContextOutput,
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from '../domain/types';
 
@@ -33,9 +34,14 @@ export class OrchestrationEntryAccess {
     mqCore?: any,
     logger?: Logger,
     summaryAgent?: SummaryAgentAccess,
+    intentAgent?: IntentAgentAccess,
+    streamAccess?: StreamAccess,
   ) {
     this.initPromise = new OrchestrationEntrySchemaInitializer(relationDb).init();
-    const raw = new OrchestrationEntryService(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent);
+    const raw = new OrchestrationEntryService(
+      relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution,
+      llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent, intentAgent, streamAccess,
+    );
     this.service = AopProxy.wrap(raw, { logger });
   }
 
@@ -83,6 +89,13 @@ export class OrchestrationEntryAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.cancelWork(i, c, o);
+  }
+
+  async confirmIntent(
+    i: ConfirmIntentInput, c: OrchestrationEntryContext, o: ConfirmIntentOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.confirmIntent(i, c, o);
   }
 
   async configOrchestrationEntry(

@@ -609,15 +609,18 @@ describe('UserProfileService', () => {
 
     it('TC-UP-053: default profile_analysis_prompt_template_id empty → uses built-in prompt', async () => {
       setupProfileLLM('some-value', 0.7);
-
-      vi.spyOn(promptsAccess as any, 'execPrompt' as any).mockRejectedValue(new Error('should not be called'));
+      const spy = vi.spyOn(promptsAccess, 'execPrompt');
 
       const input = new GenerateProfileInput();
       const output = new GenerateProfileOutput();
       const result = await service.generateProfile(input, ctx(), output);
 
       expect(result).toBe(true);
-      expect(promptsAccess.execPrompt).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'builtin.profile_analysis' }),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('TC-UP-055: Non-existent direction → handled gracefully', async () => {

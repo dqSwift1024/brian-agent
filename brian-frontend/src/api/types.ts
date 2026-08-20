@@ -8,6 +8,18 @@ export interface BlockMeta {
   updatedAt: number
 }
 
+// ============================================================
+// Agent 执行运行时状态（每个 Agent 独立的"思考中"状态）
+// ============================================================
+
+export type AgentExecutionStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'ERROR'
+
+export interface AgentRuntimeInfo {
+  status: AgentExecutionStatus
+  agentName?: string
+  updatedAt: number
+}
+
 export interface BlockBase {
   id: string
   msgId: string
@@ -125,6 +137,7 @@ export interface DagNodeItem {
   content?: string
   status?: string
   agentName?: string
+  taskId?: string
   input?: string
   output?: string
   elapsedMs?: number

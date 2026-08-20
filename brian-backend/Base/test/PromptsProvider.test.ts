@@ -646,6 +646,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.conditions = [
         { field: 'enable', operator: Operator.EQ, value: 1 },
+        { field: 'prompt_template_title', operator: Operator.LIKE, value: 'SearchPrompt%' },
       ];
       const soOut = new SoPromptOutput();
       await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
@@ -831,6 +832,9 @@ describe('PromptsProvider', () => {
 
     it('无使用记录的模板在使用频率排序中值为 0', async () => {
       const soInput = new SoPromptInput();
+      soInput.conditions = [
+        { field: 'prompt_template_title', operator: Operator.LIKE, value: 'UsageSort%' },
+      ];
       soInput.order_by = [{ field: 'usage_total_count', direction: 'ASC' }];
       const soOut = new SoPromptOutput();
       await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);

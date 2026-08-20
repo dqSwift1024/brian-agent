@@ -1609,5 +1609,33 @@ describe('LogProvider', () => {
       const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'AOP');
       expect(content).toContain('AOP source test');
     });
+
+    it('日志 SQLite 实例应与业务 SQLite 实例完全独立', async () => {
+      const bizDbPath = path.join(tempDir, 'biz.db');
+      const logDbPath = path.join(tempDir, 'log.db');
+
+      const bizDb = new RelationDBAccess({ dbPath: bizDbPath });
+      await bizDb.initialize();
+
+      const standaloneLogAccess = new LogAccess({ dbPath: logDbPath });
+      await standaloneLogAccess.initialize();
+
+      // 在 standaloneLogAccess 插入日志
+      await standaloneLogAccess.addLog(
+        { data: makeLogData({ source: 'IsolatedModule', message: 'isolated log test' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      // 验证业务数据库 bizDb 中无 log_record 表记录或查询抛错（表不存在）
+      expect(() => {
+        bizDb.queryRaw('SELECT * FROM "log_record"');
+      }).toThrow();
+
+      // 验证日志数据库中包含 log_record 表并存在写入的日志记录
+      const logRows = standaloneLogAccess.getRelationDb().queryRaw('SELECT * FROM "log_record" WHERE "source" = ?', ['IsolatedModule']);
+      expect(logRows.length).toBeGreaterThan(0);
+      expect((logRows[0] as any).message).toBe('isolated log test');
+    });
   });
 });

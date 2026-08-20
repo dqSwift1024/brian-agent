@@ -55,6 +55,11 @@ import {
   ExecPromptOutput,
   PromptContext,
 } from '@brian-agent/base';
+import {
+  PROMPT_IDS,
+  getBuiltinTemplate,
+  renderTemplate,
+} from '@brian-agent/base';
 
 /**
  * LLMCoreProvider 应用服务。
@@ -138,38 +143,29 @@ export class LLMCoreService {
     }
 
     // ===== 第 2 层：LLM 智能打分评估 =====
+    const selectionVariables = {
+      agent_id: input.agent_id,
+      context_id: input.context_id,
+      interact_id: input.interact_id,
+      available_llms: this.buildLlmList(availableLLMs),
+    };
     let selectionPrompt: string;
     if (config?.prompt_template_id) {
-      const getPromptOutput = new GetPromptOutput();
-      await this.promptsAccess.getPrompt(
-        { id: config.prompt_template_id } as GetPromptInput,
+      const execPromptOutput = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        {
+          id: config.prompt_template_id,
+          variables: selectionVariables,
+        } as ExecPromptInput,
         new PromptContext(),
-        getPromptOutput,
+        execPromptOutput,
       );
-
-      if (getPromptOutput.prompt) {
-        const execPromptOutput = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          {
-            id: config.prompt_template_id,
-            variables: {
-              agent_id: input.agent_id,
-              context_id: input.context_id,
-              interact_id: input.interact_id,
-              available_llms: JSON.stringify(
-                availableLLMs.map((l) => ({ id: l.id, llm_title: l.llm_title, llm_brief: l.llm_brief })),
-              ),
-            },
-          } as ExecPromptInput,
-          new PromptContext(),
-          execPromptOutput,
-        );
-        selectionPrompt = execPromptOutput.prompt;
-      } else {
-        selectionPrompt = this.buildDefaultSelectionPrompt(input, availableLLMs);
+      selectionPrompt = execPromptOutput.prompt;
+      if (!selectionPrompt) {
+        selectionPrompt = this.renderDefault(selectionVariables);
       }
     } else {
-      selectionPrompt = this.buildDefaultSelectionPrompt(input, availableLLMs);
+      selectionPrompt = this.renderDefault(selectionVariables);
     }
 
     const rankerLLM = availableLLMs.find((l) => l.is_default) ?? availableLLMs[0];
@@ -607,27 +603,21 @@ export class LLMCoreService {
   // ---------------------------------------------------------------------------
 
   /** 构建默认的 LLM 选择排名 Prompt */
-  private buildDefaultSelectionPrompt(
-    input: MatchLLMInput,
+  private buildLlmList(
     availableLLMs: Array<{ id: string; llm_title?: string; llm_brief?: string | null; model_usage?: string }>,
   ): string {
-    const llmList = availableLLMs.map((l) => {
+    return availableLLMs.map((l) => {
       const title = l.llm_title ?? 'Unknown';
       const brief = l.llm_brief ?? '';
       const usage = l.model_usage ?? '';
       return `- id: ${l.id}, name: ${title}, brief: ${brief}, usage: ${usage}`;
     }).join('\n');
+  }
 
-    return `You are selecting the best LLM for an AI agent. Given the available LLMs below, select the most suitable one.
-
-Agent ID: ${input.agent_id}
-Context ID: ${input.context_id}
-Interaction ID: ${input.interact_id}
-
-Available LLMs:
-${llmList}
-
-Respond with ONLY the id of the selected LLM. Do not include any other text.`;
+  /** 渲染内置 LLM 匹配模板（内存兜底） */
+  private renderDefault(variables: Record<string, unknown>): string {
+    const tpl = getBuiltinTemplate(PROMPT_IDS.llmMatch);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   /** 从 LLM 排名回复中解析出选中的 LLM ID */

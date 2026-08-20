@@ -59,16 +59,56 @@ import {
   Sparkles,
   ArrowRight,
   Database,
-  Code
+  Code,
+  Zap,
+  Clock
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
 import CanvasReActFlow from '../chat/CanvasReActFlow.vue'
+import { useSessionStore } from '@/stores/session'
 
-const props = defineProps<{ block: ThinkingBlock }>()
-const isExpanded = ref(false)
-const activeTab = ref<'chain' | 'context' | 'io'>('chain')
+const props = withDefaults(
+  defineProps<{
+    block: ThinkingBlock
+    // 是否隐藏本 Agent 的上下文区块（"思考过程"弹窗中上下文统一在顶部聚合展示，避免重复）
+    hideContext?: boolean
+    // 展开后的默认 Tab
+    defaultTab?: 'chain' | 'io'
+    // 是否默认展开（"思考过程"弹窗中默认展开以直接展示 Canvas / Prompt / 模型输出）
+    startExpanded?: boolean
+  }>(),
+  {
+    hideContext: false,
+    defaultTab: 'chain',
+    startExpanded: false,
+  },
+)
+const sessionStore = useSessionStore()
+const isExpanded = ref(props.startExpanded)
+// 默认 Tab：若请求的 defaultTab 为 'io' 但该 Agent 无输入/输出数据，回退到 'chain' 避免空白面板
+const hasIOInit = Boolean(props.block.input || props.block.output)
+const activeTab = ref<'chain' | 'context' | 'io'>(props.defaultTab === 'io' && !hasIOInit ? 'chain' : props.defaultTab)
 
 const isStreaming = computed(() => props.block.meta.status === 'streaming')
+
+// 每个 Agent 独立的"思考中"状态：优先取实时执行状态（agentExecutions），其次取 block 流式状态
+const runtimeStatus = computed(() => {
+  const id = props.block.agentInfo?.id
+  if (id) {
+    const rt = sessionStore.agentExecutions[id]
+    if (rt && rt.status) return rt.status
+  }
+  return isStreaming.value ? 'RUNNING' : 'SUCCESS'
+})
+
+const isThinking = computed(() => runtimeStatus.value === 'RUNNING')
+
+const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: '未执行', cls: 'bg-apple-gray-100 dark:bg-apple-gray-700/60 text-apple-gray-500 dark:text-apple-gray-300' },
+  RUNNING: { label: '思考中', cls: 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300' },
+  SUCCESS: { label: '已完成', cls: 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300' },
+  ERROR: { label: '执行失败', cls: 'bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300' },
+}
 
 const agentTypeLabel = computed(() => {
   const type = (props.block.agentInfo?.type || 'WORKER').toUpperCase()
@@ -78,17 +118,6 @@ const agentTypeLabel = computed(() => {
     case 'EVOLUTOR': return '进化 Agent'
     default: return '执行 Agent'
   }
-})
-
-const hasContext = computed(() => {
-  const ctx = props.block.context
-  if (!ctx) return false
-  return Boolean(
-    (ctx.userProfile && Object.keys(ctx.userProfile).length > 0) ||
-    (ctx.citingMessages && ctx.citingMessages.length > 0) ||
-    (ctx.recentWorks && ctx.recentWorks.length > 0) ||
-    ctx.customContext
-  )
 })
 
 const hasIO = computed(() => {
@@ -135,18 +164,18 @@ function formatJson(val: unknown): string {
             {{ block.agentInfo.llmId }}
           </span>
 
-          <span v-if="isStreaming" class="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 font-medium">
-            <Loader2 :size="12" class="animate-spin text-purple-500" />
-            <span>思考中...</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" :class="STATUS_CHIP[runtimeStatus]?.cls">
+            <Loader2 v-if="isThinking" :size="9" class="inline animate-spin mr-0.5 align-[-1px]" />
+            {{ STATUS_CHIP[runtimeStatus]?.label || runtimeStatus }}
           </span>
         </div>
 
         <div class="flex items-center gap-2 flex-shrink-0 text-[11px] text-apple-gray-400">
-          <span v-if="block.tokenUsage" class="hidden sm:inline">
-            {{ block.tokenUsage }} tokens
+          <span v-if="block.tokenUsage" class="hidden sm:inline-flex items-center gap-1" title="大模型 Token 用量">
+            <Zap :size="11" /> {{ block.tokenUsage }} tokens
           </span>
-          <span v-if="block.durationMs">
-            {{ block.durationMs }}ms
+          <span v-if="block.durationMs" class="inline-flex items-center gap-1" title="调用耗时">
+            <Clock :size="11" /> {{ block.durationMs }}ms
           </span>
         </div>
       </button>
@@ -154,8 +183,8 @@ function formatJson(val: unknown): string {
       <!-- Expanded Detail 展开面板 -->
       <div v-if="isExpanded" class="border-t border-purple-100 dark:border-purple-900/40 bg-white/60 dark:bg-apple-gray-900/40 p-3.5 space-y-3">
         
-        <!-- 1. 【最最最顶部置顶展示】Context 上下文信息环境 -->
-        <div class="p-3 rounded-lg border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-r from-purple-50/80 to-blue-50/50 dark:from-purple-950/40 dark:to-blue-950/30 text-xs space-y-2">
+        <!-- 1. 【最最最顶部置顶展示】Context 上下文信息环境（弹窗内已全局展示，可用 hideContext 隐藏） -->
+        <div v-if="!hideContext" class="p-3 rounded-lg border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-r from-purple-50/80 to-blue-50/50 dark:from-purple-950/40 dark:to-blue-950/30 text-xs space-y-2">
           <div class="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200 border-b pb-1">
             <div class="flex items-center gap-1.5">
               <Database :size="13" class="text-purple-600 dark:text-purple-400" />
@@ -212,8 +241,9 @@ function formatJson(val: unknown): string {
           </div>
         </div>
 
-        <!-- 3. Canvas ReAct / CoT 执行状态机流程图 -->
+        <!-- 3. Canvas ReAct / CoT 执行状态机流程图（仅展开时渲染） -->
         <CanvasReActFlow
+          v-if="isExpanded"
           :steps="block.steps || []"
           :input="block.input"
           :output="block.output"
@@ -313,7 +343,7 @@ function formatJson(val: unknown): string {
           <!-- 备用降级文本展示 -->
           <div v-else class="text-apple-gray-700 dark:text-apple-gray-300 whitespace-pre-wrap leading-relaxed">
             {{ block.content || '思考中...' }}
-            <span v-if="isStreaming" class="inline-block w-1.5 h-4 bg-purple-500 animate-cursor-blink align-middle ml-0.5" />
+            <span v-if="isThinking" class="inline-block w-1.5 h-4 bg-purple-500 animate-cursor-blink align-middle ml-0.5" />
           </div>
         </div>
 

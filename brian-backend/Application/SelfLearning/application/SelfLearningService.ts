@@ -12,6 +12,7 @@ import {
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   InfoType,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type Logger, type Condition,
 } from '@brian-agent/base';
 import type { GraphDBAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
@@ -526,31 +527,16 @@ export class SelfLearningService {
     const configuredLlmId = String(config.document_query_llm_id ?? '');
 
     // 1. 渲染 Prompt（配置的模板，或内置默认）
-    let prompt: string;
-    if (templateId) {
-      try {
-        const promptOut = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          Object.assign(new ExecPromptInput(), {
-            id: templateId,
-            variables: {
-              selection,
-              context_before: contextBefore,
-              context_after: contextAfter,
-              question,
-              content: selection,
-            },
-          }),
-          new PromptContext(),
-          promptOut,
-        );
-        prompt = promptOut.prompt || this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
-      } catch {
-        prompt = this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
-      }
-    } else {
-      prompt = this.buildDefaultDocumentQueryPrompt(selection, contextBefore, contextAfter, question);
-    }
+    const prompt = await this.renderPrompt(
+      templateId,
+      PROMPT_IDS.documentQuery,
+      {
+        selection,
+        context_before: contextBefore,
+        context_after: contextAfter,
+        question,
+      },
+    );
 
     // 2. 匹配 LLM（配置的模型，或自动匹配）
     let llmId = configuredLlmId;
@@ -603,18 +589,30 @@ export class SelfLearningService {
     contextAfter: string,
     question: string,
   ): string {
-    const parts: string[] = ['请基于下面文档的上下文，回答用户关于选中内容的问题。请用中文回答。'];
-    if (contextBefore) {
-      parts.push(`【选中内容的前文】\n${contextBefore}`);
-    }
-    parts.push(`【选中的内容】\n${selection}`);
-    if (contextAfter) {
-      parts.push(`【选中内容的后文】\n${contextAfter}`);
-    }
-    if (question) {
-      parts.push(`【用户问题】\n${question}`);
-    }
-    return parts.join('\n\n');
+    const tpl = getBuiltinTemplate(PROMPT_IDS.documentQuery);
+    return tpl
+      ? renderTemplate(tpl, { selection, context_before: contextBefore, context_after: contextAfter, question })
+      : '';
+  }
+
+  /** 渲染 Prompt：配置模板 → 内置模板 → 内存兜底 */
+  private async renderPrompt(
+    templateId: string | undefined,
+    builtinId: string,
+    variables: Record<string, unknown>,
+  ): Promise<string> {
+    const id = templateId || builtinId;
+    try {
+      const promptOut = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), { id, variables }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (promptOut.prompt) return promptOut.prompt;
+    } catch { /* use fallback */ }
+    const tpl = getBuiltinTemplate(builtinId);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   // ─────────────────────────────────────────────────────────────────────────

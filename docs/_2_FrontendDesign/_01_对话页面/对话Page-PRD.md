@@ -254,6 +254,20 @@
   - 修改后：按钮明确标注「思考过程」，对话区消息框新增可折叠摘要区，与 ChatMap 结构一致，仅默认展开态不同。
 - **新增边界条件**：反查不到 work_id 或采集失败时弹窗展示「暂无思考过程」空态；对话区无摘要数据时不渲染折叠摘要区。
 
+### [2026-08-19] "思考过程"弹窗重构：独立 Agent 思考中状态 + Canvas 式 DAG 展示
+- **变更原因**：原弹窗按"Planning 拆解 + 思考块"展示，未按 上下文→TaskDAG→AgentDAG→工作 Agent→Writer 的顺序组织；各 Agent "思考中"状态不独立（依赖整块 streaming 标志）；AgentDAG 无执行状态着色，也无法与下方 Agent 执行联动。
+- **功能变更**：
+  1. **每个 Agent 独立的"思考中"状态**：`session.ts` 新增 `agentExecutions`（key=agent_id 的运行时状态表）与 `setAgentStatus/resetAgentStatus`；`ChatArea.vue` 在 `agent_building/agent_built`、`agent_thinking`、`agent_reflection` 置为 RUNNING（思考中/黄色），`agent_output` 置为 SUCCESS（成功/绿色）并回填 `tokenUsage`/`durationMs`，`agent_error`/`error` 置为 ERROR（失败/红色）。`ThinkingBlock.vue` 标题栏展示独立状态徽标（思考中/已完成/执行失败）。
+  2. **整体"思考中"状态**：`ThinkingModal.vue` 顶部若任一 Agent 处于 RUNNING 或存在流式思考块则整体显示"思考中..."。
+  3. **展示顺序重构**：`ThinkingModal.vue` 按 ① 上下文 `ThinkingContext.vue`（聚合用户画像/引用历史/最近工作/记忆知识/策略）→ ② TaskDAG Canvas 图 `TaskDagFlow.vue`（分层 DAG + 依赖箭头）→ ③ AgentDAG Canvas 图 `AgentDagFlow.vue`（Agent 名称 + 状态着色 + 点击定位下方对应 Agent）→ ④ 工作 Agent（每个独立展示 CoT/ReAct Canvas、Prompt、模型输出、Token 用量与耗时）→ ⑤ Writer Agent 的顺序展示。
+  4. **AgentDAG 与 Agent 执行联动**：`AgentDagFlow.vue` 重写为分层 DAG（`dagLayout.ts` 最长路径分层布局），节点未执行灰色 / 执行中黄色 / 成功绿色 / 失败红色，含图例；点击节点触发 `focusAgent` 滚动并高亮下方对应 Agent 卡片（`agent-focus-ring`）。
+  5. **后端 Agent 执行完成事件**：`OrchestrationExecutionService.execSingleAgent` 在成功/失败时推送 `agent_output` / `agent_error` SSE 事件（含 `agent_id`、`answer`、`elapsed_ms`、`token_usage`），使流式期间 AgentDAG 能实时由黄转绿/红；`dev-server.ts` DI 装配 `streamAccess` 传入。
+  6. **历史 AgentDAG 状态回填**：`dev-server.ts` 的 `buildThinkingBlocksAndDag` 按 `orchestration_agent_execution.status` 回填 DAG 节点状态（COMPLETED 成功 / EXEC_FAILED 失败 / CANCELLED·PENDING 未执行），历史任务重看时 AgentDAG 颜色准确。
+- **行为差异**：
+  - 修改前：弹窗为"Planning 拆解（列表式 Task DAG + 链式 AgentDAG）+ 思考块"；Agent "思考中"依赖整块 streaming 标志（不独立）；AgentDAG 无执行状态与联动。
+  - 修改后：弹窗严格按 上下文 → TaskDAG → AgentDAG → 工作 Agent → Writer 顺序展示；每个 Agent 独立"思考中"状态；AgentDAG 为 Canvas 式分层图并实时状态着色、可点击联动下方 Agent。
+- **新增边界条件**：无 AgentDAG/TaskDAG 数据（Simple 策略）时仅展示上下文 + 工作 Agent；AgentDAG 节点点击但下方无对应 Agent 卡片时无副作用；`agent_output` 事件缺失（旧后端）时 Agent 保持 RUNNING 直至 `done`。
+
 ### [2026-08-18] Agent 思考过程、上下文与输入输出完整展示升级
 - **变更原因**：针对原本“思考过程信息不全，未展示上下文及各个 Agent 输入输出”的问题进行全链路重构。
 - **功能变更**：

@@ -64,6 +64,7 @@ export const MODULE_LABELS: Record<string, { label: string; desc: string }> = {
   planner_agent: { label: 'Planner Agent', desc: '规划 Agent' },
   writer_agent: { label: 'Writer Agent', desc: '写作 Agent' },
   evolutor_agent: { label: 'Evolutor Agent', desc: '进化 Agent' },
+  intent_agent: { label: 'Intent Agent', desc: '需求理解与意图匹配 Agent' },
   entry: { label: 'Entry', desc: '编排入口（复杂度分解、策略选择）' },
   strategy: { label: 'Strategy', desc: '编排策略配置' },
   execution: { label: 'Execution', desc: '编排执行引擎' },
@@ -170,9 +171,9 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // =========================================================================
 
   // --- LLMCoreProvider ---
-  core('llm_core', 'basic', 'similarity_threshold', 'LLM 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
-  core('llm_core', 'basic', 'regen_rate', 'LLM 重新匹配概率（0-100）', 'INT', 75, '值越大越倾向于重新评估'),
-  core('llm_core', 'basic', 'prompt_template_id', 'LLM 匹配 Prompt', 'STRING', '', '用于 LLM 匹配排名'),
+  core('llm_core', 'basic', 'similarity_threshold', 'LLM 相似度阈值', 'DOUBLE', 0.7, 'LLM 匹配的相似度阈值（0.0-1.0）：预留的相似度判定阈值（当前 matchLLM 未实际使用，匹配由缓存复用概率 regen_rate 与 LLM 打分决定）'),
+  core('llm_core', 'basic', 'regen_rate', 'LLM 重新匹配概率（0-100）', 'INT', 75, '匹配缓存命中后跳过缓存、重新评估并重新绑定 LLM 的概率：值越大越倾向于重新匹配；设为 0 表示始终复用缓存绑定，设为 100 表示每次都重新评估'),
+  core('llm_core', 'basic', 'prompt_template_id', 'LLM 匹配 Prompt', 'STRING', '', 'LLM 选择排名所用的 Prompt 模板 ID：用于让大模型在候选 LLM 列表（标题/简介/用途）中为 Agent 选出最合适的提供商；留空使用内置默认提示词'),
   core('llm_core', 'quota', 'quota_tokens_per_day', '每日 Token 限额', 'INT', 0, '0 为不限制'),
   core('llm_core', 'quota', 'quota_tokens_per_week', '每周 Token 限额', 'INT', 0, '0 为不限制'),
   core('llm_core', 'quota', 'quota_tokens_per_month', '每月 Token 限额', 'INT', 0, '0 为不限制'),
@@ -261,10 +262,10 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- AgentLibrary ---
   // 注意：Agent 复用/重新评估概率属于 AgentLibrary（agent_library_config 表），
   // 由 AgentLibraryService.matchAgent 的第一层算法匹配复用判定读取，勿挂到 agent_builder。
-  agent('agent_library', 'basic', 'regen_rate', 'Agent 重新评估概率（0-100）', 'INT', 75, '1-该值 为第1层算法匹配成功后的直接复用概率'),
-  agent('agent_library', 'basic', 'similarity_threshold', 'Agent 复用相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),
-  agent('agent_library', 'basic', 'prompt_template_id', 'Agent 匹配 Prompt', 'STRING', '', '用于 Agent 匹配排名'),
-  agent('agent_library', 'basic', 'max_agent_count', '最大 Agent 保留数量', 'INT', 100, '超过此数量后触发老化淘汰'),
+  agent('agent_library', 'basic', 'regen_rate', 'Agent 重新评估概率（0-100）', 'INT', 75, '第一层算法匹配命中后进入 LLM 重新评估（而非直接复用）的概率：值越大越倾向于重新评估生成新 Agent；设为 0 表示命中即复用，设为 100 表示命中也强制重新评估'),
+  agent('agent_library', 'basic', 'similarity_threshold', 'Agent 复用相似度阈值', 'DOUBLE', 0.7, 'Agent 复用的相似度阈值（0.0-1.0）：第一层 Jaccard 算法匹配得分与第二层 LLM 打分均需达到该值才复用现有 Agent，否则生成新 Agent'),
+  agent('agent_library', 'basic', 'prompt_template_id', 'Agent 匹配 Prompt', 'STRING', '', '第二层 LLM 匹配所用的 Prompt 模板 ID：大模型依据候选 Agent 的用途/名称对任务打分并选出最佳 Agent；留空使用内置默认提示词'),
+  agent('agent_library', 'basic', 'max_agent_count', '最大 Agent 保留数量', 'INT', 100, 'Agent 库允许保留的最大启用数量：启用数量超过该值时自动触发老化淘汰（依据观察窗口内使用次数与评估分数禁用低活跃 Agent）'),
 
   // --- AgentExecution ---
   agent('agent_execution', 'basic', 'think_prompt_template_id', 'Think Prompt', 'STRING', '', 'Worker Think 阶段 Prompt 模板'),
@@ -295,6 +296,11 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   agent('evolutor_agent', 'basic', 'eval_frequency_threshold', '评估频率阈值', 'INT', 5, '使用次数达到此值触发评估'),
   agent('evolutor_agent', 'basic', 'eval_schedule_interval_ms', '评估调度间隔（ms）', 'INT', 3600000, '定期评估的调度间隔'),
   agent('evolutor_agent', 'basic', 'eval_batch_size', '评估批量大小', 'INT', 20, '单次评估处理的 Agent 数量'),
+
+  // --- IntentAgent ---
+  agent('intent_agent', 'basic', 'match_threshold', '需求理解匹配阈值', 'INT', 80, '理解需求与原始输入的匹配评分低于此阈值时触发前端用户确认弹窗'),
+  agent('intent_agent', 'basic', 'llm_id', '需求理解模型', 'STRING', '', '留空则使用系统默认模型'),
+  agent('intent_agent', 'basic', 'prompt_template_id', '需求理解 Prompt', 'STRING', '', '需求理解与意图匹配 Prompt 模板'),
 
   // =========================================================================
   // APPLICATION layer

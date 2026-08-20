@@ -12,6 +12,7 @@
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { PromptsSchemaInitializer } from '../infrastructure/PromptsSchemaInitializer';
 import { PromptsService } from '../application/PromptsService';
+import { PromptCatalogAccess } from '../../PromptCatalog/access/PromptCatalogAccess';
 import {
   PromptContext,
   AddPromptInput,
@@ -56,6 +57,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  */
 export class PromptsAccess {
   private readonly service: PromptsService;
+  private readonly catalog: PromptCatalogAccess;
 
   /**
    * @param relationDb RelationDBProvider 接入层实例
@@ -67,13 +69,15 @@ export class PromptsAccess {
     // 创建 Service 并通过代理模式增加切面注入能力
     const rawService = new PromptsService(relationDb);
     this.service = AopProxy.wrap(rawService, { logger });
+    this.catalog = new PromptCatalogAccess(relationDb);
   }
 
   /**
-   * 初始化组件：写入默认配置并恢复 enabled 状态。
+   * 初始化组件：写入默认配置并恢复 enabled 状态，并种子化全部内置 Prompt。
    */
   async initialize(): Promise<void> {
     await this.service.initialize();
+    await this.catalog.seed();
   }
 
   /** 新增 Prompt */

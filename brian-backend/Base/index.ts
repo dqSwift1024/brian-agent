@@ -56,6 +56,9 @@ export * from './MQProvider';
 // PromptsProvider
 export * from './PromptsProvider';
 
+// PromptCatalog（内置 Prompt 目录，稳定 ID + 统一变量 + 幂等种子化）
+export * from './PromptCatalog';
+
 // SkillProvider
 export * from './SkillProvider';
 

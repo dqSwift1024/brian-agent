@@ -153,6 +153,7 @@ import type {
   DelPromptInput, DelPromptOutput, SoPromptInput, SoPromptOutput, GetPromptInput, GetPromptOutput,
   PromptContext,
 } from '@brian-agent/base';
+import { PROMPT_SLOTS } from '@brian-agent/base';
 
 import type { Input, Context, Output } from '@brian-agent/base';
 
@@ -896,7 +897,7 @@ export class ConfigService {
       await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, {} as McpCoreContext, out);
       return this.extractConfigValue(out, 'mcp_core', configKey);
     }
-    if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.similarity_threshold') || configKey.startsWith('skill_core.prompt_template_id')) {
+    if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
       const out = new ConfigSkillCoreOutput();
       await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
       return this.extractConfigValue(out, 'skill_core', configKey);
@@ -909,7 +910,7 @@ export class ConfigService {
       const key = configKey.split('skill_core.opt_rule.')[1];
       return (first as unknown as Record<string, unknown>)[key] ?? null;
     }
-    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.similarity_threshold') || configKey.startsWith('soul_core.prompt_template_id') || configKey.startsWith('soul_core.llm_id')) {
+    if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SOUL_MATCH) || configKey.startsWith('soul_core.llm_id')) {
       const out = new ConfigSoulCoreOutput();
       await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, {} as SoulCoreContext, out);
       return this.extractConfigValue(out, 'soul_core', configKey);
@@ -1142,11 +1143,11 @@ export class ConfigService {
       return;
     }
 
-    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith('llm_core.prompt_template_id')) {
+    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.LLM_MATCH)) {
       const input: any = {};
       if (prefix.startsWith('llm_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('llm_core.similarity_threshold')) input.similarity_threshold = value;
-      if (prefix.startsWith('llm_core.prompt_template_id')) input.prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.LLM_MATCH)) input.prompt_template_id = value as string;
       const output: any = {};
       await this.llmCore.configLLMCore(input, {} as any, output);
       return;
@@ -1161,16 +1162,16 @@ export class ConfigService {
       const input: any = {};
       if (prefix.startsWith('mcp_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('mcp_core.similarity_threshold')) input.similarity_threshold = value;
-      if (prefix.startsWith('mcp_core.prompt_template_id')) input.prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.MCP_MATCH)) input.prompt_template_id = value as string;
       const output: any = {};
       await this.mcpCore.configMCPCore(input, {} as any, output);
       return;
     }
-    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith('skill_core.prompt_template_id')) {
+    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
       const input: any = {};
       if (prefix.startsWith('skill_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('skill_core.similarity_threshold')) input.similarity_threshold = value;
-      if (prefix.startsWith('skill_core.prompt_template_id')) input.prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH)) input.prompt_template_id = value as string;
       const output: any = {};
       await this.skillCore.configSkillCore(input, {} as any, output);
       return;
@@ -1198,11 +1199,11 @@ export class ConfigService {
       }
       return;
     }
-    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith('soul_core.prompt_template_id') || prefix.startsWith('soul_core.llm_id')) {
+    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH) || prefix.startsWith('soul_core.llm_id')) {
       const input: any = {};
       if (prefix.startsWith('soul_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('soul_core.similarity_threshold')) input.similarity_threshold = value;
-      if (prefix.startsWith('soul_core.prompt_template_id')) input.prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH)) input.prompt_template_id = value as string;
       if (prefix.startsWith('soul_core.llm_id')) input.llm_id = value as string;
       const output: any = {};
       await this.soulCore.configSoulCore(input, {} as any, output);
@@ -1234,7 +1235,7 @@ export class ConfigService {
     if (prefix.startsWith('info_core.tag_config.')) {
       const input: any = {};
       if (prefix.startsWith('info_core.tag_config.llm_id')) input.llm_id = value as string;
-      else if (prefix.startsWith('info_core.tag_config.prompt_template_id')) input.prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.INFO_TAG)) input.prompt_template_id = value as string;
       else if (prefix.startsWith('info_core.tag_config.tag_top_k')) input.tag_top_k = Number(value);
       else if (prefix.startsWith('info_core.tag_config.enable')) input.enable = value ? 1 : 0;
       const output: any = {};
@@ -1244,7 +1245,7 @@ export class ConfigService {
     if (prefix.startsWith('info_core.summary_config.')) {
       const input: any = {};
       if (prefix.startsWith('info_core.summary_config.llm_id')) input.llm_id = value as string;
-      else if (prefix.startsWith('info_core.summary_config.prompt_template_id')) input.prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.INFO_SUMMARY)) input.prompt_template_id = value as string;
       else if (prefix.startsWith('info_core.summary_config.enable')) input.enable = value ? 1 : 0;
       else if (prefix.startsWith('info_core.summary_config.threshold')) input.threshold = Number(value);
       else if (prefix.startsWith('info_core.summary_config.info_types')) input.info_types = value as string;
@@ -1285,7 +1286,7 @@ export class ConfigService {
     if (prefix.startsWith('planner_agent.')) {
       const input: any = {};
       if (prefix.startsWith('planner_agent.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
-      else if (prefix.startsWith('planner_agent.plan_prompt_template_id')) input.plan_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.PLAN)) input.plan_prompt_template_id = value as string;
       else if (prefix.startsWith('planner_agent.max_subtask_count')) input.max_subtask_count = value as number;
       else if (prefix.startsWith('planner_agent.llm_id')) input.llm_id = value as string;
       const output: any = {};
@@ -1294,7 +1295,7 @@ export class ConfigService {
     }
     if (prefix.startsWith('writer_agent.')) {
       const input: any = {};
-      if (prefix.startsWith('writer_agent.write_prompt_template_id')) input.write_prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.WRITE)) input.write_prompt_template_id = value as string;
       else if (prefix.startsWith('writer_agent.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith('writer_agent.default_language')) input.default_language = value as string;
       else if (prefix.startsWith('writer_agent.default_style')) input.default_style = value as string;
@@ -1306,8 +1307,8 @@ export class ConfigService {
     }
     if (prefix.startsWith('evolutor_agent.')) {
       const input: any = {};
-      if (prefix.startsWith('evolutor_agent.eval_work_prompt_template_id')) input.eval_work_prompt_template_id = value as string;
-      else if (prefix.startsWith('evolutor_agent.eval_write_prompt_template_id')) input.eval_write_prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.EVAL_WORK)) input.eval_work_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.EVAL_WRITE)) input.eval_write_prompt_template_id = value as string;
       else if (prefix.startsWith('evolutor_agent.optimize_threshold')) input.optimize_threshold = value as number;
       else if (prefix.startsWith('evolutor_agent.eval_frequency_threshold')) input.eval_frequency_threshold = value as number;
       else if (prefix.startsWith('evolutor_agent.eval_schedule_interval_ms')) input.eval_schedule_interval_ms = value as number;
@@ -1329,7 +1330,7 @@ export class ConfigService {
       const input: any = {};
       if (prefix.startsWith('agent_library.regen_rate')) input.regen_rate = value;
       else if (prefix.startsWith('agent_library.similarity_threshold')) input.similarity_threshold = value;
-      else if (prefix.startsWith('agent_library.prompt_template_id')) input.prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.AGENT_MATCH)) input.prompt_template_id = value as string;
       else if (prefix.startsWith('agent_library.max_agent_count')) input.max_agent_count = value as number;
       const output: any = {};
       await this.agentLibrary.configAgentLibrary(input, {} as any, output);
@@ -1337,7 +1338,7 @@ export class ConfigService {
     }
     if (prefix.startsWith('agent_builder.')) {
       const input: any = {};
-      if (prefix.startsWith('agent_builder.task_analysis_prompt_template_id')) input.task_analysis_prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.TASK_ANALYSIS)) input.task_analysis_prompt_template_id = value as string;
       else if (prefix.startsWith('agent_builder.auto_optimize')) input.auto_optimize = value as boolean;
       const output: any = {};
       await this.agentBuilder.configAgentBuilder(input, {} as any, output);
@@ -1345,9 +1346,9 @@ export class ConfigService {
     }
     if (prefix.startsWith('agent_execution.')) {
       const input: any = {};
-      if (prefix.startsWith('agent_execution.think_prompt_template_id')) input.think_prompt_template_id = value as string;
-      else if (prefix.startsWith('agent_execution.reflect_prompt_template_id')) input.reflect_prompt_template_id = value as string;
-      else if (prefix.startsWith('agent_execution.answer_prompt_template_id')) input.answer_prompt_template_id = value as string;
+      if (prefix.startsWith(PROMPT_SLOTS.THINK)) input.think_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.REFLECT)) input.reflect_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.ANSWER)) input.answer_prompt_template_id = value as string;
       else if (prefix.startsWith('agent_execution.default_max_iterations')) input.default_max_iterations = value as number;
       else if (prefix.startsWith('agent_execution.async_worker_interval')) input.async_worker_interval = value as number;
       const output: any = {};
@@ -1363,7 +1364,7 @@ export class ConfigService {
     if (prefix.startsWith('orchestration.entry')) {
       const input: any = {};
       if (prefix.startsWith('orchestration.entry.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
-      else if (prefix.startsWith('orchestration.entry.strategy_prompt_template_id')) input.strategy_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.STRATEGY_SELECTOR)) input.strategy_prompt_template_id = value as string;
       else if (prefix.startsWith('orchestration.entry.default_strategy')) input.default_strategy = value as string;
       else if (prefix.startsWith('orchestration.entry.max_recent_works')) input.max_recent_works = value as number;
       else if (prefix.startsWith('orchestration.entry.async_worker_interval')) input.async_worker_interval = value as number;
@@ -1431,7 +1432,7 @@ export class ConfigService {
       else if (prefix.startsWith('self_learning.orphan_tag_check_cron')) input.orphan_tag_check_cron = value as string;
       else if (prefix.startsWith('self_learning.document_split_threshold')) input.document_split_threshold = Number(value);
       else if (prefix.startsWith('self_learning.chunk_overlap_ratio')) input.chunk_overlap_ratio = Number(value);
-      else if (prefix.startsWith('self_learning.document_query_prompt_template_id')) input.document_query_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.DOCUMENT_QUERY)) input.document_query_prompt_template_id = value as string;
       else if (prefix.startsWith('self_learning.document_query_llm_id')) input.document_query_llm_id = value as string;
       const output: any = {};
       await this.selfLearningAccess.configSelfLearning(input, {} as any, output);
@@ -1440,7 +1441,7 @@ export class ConfigService {
     if (prefix.startsWith('user_profile.')) {
       const input: any = {};
       if (prefix.startsWith('user_profile.auto_generate_interval_ms')) input.auto_generate_interval_ms = Number(value);
-      else if (prefix.startsWith('user_profile.profile_analysis_prompt_template_id')) input.profile_analysis_prompt_template_id = value as string;
+      else if (prefix.startsWith(PROMPT_SLOTS.PROFILE_ANALYSIS)) input.profile_analysis_prompt_template_id = value as string;
       else if (prefix.startsWith('user_profile.max_conversation_sample_count')) input.max_conversation_sample_count = Number(value);
       else if (prefix.startsWith('user_profile.profile_retention_versions')) input.profile_retention_versions = Number(value);
       else if (prefix.startsWith('user_profile.min_confidence_threshold')) input.min_confidence_threshold = Number(value);

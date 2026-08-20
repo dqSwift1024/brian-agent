@@ -7,7 +7,7 @@ import {
   IdGenerator, ValidationError, Operator,
   OperationType,
   InfoType,
-  type Logger, type Condition, type Operation,
+  type Logger, type Condition, type Operation, type StreamAccess,
 } from '@brian-agent/base';
 import type { AgentBuilderAccess, AgentExecutionAccess, AgentLibraryAccess } from '@brian-agent/agent';
 import {
@@ -64,6 +64,7 @@ export class OrchestrationExecutionService {
     private readonly mqAccess?: any,
     private readonly mqCore?: any,
     private readonly logger?: Logger,
+    private readonly streamAccess?: StreamAccess,
   ) {}
 
   getConfig(): OrchestrationExecutionConfig {
@@ -218,7 +219,7 @@ export class OrchestrationExecutionService {
     for (const edge of edges) {
       const fromAgentId = taskAgentMap[edge.from_task_id];
       const toAgentId = taskAgentMap[edge.to_task_id];
-      if (!fromAgentId || !toAgentId) continue;
+      if (!fromAgentId || !toAgentId || fromAgentId === toAgentId) continue;
 
       const edgeKey = `${fromAgentId}->${toAgentId}`;
       if (existingEdgeSet.has(edgeKey)) continue;
@@ -352,6 +353,13 @@ export class OrchestrationExecutionService {
           ] as Condition[],
         });
         await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
+          await this.streamAccess.pushEvent(context.session_id, 'agent_error', 'TRACE', {
+            agent_id,
+            error_message: errorMsg,
+            elapsed_ms: elapsed,
+          }, { work_id, interact_id, agent_id, node_id: 'ANSWER' });
+        }
         output.error = errorMsg;
         return false;
       }
@@ -393,6 +401,32 @@ export class OrchestrationExecutionService {
       });
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
 
+      // Agent 执行完成事件：前端据此将对应 AgentDAG 节点 / 工作 Agent 标记为执行成功（绿色）
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
+        let totalTokens = 0;
+        try {
+          if (execOutput.trace_id) {
+            const traceRows = this.relationDb.queryRaw<{ total_token_usage: number }>(
+              `SELECT "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
+              [execOutput.trace_id],
+            );
+            if (traceRows.length > 0) totalTokens = Number(traceRows[0].total_token_usage ?? 0);
+          }
+        } catch { /* best-effort */ }
+        await this.streamAccess.pushEvent(context.session_id, 'agent_output', 'TRACE', {
+          agent_id,
+          answer: execOutput.answer,
+          iterations: execOutput.iterations,
+          elapsed_ms: elapsed,
+          token_usage: totalTokens,
+        }, {
+          work_id,
+          interact_id,
+          agent_id,
+          node_id: 'ANSWER',
+        });
+      }
+
       output.answer = execOutput.answer;
       output.trace_id = execOutput.trace_id;
       output.iterations = execOutput.iterations;
@@ -422,6 +456,14 @@ export class OrchestrationExecutionService {
         error: errorMsg,
       });
 
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
+        await this.streamAccess.pushEvent(context.session_id, 'agent_error', 'TRACE', {
+          agent_id,
+          error_message: errorMsg,
+          elapsed_ms: elapsed,
+        }, { work_id, interact_id, agent_id, node_id: 'ANSWER' });
+      }
+
       return false;
     }
   }
@@ -430,7 +472,9 @@ export class OrchestrationExecutionService {
   // execDAG
   // -------------------------------------------------------------------------
 
-  async execDAG(
+  // ===== 原始 execDAG 方法（保留作为参考） =====
+  /*
+  async originalExecDAG(
     input: ExecDAGInput,
     context: OrchestrationExecutionContext,
     output: ExecDAGOutput,
@@ -553,8 +597,6 @@ export class OrchestrationExecutionService {
     while (readyQueue.length > 0) {
       const elapsed = Date.now() - dagStartedAt;
       if (timeoutMs > 0 && elapsed >= timeoutMs) {
-        // ===== 原子化 DAG CANCELLED：使用事务一次性批量更新 readyQueue + pending 节点 =====
-        // 1) 构造事务 Operation 列表
         const cancelOps: Operation[] = [];
         const now = IdGenerator.now();
         const readyAgentIds: string[] = [];
@@ -595,7 +637,6 @@ export class OrchestrationExecutionService {
           }
         }
 
-        // 2) 优先事务执行；事务失败 fallback 回原有逐行更新路径，保证不丢失状态
         let transactionOk = false;
         try {
           if (cancelOps.length > 0) {
@@ -702,6 +743,373 @@ export class OrchestrationExecutionService {
         }
 
         continue;
+      }
+    }
+
+    output.agent_results = results;
+    output.total_elapsed_ms = Date.now() - dagStartedAt;
+    output.failed_count = failedCount;
+    return true;
+  }
+  */
+
+  // ===== 修改后的 execDAG 方法 =====
+  async execDAG(
+    input: ExecDAGInput,
+    context: OrchestrationExecutionContext,
+    output: ExecDAGOutput,
+  ): Promise<boolean> {
+    const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
+    const concurrency = max_concurrent ?? this.config.max_concurrent;
+    const timeoutMs = dag_timeout_ms ?? this.config.dag_timeout_ms;
+
+    const nodes = agent_dag.agent_nodes;
+    const edges = agent_dag.agent_edges;
+
+    const getNodeKey = (node: AgentNode): string => node.task_id || node.agent_id;
+
+    const adjList = new Map<string, string[]>();
+    const indegree = new Map<string, number>();
+    const nodeMap = new Map<string, AgentNode>();
+    const agentToKeysMap = new Map<string, string[]>();
+
+    for (const node of nodes) {
+      const key = getNodeKey(node);
+      nodeMap.set(key, node);
+      adjList.set(key, []);
+      indegree.set(key, 0);
+
+      const keys = agentToKeysMap.get(node.agent_id) || [];
+      keys.push(key);
+      agentToKeysMap.set(node.agent_id, keys);
+    }
+
+    for (const edge of edges) {
+      if (edge.from_agent_id === edge.to_agent_id) continue;
+      const fromKeys = agentToKeysMap.get(edge.from_agent_id) || [edge.from_agent_id];
+      const toKeys = agentToKeysMap.get(edge.to_agent_id) || [edge.to_agent_id];
+      for (const fk of fromKeys) {
+        for (const tk of toKeys) {
+          if (fk === tk) continue;
+          const neighbors = adjList.get(fk);
+          if (neighbors && !neighbors.includes(tk)) {
+            neighbors.push(tk);
+            indegree.set(tk, (indegree.get(tk) ?? 0) + 1);
+          }
+        }
+      }
+    }
+
+    const incomingMap = new Map<string, string[]>();
+    for (const node of nodes) {
+      incomingMap.set(getNodeKey(node), []);
+    }
+    for (const edge of edges) {
+      if (edge.from_agent_id === edge.to_agent_id) continue;
+      const fromKeys = agentToKeysMap.get(edge.from_agent_id) || [edge.from_agent_id];
+      const toKeys = agentToKeysMap.get(edge.to_agent_id) || [edge.to_agent_id];
+      for (const fk of fromKeys) {
+        for (const tk of toKeys) {
+          if (fk === tk) continue;
+          const parents = incomingMap.get(tk);
+          if (parents && !parents.includes(fk)) {
+            parents.push(fk);
+          }
+        }
+      }
+    }
+
+    const readyQueue: AgentNode[] = nodes.filter((n) => indegree.get(getNodeKey(n)) === 0);
+
+    const agentOutputs: Record<string, string> = {};
+    const results: AgentResult[] = [];
+
+    const dagStartedAt = Date.now();
+    let failedCount = 0;
+
+    const execOne = async (agentNode: AgentNode): Promise<AgentResult> => {
+      let enhancedContent = agentNode.task_content;
+
+      if (concurrency === 1) {
+        const upstreamKeys = incomingMap.get(getNodeKey(agentNode)) ?? [];
+        const upstreamOutputs: string[] = [];
+        for (const upKey of upstreamKeys) {
+          const upOutput = agentOutputs[upKey] || agentOutputs[nodeMap.get(upKey)?.agent_id || ''];
+          if (upOutput) {
+            const summary = upOutput.slice(0, 500);
+            upstreamOutputs.push(summary);
+          }
+        }
+        if (upstreamOutputs.length > 0) {
+          const upstreamSummary = upstreamOutputs.join('\n');
+          enhancedContent = `上游Agent完成的工作摘要：\n${upstreamSummary}\n---\n当前任务：${agentNode.task_content}`;
+        }
+      }
+
+      const singleInput = Object.assign(new ExecSingleAgentInput(), {
+        work_id,
+        interact_id: context.interact_id ?? '',
+        agent_id: agentNode.agent_id,
+        task_content: enhancedContent,
+        plan_id: agent_dag.plan_id,
+        task_id: agentNode.task_id,
+        work_context: work_context,
+        trace_id: input.trace_id,
+      });
+      const singleOutput = new ExecSingleAgentOutput();
+      const ok = await this.execSingleAgent(singleInput, context, singleOutput);
+
+      if (!ok) {
+        failedCount++;
+
+        const updExecInput = Object.assign(new UpdateDBInput(), {
+          table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+          data: [
+            { field: 'status', value: 'EXEC_FAILED' },
+            { field: 'updated', value: IdGenerator.now() },
+          ] as DataObject[],
+          conditions: [
+            { field: 'work_id', operator: Operator.EQ, value: work_id },
+            { field: 'agent_id', operator: Operator.EQ, value: agentNode.agent_id },
+            { field: 'status', operator: Operator.EQ, value: 'RUNNING' },
+          ] as Condition[],
+        });
+        await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+
+        throw {
+          failed: true,
+          agent_id: agentNode.agent_id,
+          task_id: agentNode.task_id,
+          reason: 'Agent execution failed',
+          failed_count: failedCount,
+          completed_results: results.slice(),
+        };
+      }
+
+      const nodeKey = getNodeKey(agentNode);
+      agentOutputs[nodeKey] = singleOutput.answer;
+      if (agentNode.agent_id) {
+        agentOutputs[agentNode.agent_id] = singleOutput.answer;
+      }
+
+      return {
+        agent_id: agentNode.agent_id,
+        task_id: agentNode.task_id,
+        answer: singleOutput.answer,
+        trace_id: singleOutput.trace_id,
+        iterations: singleOutput.iterations,
+        elapsed_ms: singleOutput.elapsed_ms,
+        status: 'COMPLETED',
+      };
+    };
+
+    while (readyQueue.length > 0) {
+      const elapsed = Date.now() - dagStartedAt;
+      if (timeoutMs > 0 && elapsed >= timeoutMs) {
+        const cancelOps: Operation[] = [];
+        const now = IdGenerator.now();
+        const readyAgentIds: string[] = [];
+        for (const node of readyQueue) {
+          readyAgentIds.push(node.agent_id);
+          cancelOps.push({
+            type: OperationType.UPDATE,
+            table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+            data: [
+              { field: 'status', value: 'CANCELLED' },
+              { field: 'error_info', value: 'DAG timeout exceeded' },
+              { field: 'updated', value: now },
+            ] as DataObject[],
+            conditions: [
+              { field: 'work_id', operator: Operator.EQ, value: work_id },
+              { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
+            ] as Condition[],
+          });
+        }
+        const pendingAgents: typeof nodes = [];
+        for (const node of nodes) {
+          const key = getNodeKey(node);
+          const isPending = (indegree.get(key) ?? 0) > 0 && !agentOutputs[key];
+          if (isPending) {
+            pendingAgents.push(node);
+            cancelOps.push({
+              type: OperationType.UPDATE,
+              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+              data: [
+                { field: 'status', value: 'CANCELLED' },
+                { field: 'error_info', value: 'DAG timeout exceeded' },
+                { field: 'updated', value: now },
+              ] as DataObject[],
+              conditions: [
+                { field: 'work_id', operator: Operator.EQ, value: work_id },
+                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
+              ] as Condition[],
+            });
+          }
+        }
+
+        let transactionOk = false;
+        try {
+          if (cancelOps.length > 0) {
+            transactionOk = this.relationDb.transactionRaw(cancelOps);
+          } else {
+            transactionOk = true;
+          }
+        } catch {
+          transactionOk = false;
+        }
+        if (!transactionOk) {
+          for (const node of readyQueue) {
+            const updExecInput = Object.assign(new UpdateDBInput(), {
+              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+              data: [
+                { field: 'status', value: 'CANCELLED' },
+                { field: 'error_info', value: 'DAG timeout exceeded' },
+                { field: 'updated', value: IdGenerator.now() },
+              ] as DataObject[],
+              conditions: [
+                { field: 'work_id', operator: Operator.EQ, value: work_id },
+                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
+              ] as Condition[],
+            });
+            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+          }
+          for (const node of pendingAgents) {
+            const updExecInput = Object.assign(new UpdateDBInput(), {
+              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+              data: [
+                { field: 'status', value: 'CANCELLED' },
+                { field: 'error_info', value: 'DAG timeout exceeded' },
+                { field: 'updated', value: IdGenerator.now() },
+              ] as DataObject[],
+              conditions: [
+                { field: 'work_id', operator: Operator.EQ, value: work_id },
+                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
+              ] as Condition[],
+            });
+            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+            failedCount++;
+          }
+          break;
+        }
+
+        failedCount += pendingAgents.length;
+        break;
+      }
+
+      const batch = readyQueue.splice(0, Math.max(1, concurrency));
+
+      if (batch.length === 1) {
+        try {
+          const nodeKey = getNodeKey(batch[0]);
+          const result = await execOne(batch[0]);
+          results.push(result);
+          if (work_id) {
+            try {
+              await this.relationDb.updateDB(
+                Object.assign(new UpdateDBInput(), {
+                  table: 'orchestration_work',
+                  data: [
+                    { field: 'completed_task_count', value: results.length },
+                    { field: 'updated', value: IdGenerator.now() },
+                  ] as DataObject[],
+                  conditions: [
+                    { field: 'work_id', operator: Operator.EQ, value: work_id },
+                  ] as Condition[],
+                }),
+                new DBContext(),
+                Object.assign(new UpdateDBOutput(), {}),
+              );
+            } catch {
+              // ignore
+            }
+          }
+          const downstreamKeys = adjList.get(nodeKey) ?? [];
+          for (const downKey of downstreamKeys) {
+            const deg = (indegree.get(downKey) ?? 1) - 1;
+            indegree.set(downKey, deg);
+            if (deg === 0) {
+              const downNode = nodeMap.get(downKey);
+              if (downNode) {
+                readyQueue.push(downNode);
+              }
+            }
+          }
+        } catch (err: unknown) {
+          throw err;
+        }
+      } else {
+        const settled = await Promise.allSettled(batch.map((n) => execOne(n)));
+        let batchFailure: unknown = null;
+
+        for (let i = 0; i < settled.length; i++) {
+          const s = settled[i];
+          const nodeKey = getNodeKey(batch[i]);
+          if (s.status === 'fulfilled') {
+            results.push(s.value);
+            if (work_id) {
+              try {
+                await this.relationDb.updateDB(
+                  Object.assign(new UpdateDBInput(), {
+                    table: 'orchestration_work',
+                    data: [
+                      { field: 'completed_task_count', value: results.length },
+                      { field: 'updated', value: IdGenerator.now() },
+                    ] as DataObject[],
+                    conditions: [
+                      { field: 'work_id', operator: Operator.EQ, value: work_id },
+                    ] as Condition[],
+                  }),
+                  new DBContext(),
+                  Object.assign(new UpdateDBOutput(), {}),
+                );
+              } catch {
+                // ignore
+              }
+            }
+            const downstreamKeys = adjList.get(nodeKey) ?? [];
+            for (const downKey of downstreamKeys) {
+              const deg = (indegree.get(downKey) ?? 1) - 1;
+              indegree.set(downKey, deg);
+              if (deg === 0) {
+                const downNode = nodeMap.get(downKey);
+                if (downNode) {
+                  readyQueue.push(downNode);
+                }
+              }
+            }
+          } else {
+            batchFailure = s.reason;
+          }
+        }
+
+        if (batchFailure) {
+          const err = batchFailure as Record<string, unknown>;
+          throw {
+            failed: true,
+            agent_id: (err.agent_id as string) ?? '',
+            task_id: (err.task_id as string) ?? '',
+            reason: (err.reason as string) ?? 'Agent execution failed',
+            failed_count: failedCount,
+            completed_results: results.slice(),
+          };
+        }
+
+        continue;
+      }
+
+      if (readyQueue.length === 0 && results.length + failedCount < nodes.length) {
+        const executedKeys = new Set(results.map((r) => r.task_id || r.agent_id));
+        const unexecutedNodes = nodes.filter((n) => !executedKeys.has(getNodeKey(n)));
+        if (unexecutedNodes.length > 0) {
+          this.logger?.debug?.('execDAG: cycle or dependency deadlock detected, falling back to execute remaining nodes', {
+            work_id,
+            unexecuted_count: unexecutedNodes.length,
+          });
+          for (const unNode of unexecutedNodes) {
+            indegree.set(getNodeKey(unNode), 0);
+            readyQueue.push(unNode);
+          }
+        }
       }
     }
 

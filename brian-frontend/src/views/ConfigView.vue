@@ -106,6 +106,20 @@ const navSections: NavSection[] = [
       { key: 'roles-prompt', label: 'Prompt 模板', icon: MessageSquare, type: 'entity', entityType: 'prompt' },
     ],
   },
+  // ===== 原始编排配置 navigation section（保留作为参考）=====
+  // {
+  //   key: 'orchestration', label: '编排配置', icon: Workflow,
+  //   desc: '任务编排的策略、执行与可视化',
+  //   subsections: [
+  //     { key: 'orch-entry', label: '入口参数', icon: Settings, type: 'params', configModule: 'entry', configCategories: ['basic'] },
+  //     { key: 'orch-strategy-params', label: '策略参数', icon: GitBranch, type: 'params', configModule: 'strategy', configCategories: ['basic'] },
+  //     { key: 'orch-strategy', label: '策略管理', icon: GitBranch, type: 'entity', entityType: 'orch-strategy' },
+  //     { key: 'orch-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'execution', configCategories: ['basic'] },
+  //     { key: 'orch-visual', label: 'Agent DAG 可视化', icon: Monitor, type: 'params', configModule: 'visualization', configCategories: ['basic'], configLayer: 'ORCHESTRATION' },
+  //   ],
+  // },
+
+  // ===== 修改后的编排配置 navigation section（增加 JSONNode 参数配置项）=====
   {
     key: 'orchestration', label: '编排配置', icon: Workflow,
     desc: '任务编排的策略、执行与可视化',
@@ -114,6 +128,7 @@ const navSections: NavSection[] = [
       { key: 'orch-strategy-params', label: '策略参数', icon: GitBranch, type: 'params', configModule: 'strategy', configCategories: ['basic'] },
       { key: 'orch-strategy', label: '策略管理', icon: GitBranch, type: 'entity', entityType: 'orch-strategy' },
       { key: 'orch-execution', label: '执行参数', icon: Zap, type: 'params', configModule: 'execution', configCategories: ['basic'] },
+      { key: 'orch-jsonnode', label: 'JSONNode 参数', icon: Boxes, type: 'params', configModule: 'jsonnode', configCategories: ['basic'] },
       { key: 'orch-visual', label: 'Agent DAG 可视化', icon: Monitor, type: 'params', configModule: 'visualization', configCategories: ['basic'], configLayer: 'ORCHESTRATION' },
     ],
   },
@@ -2683,6 +2698,7 @@ interface BackendAgent {
   agent_type?: string
   type?: string
   description?: string
+  agent_purpose?: string
   strategy_id?: string
   llm_id?: string
   soul_id?: string
@@ -2708,10 +2724,10 @@ const agentSubmitting = ref(false)
 // function getModelName(modelId: string): string { return modelId }
 // function getSoulName(soulId: string): string { return soulId }
 
-// ===== 修改后：根据 ID 查找名称 =====
+// ===== 修改后：根据 ID 查找名称（Agent 执行策略来自 /api/agent/strategy）=====
 function getStrategyLabel(strategyId: string): string {
-  const s = orchStrategies.value.find(o => o.id === strategyId)
-  return s ? `${s.label} (${s.description || strategyId})` : strategyId || '—'
+  const s = agentStrategies.value.find(o => o.strategy_id === strategyId)
+  return s ? `${s.strategy_label} (${parseDomains(s.suitable_domains)})` : strategyId || '—'
 }
 function getModelName(modelId: string): string {
   const m = models.value.find(md => md.id === modelId)
@@ -2757,6 +2773,7 @@ async function loadAgents() {
 // ===== 修改后：加载下拉选项数据 =====
 async function openAgentModal(agent?: BackendAgent) {
   if (orchStrategies.value.length === 0) await loadOrchStrategies()
+  if (agentStrategies.value.length === 0) await loadAgentStrategies()
   if (models.value.length === 0) await loadModels()
   if (souls.value.length === 0) await loadSouls()
   if (agent) {
@@ -2764,7 +2781,7 @@ async function openAgentModal(agent?: BackendAgent) {
     agentForm.value = {
       name: agent.agent_name || agent.name || '',
       type: agent.agent_type || agent.type || 'WORKER',
-      description: agent.description || '',
+      description: agent.agent_purpose || agent.description || '',
       strategyId: agent.strategy_id || '',
       llmId: agent.llm_id || '',
       soulId: agent.soul_id || '',
@@ -2786,6 +2803,7 @@ async function submitAgentForm() {
       agent_name: agentForm.value.name,
       agent_type: agentForm.value.type,
       description: agentForm.value.description,
+      agent_purpose: agentForm.value.description,
       strategy_id: agentForm.value.strategyId,
       llm_id: agentForm.value.llmId,
       soul_id: agentForm.value.soulId,
@@ -4972,7 +4990,7 @@ watch(activeSubSection, async (val) => {
                   </div>
                   <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :class="(a.enable ?? a.enabled ?? true) ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" />
                 </div>
-                <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-2 min-h-[32px] line-clamp-2">{{ a.description || a.task_signature || '暂无描述' }}</p>
+                <p class="text-xs text-apple-gray-500 dark:text-apple-gray-400 mb-2 min-h-[32px] line-clamp-2">{{ a.agent_purpose || a.description || a.task_signature || '暂无描述' }}</p>
                 <div class="flex flex-col gap-1.5 text-[10px] mb-3">
                   <div v-if="a.strategy_id" class="flex items-center gap-1.5 min-w-0">
                     <span class="px-1.5 py-0.5 rounded bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-500 dark:text-apple-gray-300 flex-shrink-0">策略</span>
@@ -6118,6 +6136,8 @@ watch(activeSubSection, async (val) => {
                   <option value="PLANNER">PLANNER</option>
                   <option value="WRITER">WRITER</option>
                   <option value="EVOLUTOR">EVOLUTOR</option>
+                  <option value="SUMMARY">SUMMARY</option>
+                  <option value="INTENT">INTENT</option>
                 </select>
               </div>
             </div>
@@ -6130,7 +6150,7 @@ watch(activeSubSection, async (val) => {
                 <label class="block text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300 mb-1.5">执行策略</label>
                 <select v-model="agentForm.strategyId" :class="inputClass">
                   <option value="">无</option>
-                  <option v-for="s in orchStrategies" :key="s.id" :value="s.id">{{ s.label }}</option>
+                  <option v-for="s in agentStrategies" :key="s.strategy_id" :value="s.strategy_id">{{ s.strategy_label }}（复杂度 {{ s.suitable_complexity_min }}-{{ s.suitable_complexity_max }}）</option>
                 </select>
               </div>
               <div>

@@ -5,6 +5,7 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
   InfoType,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
@@ -200,7 +201,6 @@ export class AgentBuilderService {
         agent_id: agentId,
         agent_type: 'WORKER',
         strategy_id: strategyOut.strategy_id,
-        llm_id: llmId,
         soul_id: soulOut.soul_id || '',
         task_signature: signature,
         agent_name: agentName,
@@ -352,6 +352,7 @@ export class AgentBuilderService {
       );
     }
 
+    // LLM 重新匹配：绑定只写入 LLMProvider 的 agent_llm，不再回写 agent 表 llm_id
     const llmOut = new MatchLLMOutput();
     await this.llmCore.matchLLM(
       Object.assign(new MatchLLMInput(), {
@@ -362,16 +363,8 @@ export class AgentBuilderService {
       new LLMCoreContext(),
       llmOut,
     );
-    if (llmOut.llm_id && llmOut.llm_id !== agent.llm_id) {
-      output.changes.push({ component: 'llm', from: agent.llm_id, to: llmOut.llm_id });
-      await this.agentLibrary.updateAgent(
-        Object.assign(new UpdateAgentInput(), {
-          agent_id: input.agent_id,
-          llm_id: llmOut.llm_id,
-        }),
-        libCtx,
-        new UpdateAgentOutput(),
-      );
+    if (llmOut.llm_id) {
+      output.changes.push({ component: 'llm', from: '', to: llmOut.llm_id });
     }
 
     const soulOut = new OptSoulOutput();
@@ -454,11 +447,12 @@ export class AgentBuilderService {
   }
 
   // ===== 系统 Agent 配置映射 =====
-  private static readonly SYSTEM_AGENT_CONFIG: Record<string, { strategyLabel: string; signatureKey: string }> = {
-    PLANNER: { strategyLabel: 'Plan-and-Solve', signatureKey: 'planner' },
-    WRITER: { strategyLabel: 'CoT', signatureKey: 'writer' },
-    EVOLUTOR: { strategyLabel: 'ReAct', signatureKey: 'evolutor' },
-    SUMMARY: { strategyLabel: 'CoT', signatureKey: 'summary' },
+  private static readonly SYSTEM_AGENT_CONFIG: Record<string, { strategyLabel: string; signatureKey: string; defaultName: string }> = {
+    PLANNER: { strategyLabel: 'Plan-and-Solve', signatureKey: 'planner', defaultName: '系统-Planner' },
+    WRITER: { strategyLabel: 'CoT', signatureKey: 'writer', defaultName: '系统-Writer' },
+    EVOLUTOR: { strategyLabel: 'ReAct', signatureKey: 'evolutor', defaultName: '系统-Evolutor' },
+    SUMMARY: { strategyLabel: 'CoT', signatureKey: 'summary', defaultName: '系统-Summary' },
+    INTENT: { strategyLabel: 'CoT', signatureKey: 'intent', defaultName: '需求理解 Agent' },
   };
 
   async buildSystemAgent(
@@ -480,30 +474,16 @@ export class AgentBuilderService {
       );
       const found = getOut.agents.find((a) => a.enable);
       if (found) {
-        // 若发现复用的 Agent 身上的 llm_id 已失效或被删除，清空悬空 ID 允许统一动态兜底
-        if (found.llm_id) {
-          const llmExists = await this.relationDb.selectOne('llm_available', [
-            { field: 'id', operator: Operator.EQ, value: found.llm_id },
-            { field: 'enable', operator: Operator.EQ, value: 1 },
-          ]);
-          if (!llmExists) {
-            await this.agentLibrary.updateAgent(
-              Object.assign(new UpdateAgentInput(), { agent_id: found.agent_id, llm_id: '' }),
-              libCtx,
-              new UpdateAgentOutput(),
-            );
-            found.llm_id = '';
-          }
-        }
         output.agent_id = found.agent_id;
         return true;
       }
     }
 
     const agentId = IdGenerator.generate();
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm，构建时经 matchLLM 写入（此处解析仅用于任务分析）
     const llmId = await this.matchLlmForAgent(agentId, ctx.interact_id || '');
     let soulId = '';
-    if (agentType !== 'SUMMARY') {
+    if (agentType !== 'SUMMARY' && agentType !== 'INTENT') {
       const soulOut = new MatchSoulOutput();
       await this.soulCore.matchSoul(
         Object.assign(new MatchSoulInput(), {
@@ -526,10 +506,9 @@ export class AgentBuilderService {
         agent_id: agentId,
         agent_type: agentType,
         strategy_id: strategyId,
-        llm_id: llmId,
         soul_id: soulId,
         task_signature: buildTaskSignature(config.signatureKey, agentType.toLowerCase()),
-        agent_name: `系统-${agentType.charAt(0)}${agentType.slice(1).toLowerCase()}`,
+        agent_name: config.defaultName || `系统-${agentType.charAt(0)}${agentType.slice(1).toLowerCase()}`,
       }),
       libCtx,
       addOut,
@@ -621,19 +600,25 @@ export class AgentBuilderService {
 
     if (config?.task_analysis_prompt_template_id && llmId) {
       try {
+        const variables = { task_content: input.task_content };
         const promptOut = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
+        const okPrompt = await this.promptsAccess.execPrompt(
           Object.assign(new ExecPromptInput(), {
             id: config.task_analysis_prompt_template_id,
-            variables: { task_content: input.task_content },
+            variables,
           }),
           new PromptContext(),
           promptOut,
         );
-        if (promptOut.prompt) {
+        let prompt = okPrompt && promptOut.prompt ? promptOut.prompt : '';
+        if (!prompt) {
+          const tpl = getBuiltinTemplate(PROMPT_IDS.taskAnalysis);
+          if (tpl) prompt = renderTemplate(tpl, variables);
+        }
+        if (prompt) {
           const llmOut = new ExecLLMOutput();
           await this.llmAccess.execLLM(
-            Object.assign(new ExecLLMInput(), { id: llmId, prompt: promptOut.prompt }),
+            Object.assign(new ExecLLMInput(), { id: llmId, prompt }),
             new LLMContext(),
             llmOut,
           );

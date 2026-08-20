@@ -20,6 +20,7 @@
   - user_query：用户输入内容
   - force_orchestration_strategy：强制指定编排策略（可选："SIMPLE" | "PLANNING"，不传则自动选择）
   - user_profile：用户偏好配置（可选，不传则从 WriterAgent.getUserProfile 获取）
+  - skip_intent_check：跳过需求理解（可选，默认 false）
 - context：ReceiveWorkContext（继承 Context），会话上下文（session_id 等）
 - output：ReceiveWorkOutput（继承 Output），承载返回内容：
   - work_id：工作 ID
@@ -33,8 +34,12 @@
    a. 生成 `work_id`（UUID）和 `interact_id`（UUID）；
    b. 调用 RelationDBProvider.insertDB 向 `orchestration_work` 表插入工作记录：`{ work_id, interact_id, session_id, user_query, status: "CREATED" }`；
 
-2. **保存用户请求**
-   a. 调用 InfoCore.saveInfo，传入 `{ session_id, work_id, interact_id, info_type: "REQUEST", info_creator_role: "USER", info_creator_id: "", info: user_query }`，记录用户的原始输入（消息角色由上游调用方通过 `info_type`/`info_creator_role`/`info_creator_id` 指定，默认 REQUEST/USER/空）；
+2. **需求理解 Agent (IntentAgent) 前置执行**
+   a. 若 `skip_intent_check` 为 false，调用 IntentAgent.understandRequirement 分析用户真实需求；
+   b. 推送 `intent_agent_result` SSE 事件（含 understood_requirement、match_score、reasoning），供前端"思考过程"弹窗展示；
+   c. 将 IntentAgent 结果持久化到 `orchestration_work.metadata` 的 `intent_agent` 字段，供历史查询；
+   d. 若 match_score 低于阈值（should_modify_query=true），推送 `intent_confirmation_required` 事件暂停工作等待用户确认；
+   e. IntentAgent 失败时降级继续原始流程（不阻塞）；
 
 3. **选择编排策略**
    a. 若 `force_orchestration_strategy` 非空，直接使用入参指定的策略；

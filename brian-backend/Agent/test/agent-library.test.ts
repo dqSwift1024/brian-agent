@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { ValidationError, NotFoundError } from '@brian-agent/base';
+import { ValidationError, NotFoundError, IdGenerator } from '@brian-agent/base';
+import type { RelationDBAccess } from '@brian-agent/base';
 import { AgentLibraryService } from '../AgentLibrary/application/AgentLibraryService';
 import {
   AgentLibraryContext, AddAgentInput, AddAgentOutput,
@@ -12,10 +13,11 @@ import { createTestDb, setupAgentTestMocks, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS
 
 describe('AgentLibrary', () => {
   let service: AgentLibraryService;
+  let db: RelationDBAccess;
 
   beforeAll(async () => {
     await setupAgentTestMocks();
-    const db = await createTestDb();
+    db = await createTestDb();
     try {
       db.executeRaw('ALTER TABLE agent_library_config ADD COLUMN regen_rate INTEGER NOT NULL DEFAULT 75');
     } catch {}
@@ -75,7 +77,7 @@ describe('AgentLibrary', () => {
       }), new AgentLibraryContext(), new AddAgentOutput());
       const o = new GetAgentOutput();
       await service.getAgent(Object.assign(new GetAgentInput(), { agent_id: id }), new AgentLibraryContext(), o);
-      expect(o.agents[0].llm_id).toBe('');
+      expect(o.agents[0].soul_id).toBe('');
     });
 
     it('TC-AL-009: agent_name 自定义', async () => {
@@ -203,6 +205,24 @@ describe('AgentLibrary', () => {
       const o = new GetAgentOutput();
       await service.getAgent(Object.assign(new GetAgentInput(), { agent_id: id }), new AgentLibraryContext(), o);
       expect(o.agents[0].usage_count).toBe(1);
+    });
+
+    it('TC-AL-029b: 按日统计表 agent_usage_daily 当天计数自增', async () => {
+      const id = aid();
+      await service.addAgent(Object.assign(new AddAgentInput(), {
+        agent_id: id, agent_type: 'WORKER', strategy_id: 's-1',
+      }), new AgentLibraryContext(), new AddAgentOutput());
+      for (let i = 0; i < 3; i++) {
+        await service.recordAgentUsage(Object.assign(new RecordAgentUsageInput(), {
+          agent_id: id, work_id: 'w', interact_id: 'i',
+        }), new AgentLibraryContext(), new RecordAgentUsageOutput());
+      }
+      const daily = db.queryRaw<{ usage_date: string; usage_count: number }>(
+        'SELECT "usage_date", "usage_count" FROM "agent_usage_daily" WHERE "agent_id" = ?', [id],
+      );
+      expect(daily.length).toBe(1);
+      expect(daily[0].usage_count).toBe(3);
+      expect(daily[0].usage_date).toBe(IdGenerator.today());
     });
 
     it('TC-AL-030: agent_id 为空抛异常', async () => {

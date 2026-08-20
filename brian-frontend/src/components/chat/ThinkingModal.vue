@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { X, Brain, Loader2 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
-import ThinkingBlockView from '@/components/blocks/ThinkingBlock.vue'
-import PlanningBreakdown from './PlanningBreakdown.vue'
 import type { ThinkingBlock, PlanningData } from '@/api/types'
+import ThinkingContext from './ThinkingContext.vue'
+import TaskDagFlow from './TaskDagFlow.vue'
+import AgentDagFlow from './AgentDagFlow.vue'
+import ThinkingBlockView from '@/components/blocks/ThinkingBlock.vue'
+// ===== 原始导入（保留参考）：旧版通过 PlanningBreakdown 展示 Task/Agent DAG 与编排步骤，
+//      现改为按新顺序分区块展示（上下文 → TaskDAG → AgentDAG → 工作Agent → Writer） =====
+// import PlanningBreakdown from './PlanningBreakdown.vue'
 
 const sessionStore = useSessionStore()
 
@@ -22,7 +27,7 @@ const thinkingBlocks = computed<ThinkingBlock[]>(() => {
 })
 
 // Planning 策略拆解：指定消息 → 接口采集的 Task/Agent DAG；流式期间 → 实时拆解数据
-const planningData = computed<PlanningData | null>(() => {
+const planning = computed<PlanningData | null>(() => {
   if (targetMsgId.value) {
     const dag = sessionStore.thinkingDag
     if (!dag || (!dag.nodes.length && !dag.taskDag)) return null
@@ -38,7 +43,36 @@ const planningData = computed<PlanningData | null>(() => {
   return p
 })
 
-const isStreaming = computed(() => thinkingBlocks.value.some((b) => b.meta.status === 'streaming'))
+const taskDag = computed(() => planning.value?.taskDag ?? null)
+const agentDag = computed(() => planning.value?.agentDag ?? null)
+
+// 将思考块按 Agent 类型分组：工作 Agent（WORKER）/ Writer / 其他系统 Agent（Planner / Evolutor）
+function typeOf(b: ThinkingBlock): string {
+  return (b.agentInfo?.type || 'WORKER').toUpperCase()
+}
+
+const workAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'WORKER'))
+const writerAgent = computed<ThinkingBlock | null>(() => thinkingBlocks.value.find((b) => typeOf(b) === 'WRITER') ?? null)
+const systemAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'PLANNER' || typeOf(b) === 'EVOLUTOR' || typeOf(b) === 'INTENT'))
+
+// 整体的"思考中"状态：任一 Agent 处于思考中（RUNNING）即整体显示"思考中"
+const overallStreaming = computed(() => {
+  if (thinkingBlocks.value.some((b) => b.meta.status === 'streaming')) return true
+  return Object.values(sessionStore.agentExecutions).some((i) => i.status === 'RUNNING')
+})
+
+// AgentDAG 与下方 Agent 执行区联动：点击 AgentDAG 节点 → 定位并高亮对应 Agent 卡片
+const focusedAgentId = ref<string | null>(null)
+async function focusAgent(agentId: string) {
+  focusedAgentId.value = agentId
+  await nextTick()
+  const el = document.querySelector(`[data-agent-id="${agentId}"]`) as HTMLElement | null
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('agent-focus-ring')
+    setTimeout(() => el.classList.remove('agent-focus-ring'), 1800)
+  }
+}
 
 function close() {
   sessionStore.closeThinkingModal()
@@ -52,26 +86,84 @@ function close() {
       class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm"
       @click.self="close"
     >
-      <div class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 w-full max-w-3xl mx-4 overflow-hidden flex flex-col max-h-[80vh]">
+      <div class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 w-full max-w-4xl mx-4 overflow-hidden flex flex-col max-h-[85vh]">
         <div class="px-5 py-3.5 border-b border-apple-gray-200 dark:border-apple-gray-700 flex items-center justify-between flex-shrink-0">
           <div class="flex items-center gap-2">
             <Brain :size="16" class="text-purple-600 dark:text-purple-400" />
             <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">思考过程</h3>
-            <Loader2 v-if="isStreaming" :size="13" class="animate-spin text-purple-500" />
+            <Loader2 v-if="overallStreaming" :size="13" class="animate-spin text-purple-500" />
+            <span v-if="overallStreaming" class="text-xs text-purple-600 dark:text-purple-400">思考中...</span>
           </div>
           <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="close">
             <X :size="18" />
           </button>
         </div>
 
-        <div class="px-5 py-4 flex-1 overflow-y-auto space-y-2">
-          <!-- Planning 策略拆解（Task DAG / Agent DAG / 编排执行步骤） -->
-          <PlanningBreakdown v-if="planningData" :planning="planningData" />
+        <div class="px-5 py-4 flex-1 overflow-y-auto space-y-1">
+          <!-- 1. 上下文（聚合所有类型的信息） -->
+          <ThinkingContext :blocks="thinkingBlocks" />
 
-          <template v-if="thinkingBlocks.length > 0">
-            <ThinkingBlockView v-for="block in thinkingBlocks" :key="block.id" :block="block" />
-          </template>
-          <div v-else-if="!planningData" class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
+          <!-- 2. TaskDAG（Canvas 图，如果存在） -->
+          <TaskDagFlow v-if="taskDag" :dag="taskDag" />
+
+          <!-- 3. AgentDAG（Agent 名称 Canvas 图，与下方 Agent 执行联动；点击节点可定位对应 Agent） -->
+          <AgentDagFlow v-if="agentDag" :dag="agentDag" @select="focusAgent" />
+
+          <!-- 4. 工作 Agent（每个 Agent 独立：CoT/ReAct Canvas + Prompt + 模型输出 + Token/耗时） -->
+          <section v-if="workAgents.length > 0" class="mt-2.5">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-purple-900 dark:text-purple-200 mb-1 px-1">
+              <Brain :size="13" class="text-purple-600 dark:text-purple-400" />
+              <span>工作 Agent (Work Agents)</span>
+              <span class="text-[10px] font-normal text-apple-gray-400">共 {{ workAgents.length }} 个</span>
+            </div>
+            <div
+              v-for="block in workAgents"
+              :key="block.id"
+              :data-agent-id="block.agentInfo?.id"
+              class="rounded-xl transition-shadow"
+            >
+              <ThinkingBlockView
+                :block="block"
+                hide-context
+                default-tab="io"
+                :start-expanded="focusedAgentId === block.agentInfo?.id || thinkingBlocks.length <= 2"
+              />
+            </div>
+          </section>
+
+          <!-- 5. Writer Agent（Prompt + 模型输出） -->
+          <section v-if="writerAgent" class="mt-2.5">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-200 mb-1 px-1">
+              <Brain :size="13" class="text-emerald-600 dark:text-emerald-400" />
+              <span>表达 Agent (Writer)</span>
+            </div>
+            <div :data-agent-id="writerAgent.agentInfo?.id">
+              <ThinkingBlockView
+                :block="writerAgent"
+                hide-context
+                default-tab="io"
+                :start-expanded="true"
+              />
+            </div>
+          </section>
+
+          <!-- 其他系统 Agent（Planner / Evolutor） -->
+          <section v-if="systemAgents.length > 0" class="mt-2.5">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-apple-gray-600 dark:text-apple-gray-300 mb-1 px-1">
+              <Brain :size="13" class="text-apple-gray-500 dark:text-apple-gray-400" />
+              <span>系统 Agent (Planner / Evolutor)</span>
+            </div>
+            <div v-for="block in systemAgents" :key="block.id" :data-agent-id="block.agentInfo?.id">
+              <ThinkingBlockView
+                :block="block"
+                hide-context
+                default-tab="io"
+                :start-expanded="false"
+              />
+            </div>
+          </section>
+
+          <div v-if="thinkingBlocks.length === 0 && !taskDag && !agentDag" class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
             <Brain :size="32" class="mb-3 text-apple-gray-300" />
             <p>暂无思考过程</p>
           </div>
@@ -80,3 +172,9 @@ function close() {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.agent-focus-ring {
+  box-shadow: 0 0 0 2px #8b5cf6, 0 0 24px rgba(139, 92, 246, 0.45);
+}
+</style>

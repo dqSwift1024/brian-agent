@@ -3,13 +3,14 @@ import {
   Operator, ValidationError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
-  SoPromptInput, SoPromptOutput, AddPromptInput, AddPromptOutput,
   SoSoulInput, SoSoulOutput, AddSoulInput, AddSoulOutput,
   GetSoulInput, GetSoulOutput, SoulContext,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
-import type { InfoCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   InfoCoreContext, SoInfoSummaryConfigInput, SoInfoSummaryConfigOutput,
+  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
 } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
@@ -23,7 +24,6 @@ import {
   SummaryAgentContext,
   GenerateSummaryInput, GenerateSummaryOutput,
   SUMMARY_SOUL_BRIEF, SUMMARY_SOUL_CONTENT, SUMMARY_SOUL_USAGE,
-  SUMMARY_PROMPT_TITLE, SUMMARY_PROMPT_TEMPLATE,
 } from '../domain/types';
 
 export class SummaryAgentService {
@@ -35,12 +35,12 @@ export class SummaryAgentService {
     private readonly agentBuilder: AgentBuilderAccess,
     private readonly agentLibrary: AgentLibraryAccess,
     private readonly infoCore: InfoCoreAccess,
+    private readonly llmCore?: LLMCoreAccess,
     private readonly logger?: Logger,
   ) {}
 
   async ensureBuiltin(_ctx: SummaryAgentContext): Promise<boolean> {
     const builtinSoulId = await this.ensureBuiltinSoul();
-    await this.ensureBuiltinPrompt();
 
     const buildOut = new BuildSystemAgentOutput();
     await this.agentBuilder.buildSystemAgent(
@@ -123,40 +123,7 @@ export class SummaryAgentService {
     return addOut.id;
   }
 
-  private async ensureBuiltinPrompt(): Promise<string> {
-    const so = new SoPromptOutput();
-    await this.promptsAccess.soPrompt(
-      { conditions: [{ field: 'prompt_template_title', operator: Operator.EQ, value: SUMMARY_PROMPT_TITLE }] },
-      new PromptContext(),
-      so,
-    );
-    if (so.list.length > 0) return so.list[0].id;
-
-    const addOut = new AddPromptOutput();
-    await this.promptsAccess.addPrompt(
-      {
-        data: {
-          prompt_template_title: SUMMARY_PROMPT_TITLE,
-          prompt_template_brief: SUMMARY_PROMPT_TITLE,
-          prompt_template: SUMMARY_PROMPT_TEMPLATE,
-        },
-      },
-      new PromptContext(),
-      addOut,
-    );
-    return addOut.id;
-  }
-
   private async generateByLLM(info: string): Promise<string> {
-    const soPromptOut = new SoPromptOutput();
-    await this.promptsAccess.soPrompt(
-      { conditions: [{ field: 'prompt_template_title', operator: Operator.EQ, value: SUMMARY_PROMPT_TITLE }] },
-      new PromptContext(),
-      soPromptOut,
-    );
-    const template = soPromptOut.list?.[0];
-    if (!template) return '';
-
     const getOut = new GetAgentOutput();
     await this.agentLibrary.getAgent(
       Object.assign(new GetAgentInput(), { agent_type: 'SUMMARY' }),
@@ -164,7 +131,11 @@ export class SummaryAgentService {
       getOut,
     );
     const agent = getOut.agents.find((a) => a.enable);
-    const llmId = agent?.llm_id || '';
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm，经 Core.matchLLM 解析
+    let llmId = '';
+    if (agent?.agent_id && this.llmCore) {
+      llmId = await this.resolveLlm(agent.agent_id);
+    }
 
     let system = '';
     if (agent?.soul_id) {
@@ -182,21 +153,26 @@ export class SummaryAgentService {
     }
 
     const promptOut = new ExecPromptOutput();
-    await this.promptsAccess.execPrompt(
+    const okPrompt = await this.promptsAccess.execPrompt(
       Object.assign(new ExecPromptInput(), {
-        id: template.id,
-        variables: { text: info, soul: system },
+        id: PROMPT_IDS.summary,
+        variables: { task_content: info, soul: system },
       }),
       new PromptContext(),
       promptOut,
     );
-    if (!promptOut.prompt) return '';
+    let prompt = okPrompt && promptOut.prompt ? promptOut.prompt : '';
+    if (!prompt) {
+      const tpl = getBuiltinTemplate(PROMPT_IDS.summary);
+      if (tpl) prompt = renderTemplate(tpl, { task_content: info, soul: system });
+    }
+    if (!prompt) return '';
 
     const llmOut = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
       Object.assign(new ExecLLMInput(), {
         id: llmId,
-        prompt: promptOut.prompt,
+        prompt,
         ...(system ? { system } : {}),
       }),
       new LLMContext(),
@@ -204,5 +180,22 @@ export class SummaryAgentService {
     );
     if (!ok || !llmOut.result) return '';
     return llmOut.result.trim();
+  }
+
+  /**
+   * 通过 Core.matchLLM 解析 SummaryAgent 绑定的 LLM（agent_llm）。
+   */
+  private async resolveLlm(agentId: string): Promise<string> {
+    try {
+      const llmOut = new MatchLLMOutput();
+      await this.llmCore?.matchLLM(
+        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
+        new LLMCoreContext(),
+        llmOut,
+      );
+      return llmOut.llm_id || '';
+    } catch {
+      return '';
+    }
   }
 }

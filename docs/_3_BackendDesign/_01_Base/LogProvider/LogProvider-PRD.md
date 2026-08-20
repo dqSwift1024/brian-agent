@@ -306,14 +306,16 @@ LogProvider 提供 LogInterceptor，实现 shared/aop 基础框架的 Intercepto
 
 ## 7. 组件初始化
 
-1. 创建 log_record 表和 log_config 表（通过 RelationDBAccess.executeRaw）
-2. 写入默认配置项（enabled=true 等）
-3. 从 log_config 读取 enabled 状态恢复运行时状态
+1. 创建独立的日志 RelationDB 实例（如 `brian_log.db`），物理隔离业务 SQLite 数据库与日志 SQLite 数据库，避免日志读写影响业务性能
+2. 创建 log_record 表、log_rule 表和 log_config 表（通过 RelationDBAccess.executeRaw）
+3. 写入默认配置项（enabled=true 等）
+4. 从 log_config 读取 enabled 状态恢复运行时状态
 
 ## 8. 方法调用示例
 
 ```typescript
-const logAccess = new LogAccess(relationDb);
+// 构造专用于日志的 LogAccess 实例（传入独立的 RelationDBAccess 实例或 SQLite 配置对象）
+const logAccess = new LogAccess({ dbPath: './data/brian_log.db' });
 await logAccess.initialize();
 
 // 手动记录日志

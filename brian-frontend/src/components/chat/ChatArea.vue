@@ -224,6 +224,8 @@ async function handleSend(content: string, citingIds: string[]) {
   sessionStore.setStreaming(true)
   // 重置本轮 Planning 策略拆解数据（流式期间实时填充）
   sessionStore.resetPlanning()
+  // 重置本轮各 Agent 的执行运行时状态
+  sessionStore.resetAgentStatus()
   // 用户发送消息 → 自动弹出思考过程弹窗（流式展示）
   sessionStore.openThinkingModal(null)
   try {
@@ -509,6 +511,40 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       break
     }
 
+    case 'intent_agent_result': {
+      // 需求理解 Agent (IntentAgent) 结果：创建 ThinkingBlock 展示在"思考过程"弹窗中
+      const intentAgentId = 'intent-agent'
+      const intentBlock = getOrCreateThinkBlock(intentAgentId, '需求理解 Agent (Intent)', 'INTENT')
+      intentBlock.input = String(payload.understood_requirement ?? '')
+      intentBlock.content = String(payload.reasoning ?? '')
+      intentBlock.output = {
+        understood_requirement: payload.understood_requirement,
+        match_score: payload.match_score,
+        threshold_score: payload.threshold_score,
+        should_modify_query: payload.should_modify_query,
+      }
+      if (!intentBlock.steps) intentBlock.steps = []
+      intentBlock.steps.push({
+        phase: 'THINK',
+        iteration: 1,
+        content: `需求理解: ${String(payload.understood_requirement ?? '')}\n匹配度: ${payload.match_score ?? 'N/A'} / 阈值: ${payload.threshold_score ?? 'N/A'}`,
+      })
+      intentBlock.steps.push({
+        phase: 'REFLECT',
+        iteration: 2,
+        reflection: `是否需要修改查询: ${payload.should_modify_query ? '是' : '否'}`,
+        passed: true,
+      })
+      sessionStore.updateBlock(intentBlock.id, {
+        input: intentBlock.input,
+        content: intentBlock.content,
+        output: intentBlock.output,
+        steps: intentBlock.steps,
+      })
+      sessionStore.setAgentStatus(intentAgentId, 'SUCCESS', '需求理解 Agent (Intent)')
+      break
+    }
+
     // ===== Planning 策略拆解事件 =====
     case 'plan_created': {
       // PlannerAgent 完成任务级拆解：记录 Task DAG 并更新弹窗
@@ -561,6 +597,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
               domain,
               content,
               status: String(n.status ?? 'PENDING'),
+              taskId: String(n.task_id ?? ''),
             }
           }),
           edges: Array.isArray(agentDag.agent_edges)
@@ -573,6 +610,15 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         },
         status: 'streaming',
       })
+      // 初始化每个 AgentDAG 节点的执行运行时状态（未执行 → 灰色）
+      const dagNodes = (sessionStore.planning.agentDag?.nodes ?? [])
+      for (const n of dagNodes) {
+        const s = String(n.status ?? '').toUpperCase()
+        const st = s.includes('COMPLET') || s.includes('SUCCESS') || s.includes('DONE')
+          ? 'SUCCESS'
+          : (s.includes('RUN') || s.includes('EXECUT') || s.includes('PROCESS') ? 'RUNNING' : 'PENDING')
+        sessionStore.setAgentStatus(n.id, st, n.agentName)
+      }
       break
     }
 
@@ -619,6 +665,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const skills = Array.isArray(payload.skill_ids) ? payload.skill_ids.map(String) : undefined
       const mcps = Array.isArray(payload.mcp_ids) ? payload.mcp_ids.map(String) : undefined
 
+      // 记录该 Agent 进入执行（RUNNING → 黄色），并同步 AgentDAG 节点名称与状态
+      sessionStore.setAgentStatus(agentId || agentName, 'RUNNING', agentName)
+
       const thinkBlock = getOrCreateThinkBlock(agentId || agentName, agentName, agentType)
       thinkBlock.agentInfo = {
         id: agentId || agentName,
@@ -641,6 +690,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const chunk = typeof payload === 'string' ? payload : String(payload.chunk || payload.reasoning || '')
       const rawAgName = typeof payload.agent_name === 'string' ? payload.agent_name : undefined
       const rawAgType = typeof payload.agent_type === 'string' ? payload.agent_type : undefined
+      // 该 Agent 正在思考推理（RUNNING → 黄色）
+      sessionStore.setAgentStatus(agentId, 'RUNNING', rawAgName)
       const thinkBlock = getOrCreateThinkBlock(agentId, rawAgName, rawAgType)
       thinkBlock.content += chunk
       
@@ -693,6 +744,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     }
 
     case 'agent_reflection': {
+      // 反思阶段仍属于思考推理中（RUNNING）
+      sessionStore.setAgentStatus(agentId, 'RUNNING')
       const thinkBlock = getOrCreateThinkBlock(agentId)
       if (!thinkBlock.steps) thinkBlock.steps = []
 
@@ -707,11 +760,19 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     }
 
     case 'agent_output': {
-      const outputVal = payload.output || payload.result || payload.chunk
+      const outputVal = payload.output || payload.result || payload.chunk || payload.answer
       if (agentId) {
+        // 该 Agent 已完成产出（SUCCESS → 绿色），并回填 Token 用量与耗时
+        sessionStore.setAgentStatus(agentId, 'SUCCESS')
         const thinkBlock = getOrCreateThinkBlock(agentId)
         thinkBlock.output = outputVal as string | Record<string, unknown>
-        sessionStore.updateBlock(thinkBlock.id, { output: thinkBlock.output })
+        if (typeof payload.token_usage === 'number') thinkBlock.tokenUsage = payload.token_usage
+        if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
+        sessionStore.updateBlock(thinkBlock.id, {
+          output: thinkBlock.output,
+          tokenUsage: thinkBlock.tokenUsage,
+          durationMs: thinkBlock.durationMs,
+        })
       }
       
       // 如果也是向用户展示的文本块
@@ -782,7 +843,32 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       break
     }
 
+    case 'agent_error': {
+      // 单个 Agent 执行失败（ERROR → 红色），并记录错误信息
+      sessionStore.setAgentStatus(agentId, 'ERROR')
+      const thinkBlock = getOrCreateThinkBlock(agentId)
+      if (typeof payload.error_message === 'string' && payload.error_message) {
+        thinkBlock.output = { error: payload.error_message } as string | Record<string, unknown>
+      }
+      if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
+      sessionStore.updateBlock(thinkBlock.id, {
+        output: thinkBlock.output,
+        durationMs: thinkBlock.durationMs,
+      })
+      break
+    }
+
     case 'error': {
+      // 执行失败：标记当前 Agent 为 ERROR（红色），无具体 Agent 时标记所有进行中的为 ERROR
+      if (agentId) {
+        sessionStore.setAgentStatus(agentId, 'ERROR')
+      } else {
+        for (const [aid, info] of Object.entries(sessionStore.agentExecutions)) {
+          if (info.status === 'RUNNING' || info.status === 'PENDING') {
+            sessionStore.setAgentStatus(aid, 'ERROR')
+          }
+        }
+      }
       const errBlock: Block = {
         id: `block-err-${Date.now()}`,
         msgId: botMsgId,

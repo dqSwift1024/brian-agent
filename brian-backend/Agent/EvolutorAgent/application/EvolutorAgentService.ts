@@ -5,11 +5,13 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
   SendMQInput, SendMQOutput, MQContext,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject, type Direction,
 } from '@brian-agent/base';
-import type { InfoCoreAccess, MQCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   StartWorkerInput, StartWorkerOutput, StopWorkerInput, StopWorkerOutput, MQCoreContext,
+  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
 } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
@@ -73,6 +75,7 @@ export class EvolutorAgentService {
     private readonly agentBuilder: AgentBuilderAccess,
     private readonly agentLibrary: AgentLibraryAccess,
     private readonly agentExecution: AgentExecutionAccess,
+    private readonly llmCore?: LLMCoreAccess,
   ) {}
 
   async evalWorkAgent(
@@ -97,7 +100,11 @@ export class EvolutorAgentService {
     );
     const evolutor = getOut.agents[0];
     const config = await this.getConfig();
-    const targetLlmId = config?.llm_id || evolutor?.llm_id || '';
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm：配置未指定时经 Core.matchLLM 解析
+    let targetLlmId = config?.llm_id || '';
+    if (!targetLlmId && evolutor?.agent_id && this.llmCore) {
+      targetLlmId = await this.resolveLlm(evolutor.agent_id);
+    }
     const threshold = config?.optimize_threshold ?? 60;
 
     let traceData: unknown = null;
@@ -118,29 +125,15 @@ export class EvolutorAgentService {
     };
     let suggestions: string[] = [];
 
-    let prompt =
-      `Task: ${input.task_content}\nOutput: ${input.agent_output}\n` +
-      (traceData ? `Trace: ${JSON.stringify(traceData)}\n` : '') +
-      `Evaluate the agent output. Return JSON: {"correctness":50,"completeness":50,"efficiency":50,"relevance":50,"overall":50,"suggestions":[]}`;
-
-    if (config?.eval_work_prompt_template_id) {
-      try {
-        const promptOut = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          Object.assign(new ExecPromptInput(), {
-            id: config.eval_work_prompt_template_id,
-            variables: {
-              task_content: input.task_content,
-              agent_output: input.agent_output,
-              trace: traceData,
-            },
-          }),
-          new PromptContext(),
-          promptOut,
-        );
-        if (promptOut.prompt) prompt = promptOut.prompt;
-      } catch { /* use fallback prompt */ }
-    }
+    const prompt = await this.renderPrompt(
+      config?.eval_work_prompt_template_id,
+      PROMPT_IDS.evalWork,
+      {
+        task_content: input.task_content,
+        agent_output: input.agent_output,
+        trace: traceData ? JSON.stringify(traceData) : '',
+      },
+    );
 
     try {
       const llmOut = new ExecLLMOutput();
@@ -246,7 +239,11 @@ export class EvolutorAgentService {
     );
     const evolutor = getOut.agents[0];
     const config = await this.getConfig();
-    const targetLlmId = config?.llm_id || evolutor?.llm_id || '';
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm：配置未指定时经 Core.matchLLM 解析
+    let targetLlmId = config?.llm_id || '';
+    if (!targetLlmId && evolutor?.agent_id && this.llmCore) {
+      targetLlmId = await this.resolveLlm(evolutor.agent_id);
+    }
     const threshold = config?.optimize_threshold ?? 60;
 
     let scores = {
@@ -254,29 +251,15 @@ export class EvolutorAgentService {
     };
     let suggestions: string[] = [];
 
-    let prompt =
-      `User query: ${input.user_query}\nFinal response: ${input.final_response}\n` +
-      `Agent results: ${JSON.stringify(input.agent_results)}\n` +
-      `Evaluate writer agent response. Return JSON: {"clarity":60,"informativeness":60,"user_alignment":60,"conciseness":60,"overall":60,"suggestions":[]}`;
-
-    if (config?.eval_write_prompt_template_id) {
-      try {
-        const promptOut = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          Object.assign(new ExecPromptInput(), {
-            id: config.eval_write_prompt_template_id,
-            variables: {
-              user_query: input.user_query,
-              final_response: input.final_response,
-              agent_results: input.agent_results,
-            },
-          }),
-          new PromptContext(),
-          promptOut,
-        );
-        if (promptOut.prompt) prompt = promptOut.prompt;
-      } catch { /* use fallback prompt */ }
-    }
+    const prompt = await this.renderPrompt(
+      config?.eval_write_prompt_template_id,
+      PROMPT_IDS.evalWrite,
+      {
+        task_content: input.user_query,
+        final_response: input.final_response,
+        agent_results: JSON.stringify(input.agent_results),
+      },
+    );
 
     try {
       const llmOut = new ExecLLMOutput();
@@ -671,6 +654,45 @@ export class EvolutorAgentService {
     }
     output.config = await this.getConfig();
     return true;
+  }
+
+  /**
+   * 通过 Core.matchLLM 解析 EvolutorAgent 绑定的 LLM（agent_llm）。
+   */
+  private async resolveLlm(agentId: string): Promise<string> {
+    try {
+      const llmOut = new MatchLLMOutput();
+      await this.llmCore?.matchLLM(
+        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
+        new LLMCoreContext(),
+        llmOut,
+      );
+      return llmOut.llm_id || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * 渲染 Prompt：配置模板 → 内置模板 → 内存兜底。
+   */
+  private async renderPrompt(
+    templateId: string | undefined,
+    builtinId: string,
+    variables: Record<string, unknown>,
+  ): Promise<string> {
+    const id = templateId || builtinId;
+    try {
+      const promptOut = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), { id, variables }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (promptOut.prompt) return promptOut.prompt;
+    } catch { /* use fallback prompt */ }
+    const tpl = getBuiltinTemplate(builtinId);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   private async getConfig(): Promise<EvolutorAgentConfigRecord | null> {

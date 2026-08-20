@@ -114,11 +114,10 @@ describe('SummaryAgent', () => {
   });
 
   describe('ensureBuiltin', () => {
-    it('TC-SUM-010: 创建内置 Soul 与 Prompt 并构建 SUMMARY Agent', async () => {
+    it('TC-SUM-010: 创建内置 Soul 并构建 SUMMARY Agent', async () => {
       const ok = await svc.ensureBuiltin(new SummaryAgentContext());
       expect(ok).toBe(true);
       expect(mocks.soulAccess.addSoul).toHaveBeenCalled();
-      expect(mocks.promptsAccess.addPrompt).toHaveBeenCalled();
       expect(mocks.agentBuilder.buildSystemAgent).toHaveBeenCalled();
     });
 

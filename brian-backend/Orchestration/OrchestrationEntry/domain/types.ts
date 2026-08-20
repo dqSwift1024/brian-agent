@@ -16,6 +16,7 @@ export class ReceiveWorkInput extends Input {
   info_creator_role?: string;
   citing_msg_ids?: string[];
   selected_msg_ids?: string[];
+  skip_intent_check?: boolean;
 }
 
 export class ReceiveWorkOutput extends Output {
@@ -98,6 +99,19 @@ export class CancelWorkInput extends Input {
 
 export class CancelWorkOutput extends Output {
   cancelled = false;
+}
+
+export class ConfirmIntentInput extends Input {
+  session_id!: string;
+  work_id!: string;
+  action!: 'APPROVE' | 'KEEP' | 'CANCEL';
+  understood_requirement?: string;
+}
+
+export class ConfirmIntentOutput extends Output {
+  success = false;
+  action_applied = '';
+  next_status = '';
 }
 
 export class ConfigOrchestrationEntryInput extends Input {

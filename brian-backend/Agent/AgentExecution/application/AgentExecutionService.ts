@@ -12,14 +12,16 @@ import {
   GetQueueStatsInput, GetQueueStatsOutput,
   SoPromptInput, SoPromptOutput,
   InfoType,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentStrategyAccess } from '../../AgentStrategy/access/AgentStrategyAccess';
-import type { InfoCoreAccess, MQCoreAccess, SkillCoreAccess, MCPCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, MQCoreAccess, SkillCoreAccess, MCPCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   MatchSkillInput, MatchSkillOutput, SkillCoreContext,
   MatchMcpInput, MatchMcpOutput, McpCoreContext,
+  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
 } from '@brian-agent/core';
 import {
   AGENT_EXECUTION_CONFIG_TABLE, AGENT_EXECUTION_TRACE_TABLE, type AgentExecutionConfigRecord,
@@ -107,6 +109,7 @@ export class AgentExecutionService {
     private readonly mqCore: MQCoreAccess,
     private readonly skillCore: SkillCoreAccess,
     private readonly mcpCore: MCPCoreAccess,
+    private readonly llmCore: LLMCoreAccess,
     private readonly logger?: Logger,
     private readonly streamAccess?: StreamAccess,
   ) {}
@@ -132,9 +135,8 @@ export class AgentExecutionService {
       throw new NotFoundError('Agent', input.agent_id);
     }
     const agent = getOut.agents[0];
-    if (!agent.llm_id) {
-      throw new ValidationError(`Agent ${input.agent_id} 未绑定 llm_id，请先通过 Core.matchLLM 完成匹配`);
-    }
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm，执行时经 Core.matchLLM 解析
+    const llmId = await this.resolveLlm(input.agent_id, ctx);
     const domainMatch = (agent.task_signature || '').match(/^\[(.+?)\]/);
     const domain = domainMatch ? domainMatch[1] : 'general';
     const agentName = agent.agent_name || agent.agent_id;
@@ -192,14 +194,14 @@ export class AgentExecutionService {
 
     const env = {
       input, ctx, agent, skillIds, mcpIds, skills, mcps, contextData, toolsJson, maxFromRule, config,
-      agentName, domain,
+      agentName, domain, llmId,
     };
 
     if (!rule?.steps && !rule?.phases) {
       const answerOut = new AnswerOutput();
       await this.answer(
         Object.assign(new AnswerInput(), {
-          agent_id: input.agent_id, agent_name: agentName, domain, llm_id: agent.llm_id, soul_id: agent.soul_id,
+          agent_id: input.agent_id, agent_name: agentName, domain, llm_id: llmId, soul_id: agent.soul_id,
           history, context_data: contextData, task_content: input.task_content,
           tools_json: toolsJson,
         }),
@@ -231,7 +233,7 @@ export class AgentExecutionService {
       const answerOut = new AnswerOutput();
       await this.answer(
         Object.assign(new AnswerInput(), {
-          agent_id: input.agent_id, agent_name: agentName, domain, llm_id: agent.llm_id, soul_id: agent.soul_id,
+          agent_id: input.agent_id, agent_name: agentName, domain, llm_id: llmId, soul_id: agent.soul_id,
           history, context_data: contextData, task_content: input.task_content,
           tools_json: toolsJson,
         }),
@@ -406,6 +408,7 @@ export class AgentExecutionService {
     const system = await this.loadSoulSystem(input.soul_id);
     const prompt = await this.renderOrFallback(
       config?.think_prompt_template_id,
+      PROMPT_IDS.think,
       {
         agent_name: input.agent_name,
         soul: system,
@@ -415,10 +418,6 @@ export class AgentExecutionService {
         tools_json: input.tools_json || '{}',
         domain: input.domain || 'general',
       },
-      `System: ${system}\nContext: ${input.context_data}\nHistory: ${input.history}\n` +
-      `Tools: ${input.tools_json}\nIteration: ${input.iteration}\n` +
-      'Reason step by step. If external tools are needed, set next_action.tool_type to SKILL or MCP with tool_id and params. ' +
-      'Return JSON: {"reasoning":"...","next_action":{"tool_type":"NONE|SKILL|MCP","tool_id":"","params":{},"sub_steps":[]}}',
     );
 
     const llmOut = new ExecLLMOutput();
@@ -509,6 +508,7 @@ export class AgentExecutionService {
     const system = await this.loadSoulSystem(input.soul_id);
     const prompt = await this.renderOrFallback(
       config?.reflect_prompt_template_id,
+      PROMPT_IDS.reflect,
       {
         agent_name: input.agent_name,
         soul: system,
@@ -519,10 +519,6 @@ export class AgentExecutionService {
         tools_json: input.tools_json || '{}',
         domain: input.domain || 'general',
       },
-      `System: ${system}\nContext: ${input.context_data}\nHistory: ${input.history}\n` +
-      `Tools: ${input.tools_json}\n` +
-      `Iteration: ${input.iteration}/${input.max_iterations}\n` +
-      'Evaluate progress. Return JSON: {"should_continue":true/false,"reflection":"..."}',
     );
 
     const llmOut = new ExecLLMOutput();
@@ -550,6 +546,7 @@ export class AgentExecutionService {
     const system = await this.loadSoulSystem(input.soul_id);
     const prompt = await this.renderOrFallback(
       config?.answer_prompt_template_id,
+      PROMPT_IDS.answer,
       {
         agent_name: input.agent_name,
         soul: system,
@@ -559,8 +556,6 @@ export class AgentExecutionService {
         tools_json: input.tools_json || '{}',
         domain: input.domain || 'general',
       },
-      `System: ${system}\nTask: ${input.task_content}\nContext: ${input.context_data}\n` +
-      `Tools: ${input.tools_json}\nHistory: ${input.history}\nGenerate the final answer.`,
     );
 
     const llmOut = new ExecLLMOutput();
@@ -772,7 +767,7 @@ export class AgentExecutionService {
     env: {
       input: ExecAgentInput;
       ctx: AgentExecutionContext;
-      agent: { agent_id: string; llm_id: string; soul_id: string };
+      agent: { agent_id: string; soul_id: string };
       skillIds: string[];
       mcpIds: string[];
       skills: { id: string; brief: string; work: string }[];
@@ -781,6 +776,7 @@ export class AgentExecutionService {
       agentName: string;
       domain: string;
       contextData: string;
+      llmId: string;
       maxFromRule: number;
       config: AgentExecutionConfigRecord | null;
     },
@@ -841,7 +837,7 @@ export class AgentExecutionService {
     env: {
       input: ExecAgentInput;
       ctx: AgentExecutionContext;
-      agent: { agent_id: string; llm_id: string; soul_id: string };
+      agent: { agent_id: string; soul_id: string };
       skillIds: string[];
       mcpIds: string[];
       skills: { id: string; brief: string; work: string }[];
@@ -850,6 +846,7 @@ export class AgentExecutionService {
       agentName: string;
       domain: string;
       contextData: string;
+      llmId: string;
       maxFromRule: number;
       config: AgentExecutionConfigRecord | null;
     },
@@ -976,7 +973,7 @@ export class AgentExecutionService {
     env: {
       input: ExecAgentInput;
       ctx: AgentExecutionContext;
-      agent: { agent_id: string; llm_id: string; soul_id: string };
+      agent: { agent_id: string; soul_id: string };
       skillIds: string[];
       mcpIds: string[];
       skills: { id: string; brief: string; work: string }[];
@@ -985,12 +982,13 @@ export class AgentExecutionService {
       agentName: string;
       domain: string;
       contextData: string;
+      llmId: string;
     },
     history: string,
     iteration: number,
     maxIter: number,
   ): Promise<StepResult & { token_usage?: number; tracePiece: Partial<TraceIteration> }> {
-    const { input, ctx, agent, skillIds, mcpIds, contextData, toolsJson, agentName, domain } = env;
+    const { input, ctx, agent, skillIds, mcpIds, contextData, toolsJson, agentName, domain, llmId } = env;
 
     try {
       const sessionId = ctx.session_id || '';
@@ -1003,7 +1001,7 @@ export class AgentExecutionService {
           Object.assign(new ThinkInput(), {
             agent_id: input.agent_id,
             agent_name: agentName,
-            llm_id: agent.llm_id,
+            llm_id: llmId,
             soul_id: agent.soul_id,
             context_data: contextData,
             history,
@@ -1085,7 +1083,7 @@ export class AgentExecutionService {
           Object.assign(new ReflectInput(), {
             agent_id: input.agent_id,
             agent_name: agentName,
-            llm_id: agent.llm_id,
+            llm_id: llmId,
             soul_id: agent.soul_id,
             context_data: contextData,
             history,
@@ -1134,7 +1132,7 @@ export class AgentExecutionService {
           Object.assign(new AnswerInput(), {
             agent_id: input.agent_id,
             agent_name: agentName,
-            llm_id: agent.llm_id,
+            llm_id: llmId,
             soul_id: agent.soul_id,
             history,
             context_data: contextData,
@@ -1171,6 +1169,26 @@ export class AgentExecutionService {
   // helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * 通过 Core.matchLLM 解析 Agent 绑定的 LLM（绑定只存在于 LLMProvider 的 agent_llm）。
+   */
+  private async resolveLlm(agentId: string, ctx: AgentExecutionContext): Promise<string> {
+    const llmOut = new MatchLLMOutput();
+    await this.llmCore.matchLLM(
+      Object.assign(new MatchLLMInput(), {
+        agent_id: agentId,
+        context_id: ctx.session_id || '',
+        interact_id: ctx.interact_id || '',
+      }),
+      new LLMCoreContext(),
+      llmOut,
+    );
+    if (!llmOut.llm_id) {
+      throw new ValidationError(`Agent ${agentId} 未匹配到可用 LLM`);
+    }
+    return llmOut.llm_id;
+  }
+
   private async loadSoulSystem(soulId: string): Promise<string> {
     if (!soulId) return '';
     try {
@@ -1188,14 +1206,14 @@ export class AgentExecutionService {
 
   private async renderOrFallback(
     templateId: string | undefined,
+    builtinId: string,
     variables: Record<string, unknown>,
-    fallback: string,
   ): Promise<string> {
-    if (!templateId) return fallback;
+    const id = templateId || builtinId;
     try {
       const out = new ExecPromptOutput();
       const ok = await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), { id: templateId, variables }),
+        Object.assign(new ExecPromptInput(), { id, variables }),
         new PromptContext(),
         out,
       );
@@ -1203,7 +1221,8 @@ export class AgentExecutionService {
     } catch {
       /* fallback */
     }
-    return fallback;
+    const tpl = getBuiltinTemplate(builtinId);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   private async assertPromptExists(id: string): Promise<void> {

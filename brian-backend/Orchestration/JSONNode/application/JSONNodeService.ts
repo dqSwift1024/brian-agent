@@ -104,11 +104,182 @@ export class JSONNodeService {
     this.nodeTypeRegistry.set('INVOKE', (sd, p, c) => this.handleInvoke(sd, p, c));
   }
 
+  // ===== 原始方法（保留作为参考） =====
+  // async execJSONNode(
+  //   input: ExecJSONNodeInput,
+  //   context: JSONNodeContext,
+  //   output: ExecJSONNodeOutput,
+  // ): Promise<boolean> {
+  //   const def = input.jsonnode_definition;
+  //   const sharedData: Record<string, unknown> = {
+  //     ...(input.initial_data ?? {}),
+  //   };
+  //   context.work_id = context.work_id ?? (sharedData.work_id as string);
+  //   context.interact_id = context.interact_id ?? (sharedData.interact_id as string);
+  //   context.session_id = context.session_id ?? (sharedData.session_id as string);
+  //   const trace: NodeExecutionTrace[] = [];
+  //
+  //   const nodeMap = new Map(def.nodes.map((n) => [n.node_id, n]));
+  //   if (!nodeMap.has(def.start_node)) {
+  //     output.error = `start_node "${def.start_node}" not found in nodes`;
+  //     return false;
+  //   }
+  //
+  //   for (const node of def.nodes) {
+  //     const nextIds: string[] = [];
+  //     if (node.on_error) nextIds.push(node.on_error);
+  //     if (node.next) nextIds.push(node.next);
+  //     if (node.true_next) nextIds.push(node.true_next);
+  //     if (node.false_next) nextIds.push(node.false_next);
+  //     for (const nid of nextIds) {
+  //       if (!nodeMap.has(nid)) {
+  //         output.error = `node "${node.node_id}" references unknown node_id "${nid}"`;
+  //         return false;
+  //       }
+  //     }
+  //   }
+  //
+  //   let currentNode = nodeMap.get(def.start_node) ?? null;
+  //   let depth = 0;
+  //   const maxDepth = this.config.max_execution_depth;
+  //
+  //   while (currentNode && depth < maxDepth) {
+  //     const node = currentNode;
+  //     depth++;
+  //     const handler = this.nodeTypeRegistry.get(node.node_type);
+  //     if (!handler) {
+  //       this.logger?.error?.('JSONNode: unknown node_type', { node_type: node.node_type });
+  //       currentNode = node.on_error ? (nodeMap.get(node.on_error) ?? null) : null;
+  //       continue;
+  //     }
+  //
+  //     const startedAt = Date.now();
+  //     const traceEntry: NodeExecutionTrace = {
+  //       node_id: node.node_id,
+  //       node_type: node.node_type,
+  //       status: 'RUNNING',
+  //       elapsed_ms: 0,
+  //     };
+  //
+  //     const sId = (sharedData.session_id as string) ?? context.session_id ?? '';
+  //     const wId = (sharedData.work_id as string) ?? context.work_id ?? '';
+  //     const iId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
+  //
+  //     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+  //       await this.streamAccess.pushEvent(sId, 'dag_node_start', 'DAG', {
+  //         node_id: node.node_id,
+  //         node_type: node.node_type,
+  //         params: node.params,
+  //       }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+  //     }
+  //
+  //     try {
+  //       const timeoutMs = this.config.node_timeout_ms;
+  //       if (timeoutMs > 0) {
+  //         await Promise.race([
+  //           handler(sharedData, node.params, context),
+  //           new Promise<void>((_, reject) => {
+  //             setTimeout(() => reject(new Error(`Node execution timeout after ${timeoutMs}ms`)), timeoutMs);
+  //           }),
+  //         ]);
+  //       } else {
+  //         await handler(sharedData, node.params, context);
+  //       }
+  //       traceEntry.status = 'SUCCESS';
+  //       traceEntry.elapsed_ms = Date.now() - startedAt;
+  //       trace.push(traceEntry);
+  //
+  //       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+  //         await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
+  //           node_id: node.node_id,
+  //           node_type: node.node_type,
+  //           status: 'SUCCESS',
+  //           elapsed_ms: traceEntry.elapsed_ms,
+  //         }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+  //       }
+  //
+  //       if (this.config.trace_enabled) {
+  //         await this.saveTrace(input.orchestration_id, traceEntry);
+  //       }
+  //
+  //       if (node.node_type === 'CONDITION') {
+  //         const condResult = sharedData._condition_result as boolean;
+  //         const nextId = condResult ? node.true_next : node.false_next;
+  //         currentNode = nextId ? (nodeMap.get(nextId) ?? null) : null;
+  //       } else {
+  //         currentNode = node.next ? (nodeMap.get(node.next) ?? null) : null;
+  //       }
+  //     } catch (err: unknown) {
+  //       traceEntry.status = 'ERROR';
+  //       traceEntry.elapsed_ms = Date.now() - startedAt;
+  //       const errorMsg = err instanceof Error ? err.message : String(err);
+  //       traceEntry.error = errorMsg;
+  //       trace.push(traceEntry);
+  //
+  //       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
+  //         await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
+  //           node_id: node.node_id,
+  //           node_type: node.node_type,
+  //           status: 'ERROR',
+  //           error: errorMsg,
+  //           elapsed_ms: traceEntry.elapsed_ms,
+  //         }, { work_id: wId, interact_id: iId, node_id: node.node_id });
+  //       }
+  //
+  //       if (this.config.trace_enabled) {
+  //         await this.saveTrace(input.orchestration_id, traceEntry);
+  //       }
+  //
+  //       sharedData._error = errorMsg;
+  //       this.logger?.error?.('JSONNode: node execution failed', {
+  //         node_id: node.node_id,
+  //         node_type: node.node_type,
+  //         error: errorMsg,
+  //       });
+  //       if (node.on_error && node.on_error !== node.node_id) {
+  //         currentNode = nodeMap.get(node.on_error) ?? null;
+  //       } else {
+  //         if (node.on_error === node.node_id) {
+  //           this.logger?.error?.('JSONNode: on_error self-loop detected, terminating', { node_id: node.node_id });
+  //         }
+  //         currentNode = null;
+  //       }
+  //     }
+  //   }
+  //
+  //   output.shared_data = sharedData;
+  //   return true;
+  // }
+
+  private async ensureConfigLoaded(): Promise<void> {
+    try {
+      const selInput = Object.assign(new SelectOneDBInput(), {
+        query_param: { table: 'orchestration_config' },
+      });
+      const selOutput = Object.assign(new SelectOneDBOutput(), {});
+      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      const current = (selOutput.row ?? {}) as Record<string, unknown>;
+      if (current.max_execution_depth !== undefined && current.max_execution_depth !== null) {
+        this.config.max_execution_depth = Number(current.max_execution_depth);
+      }
+      if (current.node_timeout_ms !== undefined && current.node_timeout_ms !== null) {
+        this.config.node_timeout_ms = Number(current.node_timeout_ms);
+      }
+      if (current.trace_enabled !== undefined && current.trace_enabled !== null) {
+        this.config.trace_enabled = Boolean(current.trace_enabled);
+      }
+    } catch {
+      /* ignore if table not ready or query fails */
+    }
+  }
+
+  // ===== 修改后的方法 =====
   async execJSONNode(
     input: ExecJSONNodeInput,
     context: JSONNodeContext,
     output: ExecJSONNodeOutput,
   ): Promise<boolean> {
+    await this.ensureConfigLoaded();
     const def = input.jsonnode_definition;
     const sharedData: Record<string, unknown> = {
       ...(input.initial_data ?? {}),
@@ -175,12 +346,19 @@ export class JSONNodeService {
       try {
         const timeoutMs = this.config.node_timeout_ms;
         if (timeoutMs > 0) {
-          await Promise.race([
-            handler(sharedData, node.params, context),
-            new Promise<void>((_, reject) => {
-              setTimeout(() => reject(new Error(`Node execution timeout after ${timeoutMs}ms`)), timeoutMs);
-            }),
-          ]);
+          let timer: NodeJS.Timeout | null = null;
+          try {
+            await Promise.race([
+              handler(sharedData, node.params, context),
+              new Promise<void>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`Node execution timeout after ${timeoutMs}ms`)), timeoutMs);
+              }),
+            ]);
+          } finally {
+            if (timer) {
+              clearTimeout(timer);
+            }
+          }
         } else {
           await handler(sharedData, node.params, context);
         }
@@ -763,8 +941,15 @@ export class JSONNodeService {
     const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
     const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+      const agentDagForSSE = {
+        ...buildOutput.agent_dag,
+        agent_nodes: (buildOutput.agent_dag?.agent_nodes ?? []).map((n) => ({
+          ...n,
+          task_id: n.task_id,
+        })),
+      };
       await this.streamAccess.pushEvent(sessionId, 'agent_dag_created', 'DAG', {
-        agent_dag: buildOutput.agent_dag,
+        agent_dag: agentDagForSSE,
         task_agent_map: buildOutput.task_agent_map,
       }, { work_id: workId, interact_id: interactId, node_id: 'BUILD_AGENT_DAG' });
     }

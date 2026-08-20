@@ -37,6 +37,7 @@ import {
   JsonParser,
   ValidationError,
   NotFoundError,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
 import type { Condition, DataObject, Operation, OrderBy, Page } from '@brian-agent/base';
 import {
@@ -642,47 +643,31 @@ export class SoulCoreService {
     availableSouls: Array<{ id: string; soul_brief: string; soul_usage?: string }>,
     config: SoulCoreConfigRecord | null,
   ): Promise<string> {
+    const selectionVariables = {
+      agent_id: agentId,
+      context_id: contextId,
+      interact_id: interactId,
+      available_souls: availableSouls.map((s) => {
+        const usage = s.soul_usage ?? '';
+        return `- id: ${s.id}, brief: ${s.soul_brief}, usage: ${usage}`;
+      }).join('\n'),
+    };
+
     let selectionPrompt: string;
-
     if (config?.prompt_template_id) {
-      const getPromptOutput = new GetPromptOutput();
-      await this.promptsAccess.getPrompt(
-        { id: config.prompt_template_id } as GetPromptInput,
+      const execPromptOutput = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        {
+          id: config.prompt_template_id,
+          variables: selectionVariables,
+        } as ExecPromptInput,
         new PromptContext(),
-        getPromptOutput,
+        execPromptOutput,
       );
-
-      if (getPromptOutput.prompt) {
-        const execPromptOutput = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          {
-            id: config.prompt_template_id,
-            variables: {
-              agent_id: agentId,
-              context_id: contextId,
-              interact_id: interactId,
-              available_souls: JSON.stringify(
-                availableSouls.map((s) => ({
-                  id: s.id,
-                  soul_brief: s.soul_brief,
-                  soul_usage: s.soul_usage,
-                })),
-              ),
-            },
-          } as ExecPromptInput,
-          new PromptContext(),
-          execPromptOutput,
-        );
-        selectionPrompt = execPromptOutput.prompt;
-      } else {
-        selectionPrompt = this.buildDefaultMatchPrompt(
-          agentId, contextId, interactId, availableSouls,
-        );
-      }
+      selectionPrompt = execPromptOutput.prompt;
+      if (!selectionPrompt) selectionPrompt = this.renderDefault(selectionVariables);
     } else {
-      selectionPrompt = this.buildDefaultMatchPrompt(
-        agentId, contextId, interactId, availableSouls,
-      );
+      selectionPrompt = this.renderDefault(selectionVariables);
     }
 
     const llmId = config?.llm_id || '';
@@ -710,29 +695,10 @@ export class SoulCoreService {
   }
 
   /** 构建默认 Soul 匹配 Prompt */
-  private buildDefaultMatchPrompt(
-    agentId: string,
-    contextId: string,
-    interactId: string,
-    souls: Array<{ id: string; soul_brief: string; soul_usage?: string }>,
-  ): string {
-    const soulList = souls.map((s) => {
-      const usage = s.soul_usage ?? '';
-      return `- id: ${s.id}, brief: ${s.soul_brief}, usage: ${usage}`;
-    }).join('\n');
-
-    return [
-      'You are selecting the best Soul (persona) for an AI agent. Given the available Souls below, select the most suitable one.',
-      '',
-      `Agent ID: ${agentId}`,
-      `Context ID: ${contextId}`,
-      `Interaction ID: ${interactId}`,
-      '',
-      'Available Souls:',
-      soulList,
-      '',
-      'Respond with ONLY the id of the selected Soul. Do not include any other text.',
-    ].join('\n');
+  /** 渲染内置 Soul 匹配模板（内存兜底） */
+  private renderDefault(variables: Record<string, unknown>): string {
+    const tpl = getBuiltinTemplate(PROMPT_IDS.soulMatch);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   /** 从 LLM 排名回复中解析出选中的 Soul ID */

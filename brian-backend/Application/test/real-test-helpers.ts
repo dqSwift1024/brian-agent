@@ -222,7 +222,9 @@ export async function setupRealTestEnvironment(): Promise<RealTestContext> {
   const mqAccess = new MQAccess(relationDb, logger);
   await mqAccess.initialize();
 
-  const logAccess = new LogAccess(relationDb, logger);
+  const logRelationDb = new RelationDBAccess({ dbPath: path.join(tempDir, 'test_log.db'), autoCreateConfigTable: true });
+  await logRelationDb.initialize();
+  const logAccess = new LogAccess(logRelationDb, logger);
   await logAccess.initialize();
 
   // Handle table name conflict: Base/SkillProvider and Core/SkillCoreProvider both use

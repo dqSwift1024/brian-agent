@@ -49,6 +49,23 @@ export class IdGenerator {
   }
 
   /**
+   * 将毫秒时间戳格式化为本地日期字符串（YYYY-MM-DD）。
+   *
+   * 与 today() 使用相同的本地时区口径，保证按日统计表的 usage_date
+   * 在"实时写入（today）"与"历史回填（dateOf）"两条路径上口径一致。
+   *
+   * @param ts 毫秒级 Unix 时间戳
+   * @returns 日期字符串，如 "2026-07-25"
+   */
+  static dateOf(ts: number): string {
+    const d = new Date(ts);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /**
    * 获取当前操作系统类型。
    *
    * @returns 'linux' | 'macos' | 'windows'

@@ -5,11 +5,13 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
   InfoType,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
-import type { InfoCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   SaveInfoInput, SaveInfoOutput, ContextInfoInput, ContextInfoOutput, InfoCoreContext,
+  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
 } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
@@ -53,6 +55,7 @@ export class PlannerAgentService {
     private readonly infoCore: InfoCoreAccess,
     private readonly agentBuilder: AgentBuilderAccess,
     private readonly agentLibrary: AgentLibraryAccess,
+    private readonly llmCore?: LLMCoreAccess,
   ) {}
 
   async plan(input: PlanInput, ctx: PlannerAgentContext, output: PlanOutput): Promise<boolean> {
@@ -95,7 +98,11 @@ export class PlannerAgentService {
     }
 
     let dag: TaskDag | null = null;
-    const targetLlmId = config?.llm_id || agent?.llm_id || '';
+    // LLM 绑定只存在于 LLMProvider 的 agent_llm：配置未指定时经 Core.matchLLM 解析
+    let targetLlmId = config?.llm_id || '';
+    if (!targetLlmId && agent?.agent_id && this.llmCore) {
+      targetLlmId = await this.resolveLlm(agent.agent_id);
+    }
     dag = await this.llmPlan(targetLlmId, agent?.soul_id || '', config?.plan_prompt_template_id || '', input.task_content, contextExtra, maxSub);
     if (!dag) {
       const complexity = this.estimateComplexity(input.task_content);
@@ -264,29 +271,16 @@ export class PlannerAgentService {
   ): Promise<TaskDag | null> {
     try {
       const system = '';
-      let prompt =
-        `Task: ${task}\n` +
-        (contextExtra ? `Context:\n${contextExtra}\n` : '') +
-        `Max subtasks: ${maxSub}\n\n` +
-        `Decompose the task into a DAG of subtasks if it is complex. ` +
-        `Return ONLY valid JSON with format: ` +
-        `{"nodes":[{"task_id":"1","task_content":"...","task_complexity":50,"task_domain":"","priority":1,"dependencies":[]}],` +
-        `"edges":[{"from_task_id":"1","to_task_id":"2"}]}`;
-
-      if (promptId) {
-        try {
-          const promptOut = new ExecPromptOutput();
-          await this.promptsAccess.execPrompt(
-            Object.assign(new ExecPromptInput(), {
-              id: promptId,
-              variables: { task_content: task, context: contextExtra, max_subtask_count: maxSub, soul_id: soulId },
-            }),
-            new PromptContext(),
-            promptOut,
-          );
-          if (promptOut.prompt) prompt = promptOut.prompt;
-        } catch { /* use fallback prompt */ }
-      }
+      const prompt = await this.renderPrompt(
+        promptId,
+        PROMPT_IDS.planner,
+        {
+          task_content: task,
+          context_data: contextExtra,
+          max_subtask_count: maxSub,
+          soul: soulId,
+        },
+      );
 
       const llmOut = new ExecLLMOutput();
       const ok = await this.llmAccess.execLLM(
@@ -419,6 +413,45 @@ export class PlannerAgentService {
       out,
     );
     if (!out.list?.length) throw new ValidationError(`prompt_template_id 不存在: ${id}`);
+  }
+
+  /**
+   * 渲染 Prompt：配置模板 → 内置模板 → 内存兜底。
+   */
+  private async renderPrompt(
+    templateId: string | undefined,
+    builtinId: string,
+    variables: Record<string, unknown>,
+  ): Promise<string> {
+    const id = templateId || builtinId;
+    try {
+      const promptOut = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), { id, variables }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (promptOut.prompt) return promptOut.prompt;
+    } catch { /* use fallback prompt */ }
+    const tpl = getBuiltinTemplate(builtinId);
+    return tpl ? renderTemplate(tpl, variables) : '';
+  }
+
+  /**
+   * 通过 Core.matchLLM 解析 PlannerAgent 绑定的 LLM（agent_llm）。
+   */
+  private async resolveLlm(agentId: string): Promise<string> {
+    try {
+      const llmOut = new MatchLLMOutput();
+      await this.llmCore?.matchLLM(
+        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
+        new LLMCoreContext(),
+        llmOut,
+      );
+      return llmOut.llm_id || '';
+    } catch {
+      return '';
+    }
   }
 
   private async getConfig(): Promise<PlannerAgentConfigRecord | null> {

@@ -4,10 +4,12 @@ import {
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
+  SoLLMInput, SoLLMOutput,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject, type Condition,
 } from '@brian-agent/base';
 import {
-  AGENT_TABLE, AGENT_USAGE_TABLE, AGENT_OPT_RULE_TABLE, AGENT_LIBRARY_CONFIG_TABLE,
+  AGENT_TABLE, AGENT_USAGE_TABLE, AGENT_USAGE_DAILY_TABLE, AGENT_OPT_RULE_TABLE, AGENT_LIBRARY_CONFIG_TABLE,
   VALID_AGENT_TYPES, SYSTEM_AGENT_TYPES,
   type AgentRecord, type AgentLibraryConfigRecord, type AgentOptRuleRecord,
   AgentLibraryContext,
@@ -43,7 +45,6 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
     agent_purpose: String(row.agent_purpose ?? ''),
     agent_type: String(row.agent_type),
     strategy_id: String(row.strategy_id),
-    llm_id: String(row.llm_id ?? ''),
     soul_id: String(row.soul_id ?? ''),
     task_signature: String(row.task_signature ?? ''),
     usage_count: Number(row.usage_count ?? 0),
@@ -79,7 +80,6 @@ export class AgentLibraryService {
       { field: 'agent_name', value: input.agent_name ?? `Agent-${input.agent_id.slice(0, 8)}` },
       { field: 'agent_type', value: input.agent_type },
       { field: 'strategy_id', value: input.strategy_id },
-      { field: 'llm_id', value: input.llm_id ?? '' },
       { field: 'soul_id', value: input.soul_id ?? '' },
       { field: 'task_signature', value: input.task_signature ?? '' },
       { field: 'usage_count', value: 0 },
@@ -170,6 +170,42 @@ export class AgentLibraryService {
     return true;
   }
 
+  // ===== 原始 updateAgent（保留作为参考）=====
+  // async updateAgent(
+  //   input: UpdateAgentInput,
+  //   _ctx: AgentLibraryContext,
+  //   _output: UpdateAgentOutput,
+  // ): Promise<boolean> {
+  //   const existing = await this.relationDb.selectOne(AGENT_TABLE, [
+  //     { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
+  //   ]);
+  //   if (!existing) throw new NotFoundError('Agent', input.agent_id);
+  //
+  //   if (input.eval_score !== undefined) {
+  //     if (input.eval_score < 0 || input.eval_score > 100) {
+  //       throw new ValidationError('eval_score 必须在 0-100 之间');
+  //     }
+  //   }
+  //
+  //   const data: DataObject[] = [{ field: 'updated', value: IdGenerator.now() }];
+  //   if (input.agent_name !== undefined) data.push({ field: 'agent_name', value: input.agent_name });
+  //   if (input.task_signature !== undefined) data.push({ field: 'task_signature', value: input.task_signature });
+  //   if (input.eval_score !== undefined) data.push({ field: 'eval_score', value: input.eval_score });
+  //   if (input.enable !== undefined) data.push({ field: 'enable', value: input.enable ? 1 : 0 });
+  //   if (input.strategy_id !== undefined) data.push({ field: 'strategy_id', value: input.strategy_id });
+  //   if (input.llm_id !== undefined) data.push({ field: 'llm_id', value: input.llm_id });
+  //   if (input.soul_id !== undefined) data.push({ field: 'soul_id', value: input.soul_id });
+  //
+  //   if (data.length <= 1) return true;
+  //   await this.relationDb.update(
+  //     AGENT_TABLE,
+  //     data,
+  //     [{ field: 'agent_id', operator: Operator.EQ, value: input.agent_id }],
+  //   );
+  //   return true;
+  // }
+
+  // ===== 修改后：新增 agent_purpose 持久化（对应前端"描述"字段）=====
   async updateAgent(
     input: UpdateAgentInput,
     _ctx: AgentLibraryContext,
@@ -188,11 +224,11 @@ export class AgentLibraryService {
 
     const data: DataObject[] = [{ field: 'updated', value: IdGenerator.now() }];
     if (input.agent_name !== undefined) data.push({ field: 'agent_name', value: input.agent_name });
+    if (input.agent_purpose !== undefined) data.push({ field: 'agent_purpose', value: input.agent_purpose });
     if (input.task_signature !== undefined) data.push({ field: 'task_signature', value: input.task_signature });
     if (input.eval_score !== undefined) data.push({ field: 'eval_score', value: input.eval_score });
     if (input.enable !== undefined) data.push({ field: 'enable', value: input.enable ? 1 : 0 });
     if (input.strategy_id !== undefined) data.push({ field: 'strategy_id', value: input.strategy_id });
-    if (input.llm_id !== undefined) data.push({ field: 'llm_id', value: input.llm_id });
     if (input.soul_id !== undefined) data.push({ field: 'soul_id', value: input.soul_id });
 
     if (data.length <= 1) return true;
@@ -277,6 +313,45 @@ export class AgentLibraryService {
     return true;
   }
 
+  // ===== 原始 recordAgentUsage（保留作为参考）=====
+  // async recordAgentUsage(
+  //   input: RecordAgentUsageInput,
+  //   ctx: AgentLibraryContext,
+  //   _output: RecordAgentUsageOutput,
+  // ): Promise<boolean> {
+  //   if (!input.agent_id) throw new ValidationError('agent_id 为必填');
+  //   const existing = await this.relationDb.selectOne(AGENT_TABLE, [
+  //     { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
+  //   ]);
+  //   if (!existing) throw new NotFoundError('Agent', input.agent_id);
+  //
+  //   const now = IdGenerator.now();
+  //   const workId = input.work_id || ctx.work_id || '';
+  //   const interactId = input.interact_id || ctx.interact_id || '';
+  //
+  //   await this.relationDb.insert(AGENT_USAGE_TABLE, [
+  //     { field: 'id', value: IdGenerator.generate() },
+  //     { field: 'created', value: now },
+  //     { field: 'updated', value: now },
+  //     { field: 'agent_id', value: input.agent_id },
+  //     { field: 'work_id', value: workId },
+  //     { field: 'interact_id', value: interactId },
+  //     { field: 'usage_context', value: input.usage_context ?? '' },
+  //   ]);
+  //
+  //   const usageCount = Number(existing.usage_count ?? 0) + 1;
+  //   await this.relationDb.update(
+  //     AGENT_TABLE,
+  //     [
+  //       { field: 'usage_count', value: usageCount },
+  //       { field: 'updated', value: now },
+  //     ],
+  //     [{ field: 'agent_id', operator: Operator.EQ, value: input.agent_id }],
+  //   );
+  //   return true;
+  // }
+
+  // ===== 修改后：新增按日统计 agent_usage_daily（upsert 当天计数）=====
   async recordAgentUsage(
     input: RecordAgentUsageInput,
     ctx: AgentLibraryContext,
@@ -301,6 +376,35 @@ export class AgentLibraryService {
       { field: 'interact_id', value: interactId },
       { field: 'usage_context', value: input.usage_context ?? '' },
     ]);
+
+    // 按日统计 upsert：当天已有记录则 usage_count + 1，否则新增
+    const usageDate = IdGenerator.today();
+    const daily = await this.relationDb.selectOne(AGENT_USAGE_DAILY_TABLE, [
+      { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
+      { field: 'usage_date', operator: Operator.EQ, value: usageDate },
+    ]);
+    if (daily) {
+      await this.relationDb.update(
+        AGENT_USAGE_DAILY_TABLE,
+        [
+          { field: 'usage_count', value: (Number(daily.usage_count) ?? 0) + 1 },
+          { field: 'updated', value: now },
+        ],
+        [
+          { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
+          { field: 'usage_date', operator: Operator.EQ, value: usageDate },
+        ],
+      );
+    } else {
+      await this.relationDb.insert(AGENT_USAGE_DAILY_TABLE, [
+        { field: 'id', value: IdGenerator.generate() },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'agent_id', value: input.agent_id },
+        { field: 'usage_date', value: usageDate },
+        { field: 'usage_count', value: 1 },
+      ]);
+    }
 
     const usageCount = Number(existing.usage_count ?? 0) + 1;
     await this.relationDb.update(
@@ -345,6 +449,67 @@ export class AgentLibraryService {
    * 对每个非系统 Agent，当且仅当「每一条规则」都满足
    * (窗口内 usage < min_usage_count 且 eval_score < min_eval_score) 时才禁用。
    */
+  // ===== 原始 ageAgent（保留作为参考）=====
+  // async ageAgent(
+  //   _input: AgeAgentInput,
+  //   _ctx: AgentLibraryContext,
+  //   output: AgeAgentOutput,
+  // ): Promise<boolean> {
+  //   const ruleRows = await this.relationDb.select(AGENT_OPT_RULE_TABLE);
+  //   const rules = ruleRows.map((r) => ({
+  //     id: String(r.id),
+  //     days: Number(r.days),
+  //     min_usage_count: Number(r.min_usage_count),
+  //     min_eval_score: Number(r.min_eval_score),
+  //   })) as AgentOptRuleRecord[];
+  //   if (rules.length === 0) {
+  //     output.aged_count = 0;
+  //     return true;
+  //   }
+  //
+  //   const agentRows = await this.relationDb.select(AGENT_TABLE, {
+  //     conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }],
+  //   });
+  //   const agents = agentRows.map(mapAgent);
+  //   const now = IdGenerator.now();
+  //   const agedIds: string[] = [];
+  //
+  //   for (const agent of agents) {
+  //     if ((SYSTEM_AGENT_TYPES as readonly string[]).includes(agent.agent_type)) continue;
+  //
+  //     let allRulesMet = true;
+  //     for (const rule of rules) {
+  //       const threshold = now - rule.days * 24 * 60 * 60 * 1000;
+  //       const usageCount = await this.relationDb.count(AGENT_USAGE_TABLE, [
+  //         { field: 'agent_id', operator: Operator.EQ, value: agent.agent_id },
+  //         { field: 'created', operator: Operator.GE, value: threshold },
+  //       ]);
+  //       const lowUsage = usageCount < rule.min_usage_count;
+  //       const lowEval = agent.eval_score < rule.min_eval_score;
+  //       if (!(lowUsage && lowEval)) {
+  //         allRulesMet = false;
+  //         break;
+  //       }
+  //     }
+  //
+  //     if (allRulesMet) agedIds.push(agent.agent_id);
+  //   }
+  //
+  //   for (const agentId of agedIds) {
+  //     await this.relationDb.update(
+  //       AGENT_TABLE,
+  //       [
+  //         { field: 'enable', value: 0 },
+  //         { field: 'updated', value: now },
+  //       ],
+  //       [{ field: 'agent_id', operator: Operator.EQ, value: agentId }],
+  //     );
+  //   }
+  //   output.aged_count = agedIds.length;
+  //   return true;
+  // }
+
+  // ===== 修改后：按日统计表 agent_usage_daily 按 usage_date 日期窗口统计 =====
   async ageAgent(
     _input: AgeAgentInput,
     _ctx: AgentLibraryContext,
@@ -374,11 +539,13 @@ export class AgentLibraryService {
 
       let allRulesMet = true;
       for (const rule of rules) {
-        const threshold = now - rule.days * 24 * 60 * 60 * 1000;
-        const usageCount = await this.relationDb.count(AGENT_USAGE_TABLE, [
-          { field: 'agent_id', operator: Operator.EQ, value: agent.agent_id },
-          { field: 'created', operator: Operator.GE, value: threshold },
-        ]);
+        // 按日期窗口统计：usage_date >= 截止日期（YYYY-MM-DD）
+        const cutoffDate = IdGenerator.dateOf(now - rule.days * 24 * 60 * 60 * 1000);
+        const dailyRows = await this.relationDb.queryRaw<{ total: number }>(
+          `SELECT COALESCE(SUM("usage_count"), 0) AS "total" FROM "${AGENT_USAGE_DAILY_TABLE}" WHERE "agent_id" = ? AND "usage_date" >= ?`,
+          [agent.agent_id, cutoffDate],
+        );
+        const usageCount = Number(dailyRows?.[0]?.total ?? 0);
         const lowUsage = usageCount < rule.min_usage_count;
         const lowEval = agent.eval_score < rule.min_eval_score;
         if (!(lowUsage && lowEval)) {
@@ -584,6 +751,22 @@ export class AgentLibraryService {
   }
 
   /**
+   * 解析用于 Agent 匹配排序的 LLM：优先默认启用的非 embedding 文本模型。
+   * 仅作为"排序执行者"，与 Agent 绑定无关（绑定只存在于 LLMProvider 的 agent_llm）。
+   */
+  private async resolveRankerLlm(): Promise<string> {
+    try {
+      const so = new SoLLMOutput();
+      await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), so);
+      const list = (so.list || []).filter((l) => l.enable && l.llm_type !== 'embedding');
+      const def = list.find((l) => l.is_default) ?? list[0];
+      return def?.id ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * 第二层匹配：提交给大模型 (LLM)，依据 Agent 列表用途/名称与提问进行评估打分。
    */
   private async llmMatchAgent(
@@ -591,7 +774,8 @@ export class AgentLibraryService {
     candidates: AgentRecord[],
     promptTemplateId?: string,
   ): Promise<{ agent_id: string; score: number } | null> {
-    const llmId = candidates.find((c) => c.llm_id)?.llm_id;
+    // 排序 LLM 从 llm_available 解析（默认文本模型优先），不再依赖 agent 表 llm_id
+    const llmId = await this.resolveRankerLlm();
     if (!llmId) return null;
 
     const candidateList = candidates.map((c) => ({
@@ -601,37 +785,25 @@ export class AgentLibraryService {
       agent_type: c.agent_type,
     }));
 
+    const candidatesJson = JSON.stringify(candidateList, null, 2);
     let prompt = '';
-    if (promptTemplateId) {
-      try {
-        const promptOut = new ExecPromptOutput();
-        const okPrompt = await this.promptsAccess.execPrompt(
-          Object.assign(new ExecPromptInput(), {
-            id: promptTemplateId,
-            variables: { task_content: taskContent, candidates: candidateList },
-          }),
-          new PromptContext(),
-          promptOut,
-        );
-        if (okPrompt && promptOut.prompt) prompt = promptOut.prompt;
-      } catch { /* ignore prompt failure */ }
-    }
+    const id = promptTemplateId || PROMPT_IDS.agentMatch;
+    try {
+      const promptOut = new ExecPromptOutput();
+      const okPrompt = await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), {
+          id,
+          variables: { task_content: taskContent, candidates: candidatesJson },
+        }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (okPrompt && promptOut.prompt) prompt = promptOut.prompt;
+    } catch { /* ignore prompt failure */ }
 
     if (!prompt) {
-      prompt = `你是一个智能 Agent 匹配评估专家。请评估用户的提问，并对候选 Agent 列表逐一打分，判断是否有能够完美或高度胜任该任务的现有 Agent。
-
-【用户提问/任务内容】:
-${taskContent}
-
-【候选 Agent 列表 (包含用途描述 agent_purpose)】:
-${JSON.stringify(candidateList, null, 2)}
-
-评估标准：
-1. 比较 Agent 的用途 (agent_purpose) 与用户当前任务领域的契合度；
-2. 如果存在能完美或高度胜任的 Agent，选择最符合的 agent_id，并给出 0.0 到 1.0 之间的匹配得分 score；
-3. 如果无任何能胜任的 Agent，将 agent_id 设为空字符串 ""，score 设为 0.0。
-
-请严格仅输出 JSON 格式结果：{"agent_id": "选中的agent_id", "score": 匹配得分, "reason": "打分与评估说明"}`;
+      const tpl = getBuiltinTemplate(PROMPT_IDS.agentMatch);
+      if (tpl) prompt = renderTemplate(tpl, { task_content: taskContent, candidates: candidatesJson });
     }
 
     const llmOut = new ExecLLMOutput();

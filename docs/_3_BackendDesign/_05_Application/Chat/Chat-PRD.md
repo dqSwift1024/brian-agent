@@ -247,6 +247,24 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 2. 调用 RelationDBProvider.countDB 统计 `info_raw` 表中该 session_id 的消息数量；
 3. 比较 message_count 与 max_messages_per_session，返回是否溢出；
 
+### 3.3.4. 修改会话标题（updateSessionTitle）
+
+**功能**：修改已有会话的标题；另外，在会话首条消息提交时，系统会自动截取前 50 个字符更新会话标题。
+
+**URL**：`POST /api/chat/session/title`
+
+**入参**：
+- `session_id`（STRING，必选）：会话 ID
+- `session_title`（STRING，必选）：新会话标题
+
+**输出**：
+- `updated`（BOOLEAN）：是否更新成功
+
+**处理流程**：
+1. 校验 `session_id` 和 `session_title` 非空；
+2. 调用 RelationDBProvider.updateDB 更新 `chat_session` 表中对应 `session_id` 的 `session_title` 字段；
+3. 返回更新状态；
+
 ### 3.4. 消息管理
 
 #### 3.4.1. 查询消息历史（getChatHistory）

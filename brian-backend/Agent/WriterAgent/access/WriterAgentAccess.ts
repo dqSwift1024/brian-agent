@@ -1,6 +1,6 @@
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
-import type { InfoCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import { WriterAgentSchemaInitializer } from '../infrastructure/WriterAgentSchemaInitializer';
@@ -25,11 +25,12 @@ export class WriterAgentAccess {
     agentBuilder: AgentBuilderAccess,
     agentLibrary: AgentLibraryAccess,
     soulAccess?: SoulAccess,
+    llmCore?: LLMCoreAccess,
     logger?: Logger,
   ) {
     this.initPromise = new WriterAgentSchemaInitializer(relationDb).init();
     const raw = new WriterAgentService(
-      relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess,
+      relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }

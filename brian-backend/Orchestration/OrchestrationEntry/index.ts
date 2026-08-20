@@ -7,5 +7,6 @@ export {
   BuildWorkContextInput, BuildWorkContextOutput,
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from './domain/types';

@@ -59,6 +59,7 @@ import { PlannerAgentAccess } from './Agent/PlannerAgent';
 import { WriterAgentAccess } from './Agent/WriterAgent';
 import { EvolutorAgentAccess } from './Agent/EvolutorAgent';
 import { SummaryAgentAccess, SummaryAgentContext } from './Agent/SummaryAgent';
+import { IntentAgentAccess, IntentAgentContext } from './Agent/IntentAgent';
 import { OrchestrationEntryAccess } from './Orchestration/OrchestrationEntry';
 import { OrchestrationStrategyAccess } from './Orchestration/OrchestrationStrategy';
 import { OrchestrationExecutionAccess } from './Orchestration/OrchestrationExecution';
@@ -157,6 +158,8 @@ import {
 } from './Base/MCPProvider';
 import {
   AgentLibraryContext, GetAgentInput, GetAgentOutput, DelAgentInput, DelAgentOutput, ToggleAgentInput, ToggleAgentOutput,
+  AddAgentInput, AddAgentOutput, UpdateAgentInput, UpdateAgentOutput,
+  VALID_AGENT_TYPES,
 } from './Agent/AgentLibrary';
 
 import {
@@ -170,6 +173,7 @@ import {
   SearchMessageInput, SearchMessageOutput,
   PinMessageInput, PinMessageOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   UpdateSessionTitleInput, UpdateSessionTitleOutput,
 } from './Application/Chat/domain/types';
@@ -313,8 +317,11 @@ async function buildContext() {
   const relationDb = new RelationDBAccess({ dbPath: path.join(DATA_DIR, 'brian.db'), wal: true, autoCreateConfigTable: true });
   await relationDb.initialize();
 
-  // LogProvider 需先于其他 Provider 创建，供 logger 落库（AOP 切面日志写入 log_record）
-  const logAccess = new LogAccess(relationDb, createLogger());
+  // LogProvider 独立存储于 brian_log.db 中，与业务 SQLite (brian.db) 物理隔离，避免高频日志写入影响业务
+  const logRelationDb = new RelationDBAccess({ dbPath: path.join(DATA_DIR, 'brian_log.db'), wal: true, autoCreateConfigTable: true });
+  await logRelationDb.initialize();
+
+  const logAccess = new LogAccess(logRelationDb, createLogger());
   await logAccess.initialize();
   const logger = createLogger(logAccess);
 
@@ -410,20 +417,21 @@ async function buildContext() {
   await agentContext.initialize();
   const agentBuilder = new AgentBuilderAccess(relationDb, llmAccess, promptsAccess, agentLibrary, agentStrategy, llmCore, mcpCore, skillCore, soulCore, logger, infoCore, streamAccess);
   await agentBuilder.initialize();
-  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, logger, streamAccess);
+  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, llmCore, logger, streamAccess);
   await agentExecution.initialize();
-  const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, logger);
+  const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore, logger);
   await writerAgent.initialize();
-  const plannerAgent = new PlannerAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, logger);
+  const plannerAgent = new PlannerAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, llmCore, logger);
   await plannerAgent.initialize();
-  const evolutorAgent = new EvolutorAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, mqAccess, mqCore, agentBuilder, agentLibrary, agentExecution, logger);
+  const evolutorAgent = new EvolutorAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, mqAccess, mqCore, agentBuilder, agentLibrary, agentExecution, llmCore, logger);
   await evolutorAgent.initialize();
-  const summaryAgent = new SummaryAgentAccess(relationDb, llmAccess, promptsAccess, soulAccess, agentBuilder, agentLibrary, infoCore, logger);
+  const summaryAgent = new SummaryAgentAccess(relationDb, llmAccess, promptsAccess, soulAccess, agentBuilder, agentLibrary, infoCore, llmCore, logger);
   await summaryAgent.initialize();
+  const intentAgent = new IntentAgentAccess(relationDb, llmAccess, promptsAccess, soulAccess, agentBuilder, agentLibrary, infoCore, llmCore, logger);
 
   // ---- Pre-build system agents (ensure they appear in agent list on first page load) ----
   try {
-    for (const agentType of ['PLANNER', 'WRITER', 'EVOLUTOR'] as const) {
+    for (const agentType of ['PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY', 'INTENT'] as const) {
       await agentBuilder.buildSystemAgent(
         Object.assign(new BuildSystemAgentInput(), { agent_type: agentType }),
         new AgentBuilderContext(),
@@ -434,15 +442,16 @@ async function buildContext() {
     logger.warn('preBuildSystemAgents', 'failed to pre-build some system agents', String(e));
   }
 
-  // ---- Pre-build SummaryAgent（内置不可变 Agent，同步生成内置 Soul 与 Prompt） ----
+  // ---- Pre-build SummaryAgent & IntentAgent（内置不可变 Agent，同步生成内置 Soul 与 Prompt） ----
   try {
     await summaryAgent.ensureBuiltin(new SummaryAgentContext());
+    await intentAgent.ensureBuiltin(new IntentAgentContext());
   } catch (e) {
-    logger.warn('preBuildSummaryAgent', 'failed to pre-build SummaryAgent', String(e));
+    logger.warn('preBuildSystemAgents', 'failed to pre-build SummaryAgent/IntentAgent', String(e));
   }
 
   // ---- Orchestration ----
-  const orchestrationExecution = new OrchestrationExecutionAccess(relationDb, agentBuilder, agentExecution, agentLibrary, infoCore, mqAccess, mqCore, logger);
+  const orchestrationExecution = new OrchestrationExecutionAccess(relationDb, agentBuilder, agentExecution, agentLibrary, infoCore, mqAccess, mqCore, logger, streamAccess);
   await orchestrationExecution.initialize();
   const orchestrationVisualization = new OrchestrationVisualizationAccess(relationDb, agentLibrary, agentExecution, logger);
   await orchestrationVisualization.initialize();
@@ -450,7 +459,7 @@ async function buildContext() {
   await jsonNode.initialize();
   const orchestrationStrategy = new OrchestrationStrategyAccess(relationDb, agentBuilder, plannerAgent, writerAgent, evolutorAgent, orchestrationExecution, jsonNode, mqCore, logger);
   await orchestrationStrategy.initialize();
-  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent);
+  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent, intentAgent, streamAccess);
   await orchestrationEntry.initialize();
 
   // ---- Application Layer ----
@@ -727,6 +736,19 @@ async function buildThinkingBlocksAndDag(
     );
 
     const dagNodeInfoMap = new Map<string, { label: string; domain?: string; taskContent?: string }>();
+    const workStrategyMap = new Map<string, string>();
+
+    // 查询 orchestration_work 表获取真实的编排策略
+    try {
+      const strategyRows = relationDb.queryRaw<{ work_id: string; orchestration_strategy: string }>(
+        `SELECT work_id, orchestration_strategy FROM orchestration_work WHERE work_id IN (${placeholders})`,
+        workIds,
+      );
+      for (const sRow of strategyRows) {
+        const wId = String(sRow.work_id ?? '');
+        if (wId) workStrategyMap.set(wId, String(sRow.orchestration_strategy ?? ''));
+      }
+    } catch { /* degrade gracefully */ }
     
     for (const dRow of dagRows) {
       const wId = String(dRow.work_id ?? '');
@@ -795,6 +817,7 @@ async function buildThinkingBlocksAndDag(
                 domain,
                 content,
                 status: n.status || 'COMPLETED',
+                taskId: String(n.task_id || ''),
               };
             }),
             edges: (dagObj.agent_edges || []).map((e: any) => ({
@@ -809,7 +832,7 @@ async function buildThinkingBlocksAndDag(
 
     const execRows = relationDb.queryRaw<Record<string, unknown>>(
       `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
-              a.agent_name, a.agent_type, a.llm_id, a.soul_id,
+              a.agent_name, a.agent_type, a.soul_id,
               t.iterations_json, t.total_token_usage
        FROM orchestration_agent_execution e
        LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
@@ -818,6 +841,67 @@ async function buildThinkingBlocksAndDag(
        ORDER BY e.created ASC`,
       workIds,
     );
+
+    // 查询 orchestration_work.metadata 获取 IntentAgent 需求理解结果
+    const intentMetaRows = relationDb.queryRaw<{ work_id: string; metadata: string }>(
+      `SELECT work_id, metadata FROM orchestration_work WHERE work_id IN (${placeholders})`,
+      workIds,
+    );
+    const intentMetaMap = new Map<string, any>();
+    for (const imRow of intentMetaRows) {
+      const wId = String(imRow.work_id ?? '');
+      if (wId && imRow.metadata) {
+        try {
+          const meta = JSON.parse(imRow.metadata);
+          if (meta?.intent_agent) {
+            intentMetaMap.set(wId, meta.intent_agent);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // 为每个 work 创建 IntentAgent 的 ThinkingBlock
+    for (const wid of workIds) {
+      const intentData = intentMetaMap.get(wid);
+      if (intentData) {
+        const intentBlock = {
+          id: `block-think-${wid}-intent-agent`,
+          msgId: '',
+          role: 'assistant',
+          type: 'ThinkingChain',
+          content: String(intentData.reasoning ?? ''),
+          summary: '',
+          durationMs: 0,
+          agentInfo: {
+            id: `intent-agent-${wid}`,
+            name: '需求理解 Agent (Intent)',
+            type: 'INTENT',
+          },
+          context: {
+            strategy: workStrategyMap.get(wid) === 'PLANNING' ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)',
+            userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
+            citingMessages: [],
+          },
+          input: `需求理解: ${String(intentData.understood_requirement ?? '')}`,
+          output: {
+            understood_requirement: intentData.understood_requirement,
+            match_score: intentData.match_score,
+            threshold_score: intentData.threshold_score,
+            should_modify_query: intentData.should_modify_query,
+          },
+          steps: [],
+          meta: {
+            status: 'done',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        };
+        if (!workBlocksMap.has(wid)) {
+          workBlocksMap.set(wid, []);
+        }
+        workBlocksMap.get(wid)!.push(intentBlock);
+      }
+    }
 
     let agentIndexCounter = new Map<string, number>();
 
@@ -858,8 +942,12 @@ async function buildThinkingBlocksAndDag(
 
       // 解析 task_content 构造完整的 Input 与 Context 数据
       let inputQuery: string | undefined = undefined;
+      const realStrategy = workStrategyMap.get(wid) ?? '';
+      const strategyDisplay = realStrategy === 'PLANNING'
+        ? 'Planning 策略 (任务分解)'
+        : (realStrategy === 'SIMPLE' ? 'Simple 策略 (直接推理)' : (realStrategy || 'Simple 策略 (直接推理)'));
       let contextData: any = {
-        strategy: isUuid ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)',
+        strategy: strategyDisplay,
         userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
         citingMessages: [],
       };
@@ -999,7 +1087,8 @@ async function buildThinkingBlocksAndDag(
       }
       workBlocksMap.get(wid)!.push(block);
 
-      // 同步补全 workDagMap 中节点的输入输出和 token 统计
+      // 同步补全 workDagMap 中节点的输入输出、执行状态和 token 统计
+      // （执行状态由 orchestration_agent_execution.status 决定：COMPLETED 成功 / EXEC_FAILED 失败 / CANCELLED·PENDING 未执行）
       if (workDagMap.has(wid)) {
         const dagData = workDagMap.get(wid);
         const nodeInDag = dagData.nodes.find((n: any) => n.id === agentId);
@@ -1009,6 +1098,18 @@ async function buildThinkingBlocksAndDag(
           nodeInDag.output = outputAnswer;
           nodeInDag.elapsedMs = Number(row.elapsed_ms ?? 0);
           nodeInDag.tokenUsage = tokenUsage;
+          const execStatus = String(row.status ?? '').toUpperCase();
+          if (execStatus.includes('COMPLET') || execStatus.includes('SUCCESS')) {
+            nodeInDag.status = 'COMPLETED';
+          } else if (execStatus.includes('FAIL') || execStatus.includes('ERROR')) {
+            nodeInDag.status = 'EXEC_FAILED';
+          } else if (execStatus.includes('CANCEL')) {
+            nodeInDag.status = 'CANCELLED';
+          } else if (execStatus.includes('RUN') || execStatus.includes('PROCESS')) {
+            nodeInDag.status = 'RUNNING';
+          } else {
+            nodeInDag.status = 'PENDING';
+          }
         }
       }
     }
@@ -1796,8 +1897,51 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.agentStrategy.toggleStrategy(input, context, output);
         sendJson(res, 200, { success: true, enable: output.enable });
 
+      // ===== 原始 POST /api/agent（桩实现，保留作为参考）=====
+      // } else if (method === 'POST' && pathname === '/api/agent') {
+      //   sendJson(res, 200, { id: `agent-${++_seq}`, name: body.name || 'new-agent' });
+
+      // ===== 修改后：真实创建 Agent =====
       } else if (method === 'POST' && pathname === '/api/agent') {
-        sendJson(res, 200, { id: `agent-${++_seq}`, name: body.name || 'new-agent' });
+        const b = (body || {}) as Record<string, unknown>;
+        const agentType = String(b.agent_type || 'WORKER').toUpperCase();
+        if (!(VALID_AGENT_TYPES as readonly string[]).includes(agentType)) {
+          sendJson(res, 400, { error: `invalid agent_type: ${agentType}` });
+          return;
+        }
+        const agentId = IdGenerator.generate();
+        let strategyId = String(b.strategy_id || '');
+        if (!strategyId) {
+          try {
+            const cfg = ctx.relationDb.queryRaw<{ default_strategy_id: string }>(
+              'SELECT "default_strategy_id" FROM "agent_strategy_config" LIMIT 1', [],
+            );
+            strategyId = cfg?.[0]?.default_strategy_id || '';
+          } catch { strategyId = ''; }
+        }
+        if (!strategyId) {
+          const fallback = ctx.relationDb.queryRaw<{ strategy_id: string }>(
+            'SELECT "strategy_id" FROM "agent_strategy" WHERE "enable" = 1 ORDER BY "suitable_complexity_min" ASC LIMIT 1', [],
+          );
+          strategyId = fallback?.[0]?.strategy_id || '';
+        }
+        const addIn = Object.assign(new AddAgentInput(), {
+          agent_id: agentId,
+          agent_type: agentType,
+          strategy_id: strategyId,
+          soul_id: String(b.soul_id || ''),
+          task_signature: String(b.task_signature || `[${String(b.agent_name || 'custom').toLowerCase()}] 自定义任务`),
+          agent_name: String(b.agent_name || `Agent-${agentId.slice(0, 8)}`),
+          agent_purpose: String(b.agent_purpose || b.description || ''),
+        });
+        try {
+          const addOut = new AddAgentOutput();
+          const ok = await ctx.agentLibrary.addAgent(addIn, new AgentLibraryContext(), addOut);
+          if (!ok) throw new Error('addAgent failed');
+          sendJson(res, 200, { id: agentId, agent_id: agentId, name: addIn.agent_name, success: true });
+        } catch (e: unknown) {
+          sendJson(res, 400, { error: (e as Error).message || '创建失败' });
+        }
 
       } else if (method === 'POST' && /\/api\/agent\/[^/]+\/toggle$/.test(pathname)) {
         const id = pathname.split('/api/agent/')[1].split('/toggle')[0];
@@ -1807,8 +1951,35 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.agentLibrary.toggleAgent(input, context, output);
         sendJson(res, 200, { success: true, enable: output.enable });
 
+      // ===== 原始 PUT /api/agent/{id}（桩实现，保留作为参考）=====
+      // } else if (method === 'PUT' && pathname.startsWith('/api/agent/')) {
+      //   sendJson(res, 200, { success: true });
+
+      // ===== 修改后：真实更新 Agent =====
       } else if (method === 'PUT' && pathname.startsWith('/api/agent/')) {
-        sendJson(res, 200, { success: true });
+        const id = pathname.split('/api/agent/')[1];
+        const b = (body || {}) as Record<string, unknown>;
+        try {
+          const row = ctx.relationDb.queryRaw<{ agent_id: string }>(
+            'SELECT "agent_id" FROM "agent" WHERE "id" = ? LIMIT 1', [id],
+          )[0];
+          if (!row) {
+            sendJson(res, 404, { error: `Agent 不存在: ${id}` });
+            return;
+          }
+          const updIn = Object.assign(new UpdateAgentInput(), { agent_id: row.agent_id });
+          if (b.agent_name !== undefined) updIn.agent_name = String(b.agent_name);
+          if (b.description !== undefined || b.agent_purpose !== undefined) {
+            updIn.agent_purpose = String(b.agent_purpose ?? b.description);
+          }
+          if (b.task_signature !== undefined) updIn.task_signature = String(b.task_signature);
+          if (b.strategy_id !== undefined) updIn.strategy_id = String(b.strategy_id);
+          if (b.soul_id !== undefined) updIn.soul_id = String(b.soul_id);
+          await ctx.agentLibrary.updateAgent(updIn, new AgentLibraryContext(), new UpdateAgentOutput());
+          sendJson(res, 200, { success: true });
+        } catch (e: unknown) {
+          sendJson(res, 400, { error: (e as Error).message || '更新失败' });
+        }
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/agent/')) {
         const id = pathname.split('/api/agent/')[1];
@@ -2291,6 +2462,22 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
         await ctx.chatAccess.cancelWork(input, context, output);
         sendJson(res, 200, { cancelled: true });
+
+      } else if (method === 'POST' && pathname === '/api/chat/confirm-intent') {
+        const input = Object.assign(new ConfirmIntentInput(), {
+          session_id: body.session_id || params.get('sessionId') || '',
+          work_id: body.work_id || '',
+          action: body.action || 'KEEP',
+          understood_requirement: body.understood_requirement || '',
+        });
+        const output = new ConfirmIntentOutput();
+        const context = new ChatContext();
+        await ctx.chatAccess.confirmIntent(input, context, output);
+        sendJson(res, 200, {
+          success: output.success,
+          action_applied: output.action_applied,
+          next_status: output.next_status,
+        });
 
       } else if (method === 'POST' && pathname === '/api/chat/create-session') {
         const input = Object.assign(new CreateSessionInput(), { session_title: body.title || body.session_title || '' });
@@ -3696,6 +3883,11 @@ async function main() {
   console.log('[dev-server] Initializing brian-backend (real backends, no mocks)...');
   const ctx = await buildContext();
   const server = createServer(ctx);
+  // 防止 Node.js HTTP Server 默认超时中断长连接（如 SSE 对话流或多轮 Agent 思考）
+  server.timeout = 0;
+  server.requestTimeout = 0;
+  server.headersTimeout = 0;
+  server.keepAliveTimeout = 120000;
 
   // WebSocket server (Vite HMR proxy / future streaming)
   const wss = new WebSocketServer({ server, path: '/ws' });

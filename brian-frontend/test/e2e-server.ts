@@ -175,7 +175,9 @@ export async function setupE2ETestEnvironment(): Promise<E2ETestContext> {
   const mqAccess = new MQAccess(relationDb, logger);
   await mqAccess.initialize();
 
-  const logAccess = new LogAccess(relationDb, logger);
+  const logRelationDb = new RelationDBAccess({ dbPath: ':memory:', autoCreateConfigTable: true });
+  await logRelationDb.initialize();
+  const logAccess = new LogAccess(logRelationDb, logger);
   await logAccess.initialize();
 
   addColumnIfNotExists(relationDb, 'skill_usage', 'agent_skill_id', 'TEXT');

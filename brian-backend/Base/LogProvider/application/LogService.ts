@@ -338,7 +338,8 @@ export class LogService {
     return true;
   }
 
-  /** 获取日志（getLog）- 从文件中搜索第一条匹配 */
+  // ===== 原始 getLog 方法（保留作为参考）=====
+  /*
   async getLog(
     input: GetLogInput,
     _context: LogContext,
@@ -364,8 +365,57 @@ export class LogService {
     output.log = soOutput.list.length > 0 ? soOutput.list[0] : null;
     return true;
   }
+  */
 
-  /** 搜索日志（soLog）- 从文件中读取并过滤 */
+  /** 获取日志（getLog）- 从文件或 SQLite 中查找第一条匹配记录 */
+  async getLog(
+    input: GetLogInput,
+    _context: LogContext,
+    output: GetLogOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+
+    if (input.id) {
+      const row = await this.relationDb.selectOne(LOG_RECORD_TABLE, [
+        { field: 'id', operator: Operator.EQ, value: input.id },
+      ]);
+      if (row) {
+        output.log = {
+          id: String(row.id),
+          created: Number(row.created),
+          updated: Number(row.updated),
+          level: String(row.level),
+          source: String(row.source),
+          message: String(row.message),
+          trace_id: row.trace_id ? String(row.trace_id) : undefined,
+          caller: row.caller ? String(row.caller) : undefined,
+          metadata: row.metadata ? (() => { try { return JSON.parse(String(row.metadata)) as Record<string, unknown>; } catch { return undefined; } })() : undefined,
+          elapsed_ms: row.elapsed_ms ? Number(row.elapsed_ms) : undefined,
+        };
+        return true;
+      }
+    }
+
+    const soOutput = new SoLogOutput();
+    const soInput = new SoLogInput();
+    if (input.conditions) {
+      for (const cond of input.conditions) {
+        if (cond.field === 'source' && cond.operator === Operator.EQ) {
+          soInput.source = String(cond.value);
+        }
+        if (cond.field === 'level' && cond.operator === Operator.EQ) {
+          soInput.level = String(cond.value);
+        }
+      }
+    }
+    soInput.page = { current: 1, size: 1 };
+    await this.soLog(soInput, _context, soOutput);
+    output.log = soOutput.list.length > 0 ? soOutput.list[0] : null;
+    return true;
+  }
+
+  // ===== 原始 soLog 方法（保留作为参考）=====
+  /*
   async soLog(
     input: SoLogInput,
     _context: LogContext,
@@ -425,8 +475,71 @@ export class LogService {
     output.total = results.length;
     return true;
   }
+  */
 
-  /** 删除日志（delLog）- 删除日志文件 */
+  /** 搜索日志（soLog）- 从文件中读取并过滤 */
+  async soLog(
+    input: SoLogInput,
+    _context: LogContext,
+    output: SoLogOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+
+    // 确定搜索文件范围
+    const files: Array<{ source: string; file: string }> = input.source
+      ? this.getModuleFiles(input.source).map((f) => ({ source: input.source!, file: f }))
+      : this.getAllModuleFiles();
+
+    const results: LogRecord[] = [];
+    for (const { source, file } of files) {
+      let content: string;
+      try {
+        content = readFileSync(file, 'utf-8');
+      } catch {
+        continue;
+      }
+      const lines = content.split('\n').filter((l) => l.trim());
+      for (const line of lines) {
+        const record = this.parseLogLine(line, source);
+        if (!record) {
+          continue;
+        }
+        // 过滤
+        if (input.level && record.level !== input.level) {
+          continue;
+        }
+        if (input.source && record.source !== input.source) {
+          continue;
+        }
+        if (input.trace_id && record.trace_id !== input.trace_id) {
+          continue;
+        }
+        if (input.keyword && !record.message.includes(input.keyword)) {
+          continue;
+        }
+        if (input.start_time !== undefined && record.created < input.start_time) {
+          continue;
+        }
+        if (input.end_time !== undefined && record.created > input.end_time) {
+          continue;
+        }
+        results.push(record);
+      }
+    }
+
+    // 排序（默认 created DESC）
+    results.sort((a, b) => b.created - a.created);
+
+    // 分页
+    const page = input.page ?? { current: 1, size: 50 };
+    const offset = (page.current - 1) * page.size;
+    output.list = results.slice(offset, offset + page.size);
+    output.total = results.length;
+    return true;
+  }
+
+  // ===== 原始 delLog 方法（保留作为参考）=====
+  /*
   async delLog(
     input: DelLogInput,
     _context: LogContext,
@@ -477,6 +590,139 @@ export class LogService {
     output.affected_rows = deletedCount;
     return true;
   }
+  */
+
+  /** 删除日志（delLog）- 支持删除 SQLite 与文件中的日志 */
+  async delLog(
+    input: DelLogInput,
+    _context: LogContext,
+    output: DelLogOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+
+    let deletedCount = 0;
+
+    // 文件清理
+    if (this.writeMode === 'FILE' || this.writeMode === 'BOTH') {
+      if (input.ids) {
+        for (const moduleName of input.ids) {
+          const files = this.getModuleFiles(moduleName);
+          for (const file of files) {
+            try {
+              unlinkSync(file);
+              deletedCount++;
+            } catch {
+              // 忽略
+            }
+          }
+        }
+      }
+
+      if (input.before_time !== undefined) {
+        const allFiles = this.getAllModuleFiles();
+        for (const { file } of allFiles) {
+          try {
+            const content = readFileSync(file, 'utf-8');
+            const lines = content.split('\n').filter((l) => l.trim());
+            const kept = lines.filter((line) => {
+              const record = this.parseLogLine(line, '');
+              return record ? record.created >= input.before_time! : true;
+            });
+            if (kept.length < lines.length) {
+              deletedCount += lines.length - kept.length;
+              writeFileSync(file, kept.join('\n') + '\n', 'utf-8');
+            }
+          } catch {
+            // 忽略
+          }
+        }
+      }
+    }
+
+    // SQLite 清理
+    if (this.writeMode === 'SQLITE' || this.writeMode === 'BOTH') {
+      try {
+        if (input.ids && input.ids.length > 0) {
+          for (const idOrSource of input.ids) {
+            const dbDeletedById = await this.relationDb.delete(LOG_RECORD_TABLE, [
+              { field: 'id', operator: Operator.EQ, value: idOrSource },
+            ]);
+            const dbDeletedBySource = await this.relationDb.delete(LOG_RECORD_TABLE, [
+              { field: 'source', operator: Operator.EQ, value: idOrSource },
+            ]);
+            if (this.writeMode === 'SQLITE') {
+              deletedCount += dbDeletedById + dbDeletedBySource;
+            }
+          }
+        }
+
+        if (input.before_time !== undefined) {
+          const dbDeleted = await this.relationDb.delete(LOG_RECORD_TABLE, [
+            { field: 'created', operator: Operator.LT, value: input.before_time },
+          ]);
+          if (this.writeMode === 'SQLITE') {
+            deletedCount += dbDeleted;
+          }
+        }
+
+        if (input.conditions && input.conditions.length > 0) {
+          const dbDeleted = await this.relationDb.delete(LOG_RECORD_TABLE, input.conditions);
+          if (this.writeMode === 'SQLITE') {
+            deletedCount += dbDeleted;
+          }
+        }
+      } catch {
+        // 忽略异常
+      }
+    }
+
+    output.affected_rows = deletedCount;
+    return true;
+  }
+
+  // ===== 原始 countLog 方法（保留作为参考）=====
+  /*
+  async countLog(
+    input: CountLogInput,
+    _context: LogContext,
+    output: CountLogOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+
+    const files = input.source
+      ? this.getModuleFiles(input.source)
+      : this.getAllModuleFiles().map((f) => f.file);
+
+    let count = 0;
+    for (const file of files) {
+      let content: string;
+      try {
+        content = readFileSync(file, 'utf-8');
+      } catch {
+        continue;
+      }
+      const lines = content.split('\n').filter((l) => l.trim());
+      for (const line of lines) {
+        const record = this.parseLogLine(line, '');
+        if (!record) {
+          continue;
+        }
+        if (input.level && record.level !== input.level) {
+          continue;
+        }
+        if (input.start_time !== undefined && record.created < input.start_time) {
+          continue;
+        }
+        if (input.end_time !== undefined && record.created > input.end_time) {
+          continue;
+        }
+        count++;
+      }
+    }
+    output.count = count;
+    return true;
+  }
+  */
 
   /** 统计日志数量（countLog）- 从文件中统计 */
   async countLog(

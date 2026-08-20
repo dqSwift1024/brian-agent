@@ -156,6 +156,19 @@ export class CancelWorkOutput extends Output {
   cancelled = false;
 }
 
+export class ConfirmIntentInput extends Input {
+  session_id!: string;
+  work_id!: string;
+  action!: 'APPROVE' | 'KEEP' | 'CANCEL';
+  understood_requirement?: string;
+}
+
+export class ConfirmIntentOutput extends Output {
+  success = false;
+  action_applied = '';
+  next_status = '';
+}
+
 export class ConfigChatInput extends Input {
   max_messages_per_session?: number;
   sse_heartbeat_interval_ms?: number;

@@ -1,6 +1,6 @@
 import type { RelationDBAccess, LLMAccess, PromptsAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
-import type { InfoCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import { PlannerAgentSchemaInitializer } from '../infrastructure/PlannerAgentSchemaInitializer';
@@ -24,10 +24,11 @@ export class PlannerAgentAccess {
     infoCore: InfoCoreAccess,
     agentBuilder: AgentBuilderAccess,
     agentLibrary: AgentLibraryAccess,
+    llmCore?: LLMCoreAccess,
     logger?: Logger,
   ) {
     this.initPromise = new PlannerAgentSchemaInitializer(relationDb).init();
-    const raw = new PlannerAgentService(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary);
+    const raw = new PlannerAgentService(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, llmCore);
     this.service = AopProxy.wrap(raw, { logger });
   }
 

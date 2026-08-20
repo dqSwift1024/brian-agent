@@ -23,6 +23,7 @@ import {
   ExecPromptInput,
   ExecPromptOutput,
   McpInstallRecord,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
 import {
   simpleSimilarity,
@@ -249,16 +250,17 @@ export class MCPCoreService {
     );
 
     let prompt: string;
-
-    if (promptTemplateId) {
+    const variables = {
+      agent_id: input.agent_id,
+      context_id: input.context_id,
+      interact_id: input.interact_id,
+      available_mcps: mcpDescriptions.join('\n'),
+    };
+    const id = promptTemplateId || PROMPT_IDS.mcpMatch;
+    try {
       const execPromptInput = new ExecPromptInput();
-      execPromptInput.id = promptTemplateId;
-      execPromptInput.variables = {
-        agent_id: input.agent_id,
-        context_id: input.context_id,
-        interact_id: input.interact_id,
-        available_mcps: mcpDescriptions.join('\n'),
-      };
+      execPromptInput.id = id;
+      execPromptInput.variables = variables;
       const execPromptOutput = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         execPromptInput,
@@ -266,8 +268,13 @@ export class MCPCoreService {
         execPromptOutput,
       );
       prompt = execPromptOutput.prompt;
-    } else {
-      prompt = `You are an MCP tool recommender. Given the following agent and available MCP tools, rank the most relevant MCP tools for this agent's task. Return ONLY a JSON array of MCP IDs in order of relevance.\n\nAgent ID: ${input.agent_id}\n\nAvailable MCP tools:\n${mcpDescriptions.join('\n')}\n\nReturn JSON array of MCP IDs only.`;
+      if (!prompt) {
+        const tpl = getBuiltinTemplate(PROMPT_IDS.mcpMatch);
+        prompt = tpl ? renderTemplate(tpl, variables) : '';
+      }
+    } catch {
+      const tpl = getBuiltinTemplate(PROMPT_IDS.mcpMatch);
+      prompt = tpl ? renderTemplate(tpl, variables) : '';
     }
 
     const execInput = new ExecLLMInput();

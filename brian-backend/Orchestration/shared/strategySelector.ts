@@ -3,6 +3,7 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   ExecLLMInput, ExecLLMOutput, LLMContext,
   JsonParser,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type PromptsAccess, type LLMAccess, type Logger,
 } from '@brian-agent/base';
 
@@ -14,7 +15,7 @@ export interface SelectStrategyResult {
 }
 
 const DEFAULT_THRESHOLD = 50;
-const DEFAULT_TEMPLATE_ID = 'strategy_selector_prompt';
+const DEFAULT_TEMPLATE_ID = PROMPT_IDS.strategySelector;
 
 export async function selectOrchestrationStrategy(
   relationDb: RelationDBAccess,
@@ -44,19 +45,28 @@ export async function selectOrchestrationStrategy(
     : '';
 
   let promptText: string;
+  const variables = { task_content: userQuery, threshold, context_data: ctxStr };
   try {
     const promptInput = Object.assign(new ExecPromptInput(), {
       id: templateId,
-      variables: { user_query: userQuery, threshold, ctx_str: ctxStr },
+      variables,
     });
     const promptOutput = new ExecPromptOutput();
     await promptsAccess.execPrompt(promptInput, new PromptContext(), promptOutput);
     promptText = promptOutput.prompt;
+    if (!promptText) {
+      const tpl = getBuiltinTemplate(DEFAULT_TEMPLATE_ID);
+      promptText = tpl ? renderTemplate(tpl, variables) : '';
+    }
   } catch (err: unknown) {
-    logger?.error?.('selectOrchestrationStrategy: prompt render failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { strategy: defaultStrategy, complexity: 0, reason: 'prompt_render_failed' };
+    const tpl = getBuiltinTemplate(DEFAULT_TEMPLATE_ID);
+    promptText = tpl ? renderTemplate(tpl, variables) : '';
+    if (!promptText) {
+      logger?.error?.('selectOrchestrationStrategy: prompt render failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { strategy: defaultStrategy, complexity: 0, reason: 'prompt_render_failed' };
+    }
   }
 
   try {

@@ -22,7 +22,7 @@ export function initAgentSchema(db: RelationDBAccess): void {
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
       "agent_id" TEXT NOT NULL, "agent_name" TEXT NOT NULL DEFAULT '', "agent_purpose" TEXT NOT NULL DEFAULT '',
       "agent_type" TEXT NOT NULL DEFAULT 'WORKER', "strategy_id" TEXT NOT NULL DEFAULT '',
-      "llm_id" TEXT NOT NULL DEFAULT '', "soul_id" TEXT NOT NULL DEFAULT '',
+      "soul_id" TEXT NOT NULL DEFAULT '',
       "task_signature" TEXT NOT NULL DEFAULT '', "usage_count" INTEGER NOT NULL DEFAULT 0,
       "eval_score" INTEGER NOT NULL DEFAULT 50, "enable" INTEGER NOT NULL DEFAULT 1
     )`,
@@ -30,6 +30,12 @@ export function initAgentSchema(db: RelationDBAccess): void {
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
       "agent_id" TEXT NOT NULL, "work_id" TEXT NOT NULL DEFAULT '',
       "interact_id" TEXT NOT NULL DEFAULT '', "usage_context" TEXT NOT NULL DEFAULT ''
+    )`,
+    `CREATE TABLE IF NOT EXISTS "agent_usage_daily" (
+      "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
+      "agent_id" TEXT NOT NULL, "usage_date" TEXT NOT NULL,
+      "usage_count" INTEGER NOT NULL DEFAULT 0,
+      UNIQUE("agent_id", "usage_date")
     )`,
     `CREATE TABLE IF NOT EXISTS "agent_opt_rule" (
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,

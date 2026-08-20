@@ -4,6 +4,7 @@ import {
   ExecLLMInput, ExecLLMOutput, LLMContext,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   NotFoundError, JsonParser,
+  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -1019,29 +1020,15 @@ export class UserProfileService {
   ): Promise<{ value: unknown; confidence: number; evidence: unknown[] }> {
     const templateId = String(dirConfig.prompt_template_id ?? config.profile_analysis_prompt_template_id ?? '');
 
-    let prompt: string;
-    if (templateId) {
-      try {
-        const promptOut = new ExecPromptOutput();
-        await this.promptsAccess.execPrompt(
-          Object.assign(new ExecPromptInput(), {
-            id: templateId,
-            variables: {
-              direction_key: directionKey,
-              direction_name: directionName,
-              conversation_sample: conversationText.slice(0, 4000),
-            },
-          }),
-          new PromptContext(),
-          promptOut,
-        );
-        prompt = promptOut.prompt || this.buildDefaultAnalysisPrompt(directionKey, directionName, conversationText);
-      } catch {
-        prompt = this.buildDefaultAnalysisPrompt(directionKey, directionName, conversationText);
-      }
-    } else {
-      prompt = this.buildDefaultAnalysisPrompt(directionKey, directionName, conversationText);
-    }
+    const prompt = await this.renderPrompt(
+      templateId,
+      PROMPT_IDS.profileAnalysis,
+      {
+        direction_key: directionKey,
+        direction_name: directionName,
+        conversation_sample: conversationText.slice(0, 4000),
+      },
+    );
 
     try {
       const dirLlmId = String(dirConfig.llm_id ?? '');
@@ -1109,19 +1096,34 @@ export class UserProfileService {
     directionName: string,
     conversationText: string,
   ): string {
-    const truncated = conversationText.slice(0, 4000);
-    return `Analyze the user's "${directionName}" (${directionKey}) based on these conversations:
+    const tpl = getBuiltinTemplate(PROMPT_IDS.profileAnalysis);
+    return tpl
+      ? renderTemplate(tpl, {
+        direction_key: directionKey,
+        direction_name: directionName,
+        conversation_sample: conversationText.slice(0, 4000),
+      })
+      : '';
+  }
 
-${truncated || 'No conversation data available.'}
-
-Return a JSON object with:
-{
-  "value": <the analyzed value - can be string, number, object, or array>,
-  "confidence": <number 0-1>,
-  "evidence": <array of evidence strings from the conversations>
-}
-
-Return ONLY valid JSON, no other text.`;
+  /** 渲染 Prompt：配置模板 → 内置模板 → 内存兜底 */
+  private async renderPrompt(
+    templateId: string | undefined,
+    builtinId: string,
+    variables: Record<string, unknown>,
+  ): Promise<string> {
+    const id = templateId || builtinId;
+    try {
+      const promptOut = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        Object.assign(new ExecPromptInput(), { id, variables }),
+        new PromptContext(),
+        promptOut,
+      );
+      if (promptOut.prompt) return promptOut.prompt;
+    } catch { /* use fallback */ }
+    const tpl = getBuiltinTemplate(builtinId);
+    return tpl ? renderTemplate(tpl, variables) : '';
   }
 
   private parseLLMAnalysis(response: string): { value: unknown; confidence: number; evidence: unknown[] } {

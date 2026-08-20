@@ -1,6 +1,6 @@
 import type { RelationDBAccess, LLMAccess, PromptsAccess, MQAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
-import type { InfoCoreAccess, MQCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentExecutionAccess } from '../../AgentExecution/access/AgentExecutionAccess';
@@ -31,12 +31,13 @@ export class EvolutorAgentAccess {
     agentBuilder: AgentBuilderAccess,
     agentLibrary: AgentLibraryAccess,
     agentExecution: AgentExecutionAccess,
+    llmCore?: LLMCoreAccess,
     logger?: Logger,
   ) {
     this.initPromise = new EvolutorAgentSchemaInitializer(relationDb).init();
     const raw = new EvolutorAgentService(
       relationDb, llmAccess, promptsAccess, infoCore, mqAccess, mqCore,
-      agentBuilder, agentLibrary, agentExecution,
+      agentBuilder, agentLibrary, agentExecution, llmCore,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }

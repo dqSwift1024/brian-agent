@@ -13,5 +13,6 @@ export {
   UpdateAgentRuleInput, UpdateAgentRuleOutput,
   ConfigAgentLibraryInput, ConfigAgentLibraryOutput,
   AGENT_TABLE, AGENT_USAGE_TABLE, AGENT_OPT_RULE_TABLE, AGENT_LIBRARY_CONFIG_TABLE,
+  VALID_AGENT_TYPES,
 } from './domain/types';
 export type { AgentRecord, AgentUsageRecord, AgentOptRuleRecord, AgentLibraryConfigRecord } from './domain/types';

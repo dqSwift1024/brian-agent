@@ -19,6 +19,7 @@ import {
   PinMessageInput, PinMessageOutput,
   GetMessageGraphInput, GetMessageGraphOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   SSEEvent,
@@ -111,6 +112,12 @@ export class ChatAccess {
     i: CancelWorkInput, c: ChatContext, o: CancelWorkOutput,
   ): Promise<boolean> {
     return this.service.cancelWork(i, c, o);
+  }
+
+  async confirmIntent(
+    i: ConfirmIntentInput, c: ChatContext, o: ConfirmIntentOutput,
+  ): Promise<boolean> {
+    return this.service.confirmIntent(i, c, o);
   }
 
   async openChatStream(

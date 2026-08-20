@@ -22,7 +22,11 @@ import { SaveUserProfileInput, SaveUserProfileOutput, WriterAgentContext } from 
 import type { EvolutorAgentAccess } from '@brian-agent/agent';
 import { GetEvaluationInput, GetEvaluationOutput, EvolutorAgentContext } from '@brian-agent/agent';
 import type { OrchestrationEntryAccess } from '@brian-agent/orchestration';
-import { OrchestrationEntryContext, ReceiveWorkInput, ReceiveWorkOutput, CancelWorkInput as OrchCancelWorkInput, CancelWorkOutput as OrchCancelWorkOutput } from '@brian-agent/orchestration';
+import {
+  OrchestrationEntryContext, ReceiveWorkInput, ReceiveWorkOutput,
+  CancelWorkInput as OrchCancelWorkInput, CancelWorkOutput as OrchCancelWorkOutput,
+  ConfirmIntentInput as OrchConfirmIntentInput, ConfirmIntentOutput as OrchConfirmIntentOutput,
+} from '@brian-agent/orchestration';
 import {
   ChatContext,
   SubmitWorkInput, SubmitWorkOutput,
@@ -37,6 +41,7 @@ import {
   PinMessageInput, PinMessageOutput,
   GetMessageGraphInput, GetMessageGraphOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   type SSEEvent,
@@ -387,11 +392,12 @@ export class ChatService {
     const elapsedMs = Date.now() - startedAt;
     const finalResponse = rwOutput.final_response || '';
 
-    // 通过 StreamAccess 进行 2-5 字符随机 chunk 打字机流式推送
+    // 通过 StreamAccess 进行 2-5 字符随机 chunk 打字机流式推送（无延迟，实时推送）
     if (this.streamAccess && typeof this.streamAccess.pushText === 'function') {
       await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
         work_id: workId,
         interact_id: interactId,
+        chunk_delay_ms: 0,
       });
     }
 
@@ -1052,6 +1058,30 @@ export class ChatService {
       output.cancelled = false;
       return false;
     }
+  }
+
+  async confirmIntent(
+    input: ConfirmIntentInput,
+    _context: ChatContext,
+    output: ConfirmIntentOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) throw new ValidationError('work_id is required');
+    if (!input.action) throw new ValidationError('action is required');
+
+    const confirmIn = Object.assign(new OrchConfirmIntentInput(), {
+      session_id: input.session_id,
+      work_id: input.work_id,
+      action: input.action,
+      understood_requirement: input.understood_requirement,
+    });
+    const confirmOut = new OrchConfirmIntentOutput();
+    const confirmCtx = new OrchestrationEntryContext();
+
+    const ok = await this.orchestrationEntry.confirmIntent(confirmIn, confirmCtx, confirmOut);
+    output.success = confirmOut.success;
+    output.action_applied = confirmOut.action_applied;
+    output.next_status = confirmOut.next_status;
+    return ok;
   }
 
   async configChat(

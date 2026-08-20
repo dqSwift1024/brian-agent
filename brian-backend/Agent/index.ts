@@ -8,3 +8,4 @@ export * from './PlannerAgent';
 export * from './WriterAgent';
 export * from './EvolutorAgent';
 export * from './SummaryAgent';
+export * from './IntentAgent';

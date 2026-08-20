@@ -1,4 +1,4 @@
-import type { RelationDBAccess, Logger } from '@brian-agent/base';
+import type { RelationDBAccess, Logger, StreamAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { AgentBuilderAccess, AgentExecutionAccess, AgentLibraryAccess } from '@brian-agent/agent';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -29,11 +29,12 @@ export class OrchestrationExecutionAccess {
     mqAccess?: any,
     mqCore?: any,
     logger?: Logger,
+    streamAccess?: StreamAccess,
   ) {
     this.initPromise = new OrchestrationExecutionSchemaInitializer(relationDb).init();
     const raw = new OrchestrationExecutionService(
       relationDb, agentBuilder, agentExecution, agentLibrary, infoCore,
-      mqAccess, mqCore, logger,
+      mqAccess, mqCore, logger, streamAccess,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }
