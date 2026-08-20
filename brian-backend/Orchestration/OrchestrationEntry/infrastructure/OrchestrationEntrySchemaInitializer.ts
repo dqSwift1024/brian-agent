@@ -1,29 +1,7 @@
 import type { RelationDBAccess } from '@brian-agent/base';
+import { PROMPT_IDS } from '@brian-agent/base';
 
-const STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID = 'strategy_selector_prompt';
-
-const STRATEGY_SELECTOR_PROMPT_CONTENT = [
-  'You are selecting the best orchestration strategy for a user task. Given the user task below, analyze its complexity and choose the appropriate strategy.',
-  '',
-  'Strategy threshold: complexity >= {{threshold}} → PLANNING (must decompose into subtasks), otherwise SIMPLE (single Agent execution).',
-  '',
-  '{{ctx_str}}User task: {{user_query}}',
-  '',
-  'Respond with ONLY the JSON object. Do not include any other text.',
-  '',
-  '{',
-  '  "complexity": <0-100 integer>',
-  '  "strategy": "SIMPLE" | "PLANNING"',
-  '  "reason": "<brief explanation>"',
-  '  "plan": [{"step": 1, "description": "..."}, ...]',
-  '}',
-  '',
-  'Fields:',
-  '- complexity: integer 0-100 indicating task complexity.',
-  '- strategy: "SIMPLE" for simple queries, "PLANNING" for tasks requiring multi-step decomposition.',
-  '- reason: brief explanation of the strategy choice.',
-  '- plan: only for PLANNING, lists the decomposed subtasks in execution order.',
-].join('\n');
+const STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID = PROMPT_IDS.strategySelector;
 
 export class OrchestrationEntrySchemaInitializer {
   constructor(private readonly relationDb: RelationDBAccess) {}
@@ -75,7 +53,7 @@ export class OrchestrationEntrySchemaInitializer {
         default_strategy_id TEXT,
         max_plan_retries INTEGER NOT NULL DEFAULT 2,
         max_concurrent INTEGER NOT NULL DEFAULT 1,
-        dag_timeout_ms INTEGER NOT NULL DEFAULT 300000,
+        dag_timeout_ms INTEGER NOT NULL DEFAULT 600000,
         max_execution_depth INTEGER NOT NULL DEFAULT 50,
         node_timeout_ms INTEGER NOT NULL DEFAULT 300000,
         trace_enabled INTEGER NOT NULL DEFAULT 1,
@@ -95,26 +73,6 @@ export class OrchestrationEntrySchemaInitializer {
         prompt_template       TEXT    NOT NULL,
         enable                INTEGER NOT NULL DEFAULT 1
       )
-    `);
-
-    this.relationDb.executeRaw(`
-      INSERT OR IGNORE INTO prompt_template
-        (id, created, updated, prompt_template_title, prompt_template_brief, prompt_template, enable)
-      VALUES
-        ('${STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID}', ${now}, ${now},
-         'Orchestration Strategy Selector',
-         '分析用户任务复杂度并选择 SIMPLE 或 PLANNING 编排策略',
-         '${STRATEGY_SELECTOR_PROMPT_CONTENT.replace(/'/g, "''")}',
-         1)
-    `);
-
-    this.relationDb.executeRaw(`
-      UPDATE prompt_template
-      SET prompt_template_title = 'Orchestration Strategy Selector',
-          prompt_template_brief = '分析用户任务复杂度并选择 SIMPLE 或 PLANNING 编排策略',
-          prompt_template = '${STRATEGY_SELECTOR_PROMPT_CONTENT.replace(/'/g, "''")}',
-          updated = ${now}
-      WHERE id = '${STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID}'
     `);
 
     this.relationDb.executeRaw(`

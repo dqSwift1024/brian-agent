@@ -35,7 +35,7 @@ export class WriteInput extends Input {
   work_id!: string;
   interact_id!: string;
   user_query!: string;
-  agent_results!: Array<{ agent_id: string; task_content: string; result: string }>;
+  agent_results!: Array<{ agent_id: string; task_content?: string; result?: string; answer?: string }>;
   user_preferences?: { language?: string; style?: string; depth?: string; format?: string };
 }
 

@@ -269,7 +269,7 @@
 **入参**：
 - input：ConfigOrchestrationExecutionInput（继承 Input），包含以下字段：
   - max_concurrent：默认最大并发执行数（可选，默认 1）
-  - dag_timeout_ms：DAG 执行总超时时间（可选，默认 300000 = 5 分钟，0 表示不限制）
+  - dag_timeout_ms：DAG 执行总超时时间（可选，默认 600000 = 10 分钟，0 表示不限制）
 - context：ConfigOrchestrationExecutionContext（继承 Context），会话上下文（session_id 等）
 - output：ConfigOrchestrationExecutionOutput（继承 Output），承载返回内容：
   - 当前生效的全部配置

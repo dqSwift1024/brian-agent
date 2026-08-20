@@ -20,7 +20,7 @@
   - agent_results：上游 Agent 执行结果列表，每项含：
     - agent_id
     - task_content：该 Agent 处理的任务描述
-    - result：该 Agent 的执行输出
+    - result / answer：该 Agent 的执行输出（系统兼容 result 与 answer 字段）
   - user_preferences：用户偏好配置（可选，格式见 3.1）
 - context：WriteContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：WriteOutput（继承 Output），承载返回内容：
@@ -160,3 +160,21 @@
 | depth | 回复深度 | VARCHAR | N | | shallow / medium / deep |
 | format | 回复格式 | VARCHAR | N | | TEXT / MARKDOWN / JSON |
 | additional_preferences | 额外偏好 | TEXT | Y | | |
+
+## 代码变更记录
+
+### [2026-08-20] 修复 WriterAgent 结果字段映射与 DAG 执行超时默认阈值
+**变更原因**：
+解决问答任务（如 `96eb7296-7201-4781-803e-395a5b26365f`）执行结果出现"上游 Agent 未返回有效数据（结果均为 undefined）"的问题；以及避免复杂多 Task 的 Agent DAG 在 5 分钟默认超时触发截断。
+
+**修改的方法**：
+  - `WriterAgentService.write(input, ctx, output)` — 兼容量化读取 `r.answer ?? r.result`
+  - `WriteInput.agent_results` — 类型定义扩展为支持 `answer` 和 `result`
+  - `OrchestrationExecutionConfig.dag_timeout_ms` — 默认值从 300,000ms（5分钟）调整为 600,000ms（10分钟）
+
+**影响的端点**：
+  - HTTP 接口 `POST /api/chat` 及后端 DAG 编排完整运行链路
+
+**可能存在的问题**：
+  - 无已知问题；改动均向下兼容旧格式数据。
+

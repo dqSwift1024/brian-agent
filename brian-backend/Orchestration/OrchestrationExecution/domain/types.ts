@@ -8,7 +8,7 @@ export class OrchestrationExecutionContext extends Context {
 
 export class OrchestrationExecutionConfig {
   max_concurrent = 1;
-  dag_timeout_ms = 300000;
+  dag_timeout_ms = 600000;
 }
 
 export interface TaskNode {
