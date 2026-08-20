@@ -883,6 +883,7 @@ async function buildThinkingBlocksAndDag(
             citingMessages: [],
           },
           input: `需求理解: ${String(intentData.understood_requirement ?? '')}`,
+          prompt: String(intentData.prompt ?? ''),
           output: {
             understood_requirement: intentData.understood_requirement,
             match_score: intentData.match_score,
@@ -952,42 +953,105 @@ async function buildThinkingBlocksAndDag(
         citingMessages: [],
       };
 
-      if (row.task_content) {
-        try {
-          const parsedTask = JSON.parse(String(row.task_content));
-          if (parsedTask && typeof parsedTask === 'object') {
-            if (parsedTask.user_query) {
-              inputQuery = String(parsedTask.user_query);
-            } else if (parsedTask.task_content) {
-              inputQuery = String(parsedTask.task_content);
-            } else {
-              inputQuery = String(row.task_content);
-            }
+      // ===== 原始代码（保留参考）=====
+      // if (row.task_content) {
+      //   try {
+      //     const parsedTask = JSON.parse(String(row.task_content));
+      //     if (parsedTask && typeof parsedTask === 'object') {
+      //       if (parsedTask.user_query) {
+      //         inputQuery = String(parsedTask.user_query);
+      //       } else if (parsedTask.task_content) {
+      //         inputQuery = String(parsedTask.task_content);
+      //       } else {
+      //         inputQuery = String(row.task_content);
+      //       }
+      //       if (Array.isArray(parsedTask.session_context)) {
+      //         contextData.citingMessages = parsedTask.session_context;
+      //       }
+      //       if (parsedTask.context_categories) {
+      //         contextData.categories = parsedTask.context_categories;
+      //         if (Array.isArray(parsedTask.context_categories.citing)) contextData.citingMessages = parsedTask.context_categories.citing;
+      //         if (Array.isArray(parsedTask.context_categories.timeline)) contextData.timelineMessages = parsedTask.context_categories.timeline;
+      //         if (Array.isArray(parsedTask.context_categories.pinned)) contextData.pinnedMessages = parsedTask.context_categories.pinned;
+      //         if (Array.isArray(parsedTask.context_categories.similarity)) contextData.similarityMessages = parsedTask.context_categories.similarity;
+      //         if (Array.isArray(parsedTask.context_categories.tag_relative)) contextData.tagRelativeMessages = parsedTask.context_categories.tag_relative;
+      //         if (Array.isArray(parsedTask.context_categories.keyword)) contextData.keywordMessages = parsedTask.context_categories.keyword;
+      //         if (Array.isArray(parsedTask.context_categories.random)) contextData.randomMessages = parsedTask.context_categories.random;
+      //       }
+      //       if (parsedTask.context_category_ids) {
+      //         contextData.categoryIds = parsedTask.context_category_ids;
+      //       }
+      //       if (parsedTask.user_profile) {
+      //         contextData.userProfile = parsedTask.user_profile;
+      //       }
+      //     } else {
+      //       inputQuery = String(row.task_content);
+      //     }
+      //   } catch {
+      //     inputQuery = String(row.task_content);
+      //   }
+      // }
 
-            if (Array.isArray(parsedTask.session_context)) {
-              contextData.citingMessages = parsedTask.session_context;
-            }
-            if (parsedTask.context_categories) {
-              contextData.categories = parsedTask.context_categories;
-              if (Array.isArray(parsedTask.context_categories.citing)) contextData.citingMessages = parsedTask.context_categories.citing;
-              if (Array.isArray(parsedTask.context_categories.timeline)) contextData.timelineMessages = parsedTask.context_categories.timeline;
-              if (Array.isArray(parsedTask.context_categories.pinned)) contextData.pinnedMessages = parsedTask.context_categories.pinned;
-              if (Array.isArray(parsedTask.context_categories.similarity)) contextData.similarityMessages = parsedTask.context_categories.similarity;
-              if (Array.isArray(parsedTask.context_categories.tag_relative)) contextData.tagRelativeMessages = parsedTask.context_categories.tag_relative;
-              if (Array.isArray(parsedTask.context_categories.keyword)) contextData.keywordMessages = parsedTask.context_categories.keyword;
-              if (Array.isArray(parsedTask.context_categories.random)) contextData.randomMessages = parsedTask.context_categories.random;
-            }
-            if (parsedTask.context_category_ids) {
-              contextData.categoryIds = parsedTask.context_category_ids;
-            }
-            if (parsedTask.user_profile) {
-              contextData.userProfile = parsedTask.user_profile;
+      // ===== 修改后的代码：剥离 work_context 前缀 JSON，重建完整分类 Context 数据与干净 Input Query =====
+      if (row.task_content) {
+        let rawContentStr = String(row.task_content);
+        let extractedWorkContext: any = null;
+
+        if (rawContentStr.includes('\n---\n')) {
+          const idx = rawContentStr.indexOf('\n---\n');
+          const firstPart = rawContentStr.slice(0, idx).trim();
+          const restPart = rawContentStr.slice(idx + 5).trim();
+          if (firstPart.startsWith('{') && firstPart.endsWith('}')) {
+            try {
+              extractedWorkContext = JSON.parse(firstPart);
+              inputQuery = restPart;
+            } catch {
+              inputQuery = rawContentStr;
             }
           } else {
-            inputQuery = String(row.task_content);
+            inputQuery = rawContentStr;
           }
-        } catch {
-          inputQuery = String(row.task_content);
+        } else if (rawContentStr.startsWith('{') && rawContentStr.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(rawContentStr);
+            if (parsed && typeof parsed === 'object') {
+              extractedWorkContext = parsed;
+              if (parsed.user_query) inputQuery = String(parsed.user_query);
+              else if (parsed.task_content) inputQuery = String(parsed.task_content);
+              else inputQuery = rawContentStr;
+            } else {
+              inputQuery = rawContentStr;
+            }
+          } catch {
+            inputQuery = rawContentStr;
+          }
+        } else {
+          inputQuery = rawContentStr;
+        }
+
+        if (extractedWorkContext && typeof extractedWorkContext === 'object') {
+          if (Array.isArray(extractedWorkContext.session_context)) {
+            contextData.citingMessages = extractedWorkContext.session_context;
+          }
+          if (extractedWorkContext.context_categories) {
+            contextData.categories = extractedWorkContext.context_categories;
+            if (Array.isArray(extractedWorkContext.context_categories.citing)) contextData.citingMessages = extractedWorkContext.context_categories.citing;
+            if (Array.isArray(extractedWorkContext.context_categories.timeline)) contextData.timelineMessages = extractedWorkContext.context_categories.timeline;
+            if (Array.isArray(extractedWorkContext.context_categories.pinned)) contextData.pinnedMessages = extractedWorkContext.context_categories.pinned;
+            if (Array.isArray(extractedWorkContext.context_categories.similarity)) contextData.similarityMessages = extractedWorkContext.context_categories.similarity;
+            if (Array.isArray(extractedWorkContext.context_categories.tag_relative)) contextData.tagRelativeMessages = extractedWorkContext.context_categories.tag_relative;
+            if (Array.isArray(extractedWorkContext.context_categories.keyword)) contextData.keywordMessages = extractedWorkContext.context_categories.keyword;
+            if (Array.isArray(extractedWorkContext.context_categories.random)) contextData.randomMessages = extractedWorkContext.context_categories.random;
+          }
+          if (extractedWorkContext.context_category_ids) {
+            contextData.categoryIds = extractedWorkContext.context_category_ids;
+          }
+          if (extractedWorkContext.user_profile) {
+            contextData.userProfile = extractedWorkContext.user_profile;
+          }
+          if (Array.isArray(extractedWorkContext.recent_works)) {
+            contextData.recentWorks = extractedWorkContext.recent_works;
+          }
         }
       }
 
@@ -1095,9 +1159,25 @@ async function buildThinkingBlocksAndDag(
       if (!fullRawResponse) {
         fullRawResponse = outputAnswer || content || '';
       }
-      if (sumInputTokens === 0 && sumOutputTokens === 0 && tokenUsage > 0) {
-        sumInputTokens = Math.round(tokenUsage * 0.7);
-        sumOutputTokens = Math.max(0, tokenUsage - sumInputTokens);
+      // ===== 原始代码（保留参考）=====
+      // if (sumInputTokens === 0 && sumOutputTokens === 0 && tokenUsage > 0) {
+      //   sumInputTokens = Math.round(tokenUsage * 0.7);
+      //   sumOutputTokens = Math.max(0, tokenUsage - sumInputTokens);
+      // }
+
+      // ===== 修改后的代码：精准/估算 Token 用量，防止非零 Token 显示为 0 =====
+      if (sumInputTokens === 0 && sumOutputTokens === 0) {
+        if (tokenUsage > 0) {
+          sumInputTokens = Math.round(tokenUsage * 0.7);
+          sumOutputTokens = Math.max(0, tokenUsage - sumInputTokens);
+        } else {
+          const pTokens = Math.ceil((fullPrompt.length || 0) / 4);
+          const rTokens = Math.ceil((fullRawResponse.length || 0) / 4);
+          if (pTokens > 0 || rTokens > 0) {
+            sumInputTokens = pTokens;
+            sumOutputTokens = rTokens;
+          }
+        }
       }
 
       const thinkingStrategy = hasActTools ? 'ReACT' : 'CoT';

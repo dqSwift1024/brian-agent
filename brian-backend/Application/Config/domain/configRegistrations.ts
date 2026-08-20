@@ -206,7 +206,11 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'context_config', 'context_config.random_max_percent', '随机消息最大百分比', 'INT', 20, '随机消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
   core('info_core', 'context_config', 'context_config.total', '上下文总数', 'INT', 1000),
   core('info_core', 'context_config', 'context_config.enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
-  core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),
+  // ===== 原始代码（保留作为参考）=====
+  // core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),
+
+  // ===== 修改后的代码：加上 CITING 显式引用维度 =====
+  core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,CITING,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),
 
   // --- MCPCoreProvider ---
   core('mcp_core', 'basic', 'similarity_threshold', 'MCP 相似度阈值', 'DOUBLE', 0.7, '第1层算法匹配与第2层LLM打分阈值 (0.0-1.0)'),

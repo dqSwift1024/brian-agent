@@ -108,6 +108,7 @@ export class OrchestrationEntryService {
             threshold_score: intentOut.threshold_score,
             reasoning: intentOut.reasoning,
             should_modify_query: intentOut.should_modify_query,
+            prompt: intentOut.prompt,
           });
         }
 
@@ -120,6 +121,7 @@ export class OrchestrationEntryService {
             threshold_score: intentOut.threshold_score,
             reasoning: intentOut.reasoning,
             should_modify_query: intentOut.should_modify_query,
+            prompt: intentOut.prompt,
           },
         };
         const intentMetaData: DataObject[] = [
@@ -566,9 +568,17 @@ export class OrchestrationEntryService {
     let contextCategories: unknown = undefined;
     let contextCategoryIds: unknown = undefined;
     try {
+      // ===== 原始代码（保留作为参考）=====
+      // const ctxInfoInput = Object.assign(new ContextInfoInput(), {
+      //   session_id: input.session_id,
+      //   selected_msg_ids: input.selected_msg_ids,
+      // });
+
+      // ===== 修改后的代码：传入 info: input.user_query 以支撑向量/关键词/标签召回 =====
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: input.session_id,
         selected_msg_ids: input.selected_msg_ids,
+        info: input.user_query,
       });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);

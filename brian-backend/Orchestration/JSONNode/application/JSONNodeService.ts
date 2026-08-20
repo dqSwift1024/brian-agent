@@ -680,9 +680,18 @@ export class JSONNodeService {
     let contextCategoryIds: unknown = undefined;
     try {
       const selectedMsgIds = Array.isArray(sharedData.selected_msg_ids) ? sharedData.selected_msg_ids as string[] : undefined;
+      // ===== 原始代码（保留作为参考）=====
+      // const ctxInfoInput = Object.assign(new ContextInfoInput(), {
+      //   session_id: sessionId,
+      //   selected_msg_ids: selectedMsgIds,
+      // });
+
+      // ===== 修改后的代码：传入 user_query 以支撑向量/关键词/标签召回 =====
+      const userQuery = typeof sharedData.user_query === 'string' ? sharedData.user_query : undefined;
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: sessionId,
         selected_msg_ids: selectedMsgIds,
+        info: userQuery,
       });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, new InfoCoreContext(), ctxInfoOutput);
@@ -732,8 +741,28 @@ export class JSONNodeService {
     };
 
     // 上下文构建过程与结果：流式推送给前端，但不存入消息表 info_raw（避免内容膨胀）
+    // ===== 原始代码（保留参考）=====
+    // if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+    //   await this.streamAccess.pushEvent(sessionId, 'context_built', 'CONTEXT', {
+    //     recent_works_count: recentWorks.length,
+    //     user_profile_present: Boolean(userProfile && Object.keys(userProfile).length > 0),
+    //     session_context_count: Array.isArray(sessionContext) ? sessionContext.length : 0,
+    //     created_at: IdGenerator.now(),
+    //   }, {
+    //     work_id: workId,
+    //     interact_id: (sharedData.interact_id as string) ?? context.interact_id ?? '',
+    //     node_id: 'BUILD_WORK_CONTEXT',
+    //   });
+    // }
+
+    // ===== 修改后的代码：将完整上下文分类与 ID 映射表通过 context_built 事件透传给前端 =====
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
       await this.streamAccess.pushEvent(sessionId, 'context_built', 'CONTEXT', {
+        user_profile: userProfile,
+        session_context: sessionContext,
+        context_categories: contextCategories,
+        context_category_ids: contextCategoryIds,
+        recent_works: recentWorks,
         recent_works_count: recentWorks.length,
         user_profile_present: Boolean(userProfile && Object.keys(userProfile).length > 0),
         session_context_count: Array.isArray(sessionContext) ? sessionContext.length : 0,

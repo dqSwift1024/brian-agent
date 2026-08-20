@@ -241,6 +241,30 @@
   2. **后端摘要使用真实 AI 摘要**：`VisualizationService.getVisualizedMessageDAG` (`GET /api/visualization/message-dag`) 改从 `info_summary` 表读取真实 AI 摘要，不再对原文做 50 字截断。
 - **行为差异**：对话区与 ChatMap 消息框展示完整的 AI 生成摘要（超阈值内容不被截断，≤100字短内容展示完整原文作为摘要）。
 
+### [2026-08-20] "思考过程"弹窗：PromptProvider完整Prompt与引用消息采集分类统计
+
+- **变更原因**：确保"思考过程"弹窗中展示的"Agent 发送给 LLM 的完整 Prompt"全量使用 PromptProvider 渲染返回的完整 Prompt（涵盖 System Soul、提示词模板、对话历史与变量），同时按消息采集方式对"引用的消息"进行精确分类与数量统计。
+- **功能变更**：
+  1. **PromptProvider 完整 Prompt 全链路贯通**：
+     - 在 Agent 层（`AgentExecutionService.ts`、`IntentAgentService.ts`、`PlannerAgentService.ts` 等）将 `promptsAccess.execPrompt` / `PromptProvider` 返回的 `prompt` 完整保存至执行 Trace 记录、`IntentAgentOutput` 与 Work 元数据。
+     - 在实时流式 SSE 事件（`agent_thinking`、`agent_reflection`、`intent_agent_result`、`agent_output`）中全量透传 `prompt` 属性，确保前端流式期间即能完整获取 PromptProvider 渲染的完整 Prompt。
+     - 前端 `ThinkingBlock.vue` 明确标记并优先渲染 PromptProvider 返回的完整 Prompt（含系统提示词与上下文渲染变量）。
+  2. **“引用的消息”按采集方式分类及数量统计**：
+     - 前端 `ThinkingContext.vue` 与 `ChatArea.vue` 解析完整 `context_categories`（含有显式引用 CITING、时间线 TIMELINE、钉住关注 PINNED、语义相似 SIMILARITY、标签相关 TAG_RELATIVE、关键词匹配 KEYWORD、随机采样 RANDOM、手动勾选 SELECTED）及分类 ID 映射。
+     - `ThinkingContext.vue` 提供顶部**采集方式分类与数量统计网格**（如显式引用: 2条 | 时间线: 5条 | ...）与引用消息总计徽章，并在下方按采集方式分类列出所有引用的消息列表。
+- **行为差异**：
+  - 修改前：思考弹窗中 Prompt 在流式阶段容易降级为当前发送消息 Query；引用的消息二选一展示且缺乏采集方式的数量统计分类。
+  - 修改后：思考弹窗全程展示 PromptProvider 返回的完整 Prompt；引用的消息按 8 种采集方式分类列出并进行数量统计。
+
+### [2026-08-20] "思考过程"弹窗上下文丰富度提升、Prompt脱敏非内容属性、复制跨平台与Markdown渲染修复
+- **变更原因**：修复"思考过程"弹窗中运行与对话上下文环境展示不足、Agent 发送给 LLM 的 Prompt 混入 work_context 等非内容 JSON 属性、输入/输出 Token 显示为 0、Prompt 与回复复制未跨平台写入系统剪贴板以及 LLM 回复未正确渲染 Markdown 的问题。
+- **功能变更**：
+  1. **上下文环境全分类数据透传**：`JSONNodeService.ts` 的 `context_built` SSE 事件与 `dev-server.ts` 的 `/api/chat/thinking` 端点完整解析并透传 `context_categories`（含有引用消息、时间线消息、钉住消息、语义相似消息、标签相关消息、关键词相关消息、随机消息）与 `context_category_ids` 映射表，使 `ThinkingContext.vue` 能展示完整的问答上下文。
+  2. **Prompt 剥离非内容 JSON 属性**：在 Agent 层 (`AgentExecutionService.ts`) 调用 `PromptProvider` 前以及后端重建思考块时，调用 `parseTaskContentAndContext` 自动剥离 `work_context` JSON 前缀，确保 Prompt 变量仅包含干净的用户 Query / Task Content，消除非内容 JSON 属性。
+  3. **输入与输出 Token 统计修复**：在 trace 追踪与单步 answer 执行时完整记录 `prompt`、`raw_response`、`input_tokens` 与 `output_tokens`；`agent_output` SSE 事件中透传 Token 细项，并在前端 `ChatArea.vue` 和 `dev-server.ts` 中完成准确计算与回填。
+  4. **跨平台剪贴板复制 (Windows/Linux/macOS)**：`ThinkingBlock.vue` 复制 Prompt 与复制回复按钮重构为使用 `@/utils/clipboard` 中的 `copyToClipboard`，支持现代 Clipboard API 与 `document.execCommand('copy')` 双重降级，彻底解决非安全上下文/跨 OS 剪贴板失效问题。
+  5. **模型完整回复 Markdown 渲染**：`ThinkingBlock.vue` 中“模型的完整回复 (LLM Response)”改用 `marked` 解析并经 `DOMPurify` 过滤后渲染 Markdown HTML，配合 `.markdown-body` 样式展现丰富的标题、代码块、列表与表格。
+
 ### [2026-08-20] "思考过程"弹窗上下文全维度增强、Prompt与回复完整展示及Token/思考方式升级
 - **变更原因**：满足"思考过程"弹窗全维度上下文展示、问答上下文 ID 分类保存、完整 Prompt 与模型回复展示、思考方式标签 (CoT/ReACT) 保留与移除 Canvas 图，以及输入/输出 Token 分别展示的需求。
 - **功能变更**：

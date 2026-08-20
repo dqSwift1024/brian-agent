@@ -514,15 +514,44 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     case 'loading':
       break
 
+    // ===== 原始代码（保留参考）=====
+    // case 'context_built': {
+    //   // 记录上下文 (User Profile, 引用的历史消息, 最近 Works)
+    //   const thinkBlock = getOrCreateThinkBlock(agentId)
+    //   const userProfile = (payload.user_profile as Record<string, unknown>) || undefined
+    //   const citingMessages = (payload.citations as unknown[]) || undefined
+    //   const recentWorks = (payload.recent_works as unknown[]) || undefined
+    //   thinkBlock.context = {
+    //     userProfile,
+    //     citingMessages,
+    //     recentWorks,
+    //     customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
+    //   }
+    //   sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
+    //   break
+    // }
+
+    // ===== 修改后的代码：提取完整分类 Context 数据与 Category ID 映射 =====
     case 'context_built': {
-      // 记录上下文 (User Profile, 引用的历史消息, 最近 Works)
       const thinkBlock = getOrCreateThinkBlock(agentId)
       const userProfile = (payload.user_profile as Record<string, unknown>) || undefined
-      const citingMessages = (payload.citations as unknown[]) || undefined
       const recentWorks = (payload.recent_works as unknown[]) || undefined
+      const categories = (payload.context_categories as any) || {}
+      const categoryIds = (payload.context_category_ids as any) || undefined
+      const citingMessages = categories.citing || (Array.isArray(payload.session_context) ? payload.session_context : ((payload.citations as unknown[]) || undefined))
+
       thinkBlock.context = {
+        strategy: (payload.strategy as string) || (sessionStore.planning?.status && sessionStore.planning.status !== 'idle' ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)'),
         userProfile,
+        selectedMessages: categories.selected,
         citingMessages,
+        timelineMessages: categories.timeline,
+        pinnedMessages: categories.pinned,
+        similarityMessages: categories.similarity,
+        tagRelativeMessages: categories.tag_relative,
+        keywordMessages: categories.keyword,
+        randomMessages: categories.random,
+        categoryIds,
         recentWorks,
         customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
       }
@@ -535,6 +564,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const intentAgentId = 'intent-agent'
       const intentBlock = getOrCreateThinkBlock(intentAgentId, '需求理解 Agent (Intent)', 'INTENT')
       intentBlock.input = String(payload.understood_requirement ?? '')
+      if (payload.prompt) intentBlock.prompt = payload.prompt as string
       intentBlock.content = String(payload.reasoning ?? '')
       intentBlock.output = {
         understood_requirement: payload.understood_requirement,
@@ -713,6 +743,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       sessionStore.setAgentStatus(agentId, 'RUNNING', rawAgName)
       const thinkBlock = getOrCreateThinkBlock(agentId, rawAgName, rawAgType)
       thinkBlock.content += chunk
+      if (typeof payload === 'object' && payload && payload.prompt) {
+        thinkBlock.prompt = payload.prompt as string
+      }
       
       // 更新 steps
       if (!thinkBlock.steps) thinkBlock.steps = []
@@ -725,7 +758,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       }
 
       if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
-      sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input })
+      sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input, prompt: thinkBlock.prompt })
       break
     }
 
@@ -767,6 +800,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       sessionStore.setAgentStatus(agentId, 'RUNNING')
       const thinkBlock = getOrCreateThinkBlock(agentId)
       if (!thinkBlock.steps) thinkBlock.steps = []
+      if (payload.prompt) thinkBlock.prompt = payload.prompt as string
 
       thinkBlock.steps.push({
         phase: 'REFLECT',
@@ -774,10 +808,28 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         reflection: String(payload.reflection || ''),
         passed: Boolean(payload.passed),
       })
-      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
+      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt })
       break
     }
 
+    // ===== 原始代码（保留参考）=====
+    // case 'agent_output': {
+    //   const outputVal = payload.output || payload.result || payload.chunk || payload.answer
+    //   if (agentId) {
+    //     // 该 Agent 已完成产出（SUCCESS → 绿色），并回填 Token 用量与耗时
+    //     sessionStore.setAgentStatus(agentId, 'SUCCESS')
+    //     const thinkBlock = getOrCreateThinkBlock(agentId)
+    //     thinkBlock.output = outputVal as string | Record<string, unknown>
+    //     if (typeof payload.token_usage === 'number') thinkBlock.tokenUsage = payload.token_usage
+    //     if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
+    //     sessionStore.updateBlock(thinkBlock.id, {
+    //       output: thinkBlock.output,
+    //       tokenUsage: thinkBlock.tokenUsage,
+    //       durationMs: thinkBlock.durationMs,
+    //     })
+    //   }
+
+    // ===== 修改后的代码：补全 inputTokens 与 outputTokens 分别透传 =====
     case 'agent_output': {
       const outputVal = payload.output || payload.result || payload.chunk || payload.answer
       if (agentId) {
@@ -786,10 +838,14 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         const thinkBlock = getOrCreateThinkBlock(agentId)
         thinkBlock.output = outputVal as string | Record<string, unknown>
         if (typeof payload.token_usage === 'number') thinkBlock.tokenUsage = payload.token_usage
+        if (typeof payload.input_tokens === 'number') thinkBlock.inputTokens = payload.input_tokens
+        if (typeof payload.output_tokens === 'number') thinkBlock.outputTokens = payload.output_tokens
         if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
         sessionStore.updateBlock(thinkBlock.id, {
           output: thinkBlock.output,
           tokenUsage: thinkBlock.tokenUsage,
+          inputTokens: thinkBlock.inputTokens,
+          outputTokens: thinkBlock.outputTokens,
           durationMs: thinkBlock.durationMs,
         })
       }

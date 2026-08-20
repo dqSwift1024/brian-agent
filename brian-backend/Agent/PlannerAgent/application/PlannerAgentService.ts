@@ -85,10 +85,22 @@ export class PlannerAgentService {
     if (ctx.session_id) {
       try {
         const ctxOut = new ContextInfoOutput();
+        // ===== 原始代码（保留作为参考）=====
+        // await this.infoCore.context(
+        //   Object.assign(new ContextInfoInput(), {
+        //     session_id: ctx.session_id,
+        //     selected_msg_ids: ctx.selected_msg_ids,
+        //   }),
+        //   new InfoCoreContext(),
+        //   ctxOut,
+        // );
+
+        // ===== 修改后的代码：传入 info: input.task_content =====
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: ctx.session_id,
             selected_msg_ids: ctx.selected_msg_ids,
+            info: input.task_content,
           }),
           new InfoCoreContext(),
           ctxOut,

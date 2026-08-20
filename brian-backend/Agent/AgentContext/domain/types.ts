@@ -40,6 +40,8 @@ export class BuildAgentContextInput extends Input {
   session_id!: string;
   agent_id?: string;
   work_id?: string;
+  user_query?: string;
+  info?: string;
   selected_msg_ids?: string[];
 }
 

@@ -85,3 +85,48 @@ export function formatContextCategories(ctxOut?: ContextOutputLike): string {
 
   return '';
 }
+
+export function parseTaskContentAndContext(rawTaskContent: string): {
+  cleanTaskContent: string;
+  extractedWorkContext?: Record<string, unknown>;
+} {
+  if (!rawTaskContent) return { cleanTaskContent: '' };
+
+  const str = String(rawTaskContent).trim();
+  if (str.includes('\n---\n')) {
+    const idx = str.indexOf('\n---\n');
+    const firstPart = str.slice(0, idx).trim();
+    const restPart = str.slice(idx + 5).trim();
+
+    if (firstPart.startsWith('{') && firstPart.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(firstPart);
+        if (parsed && typeof parsed === 'object' && ('work_id' in parsed || 'session_id' in parsed || 'session_context' in parsed || 'context_categories' in parsed)) {
+          return {
+            cleanTaskContent: restPart,
+            extractedWorkContext: parsed as Record<string, unknown>,
+          };
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  if (str.startsWith('{') && str.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (parsed && typeof parsed === 'object') {
+        let clean = '';
+        if (parsed.user_query) clean = String(parsed.user_query);
+        else if (parsed.task_content) clean = String(parsed.task_content);
+        if (clean) {
+          return {
+            cleanTaskContent: clean,
+            extractedWorkContext: parsed as Record<string, unknown>,
+          };
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { cleanTaskContent: str };
+}

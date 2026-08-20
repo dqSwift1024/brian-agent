@@ -372,6 +372,8 @@ export interface ContextInfoCategories {
 export class ContextInfoInput extends Input {
   session_id!: string;
   info_id?: string;
+  /** 参考信息文本内容，用于检索语义相似/关键词/标签关联消息 */
+  info?: string;
   /** 构建模式：DEFAULT 默认构建 / CUSTOM 自定义构建 */
   mode?: 'DEFAULT' | 'CUSTOM' | string;
   /** 复选消息 ID 列表（勾选后仅提取复选消息与钉住消息） */

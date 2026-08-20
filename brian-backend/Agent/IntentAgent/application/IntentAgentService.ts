@@ -108,6 +108,7 @@ export class IntentAgentService {
     });
     const promptOut = new ExecPromptOutput();
     await this.promptsAccess.execPrompt(promptIn, new PromptContext(), promptOut);
+    output.prompt = promptOut.prompt;
 
     const llmIn = Object.assign(new ExecLLMInput(), {
       prompt: promptOut.prompt,

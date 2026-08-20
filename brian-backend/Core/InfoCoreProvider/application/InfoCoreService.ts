@@ -1235,6 +1235,339 @@ export class InfoCoreService {
   //   return true;
   // }
 
+  // ===== 原始代码（保留作为参考）=====
+  // async context(
+  //   input: ContextInfoInput,
+  //   _context: InfoCoreContext,
+  //   output: ContextInfoOutput,
+  // ): Promise<boolean> {
+  //   if (!input.session_id) {
+  //     throw new ValidationError('context 需要提供 session_id');
+  //   }
+  //
+  //   const contextConfig = await this.getInfoContextConfig();
+  //   const maxTotal = contextConfig?.total || 1000;
+  //   const priorityOrderStr = contextConfig?.priority_order || 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
+  //   const customIds = input.custom_info_ids || input.selected_msg_ids || [];
+  //   const isCustomMode = input.mode === 'CUSTOM' || customIds.length > 0;
+  //
+  //   // Helper: 将 raw record 转为标准 ContextInfoItem
+  //   const toContextItem = async (
+  //     raw: InfoRawRecord,
+  //     collectionSource: ContextCollectionSource,
+  //   ): Promise<ContextInfoItem> => {
+  //     let summaryText = '';
+  //     try {
+  //       const summaryRow = await this.getInfoSummaryRow(raw.info_id);
+  //       if (summaryRow?.summary) {
+  //         summaryText = summaryRow.summary;
+  //       }
+  //     } catch { /* best-effort */ }
+  //
+  //     let contentText = raw.info || '';
+  //     if (!contentText && summaryText) {
+  //       contentText = `[摘要] ${summaryText}`;
+  //     }
+  //
+  //     return {
+  //       id: raw.id || raw.info_id,
+  //       info_id: raw.info_id,
+  //       session_id: raw.session_id,
+  //       work_id: raw.work_id || '',
+  //       interact_id: raw.interact_id || '',
+  //       info_type: raw.info_type || InfoType.REQUEST,
+  //       info_creator_role: raw.info_creator_role,
+  //       info_creator_id: raw.info_creator_id,
+  //       info: contentText,
+  //       content: contentText,
+  //       summary: summaryText,
+  //       summary_length: summaryText.length,
+  //       info_length: contentText.length,
+  //       content_length: contentText.length,
+  //       collection_source: collectionSource,
+  //       source: collectionSource,
+  //       pin: raw.pin ? 1 : 0,
+  //       created: raw.created,
+  //       updated: raw.updated,
+  //     };
+  //   };
+  //
+  //   // 1. 自定义构建模式 (CUSTOM)
+  //   if (isCustomMode) {
+  //     // 1.1 收集钉住消息 (PINNED)
+  //     const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
+  //       conditions: [
+  //         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+  //         { field: 'pin', operator: Operator.EQ, value: 1 },
+  //       ],
+  //       order_by: [{ field: 'created', direction: 'DESC' }],
+  //     });
+  //     const pinnedItems: ContextInfoItem[] = [];
+  //     const pinnedIdSet = new Set<string>();
+  //     for (const row of pinnedRows) {
+  //       const raw = this.toInfoRawRecord(row);
+  //       const item = await toContextItem(raw, CollectionSource.PINNED);
+  //       pinnedItems.push(item);
+  //       pinnedIdSet.add(item.info_id);
+  //     }
+  //
+  //     // 1.2 收集传入指定消息 (CUSTOM)
+  //     const customItems: ContextInfoItem[] = [];
+  //     const seenCustomIds = new Set<string>();
+  //     for (const msgId of customIds) {
+  //       if (!msgId || seenCustomIds.has(msgId) || pinnedIdSet.has(msgId)) continue;
+  //       seenCustomIds.add(msgId);
+  //       const row = await this.getInfoByInfoId(msgId);
+  //       if (row && row.session_id === input.session_id) {
+  //         const item = await toContextItem(row, CollectionSource.CUSTOM);
+  //         customItems.push(item);
+  //       }
+  //     }
+  //     // 按时间倒序排序
+  //     customItems.sort((a, b) => b.created - a.created);
+  //
+  //     const resultList = [...pinnedItems, ...customItems].slice(0, maxTotal);
+  //
+  //     output.list = resultList;
+  //     const categories: ContextInfoCategories = {
+  //       selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
+  //       pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
+  //       timeline: [],
+  //       citing: [],
+  //       tag_relative: [],
+  //       similarity: [],
+  //       keyword: [],
+  //       random: [],
+  //     };
+  //     output.categories = categories;
+  //     output.category_ids = {
+  //       selected: categories.selected.map((i: ContextInfoItem) => i.info_id),
+  //       pinned: categories.pinned.map((i: ContextInfoItem) => i.info_id),
+  //       timeline: [],
+  //       citing: [],
+  //       tag_relative: [],
+  //       similarity: [],
+  //       keyword: [],
+  //       random: [],
+  //     };
+  //     output.sources_summary = {
+  //       selected: categories.selected.length,
+  //       pinned: categories.pinned.length,
+  //       timeline: 0,
+  //       citing: 0,
+  //       tag_relative: 0,
+  //       similarity: 0,
+  //       keyword: 0,
+  //       random: 0,
+  //     };
+  //     return true;
+  //   }
+  //
+  //   // 2. 默认构建模式 (DEFAULT)
+  //   const timelineLimit = contextConfig?.base_timeline_count ?? 500;
+  //   const tagLimit = contextConfig?.base_tag_relative_count ?? 200;
+  //   const simLimit = contextConfig?.base_similarity_count ?? 150;
+  //   const kwLimit = contextConfig?.base_keyword_count ?? 100;
+  //   const randLimit = contextConfig?.base_random_count ?? 50;
+  //   const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
+  //   const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
+  //
+  //   // 2.1 收集各维度候选原始消息
+  //   // PINNED (会话内钉住消息)
+  //   const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
+  //     conditions: [
+  //       { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+  //       { field: 'pin', operator: Operator.EQ, value: 1 },
+  //     ],
+  //     order_by: [{ field: 'created', direction: 'DESC' }],
+  //   });
+  //   const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
+  //
+  //   // CITING (引用消息，会话内) vs TIMELINE (时间线消息，会话内) 二选一
+  //   const citingCandidates: InfoRawRecord[] = [];
+  //   const citedMsgIds = input.selected_msg_ids || input.custom_info_ids || [];
+  //   if (citedMsgIds.length > 0) {
+  //     for (const msgId of citedMsgIds) {
+  //       const r = await this.getInfoByInfoId(msgId);
+  //       if (r && r.session_id === input.session_id) {
+  //         citingCandidates.push(r);
+  //       }
+  //     }
+  //   }
+  //
+  //   // TIMELINE (会话内时间线消息)
+  //   const timelineCandidates: InfoRawRecord[] = [];
+  //   if (citingCandidates.length === 0) {
+  //     const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+  //     for (const item of tl) timelineCandidates.push(item);
+  //   }
+  //
+  //   // 获取参考文本（参考 input.info_id，若无则使用最新的用户消息）
+  //   let refInfoRow: InfoRawRecord | null = null;
+  //   if (input.info_id) {
+  //     refInfoRow = await this.getInfoByInfoId(input.info_id);
+  //   }
+  //   if (!refInfoRow && (citingCandidates.length > 0 || timelineCandidates.length > 0)) {
+  //     const candidates = citingCandidates.length > 0 ? citingCandidates : timelineCandidates;
+  //     refInfoRow = candidates.find((t) => t.info_type === InfoType.REQUEST) || candidates[0] || null;
+  //   }
+  //   const refText = refInfoRow?.info || '';
+  //
+  //   // TAG_RELATIVE (全系统标签相关性)
+  //   const tagCandidates: InfoRawRecord[] = [];
+  //   if (refInfoRow && tagLimit > 0) {
+  //     try {
+  //       const relInput = new RelationKInfoInput();
+  //       relInput.info_id = refInfoRow.info_id;
+  //       relInput.topN = tagLimit;
+  //       const relOutput = new RelationKInfoOutput();
+  //       await this.relationKInfo(relInput, _context, relOutput);
+  //       for (const item of relOutput.list) {
+  //         tagCandidates.push(item);
+  //       }
+  //     } catch { /* ignore */ }
+  //   }
+  //
+  //   // SIMILARITY (全系统向量相似度)
+  //   const simCandidates: InfoRawRecord[] = [];
+  //   if (refText && simLimit > 0) {
+  //     try {
+  //       const simInput = new SimilarKInfoInput();
+  //       simInput.info = refText;
+  //       simInput.topK = simLimit;
+  //       const simOutput = new SimilarKInfoOutput();
+  //       await this.similarKInfo(simInput, _context, simOutput);
+  //       for (const item of simOutput.list) {
+  //         simCandidates.push(item);
+  //       }
+  //     } catch { /* ignore */ }
+  //   }
+  //
+  //   // KEYWORD (全系统关键词相关性)
+  //   const kwCandidates: InfoRawRecord[] = [];
+  //   if (refText && kwLimit > 0) {
+  //     try {
+  //       const kwInput = new KeywordKInfoInput();
+  //       kwInput.info = refText;
+  //       const kwOutput = new KeywordKInfoOutput();
+  //       await this.keywordKInfo(kwInput, _context, kwOutput);
+  //       for (const item of kwOutput.list.slice(0, kwLimit)) {
+  //         kwCandidates.push(item);
+  //       }
+  //     } catch { /* ignore */ }
+  //   }
+  //
+  //   // RANDOM (会话内随机消息，受配置中心最大百分比上限约束)
+  //   let randCandidates: InfoRawRecord[] = [];
+  //   if (randLimit > 0 && randomMaxPercent > 0) {
+  //     try {
+  //       const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
+  //         conditions: [
+  //           { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+  //         ],
+  //       });
+  //       const sessionCandidates = sessionAllRows.map((r) => this.toInfoRawRecord(r));
+  //
+  //       const effectivePercent = randomMaxPercent;
+  //       const maxByPercent = Math.max(1, Math.floor(maxTotal * (effectivePercent / 100)));
+  //       const finalRandCount = Math.min(randLimit, maxByPercent);
+  //
+  //       if (finalRandCount > 0 && sessionCandidates.length > 0) {
+  //         const shuffled = [...sessionCandidates];
+  //         for (let i = shuffled.length - 1; i > 0; i--) {
+  //           const j = Math.floor(Math.random() * (i + 1));
+  //           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  //         }
+  //         randCandidates = shuffled.slice(0, finalRandCount);
+  //       }
+  //     } catch { /* ignore */ }
+  //   }
+  //
+  //   // 2.2 组装候选映射表
+  //   const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
+  //     [CollectionSource.PINNED, pinnedCandidates],
+  //     [CollectionSource.CITING, citingCandidates],
+  //     [CollectionSource.TIMELINE, timelineCandidates],
+  //     [CollectionSource.TAG_RELATIVE, tagCandidates],
+  //     [CollectionSource.SIMILARITY, simCandidates],
+  //     [CollectionSource.KEYWORD, kwCandidates],
+  //     [CollectionSource.RANDOM, randCandidates],
+  //   ]);
+  //
+  //   // 2.3 解析优先级顺序
+  //   const rawPriority = priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource);
+  //   const validSources: ContextCollectionSource[] = [
+  //     CollectionSource.PINNED,
+  //     CollectionSource.CITING,
+  //     CollectionSource.TIMELINE,
+  //     CollectionSource.TAG_RELATIVE,
+  //     CollectionSource.SIMILARITY,
+  //     CollectionSource.KEYWORD,
+  //     CollectionSource.RANDOM,
+  //   ];
+  //   const priorityList: ContextCollectionSource[] = [];
+  //   for (const src of rawPriority) {
+  //     if (validSources.includes(src) && !priorityList.includes(src)) {
+  //       priorityList.push(src);
+  //     }
+  //   }
+  //
+  //   // 2.4 按优先级依次收集去重
+  //   const seenIds = new Set<string>();
+  //   const collectedItems: ContextInfoItem[] = [];
+  //
+  //   for (const sourceKey of priorityList) {
+  //     const candidates = candidatesMap.get(sourceKey) || [];
+  //     for (const cand of candidates) {
+  //       if (!cand || !cand.info_id || seenIds.has(cand.info_id)) {
+  //         continue;
+  //       }
+  //       seenIds.add(cand.info_id);
+  //       const item = await toContextItem(cand, sourceKey);
+  //       collectedItems.push(item);
+  //     }
+  //   }
+  //
+  //   // 2.5 截取 total 条
+  //   const resultList = collectedItems.slice(0, maxTotal);
+  //
+  //   output.list = resultList;
+  //   output.categories = {
+  //     selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
+  //     pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
+  //     timeline: resultList.filter((i) => i.collection_source === CollectionSource.TIMELINE),
+  //     citing: resultList.filter((i) => i.collection_source === CollectionSource.CITING),
+  //     tag_relative: resultList.filter((i) => i.collection_source === CollectionSource.TAG_RELATIVE),
+  //     similarity: resultList.filter((i) => i.collection_source === CollectionSource.SIMILARITY),
+  //     keyword: resultList.filter((i) => i.collection_source === CollectionSource.KEYWORD),
+  //     random: resultList.filter((i) => i.collection_source === CollectionSource.RANDOM),
+  //   };
+  //
+  //   output.category_ids = {
+  //     selected: output.categories.selected.map((i) => i.info_id),
+  //     pinned: output.categories.pinned.map((i) => i.info_id),
+  //     timeline: output.categories.timeline.map((i) => i.info_id),
+  //     citing: output.categories.citing.map((i) => i.info_id),
+  //     tag_relative: output.categories.tag_relative.map((i) => i.info_id),
+  //     similarity: output.categories.similarity.map((i) => i.info_id),
+  //     keyword: output.categories.keyword.map((i) => i.info_id),
+  //     random: output.categories.random.map((i) => i.info_id),
+  //   };
+  //
+  //   output.sources_summary = {
+  //     selected: output.categories.selected.length,
+  //     pinned: output.categories.pinned.length,
+  //     timeline: output.categories.timeline.length,
+  //     citing: output.categories.citing.length,
+  //     tag_relative: output.categories.tag_relative.length,
+  //     similarity: output.categories.similarity.length,
+  //     keyword: output.categories.keyword.length,
+  //     random: output.categories.random.length,
+  //   };
+  //
+  //   return true;
+  // }
+
   // ===== 修改后的方法 =====
   async context(
     input: ContextInfoInput,
@@ -1247,9 +1580,19 @@ export class InfoCoreService {
 
     const contextConfig = await this.getInfoContextConfig();
     const maxTotal = contextConfig?.total || 1000;
-    const priorityOrderStr = contextConfig?.priority_order || 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
+    const DEFAULT_PRIORITY: CollectionSource[] = [
+      CollectionSource.PINNED,
+      CollectionSource.CITING,
+      CollectionSource.TIMELINE,
+      CollectionSource.TAG_RELATIVE,
+      CollectionSource.SIMILARITY,
+      CollectionSource.KEYWORD,
+      CollectionSource.RANDOM,
+    ];
+    const priorityOrderStr = contextConfig?.priority_order;
     const customIds = input.custom_info_ids || input.selected_msg_ids || [];
-    const isCustomMode = input.mode === 'CUSTOM' || customIds.length > 0;
+    // 仅当显式设置了 input.mode === 'CUSTOM' 时才进入纯自定义模式，避免传入引用 ID 时将全局上下文误锁死在 CUSTOM 模式
+    const isCustomMode = input.mode === 'CUSTOM';
 
     // Helper: 将 raw record 转为标准 ContextInfoItem
     const toContextItem = async (
@@ -1292,7 +1635,7 @@ export class InfoCoreService {
       };
     };
 
-    // 1. 自定义构建模式 (CUSTOM)
+    // 1. 显式自定义勾选构建模式 (CUSTOM)
     if (isCustomMode) {
       // 1.1 收集钉住消息 (PINNED)
       const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
@@ -1363,15 +1706,12 @@ export class InfoCoreService {
       return true;
     }
 
-    // 2. 默认构建模式 (DEFAULT)
+    // 2. 默认多维度智能混合构建模式 (DEFAULT)
     const timelineLimit = contextConfig?.base_timeline_count ?? 500;
     const tagLimit = contextConfig?.base_tag_relative_count ?? 200;
     const simLimit = contextConfig?.base_similarity_count ?? 150;
     const kwLimit = contextConfig?.base_keyword_count ?? 100;
     const randLimit = contextConfig?.base_random_count ?? 50;
-    // ===== 原始代码（保留作为参考）=====
-    // const randomMaxPercent = contextConfig?.random_max_percent ?? 20;
-    // ===== 修改后的代码：根据 随机基础数量(randLimit) / 上下文总数(maxTotal) 计算百分比 =====
     const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
     const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
 
@@ -1386,7 +1726,7 @@ export class InfoCoreService {
     });
     const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
 
-    // CITING (引用消息，会话内) vs TIMELINE (时间线消息，会话内) 二选一
+    // CITING (显式引用的消息，会话内)
     const citingCandidates: InfoRawRecord[] = [];
     const citedMsgIds = input.selected_msg_ids || input.custom_info_ids || [];
     if (citedMsgIds.length > 0) {
@@ -1398,26 +1738,31 @@ export class InfoCoreService {
       }
     }
 
-    // TIMELINE (会话内时间线消息)
+    // TIMELINE (基于时间线的消息，会话内；独立并行采集，不再与 CITING 互斥)
     const timelineCandidates: InfoRawRecord[] = [];
-    // 若不存在显式引用消息，则收集会话时间线消息（满足“基于时间线的信息或者引用的消息 二选一，会话内”）
-    if (citingCandidates.length === 0) {
-      const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
-      for (const item of tl) timelineCandidates.push(item);
+    const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+    for (const item of tl) {
+      timelineCandidates.push(item);
     }
 
-    // 获取参考文本（参考 input.info_id，若无则使用最新的用户消息）
+    // 获取参考文本：优先使用 input.info（当前用户提问文本），其次查找 input.info_id 记录，最后从 CITING/TIMELINE 中提取
+    let refText = input.info || '';
     let refInfoRow: InfoRawRecord | null = null;
     if (input.info_id) {
       refInfoRow = await this.getInfoByInfoId(input.info_id);
+      if (refInfoRow?.info && !refText) {
+        refText = refInfoRow.info;
+      }
     }
     if (!refInfoRow && (citingCandidates.length > 0 || timelineCandidates.length > 0)) {
       const candidates = citingCandidates.length > 0 ? citingCandidates : timelineCandidates;
       refInfoRow = candidates.find((t) => t.info_type === InfoType.REQUEST) || candidates[0] || null;
+      if (refInfoRow?.info && !refText) {
+        refText = refInfoRow.info;
+      }
     }
-    const refText = refInfoRow?.info || '';
 
-    // TAG_RELATIVE (全系统标签相关性)
+    // TAG_RELATIVE (全系统标签相关性消息)
     const tagCandidates: InfoRawRecord[] = [];
     if (refInfoRow && tagLimit > 0) {
       try {
@@ -1432,7 +1777,7 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
-    // SIMILARITY (全系统向量相似度)
+    // SIMILARITY (全系统向量语义相似消息)
     const simCandidates: InfoRawRecord[] = [];
     if (refText && simLimit > 0) {
       try {
@@ -1447,7 +1792,7 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
-    // KEYWORD (全系统关键词相关性)
+    // KEYWORD (全系统关键词匹配消息)
     const kwCandidates: InfoRawRecord[] = [];
     if (refText && kwLimit > 0) {
       try {
@@ -1461,33 +1806,54 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
-    // RANDOM (会话内随机消息，受配置中心最大百分比上限约束)
+    // RANDOM (随机采样消息：优先抽取未在前面维度被选中的新消息)
     let randCandidates: InfoRawRecord[] = [];
     if (randLimit > 0 && randomMaxPercent > 0) {
       try {
-        const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
-          conditions: [
-            { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-          ],
-        });
-        const sessionCandidates = sessionAllRows.map((r) => this.toInfoRawRecord(r));
-
-        // ===== 原始代码（保留作为参考）：按当前会话消息数 totalSessionMsgs 计算上限 =====
-        // const totalSessionMsgs = sessionCandidates.length;
-        // const maxByPercent = Math.max(1, Math.floor(totalSessionMsgs * (randomMaxPercent / 100)));
-
-        // ===== 修改后的代码：按 [随机基础数量 / 上下文总数] 计算出来的百分比结合 maxTotal 确定上限 =====
         const effectivePercent = randomMaxPercent;
         const maxByPercent = Math.max(1, Math.floor(maxTotal * (effectivePercent / 100)));
         const finalRandCount = Math.min(randLimit, maxByPercent);
 
-        if (finalRandCount > 0 && sessionCandidates.length > 0) {
-          const shuffled = [...sessionCandidates];
-          for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        if (finalRandCount > 0) {
+          const existingIds = new Set<string>([
+            ...pinnedCandidates.map((c) => c.info_id),
+            ...citingCandidates.map((c) => c.info_id),
+            ...timelineCandidates.map((c) => c.info_id),
+          ]);
+
+          const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
+            conditions: [
+              { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+            ],
+          });
+          const sessionCandidates = sessionAllRows
+            .map((r) => this.toInfoRawRecord(r))
+            .filter((c) => !existingIds.has(c.info_id));
+
+          if (sessionCandidates.length > 0) {
+            const shuffled = [...sessionCandidates];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            randCandidates = shuffled.slice(0, finalRandCount);
+          } else {
+            // 若当前 session 消息均已被已有维度采集，则在全局原始消息库中随机调取其他历史消息
+            const globalRows = await this.relationDb.select(INFO_RAW_TABLE, {
+              page: { current: 1, size: 100 },
+            });
+            const globalCandidates = globalRows
+              .map((r) => this.toInfoRawRecord(r))
+              .filter((c) => !existingIds.has(c.info_id));
+            if (globalCandidates.length > 0) {
+              const shuffled = [...globalCandidates];
+              for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+              }
+              randCandidates = shuffled.slice(0, finalRandCount);
+            }
           }
-          randCandidates = shuffled.slice(0, finalRandCount);
         }
       } catch { /* ignore */ }
     }
@@ -1503,9 +1869,10 @@ export class InfoCoreService {
       [CollectionSource.RANDOM, randCandidates],
     ]);
 
-    // 2.3 解析优先级顺序
-    // 默认："钉住消息" > 引用消息 > 按时间线消息 > 标签相关性消息 > 向量相似度消息 > 关键词相关性消息 > 随机关联消息
-    const rawPriority = priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource);
+    // 2.3 解析优先级顺序并按配置列表确定采集维度
+const rawPriority = priorityOrderStr
+      ? priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource)
+      : DEFAULT_PRIORITY;
     const validSources: ContextCollectionSource[] = [
       CollectionSource.PINNED,
       CollectionSource.CITING,
@@ -1521,13 +1888,6 @@ export class InfoCoreService {
         priorityList.push(src);
       }
     }
-    // ===== 原始逻辑（保留作为参考）：未出现在 priority_order 中的维度会被自动补全，
-    // 即始终采集全部维度。现已改为以 priority_order 为准，未列出的维度不再采集。=====
-    // for (const src of validSources) {
-    //   if (!priorityList.includes(src)) {
-    //     priorityList.push(src);
-    //   }
-    // }
 
     // 2.4 按优先级依次收集去重
     const seenIds = new Set<string>();

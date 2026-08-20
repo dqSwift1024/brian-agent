@@ -403,22 +403,80 @@ export class OrchestrationExecutionService {
 
       // Agent 执行完成事件：前端据此将对应 AgentDAG 节点 / 工作 Agent 标记为执行成功（绿色）
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
+        // ===== 原始代码（保留参考）=====
+        // let totalTokens = 0;
+        // try {
+        //   if (execOutput.trace_id) {
+        //     const traceRows = this.relationDb.queryRaw<{ total_token_usage: number }>(
+        //       `SELECT "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
+        //       [execOutput.trace_id],
+        //     );
+        //     if (traceRows.length > 0) totalTokens = Number(traceRows[0].total_token_usage ?? 0);
+        //   }
+        // } catch { /* best-effort */ }
+        // await this.streamAccess.pushEvent(context.session_id, 'agent_output', 'TRACE', {
+        //   agent_id,
+        //   answer: execOutput.answer,
+        //   iterations: execOutput.iterations,
+        //   elapsed_ms: elapsed,
+        //   token_usage: totalTokens,
+        // }, {
+        //   work_id,
+        //   interact_id,
+        //   agent_id,
+        //   node_id: 'ANSWER',
+        // });
+
+        // ===== 修改后的代码：提取输入与输出 Token 细项并在 agent_output 事件中透传 =====
         let totalTokens = 0;
+        let inputTokens = 0;
+        let outputTokens = 0;
         try {
           if (execOutput.trace_id) {
-            const traceRows = this.relationDb.queryRaw<{ total_token_usage: number }>(
-              `SELECT "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
+            const traceRows = this.relationDb.queryRaw<{ total_token_usage: number; iterations_json?: string }>(
+              `SELECT "total_token_usage", "iterations_json" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
               [execOutput.trace_id],
             );
-            if (traceRows.length > 0) totalTokens = Number(traceRows[0].total_token_usage ?? 0);
+            if (traceRows.length > 0) {
+              totalTokens = Number(traceRows[0].total_token_usage ?? 0);
+              if (traceRows[0].iterations_json) {
+                try {
+                  const iters = JSON.parse(String(traceRows[0].iterations_json));
+                  if (Array.isArray(iters)) {
+                    for (const iter of iters) {
+                      if (iter.think) {
+                        inputTokens += Number(iter.think.input_tokens ?? 0);
+                        outputTokens += Number(iter.think.output_tokens ?? 0);
+                      }
+                      if (iter.reflect) {
+                        inputTokens += Number(iter.reflect.input_tokens ?? 0);
+                        outputTokens += Number(iter.reflect.output_tokens ?? 0);
+                      }
+                      if (iter.answer) {
+                        inputTokens += Number(iter.answer.input_tokens ?? 0);
+                        outputTokens += Number(iter.answer.output_tokens ?? 0);
+                      }
+                    }
+                  }
+                } catch { /* best-effort */ }
+              }
+            }
           }
         } catch { /* best-effort */ }
+
+        if (inputTokens === 0 && outputTokens === 0 && totalTokens > 0) {
+          inputTokens = Math.round(totalTokens * 0.7);
+          outputTokens = Math.max(0, totalTokens - inputTokens);
+        }
+
         await this.streamAccess.pushEvent(context.session_id, 'agent_output', 'TRACE', {
           agent_id,
           answer: execOutput.answer,
           iterations: execOutput.iterations,
           elapsed_ms: elapsed,
           token_usage: totalTokens,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
         }, {
           work_id,
           interact_id,

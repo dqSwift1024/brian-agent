@@ -693,9 +693,10 @@ describe('InfoCoreProvider', () => {
       pinIn.info_id = createdIds[0];
       await infoCore.pinInfo(pinIn, new InfoCoreContext(), new PinInfoOutput());
 
-      // Select message 2 and 3
+      // Select message 2 and 3 in CUSTOM mode
       const input = new ContextInfoInput();
       input.session_id = sessionId;
+      input.mode = 'CUSTOM';
       input.selected_msg_ids = [createdIds[2], createdIds[3]];
       const output = new ContextInfoOutput();
       await infoCore.context(input, new InfoCoreContext(), output);

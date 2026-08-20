@@ -93,6 +93,7 @@ export interface ThinkingBlock extends BlockBase {
   context?: {
     userProfile?: Record<string, unknown>
     recentWorks?: unknown[]
+    selectedMessages?: unknown[]
     citingMessages?: unknown[]
     timelineMessages?: unknown[]
     pinnedMessages?: unknown[]

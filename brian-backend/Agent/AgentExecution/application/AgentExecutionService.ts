@@ -49,7 +49,7 @@ import {
   StartWorkerInput, StartWorkerOutput, SoWorkerInput, SoWorkerOutput, MQCoreContext,
   LastNInfoInput, LastNInfoOutput,
 } from '@brian-agent/core';
-import { parseJsonObject, formatContextCategories } from '../../shared/signature';
+import { parseJsonObject, formatContextCategories, parseTaskContentAndContext } from '../../shared/signature';
 
 const EVAL_QUEUE = 'agent.eval';
 const EXEC_QUEUE = 'agent.execution';
@@ -141,15 +141,34 @@ export class AgentExecutionService {
     const domain = domainMatch ? domainMatch[1] : 'general';
     const agentName = agent.agent_name || agent.agent_id;
 
-    let contextData = input.task_content;
+    // ===== 原始方法（保留作为参考）=====
+    // let contextData = input.task_content;
+
+    // ===== 修改后的方法：剥离 work_context 非内容 JSON 属性，确保 Prompt 仅包含纯净 Task Content =====
+    const { cleanTaskContent } = parseTaskContentAndContext(input.task_content);
+    input.task_content = cleanTaskContent;
+    let contextData = cleanTaskContent;
+
     const sessionId = ctx.session_id;
     if (sessionId) {
       try {
         const ctxOut = new ContextInfoOutput();
+        // ===== 原始代码（保留作为参考）=====
+        // await this.infoCore.context(
+        //   Object.assign(new ContextInfoInput(), {
+        //     session_id: sessionId,
+        //     selected_msg_ids: ctx.selected_msg_ids,
+        //   }),
+        //   new InfoCoreContext(),
+        //   ctxOut,
+        // );
+
+        // ===== 修改后的代码：传入 info: input.task_content =====
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: sessionId,
             selected_msg_ids: ctx.selected_msg_ids,
+            info: input.task_content,
           }),
           new InfoCoreContext(),
           ctxOut,
@@ -217,9 +236,24 @@ export class AgentExecutionService {
       );
       finalAnswer = answerOut.answer;
       totalTokens += answerOut.token_usage;
+      // ===== 原始代码（保留参考）=====
+      // traceIterations.push({
+      //   iteration_index: 0,
+      //   answer: { answer: answerOut.answer },
+      //   iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
+      // });
+
+      // ===== 修改后的代码：补全 Prompt、raw_response 与 input/output tokens 记录 =====
       traceIterations.push({
         iteration_index: 0,
-        answer: { answer: answerOut.answer },
+        answer: {
+          answer: answerOut.answer,
+          prompt: answerOut.prompt,
+          raw_response: answerOut.raw_response,
+          input_tokens: answerOut.input_tokens,
+          output_tokens: answerOut.output_tokens,
+          token_usage: answerOut.token_usage,
+        },
         iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
       });
     } else if (rule.phases?.length) {
@@ -249,6 +283,18 @@ export class AgentExecutionService {
       );
       finalAnswer = answerOut.answer;
       totalTokens += answerOut.token_usage;
+      traceIterations.push({
+        iteration_index: traceIterations.length,
+        answer: {
+          answer: answerOut.answer,
+          prompt: answerOut.prompt,
+          raw_response: answerOut.raw_response,
+          input_tokens: answerOut.input_tokens,
+          output_tokens: answerOut.output_tokens,
+          token_usage: answerOut.token_usage,
+        },
+        iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
+      });
     }
 
     await this.agentLibrary.recordAgentUsage(
@@ -1040,6 +1086,8 @@ export class AgentExecutionService {
             agent_name: agentName,
             agent_type: (agent as any)?.agent_type || 'WORKER',
             node_id: step.step,
+            prompt: thinkOut.prompt,
+            raw_response: thinkOut.raw_response,
           } as any);
         }
 
@@ -1127,6 +1175,8 @@ export class AgentExecutionService {
           await this.streamAccess.pushEvent(sessionId, 'agent_reflection', 'TRACE', {
             passed: !reflectOut.should_continue,
             reflection: reflectOut.reflection,
+            prompt: reflectOut.prompt,
+            raw_response: reflectOut.raw_response,
           }, {
             work_id: workId,
             interact_id: interactId,

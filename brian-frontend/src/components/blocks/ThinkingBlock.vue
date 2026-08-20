@@ -31,6 +31,9 @@ import {
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
 import { useSessionStore } from '@/stores/session'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import { copyToClipboard } from '@/utils/clipboard'
 
 const props = withDefaults(
   defineProps<{
@@ -118,22 +121,53 @@ const fullRawResponse = computed(() => {
   return props.block.content || ''
 })
 
+// Markdown 格式化渲染模型的完整回复
+const renderedRawResponseHtml = computed(() => {
+  const raw = fullRawResponse.value
+  if (!raw) return ''
+  try {
+    return DOMPurify.sanitize(marked.parse(raw) as string)
+  } catch {
+    return raw
+  }
+})
+
+// ===== 原始代码（保留参考）=====
+// const copiedPrompt = ref(false)
+// async function copyPromptText() {
+//   try {
+//     await navigator.clipboard.writeText(fullPrompt.value)
+//     copiedPrompt.value = true
+//     setTimeout(() => (copiedPrompt.value = false), 1800)
+//   } catch { /* ignore */ }
+// }
+// 
+// const copiedResponse = ref(false)
+// async function copyResponseText() {
+//   try {
+//     await navigator.clipboard.writeText(fullRawResponse.value)
+//     copiedResponse.value = true
+//     setTimeout(() => (copiedResponse.value = false), 1800)
+//   } catch { /* ignore */ }
+// }
+
+// ===== 修改后的代码：使用跨平台剪贴板工具函数 copyToClipboard =====
 const copiedPrompt = ref(false)
 async function copyPromptText() {
-  try {
-    await navigator.clipboard.writeText(fullPrompt.value)
+  const success = await copyToClipboard(fullPrompt.value)
+  if (success) {
     copiedPrompt.value = true
     setTimeout(() => (copiedPrompt.value = false), 1800)
-  } catch { /* ignore */ }
+  }
 }
 
 const copiedResponse = ref(false)
 async function copyResponseText() {
-  try {
-    await navigator.clipboard.writeText(fullRawResponse.value)
+  const success = await copyToClipboard(fullRawResponse.value)
+  if (success) {
     copiedResponse.value = true
     setTimeout(() => (copiedResponse.value = false), 1800)
-  } catch { /* ignore */ }
+  }
 }
 
 function formatJson(val: unknown): string {
@@ -274,6 +308,9 @@ function formatJson(val: unknown): string {
               <div class="flex items-center gap-1.5">
                 <FileText :size="13" class="text-blue-600 dark:text-blue-400" />
                 <span>Agent 发送给 LLM 的完整 Prompt</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100/80 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200">
+                  PromptProvider 完整 Prompt
+                </span>
               </div>
               <div class="flex items-center gap-2 font-normal text-[10px] text-blue-700 dark:text-blue-300">
                 <span class="font-mono">输入 Token: {{ inputTokens }}</span>
@@ -307,7 +344,14 @@ function formatJson(val: unknown): string {
                 </button>
               </div>
             </div>
-            <pre class="text-[11px] text-apple-gray-800 dark:text-apple-gray-200 font-mono whitespace-pre-wrap overflow-x-auto max-h-80 overflow-y-auto leading-relaxed bg-white/70 dark:bg-apple-gray-900/70 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">{{ fullRawResponse }}</pre>
+            <!-- ===== 原始代码（保留参考）===== -->
+            <!-- <pre class="text-[11px] text-apple-gray-800 dark:text-apple-gray-200 font-mono whitespace-pre-wrap overflow-x-auto max-h-80 overflow-y-auto leading-relaxed bg-white/70 dark:bg-apple-gray-900/70 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">{{ fullRawResponse }}</pre> -->
+
+            <!-- ===== 修改后的代码：渲染 Markdown 内容 ===== -->
+            <div
+              class="markdown-body text-[11px] text-apple-gray-800 dark:text-apple-gray-200 overflow-x-auto max-h-80 overflow-y-auto leading-relaxed bg-white/70 dark:bg-apple-gray-900/70 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 select-text break-words"
+              v-html="renderedRawResponseHtml"
+            ></div>
           </div>
         </div>
 
@@ -391,3 +435,47 @@ function formatJson(val: unknown): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+.markdown-body :deep(h1) { font-size: 1.3em; font-weight: 700; margin: 0.5em 0 0.3em; }
+.markdown-body :deep(h2) { font-size: 1.15em; font-weight: 600; margin: 0.5em 0 0.3em; }
+.markdown-body :deep(h3) { font-size: 1.05em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.markdown-body :deep(h4) { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.markdown-body :deep(p) { margin: 0.4em 0; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.3em; margin: 0.4em 0; }
+.markdown-body :deep(li) { margin: 0.2em 0; }
+.markdown-body :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background-color: rgba(175, 184, 193, 0.2);
+}
+.markdown-body :deep(pre) {
+  padding: 0.6em 0.8em;
+  border-radius: 6px;
+  overflow-x: auto;
+  background-color: rgba(175, 184, 193, 0.15);
+  margin: 0.5em 0;
+}
+.markdown-body :deep(pre code) { background: transparent; padding: 0; }
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid #0071e3;
+  padding-left: 0.8em;
+  color: #6e6e73;
+  margin: 0.5em 0;
+}
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.markdown-body :deep(th), .markdown-body :deep(td) {
+  border: 1px solid rgba(175, 184, 193, 0.3);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.markdown-body :deep(a) { color: #0071e3; text-decoration: underline; }
+.markdown-body :deep(hr) { border: none; border-top: 1px solid #d1d1d6; margin: 0.8em 0; }
+.markdown-body :deep(img) { max-width: 100%; border-radius: 6px; }
+</style>

@@ -114,11 +114,24 @@ export class AgentContextService {
     }
 
     const ctxOutput = new ContextInfoOutput();
+    // ===== 原始代码（保留作为参考）=====
+    // await this.infoCore.context(
+    //   Object.assign(new ContextInfoInput(), {
+    //     session_id: input.session_id,
+    //     selected_msg_ids: input.selected_msg_ids,
+    //   }),
+    //   new InfoCoreContext(),
+    //   ctxOutput,
+    // );
+
+    // ===== 修改后的代码：支持传入 user_query/info 以精准匹配向量/关键词/标签相关消息 =====
+    const ctxInput = Object.assign(new ContextInfoInput(), {
+      session_id: input.session_id,
+      selected_msg_ids: input.selected_msg_ids,
+      info: input.info || input.user_query,
+    });
     await this.infoCore.context(
-      Object.assign(new ContextInfoInput(), {
-        session_id: input.session_id,
-        selected_msg_ids: input.selected_msg_ids,
-      }),
+      ctxInput,
       new InfoCoreContext(),
       ctxOutput,
     );

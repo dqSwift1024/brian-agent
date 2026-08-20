@@ -19,10 +19,21 @@ export class UnderstandRequirementInput extends Input {
   interact_id?: string;
 }
 
+// ===== 原始 UnderstandRequirementOutput 定义（保留参考）=====
+// export class UnderstandRequirementOutput extends Output {
+//   understood_requirement = '';
+//   match_score = 100;
+//   reasoning = '';
+//   should_modify_query = false;
+//   threshold_score = 80;
+// }
+
+// ===== 修改后的 UnderstandRequirementOutput 定义：追加 PromptProvider 返回的完整 Prompt =====
 export class UnderstandRequirementOutput extends Output {
   understood_requirement = '';
   match_score = 100;
   reasoning = '';
   should_modify_query = false;
   threshold_score = 80;
+  prompt = '';
 }
