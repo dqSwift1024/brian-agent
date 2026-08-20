@@ -145,6 +145,7 @@ export interface InfoContextConfigRecord {
   base_similarity_count: number;
   base_keyword_count: number;
   base_random_count: number;
+  random_max_percent: number;
   total: number;
   enable_snapshot_persistence: number;
   priority_order: string;
@@ -360,6 +361,7 @@ export interface ContextInfoCategories {
   selected: ContextInfoItem[];
   pinned: ContextInfoItem[];
   timeline: ContextInfoItem[];
+  citing: ContextInfoItem[];
   tag_relative: ContextInfoItem[];
   similarity: ContextInfoItem[];
   keyword: ContextInfoItem[];
@@ -382,6 +384,16 @@ export class ContextInfoInput extends Input {
 export class ContextInfoOutput extends Output {
   list: ContextInfoItem[] = [];
   categories?: ContextInfoCategories;
+  category_ids?: {
+    selected: string[];
+    pinned: string[];
+    timeline: string[];
+    citing: string[];
+    tag_relative: string[];
+    similarity: string[];
+    keyword: string[];
+    random: string[];
+  };
   sources_summary?: Record<string, number>;
 }
 
@@ -468,6 +480,7 @@ export class UpdateInfoContextConfigInput extends Input {
   base_similarity_count?: number;
   base_keyword_count?: number;
   base_random_count?: number;
+  random_max_percent?: number;
   total?: number;
   enable_snapshot_persistence?: number | boolean;
   priority_order?: string;

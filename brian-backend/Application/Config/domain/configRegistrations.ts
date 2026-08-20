@@ -200,6 +200,10 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   core('info_core', 'context_config', 'context_config.base_similarity_count', '相似度基础数量', 'INT', 150, '上下文构建-相似度'),
   core('info_core', 'context_config', 'context_config.base_keyword_count', '关键词基础数量', 'INT', 100, '上下文构建-关键词'),
   core('info_core', 'context_config', 'context_config.base_random_count', '随机基础数量', 'INT', 50, '上下文构建-随机'),
+  // ===== 原始代码（保留作为参考）=====
+  // core('info_core', 'context_config', 'context_config.random_max_percent', '随机消息最大百分比', 'INT', 20, '会话内随机消息采集数量上限百分比 (1-100%)'),
+  // ===== 修改后的代码 =====
+  core('info_core', 'context_config', 'context_config.random_max_percent', '随机消息最大百分比', 'INT', 20, '随机消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
   core('info_core', 'context_config', 'context_config.total', '上下文总数', 'INT', 1000),
   core('info_core', 'context_config', 'context_config.enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
   core('info_core', 'context_config', 'context_config.priority_order', '维度优先级顺序', 'STRING', 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM', '重合消息去重保留优先级（用逗号分隔）'),

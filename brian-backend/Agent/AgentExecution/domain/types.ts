@@ -73,6 +73,10 @@ export class ThinkInput extends Input {
 export class ThinkOutput extends Output {
   reasoning = '';
   next_action = '';
+  prompt = '';
+  raw_response = '';
+  input_tokens = 0;
+  output_tokens = 0;
   token_usage = 0;
 }
 
@@ -114,6 +118,10 @@ export class ReflectInput extends Input {
 export class ReflectOutput extends Output {
   should_continue = false;
   reflection = '';
+  prompt = '';
+  raw_response = '';
+  input_tokens = 0;
+  output_tokens = 0;
   token_usage = 0;
 }
 
@@ -135,6 +143,10 @@ export class AnswerInput extends Input {
 
 export class AnswerOutput extends Output {
   answer = '';
+  prompt = '';
+  raw_response = '';
+  input_tokens = 0;
+  output_tokens = 0;
   token_usage = 0;
 }
 

@@ -15,6 +15,9 @@ const sessionStore = useSessionStore()
 
 const visible = computed(() => sessionStore.thinkingModalVisible)
 const targetMsgId = computed(() => sessionStore.thinkingTargetMsgId)
+const thinkingLoading = computed(() => sessionStore.thinkingLoading)
+const dagLoading = computed(() => sessionStore.dagLoading)
+const blocksLoading = computed(() => sessionStore.blocksLoading)
 
 // 指定消息（思考过程按钮）→ 展示后端接口采集的思考块；未指定（流式期间自动弹出）→ 展示当前流式思考块
 const thinkingBlocks = computed<ThinkingBlock[]>(() => {
@@ -91,23 +94,41 @@ function close() {
           <div class="flex items-center gap-2">
             <Brain :size="16" class="text-purple-600 dark:text-purple-400" />
             <h3 class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-50">思考过程</h3>
-            <Loader2 v-if="overallStreaming" :size="13" class="animate-spin text-purple-500" />
-            <span v-if="overallStreaming" class="text-xs text-purple-600 dark:text-purple-400">思考中...</span>
+            <Loader2 v-if="thinkingLoading || overallStreaming" :size="13" class="animate-spin text-purple-500" />
+            <span v-if="thinkingLoading" class="text-xs text-purple-600 dark:text-purple-400 font-medium">正在加载思考过程...</span>
+            <span v-else-if="overallStreaming" class="text-xs text-purple-600 dark:text-purple-400">思考中...</span>
           </div>
           <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 transition-colors" @click="close">
             <X :size="18" />
           </button>
         </div>
 
-        <div class="px-5 py-4 flex-1 overflow-y-auto space-y-1">
-          <!-- 1. 上下文（聚合所有类型的信息） -->
-          <ThinkingContext :blocks="thinkingBlocks" />
+        <div class="px-5 py-4 flex-1 overflow-y-auto space-y-2">
+          <!-- 正在加载整卡思考过程的全屏/居中动画 -->
+          <div v-if="thinkingLoading && thinkingBlocks.length === 0 && !taskDag && !agentDag" class="flex flex-col items-center justify-center py-16 text-purple-600 dark:text-purple-400 space-y-3">
+            <Loader2 :size="32" class="animate-spin text-purple-600 dark:text-purple-400" />
+            <p class="text-sm font-medium animate-pulse">正在加载思考过程...</p>
+            <p class="text-xs text-apple-gray-400">正在按模块独立读取 Agent 链路与上下文数据...</p>
+          </div>
 
-          <!-- 2. TaskDAG（Canvas 图，如果存在） -->
+          <!-- 1. 上下文（聚合所有类型的信息） -->
+          <ThinkingContext v-if="thinkingBlocks.length > 0 || !blocksLoading" :blocks="thinkingBlocks" />
+
+          <!-- 2. TaskDAG 模块（独立加载指示与 Canvas 图） -->
+          <div v-if="dagLoading && !taskDag && !agentDag && thinkingBlocks.length > 0" class="p-3 rounded-xl border border-purple-200/60 dark:border-purple-800/40 bg-purple-50/30 dark:bg-purple-950/20 flex items-center gap-2 text-xs text-purple-700 dark:text-purple-300">
+            <Loader2 :size="14" class="animate-spin text-purple-500" />
+            <span>正在加载任务拆解与编排 DAG 图...</span>
+          </div>
           <TaskDagFlow v-if="taskDag" :dag="taskDag" />
 
-          <!-- 3. AgentDAG（Agent 名称 Canvas 图，与下方 Agent 执行联动；点击节点可定位对应 Agent） -->
+          <!-- 3. AgentDAG 模块（Agent 名称 Canvas 图） -->
           <AgentDagFlow v-if="agentDag" :dag="agentDag" @select="focusAgent" />
+
+          <!-- 各 Agent 节点的独立加载指示 -->
+          <div v-if="blocksLoading && thinkingBlocks.length === 0 && (taskDag || agentDag)" class="p-3.5 rounded-xl border border-purple-200/60 dark:border-purple-800/40 bg-purple-50/30 dark:bg-purple-950/20 flex items-center gap-2 text-xs text-purple-700 dark:text-purple-300">
+            <Loader2 :size="14" class="animate-spin text-purple-500" />
+            <span>正在独立读取各 Agent 节点的思考输出...</span>
+          </div>
 
           <!-- 4. 工作 Agent（每个 Agent 独立：CoT/ReAct Canvas + Prompt + 模型输出 + Token/耗时） -->
           <section v-if="workAgents.length > 0" class="mt-2.5">
@@ -163,7 +184,16 @@ function close() {
             </div>
           </section>
 
+          <!-- ===== 原始暂无思考过程占位（保留参考） ===== -->
+          <!--
           <div v-if="thinkingBlocks.length === 0 && !taskDag && !agentDag" class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
+            <Brain :size="32" class="mb-3 text-apple-gray-300" />
+            <p>暂无思考过程</p>
+          </div>
+          -->
+
+          <!-- 修改后：在非加载状态下且无任何思考过程时展示 -->
+          <div v-if="!thinkingLoading && thinkingBlocks.length === 0 && !taskDag && !agentDag" class="flex flex-col items-center justify-center py-12 text-apple-gray-400 text-sm">
             <Brain :size="32" class="mb-3 text-apple-gray-300" />
             <p>暂无思考过程</p>
           </div>

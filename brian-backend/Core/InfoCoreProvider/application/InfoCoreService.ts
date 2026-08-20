@@ -60,6 +60,7 @@ import {
   GraphInfoOutput,
   ContextInfoInput,
   ContextInfoOutput,
+  ContextInfoCategories,
   SoInfoTagConfigInput,
   SoInfoTagConfigOutput,
   UpdateInfoTagConfigInput,
@@ -1328,19 +1329,32 @@ export class InfoCoreService {
       const resultList = [...pinnedItems, ...customItems].slice(0, maxTotal);
 
       output.list = resultList;
-      output.categories = {
+      const categories: ContextInfoCategories = {
         selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
         pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
         timeline: [],
+        citing: [],
+        tag_relative: [],
+        similarity: [],
+        keyword: [],
+        random: [],
+      };
+      output.categories = categories;
+      output.category_ids = {
+        selected: categories.selected.map((i: ContextInfoItem) => i.info_id),
+        pinned: categories.pinned.map((i: ContextInfoItem) => i.info_id),
+        timeline: [],
+        citing: [],
         tag_relative: [],
         similarity: [],
         keyword: [],
         random: [],
       };
       output.sources_summary = {
-        selected: output.categories.selected.length,
-        pinned: output.categories.pinned.length,
+        selected: categories.selected.length,
+        pinned: categories.pinned.length,
         timeline: 0,
+        citing: 0,
         tag_relative: 0,
         similarity: 0,
         keyword: 0,
@@ -1355,6 +1369,11 @@ export class InfoCoreService {
     const simLimit = contextConfig?.base_similarity_count ?? 150;
     const kwLimit = contextConfig?.base_keyword_count ?? 100;
     const randLimit = contextConfig?.base_random_count ?? 50;
+    // ===== 原始代码（保留作为参考）=====
+    // const randomMaxPercent = contextConfig?.random_max_percent ?? 20;
+    // ===== 修改后的代码：根据 随机基础数量(randLimit) / 上下文总数(maxTotal) 计算百分比 =====
+    const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
+    const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
 
     // 2.1 收集各维度候选原始消息
     // PINNED (会话内钉住消息)
@@ -1367,16 +1386,34 @@ export class InfoCoreService {
     });
     const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
 
+    // CITING (引用消息，会话内) vs TIMELINE (时间线消息，会话内) 二选一
+    const citingCandidates: InfoRawRecord[] = [];
+    const citedMsgIds = input.selected_msg_ids || input.custom_info_ids || [];
+    if (citedMsgIds.length > 0) {
+      for (const msgId of citedMsgIds) {
+        const r = await this.getInfoByInfoId(msgId);
+        if (r && r.session_id === input.session_id) {
+          citingCandidates.push(r);
+        }
+      }
+    }
+
     // TIMELINE (会话内时间线消息)
-    const timelineCandidates = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+    const timelineCandidates: InfoRawRecord[] = [];
+    // 若不存在显式引用消息，则收集会话时间线消息（满足“基于时间线的信息或者引用的消息 二选一，会话内”）
+    if (citingCandidates.length === 0) {
+      const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+      for (const item of tl) timelineCandidates.push(item);
+    }
 
     // 获取参考文本（参考 input.info_id，若无则使用最新的用户消息）
     let refInfoRow: InfoRawRecord | null = null;
     if (input.info_id) {
       refInfoRow = await this.getInfoByInfoId(input.info_id);
     }
-    if (!refInfoRow && timelineCandidates.length > 0) {
-      refInfoRow = timelineCandidates.find((t) => t.info_type === InfoType.REQUEST) || timelineCandidates[0] || null;
+    if (!refInfoRow && (citingCandidates.length > 0 || timelineCandidates.length > 0)) {
+      const candidates = citingCandidates.length > 0 ? citingCandidates : timelineCandidates;
+      refInfoRow = candidates.find((t) => t.info_type === InfoType.REQUEST) || candidates[0] || null;
     }
     const refText = refInfoRow?.info || '';
 
@@ -1424,17 +1461,41 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
-    // RANDOM (全系统随机关联)
+    // RANDOM (会话内随机消息，受配置中心最大百分比上限约束)
     let randCandidates: InfoRawRecord[] = [];
-    if (randLimit > 0) {
+    if (randLimit > 0 && randomMaxPercent > 0) {
       try {
-        randCandidates = await this.randomSampleInfos(randLimit);
+        const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
+          conditions: [
+            { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+          ],
+        });
+        const sessionCandidates = sessionAllRows.map((r) => this.toInfoRawRecord(r));
+
+        // ===== 原始代码（保留作为参考）：按当前会话消息数 totalSessionMsgs 计算上限 =====
+        // const totalSessionMsgs = sessionCandidates.length;
+        // const maxByPercent = Math.max(1, Math.floor(totalSessionMsgs * (randomMaxPercent / 100)));
+
+        // ===== 修改后的代码：按 [随机基础数量 / 上下文总数] 计算出来的百分比结合 maxTotal 确定上限 =====
+        const effectivePercent = randomMaxPercent;
+        const maxByPercent = Math.max(1, Math.floor(maxTotal * (effectivePercent / 100)));
+        const finalRandCount = Math.min(randLimit, maxByPercent);
+
+        if (finalRandCount > 0 && sessionCandidates.length > 0) {
+          const shuffled = [...sessionCandidates];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+          randCandidates = shuffled.slice(0, finalRandCount);
+        }
       } catch { /* ignore */ }
     }
 
     // 2.2 组装候选映射表
     const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
       [CollectionSource.PINNED, pinnedCandidates],
+      [CollectionSource.CITING, citingCandidates],
       [CollectionSource.TIMELINE, timelineCandidates],
       [CollectionSource.TAG_RELATIVE, tagCandidates],
       [CollectionSource.SIMILARITY, simCandidates],
@@ -1443,10 +1504,11 @@ export class InfoCoreService {
     ]);
 
     // 2.3 解析优先级顺序
-    // 默认："钉住消息" > 按时间线消息 > 标签相关性消息 > 向量相似度消息 > 关键词相关性消息 > 随机关联消息
+    // 默认："钉住消息" > 引用消息 > 按时间线消息 > 标签相关性消息 > 向量相似度消息 > 关键词相关性消息 > 随机关联消息
     const rawPriority = priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource);
     const validSources: ContextCollectionSource[] = [
       CollectionSource.PINNED,
+      CollectionSource.CITING,
       CollectionSource.TIMELINE,
       CollectionSource.TAG_RELATIVE,
       CollectionSource.SIMILARITY,
@@ -1488,27 +1550,32 @@ export class InfoCoreService {
 
     output.list = resultList;
     output.categories = {
-      selected: [],
+      selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
       pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
       timeline: resultList.filter((i) => i.collection_source === CollectionSource.TIMELINE),
+      citing: resultList.filter((i) => i.collection_source === CollectionSource.CITING),
       tag_relative: resultList.filter((i) => i.collection_source === CollectionSource.TAG_RELATIVE),
       similarity: resultList.filter((i) => i.collection_source === CollectionSource.SIMILARITY),
       keyword: resultList.filter((i) => i.collection_source === CollectionSource.KEYWORD),
       random: resultList.filter((i) => i.collection_source === CollectionSource.RANDOM),
     };
-    output.sources_summary = {
-      selected: 0,
-      pinned: output.categories.pinned.length,
-      timeline: output.categories.timeline.length,
-      tag_relative: output.categories.tag_relative.length,
-      similarity: output.categories.similarity.length,
-      keyword: output.categories.keyword.length,
-      random: output.categories.random.length,
+
+    output.category_ids = {
+      selected: output.categories.selected.map((i) => i.info_id),
+      pinned: output.categories.pinned.map((i) => i.info_id),
+      timeline: output.categories.timeline.map((i) => i.info_id),
+      citing: output.categories.citing.map((i) => i.info_id),
+      tag_relative: output.categories.tag_relative.map((i) => i.info_id),
+      similarity: output.categories.similarity.map((i) => i.info_id),
+      keyword: output.categories.keyword.map((i) => i.info_id),
+      random: output.categories.random.map((i) => i.info_id),
     };
+
     output.sources_summary = {
-      selected: 0,
+      selected: output.categories.selected.length,
       pinned: output.categories.pinned.length,
       timeline: output.categories.timeline.length,
+      citing: output.categories.citing.length,
       tag_relative: output.categories.tag_relative.length,
       similarity: output.categories.similarity.length,
       keyword: output.categories.keyword.length,
@@ -1717,6 +1784,7 @@ export class InfoCoreService {
     assertNonNegativeInt(input.base_similarity_count, 'base_similarity_count');
     assertNonNegativeInt(input.base_keyword_count, 'base_keyword_count');
     assertNonNegativeInt(input.base_random_count, 'base_random_count');
+    assertNonNegativeInt(input.random_max_percent, 'random_max_percent');
     if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 1)) {
       throw new ValidationError('total 必须为 >= 1 的整数');
     }
@@ -1734,6 +1802,7 @@ export class InfoCoreService {
         base_similarity_count: 150,
         base_keyword_count: 100,
         base_random_count: 50,
+        random_max_percent: 20,
         total: 1000,
         enable_snapshot_persistence: 1,
         priority_order: 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM',
@@ -2470,6 +2539,7 @@ export class InfoCoreService {
       base_similarity_count: Number(raw['base_similarity_count'] ?? 150),
       base_keyword_count: Number(raw['base_keyword_count'] ?? 100),
       base_random_count: Number(raw['base_random_count'] ?? 50),
+      random_max_percent: Number(raw['random_max_percent'] ?? 20),
       total: Number(raw['total'] ?? 1000),
       enable_snapshot_persistence: Number(raw['enable_snapshot_persistence'] ?? 1),
       priority_order: String(raw['priority_order'] ?? 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'),

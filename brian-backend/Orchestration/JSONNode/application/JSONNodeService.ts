@@ -676,6 +676,8 @@ export class JSONNodeService {
     const includeProfile = (params.include_user_profile as boolean) ?? true;
 
     let sessionContext: Record<string, unknown> = {};
+    let contextCategories: unknown = undefined;
+    let contextCategoryIds: unknown = undefined;
     try {
       const selectedMsgIds = Array.isArray(sharedData.selected_msg_ids) ? sharedData.selected_msg_ids as string[] : undefined;
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
@@ -685,6 +687,8 @@ export class JSONNodeService {
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, new InfoCoreContext(), ctxInfoOutput);
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
+      contextCategories = ctxInfoOutput.categories;
+      contextCategoryIds = ctxInfoOutput.category_ids;
     } catch { /* degrade gracefully */ }
 
     let userProfile: Record<string, unknown> = {};
@@ -719,6 +723,8 @@ export class JSONNodeService {
       session_id: sessionId,
       user_query: userQuery,
       session_context: sessionContext,
+      context_categories: contextCategories,
+      context_category_ids: contextCategoryIds,
       user_profile: userProfile,
       recent_works: recentWorks,
       created_at: IdGenerator.now(),

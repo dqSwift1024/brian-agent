@@ -214,6 +214,7 @@ export class InfoCoreSchemaInitializer {
         "base_similarity_count"   INTEGER NOT NULL DEFAULT 150,
         "base_keyword_count"      INTEGER NOT NULL DEFAULT 100,
         "base_random_count"       INTEGER NOT NULL DEFAULT 50,
+        "random_max_percent"      INTEGER NOT NULL DEFAULT 20,
         "total"                   INTEGER NOT NULL DEFAULT 1000,
         "enable_snapshot_persistence" INTEGER NOT NULL DEFAULT 1,
         "priority_order"          TEXT    NOT NULL DEFAULT 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'
@@ -221,6 +222,7 @@ export class InfoCoreSchemaInitializer {
     `);
 
     for (const col of [
+      `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "random_max_percent" INTEGER NOT NULL DEFAULT 20`,
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "enable_snapshot_persistence" INTEGER NOT NULL DEFAULT 1`,
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "priority_order" TEXT NOT NULL DEFAULT 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'`,
       `ALTER TABLE "${INFO_SUMMARY_CONFIG_TABLE}" ADD COLUMN "threshold" INTEGER NOT NULL DEFAULT 100`,

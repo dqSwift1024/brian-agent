@@ -241,6 +241,28 @@
   2. **后端摘要使用真实 AI 摘要**：`VisualizationService.getVisualizedMessageDAG` (`GET /api/visualization/message-dag`) 改从 `info_summary` 表读取真实 AI 摘要，不再对原文做 50 字截断。
 - **行为差异**：对话区与 ChatMap 消息框展示完整的 AI 生成摘要（超阈值内容不被截断，≤100字短内容展示完整原文作为摘要）。
 
+### [2026-08-20] "思考过程"弹窗上下文全维度增强、Prompt与回复完整展示及Token/思考方式升级
+- **变更原因**：满足"思考过程"弹窗全维度上下文展示、问答上下文 ID 分类保存、完整 Prompt 与模型回复展示、思考方式标签 (CoT/ReACT) 保留与移除 Canvas 图，以及输入/输出 Token 分别展示的需求。
+- **功能变更**：
+  1. **全维度上下文环境展示 (ThinkingContext.vue)**：展示完整的上下文类型：① 会话内：基于时间线的信息 或 引用的消息（二选一）；② 会话内：钉住的消息；③ 全系统：语义相似消息；④ 全系统：标签相关性消息；⑤ 全系统：关键词相关消息；⑥ 会话内：随机消息（受配置中心 `random_max_percent` 上限约束，默认 ≤20%）。
+  2. **问答上下文 ID 列表分类保存**：`InfoCoreService.ts` 与 `ContextInfoOutput` 输出 `category_ids` 映射表，保存并透传一次问答按选择方式（timeline, citing, pinned, similarity, tag_relative, keyword, random）分类的消息 ID 列表；并在弹窗 Context 区提供可视化分类 ID 列表。
+  3. **完整 Prompt 与 模型完整回复 (ThinkingBlock.vue)**：Agent 展示区块中新增完整 Prompt 区域（提供一键复制与字符统计）与 LLM 模型完整回复区域。
+  4. **思考方式标签与 Canvas 优化**：移除 `CanvasReActFlow` 图形渲染，顶部标栏保留思考方式标签（如 `CoT`、`ReACT`）。
+  5. **Token 用量分别展示**：顶部与用量面板中分别展示 `输入 Token` 和 `输出 Token`（如 `输入: 120 | 输出: 45 (共 165)`）。
+- **行为差异**：
+  - 修改前：上下文仅展示部分引用/画像；思考块展示 CanvasReActFlow 图；Token 仅显示总数。
+  - 修改后：上下文全维度精准分类并显示 ID 列表；单独展示 Prompt 和完整回复；显示 CoT/ReACT 思考方式标签并移除 Canvas 图；Token 拆分展示输入与输出。
+
+### [2026-08-20] "思考过程"弹窗独立模块加载与动态加载态升级
+- **变更原因**：解决打开思考过程弹窗时展示静态"暂无思考过程"空白弹窗的问题，实现弹窗内各模块（上下文、DAG编排、Agent节点输出）独立按需加载，提升响应速度与交互体验。
+- **功能变更**：
+  1. **"正在加载思考过程..."动态加载态**：`session.ts` 新增 `thinkingLoading`、`dagLoading`、`blocksLoading` 状态；`ThinkingModal.vue` 弹窗打开时显示标题与居中动画"正在加载思考过程..."，避免静态空白或"暂无思考过程"提示。
+  2. **模块独立并发加载**：`dev-server.ts` 的 `/api/chat/thinking` 端点支持 `module=dag` / `module=blocks` / `module=all` 参数；`ChatArea.vue` 与 `ChatMap.vue` 并发调用 DAG 与 Blocks 模块接口，实现 DAG 编排图与 Agent 节点输出独立更新展示。
+  3. **模块级 Skeleton/加载骨架屏**：`ThinkingModal.vue` 为 DAG 模块与 Agent 节点输出模块分别提供独立的 Loading 骨架提示，各模块数据就绪后即刻渲染展示。
+- **行为差异**：
+  - 修改前：弹窗打开时同步等待整包数据，数据未返回时展示静态"暂无思考过程"；
+  - 修改后：弹窗打开即展示"正在加载思考过程..."，各模块独立加载并渐进式渲染。
+
 ### [2026-08-19] 思考过程弹窗与 ChatMap/对话区消息框结构统一
 - **变更原因**：用户需要点击「思考过程」按钮以弹窗形式查看 Agent 思考过程；同时要求 ChatMap 区与对话区消息框结构一致，仅默认展开态不同（ChatMap 默认展示摘要折叠详情，对话区默认展示详情折叠摘要）。
 - **功能变更**：

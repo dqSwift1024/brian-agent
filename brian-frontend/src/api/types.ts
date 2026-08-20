@@ -75,6 +75,11 @@ export interface ThinkingBlock extends BlockBase {
   summary: string
   durationMs: number
   tokenUsage?: number
+  inputTokens?: number
+  outputTokens?: number
+  thinkingStrategy?: string
+  prompt?: string
+  rawResponse?: string
   agentInfo?: {
     id?: string
     name: string
@@ -89,6 +94,23 @@ export interface ThinkingBlock extends BlockBase {
     userProfile?: Record<string, unknown>
     recentWorks?: unknown[]
     citingMessages?: unknown[]
+    timelineMessages?: unknown[]
+    pinnedMessages?: unknown[]
+    similarityMessages?: unknown[]
+    tagRelativeMessages?: unknown[]
+    keywordMessages?: unknown[]
+    randomMessages?: unknown[]
+    randomMaxPercent?: number
+    categoryIds?: {
+      selected?: string[]
+      pinned?: string[]
+      timeline?: string[]
+      citing?: string[]
+      tag_relative?: string[]
+      similarity?: string[]
+      keyword?: string[]
+      random?: string[]
+    }
     customContext?: string
     strategy?: string
   }

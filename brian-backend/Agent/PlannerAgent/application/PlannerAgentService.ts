@@ -30,7 +30,7 @@ import {
 import {
   GetAgentInput, GetAgentOutput, AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { parseJsonObject } from '../../shared/signature';
+import { parseJsonObject, formatContextCategories } from '../../shared/signature';
 
 type TaskDag = PlanOutput['task_dag'];
 
@@ -93,7 +93,11 @@ export class PlannerAgentService {
           new InfoCoreContext(),
           ctxOut,
         );
-        contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+        // ===== 原始方法（保留作为参考）=====
+        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+
+        // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
+        contextExtra = formatContextCategories(ctxOut);
       } catch { /* best-effort */ }
     }
 

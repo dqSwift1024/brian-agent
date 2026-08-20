@@ -23,6 +23,10 @@ export const useSessionStore = defineStore('session', () => {
   const thinkingModalVisible = ref(false)
   const thinkingTargetMsgId = ref<string | null>(null)
   const thinkingBlocks = ref<Block[]>([])
+  // 思考过程各模块独立/整体加载状态
+  const thinkingLoading = ref(false)
+  const dagLoading = ref(false)
+  const blocksLoading = ref(false)
   // Planning 策略拆解：planning 为流式期间的实时拆解数据，thinkingDag 为指定消息接口采集的拆解数据
   const planning = ref<PlanningData>({ status: 'idle' })
   const thinkingDag = ref<AgentDagData | null>(null)
@@ -426,7 +430,8 @@ export const useSessionStore = defineStore('session', () => {
   }
   */
 
-  // ===== 修改后的 openThinkingModal：额外接收 Planning 策略拆解数据（dag） =====
+  // ===== 原始 openThinkingModal / closeThinkingModal（保留参考） =====
+  /*
   function openThinkingModal(msgId: string | null = null, blocks: Block[] = [], dag: AgentDagData | null = null) {
     thinkingTargetMsgId.value = msgId
     thinkingBlocks.value = blocks
@@ -439,6 +444,56 @@ export const useSessionStore = defineStore('session', () => {
     thinkingTargetMsgId.value = null
     thinkingBlocks.value = []
     thinkingDag.value = null
+    resetPlanning()
+    resetAgentStatus()
+  }
+  */
+
+  // ===== 修改后的 openThinkingModal 与独立模块加载状态管理 =====
+  function startThinkingLoading(msgId: string | null = null) {
+    thinkingTargetMsgId.value = msgId
+    thinkingBlocks.value = []
+    thinkingDag.value = null
+    thinkingLoading.value = true
+    dagLoading.value = true
+    blocksLoading.value = true
+    thinkingModalVisible.value = true
+  }
+
+  function setThinkingDag(dag: AgentDagData | null) {
+    thinkingDag.value = dag
+    dagLoading.value = false
+    if (!blocksLoading.value) {
+      thinkingLoading.value = false
+    }
+  }
+
+  function setThinkingBlocks(blocks: Block[]) {
+    thinkingBlocks.value = blocks
+    blocksLoading.value = false
+    if (!dagLoading.value) {
+      thinkingLoading.value = false
+    }
+  }
+
+  function openThinkingModal(msgId: string | null = null, blocks: Block[] = [], dag: AgentDagData | null = null) {
+    thinkingTargetMsgId.value = msgId
+    thinkingBlocks.value = blocks
+    thinkingDag.value = dag
+    thinkingLoading.value = false
+    dagLoading.value = false
+    blocksLoading.value = false
+    thinkingModalVisible.value = true
+  }
+
+  function closeThinkingModal() {
+    thinkingModalVisible.value = false
+    thinkingTargetMsgId.value = null
+    thinkingBlocks.value = []
+    thinkingDag.value = null
+    thinkingLoading.value = false
+    dagLoading.value = false
+    blocksLoading.value = false
     resetPlanning()
     resetAgentStatus()
   }
@@ -497,12 +552,14 @@ export const useSessionStore = defineStore('session', () => {
     currentSessionId, messages, blocks, chatList, chatMapNodes, chatMapEdges,
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
+    thinkingLoading, dagLoading, blocksLoading,
     planning, thinkingDag, agentExecutions,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask,
+    startThinkingLoading, setThinkingDag, setThinkingBlocks,
     openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning,
     setAgentStatus, resetAgentStatus
   }

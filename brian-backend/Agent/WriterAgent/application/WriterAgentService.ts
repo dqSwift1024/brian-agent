@@ -34,7 +34,7 @@ import {
   GetAgentInput, GetAgentOutput, RecordAgentUsageInput, RecordAgentUsageOutput,
   AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { parseJsonObject } from '../../shared/signature';
+import { parseJsonObject, formatContextCategories } from '../../shared/signature';
 
 const FORMAT_ENUM = ['TEXT', 'MARKDOWN', 'JSON'];
 const STYLE_ENUM = ['clear', 'concise', 'detailed', 'creative'];
@@ -108,7 +108,11 @@ export class WriterAgentService {
           new InfoCoreContext(),
           ctxOut,
         );
-        contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+        // ===== 原始方法（保留作为参考）=====
+        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+
+        // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
+        contextExtra = formatContextCategories(ctxOut);
       } catch { }
     }
 
@@ -244,7 +248,11 @@ export class WriterAgentService {
           new InfoCoreContext(),
           ctxOut,
         );
-        contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+        // ===== 原始方法（保留作为参考）=====
+        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
+
+        // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
+        contextExtra = formatContextCategories(ctxOut);
       } catch { /* best-effort */ }
     }
 

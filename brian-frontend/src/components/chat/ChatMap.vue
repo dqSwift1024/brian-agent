@@ -199,7 +199,8 @@ function jumpTo(infoId: string) {
   sessionStore.triggerFocus(infoId)
 }
 
-// 思考过程按钮：先从后端接口采集思考过程数据，再打开弹窗展示
+// ===== 原始 showThinking 实现（保留参考） =====
+/*
 async function showThinking(infoId: string) {
   sessionStore.openThinkingModal(infoId)
   try {
@@ -208,6 +209,22 @@ async function showThinking(infoId: string) {
   } catch {
     sessionStore.openThinkingModal(infoId, [])
   }
+}
+*/
+
+// ===== 修改后：思考过程独立按模块并发加载（DAG 与 ThinkingBlocks 独立加载与渐进式展示） =====
+async function showThinking(infoId: string) {
+  sessionStore.startThinkingLoading(infoId)
+
+  const dagPromise = chatApi.thinking(infoId, 'dag')
+    .then(res => sessionStore.setThinkingDag(res.dag ?? null))
+    .catch(() => sessionStore.setThinkingDag(null))
+
+  const blocksPromise = chatApi.thinking(infoId, 'blocks')
+    .then(res => sessionStore.setThinkingBlocks(res.blocks ?? []))
+    .catch(() => sessionStore.setThinkingBlocks([]))
+
+  await Promise.allSettled([dagPromise, blocksPromise])
 }
 
 // 列表点击消息 -> 平移 ChatMap 使该消息居中并高亮

@@ -563,6 +563,8 @@ export class OrchestrationEntryService {
       return false;
     }
     let sessionContext: Record<string, unknown> = {};
+    let contextCategories: unknown = undefined;
+    let contextCategoryIds: unknown = undefined;
     try {
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: input.session_id,
@@ -571,6 +573,8 @@ export class OrchestrationEntryService {
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
+      contextCategories = ctxInfoOutput.categories;
+      contextCategoryIds = ctxInfoOutput.category_ids;
     } catch { /* degrade gracefully */ }
 
     let userProfile: Record<string, unknown> = {};
@@ -607,6 +611,8 @@ export class OrchestrationEntryService {
       session_id: input.session_id,
       user_query: input.user_query,
       session_context: sessionContext,
+      context_categories: contextCategories,
+      context_category_ids: contextCategoryIds,
       user_profile: userProfile,
       recent_works: recentWorks,
       selected_msg_ids: input.selected_msg_ids ?? [],

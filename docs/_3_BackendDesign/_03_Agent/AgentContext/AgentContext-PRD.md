@@ -38,13 +38,16 @@
 6. 调用 RelationDBProvider.insertDB 批量写入 `agent_context_item` 表（每行：context_id、info_id、source）；
 7. 返回 context_data、context_id、total_context_count 写入 output；
 
-> **来源分类说明**（对应 `InfoCore.context` 的 source 标注）：  
-> - `pinned`：钉住的消息，始终排在上下文最前方；  
-> - `timeline`：基于 `info_graph` 引用链 BFS 遍历的关联消息；  
-> - `tag_relative`：基于 Tag 相关性（`relationKInfo`）匹配的关联消息；  
-> - `similarity`：基于语义相似度（`similarKInfo`）匹配的关联消息；  
-> - `keyword`：基于关键词搜索（`keywordKInfo`）匹配的关联消息；  
-> - `random`：随机采样的联想消息。
+> **来源分类与结构化渲染说明**（对应 `InfoCore.context` 的 source 标注）：  
+> - `selected` / `custom`：指定消息，包裹节点为 `<指定消息>`；  
+> - `pinned`：钉住的消息，包裹节点为 `<钉住的消息>`；  
+> - `timeline`：时间线滑动窗口消息，包裹节点为 `<时间线消息>`；  
+> - `citing`：引用依赖关联消息，包裹节点为 `<引用关联消息>`；  
+> - `tag_relative`：基于 Tag 相关性匹配的关联消息，包裹节点为 `<标签关联消息>`；  
+> - `similarity`：基于语义相似度匹配的关联消息，包裹节点为 `<向量语义消息>`；  
+> - `keyword`：基于关键词搜索匹配的关联消息，包裹节点为 `<关键词匹配消息>`；  
+> - `random`：随机采样的探查/联想消息，包裹节点为 `<探查随机消息>`。  
+> **组装规范**：经 `formatContextCategories` 格式化时，自动剔除 `info_id`、`created` 等底层数据库属性字段，并以 XML 分类节点分类包裹输出，保证输入给 Prompt 模板的上下文纯净且结构化。
 
 ### 2.2. 按 trace_id 查询上下文摘要（getContextByTrace）
 

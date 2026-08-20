@@ -17,12 +17,25 @@ export enum InfoType {
   AGENT = 'AGENT',
 }
 
+// ===== 原始代码（保留作为参考） =====
+// export enum CollectionSource {
+//   PINNED = 'PINNED',
+//   TIMELINE = 'TIMELINE',
+//   TAG_RELATIVE = 'TAG_RELATIVE',
+//   SIMILARITY = 'SIMILARITY',
+//   KEYWORD = 'KEYWORD',
+//   RANDOM = 'RANDOM',
+//   CUSTOM = 'CUSTOM',
+// }
+
+// ===== 修改后的代码 =====
 /**
  * 上下文采集方式枚举
  */
 export enum CollectionSource {
   PINNED = 'PINNED',
   TIMELINE = 'TIMELINE',
+  CITING = 'CITING',
   TAG_RELATIVE = 'TAG_RELATIVE',
   SIMILARITY = 'SIMILARITY',
   KEYWORD = 'KEYWORD',

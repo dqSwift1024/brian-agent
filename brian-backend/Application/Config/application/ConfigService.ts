@@ -1269,6 +1269,7 @@ export class ConfigService {
       else if (prefix.startsWith('info_core.context_config.base_similarity_count')) input.base_similarity_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_keyword_count')) input.base_keyword_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_random_count')) input.base_random_count = Number(value);
+      else if (prefix.startsWith('info_core.context_config.random_max_percent')) input.random_max_percent = Number(value);
       else if (prefix.startsWith('info_core.context_config.total')) input.total = Number(value);
       else if (prefix.startsWith('info_core.context_config.enable_snapshot_persistence')) input.enable_snapshot_persistence = value ? 1 : 0;
       else if (prefix.startsWith('info_core.context_config.priority_order')) input.priority_order = String(value);

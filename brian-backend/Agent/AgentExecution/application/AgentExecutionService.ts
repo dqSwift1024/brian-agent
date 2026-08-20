@@ -49,7 +49,7 @@ import {
   StartWorkerInput, StartWorkerOutput, SoWorkerInput, SoWorkerOutput, MQCoreContext,
   LastNInfoInput, LastNInfoOutput,
 } from '@brian-agent/core';
-import { parseJsonObject } from '../../shared/signature';
+import { parseJsonObject, formatContextCategories } from '../../shared/signature';
 
 const EVAL_QUEUE = 'agent.eval';
 const EXEC_QUEUE = 'agent.execution';
@@ -154,8 +154,15 @@ export class AgentExecutionService {
           new InfoCoreContext(),
           ctxOut,
         );
-        if (ctxOut.list?.length) {
-          contextData = `${ctxOut.list.map((i) => String((i as { info?: string }).info ?? i)).join('\n')}\n${input.task_content}`;
+        // ===== 原始方法（保留作为参考）=====
+        // if (ctxOut.list?.length) {
+        //   contextData = `${ctxOut.list.map((i) => String((i as { info?: string }).info ?? i)).join('\n')}\n${input.task_content}`;
+        // }
+
+        // ===== 修改后的方法：按分类分类节点包裹内容且脱敏非内容属性 =====
+        const formattedCtx = formatContextCategories(ctxOut);
+        if (formattedCtx) {
+          contextData = `${formattedCtx}\n${input.task_content}`;
         }
       } catch {
         /* best-effort */
@@ -433,8 +440,12 @@ export class AgentExecutionService {
     if (!ok) throw new ValidationError('think execLLM failed');
 
     const parsed = parseJsonObject(llmOut.result);
+    output.prompt = prompt;
+    output.raw_response = llmOut.result || '';
     output.reasoning = String(parsed?.reasoning ?? llmOut.result);
     output.next_action = JSON.stringify(parsed?.next_action ?? { tool_type: 'NONE' });
+    output.input_tokens = Number(llmOut.input_tokens ?? 0);
+    output.output_tokens = Number(llmOut.output_tokens ?? 0);
     output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
     await this.saveStepInfo(ctx, 'THINK', 'AGENT', input.agent_id, output.reasoning);
@@ -533,8 +544,12 @@ export class AgentExecutionService {
     );
 
     const parsed = parseJsonObject(llmOut.result);
+    output.prompt = prompt;
+    output.raw_response = llmOut.result || '';
     output.should_continue = Boolean(parsed?.should_continue ?? true);
     output.reflection = String(parsed?.reflection ?? llmOut.result);
+    output.input_tokens = Number(llmOut.input_tokens ?? 0);
+    output.output_tokens = Number(llmOut.output_tokens ?? 0);
     output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
     await this.saveStepInfo(ctx, 'REFLECT', 'AGENT', input.agent_id, output.reflection);
     return true;
@@ -568,7 +583,11 @@ export class AgentExecutionService {
       new LLMContext(),
       llmOut,
     );
+    output.prompt = prompt;
+    output.raw_response = llmOut.result || '';
     output.answer = llmOut.result || '';
+    output.input_tokens = Number(llmOut.input_tokens ?? 0);
+    output.output_tokens = Number(llmOut.output_tokens ?? 0);
     output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
     // ===== 原始代码（保留参考）：WorkAgent 执行 answer() 时不应保存 final RESPONSE 消息，该消息由编排引擎的 SAVE_RESPONSE 节点保存 =====
@@ -1034,7 +1053,15 @@ export class AgentExecutionService {
           subSteps,
           token_usage: thinkOut.token_usage,
           tracePiece: {
-            think: { reasoning: thinkOut.reasoning, next_action: thinkOut.next_action },
+            think: {
+              reasoning: thinkOut.reasoning,
+              next_action: thinkOut.next_action,
+              prompt: thinkOut.prompt,
+              raw_response: thinkOut.raw_response,
+              input_tokens: thinkOut.input_tokens,
+              output_tokens: thinkOut.output_tokens,
+              token_usage: thinkOut.token_usage,
+            },
           },
         };
       }
@@ -1121,6 +1148,11 @@ export class AgentExecutionService {
             reflect: {
               should_continue: reflectOut.should_continue,
               reflection: reflectOut.reflection,
+              prompt: reflectOut.prompt,
+              raw_response: reflectOut.raw_response,
+              input_tokens: reflectOut.input_tokens,
+              output_tokens: reflectOut.output_tokens,
+              token_usage: reflectOut.token_usage,
             },
           },
         };
@@ -1148,7 +1180,16 @@ export class AgentExecutionService {
           finalAnswer: answerOut.answer,
           stopRunning: true,
           token_usage: answerOut.token_usage,
-          tracePiece: { answer: { answer: answerOut.answer } },
+          tracePiece: {
+            answer: {
+              answer: answerOut.answer,
+              prompt: answerOut.prompt,
+              raw_response: answerOut.raw_response,
+              input_tokens: answerOut.input_tokens,
+              output_tokens: answerOut.output_tokens,
+              token_usage: answerOut.token_usage,
+            },
+          },
         };
       }
     } catch (err) {

@@ -967,6 +967,19 @@ async function buildThinkingBlocksAndDag(
             if (Array.isArray(parsedTask.session_context)) {
               contextData.citingMessages = parsedTask.session_context;
             }
+            if (parsedTask.context_categories) {
+              contextData.categories = parsedTask.context_categories;
+              if (Array.isArray(parsedTask.context_categories.citing)) contextData.citingMessages = parsedTask.context_categories.citing;
+              if (Array.isArray(parsedTask.context_categories.timeline)) contextData.timelineMessages = parsedTask.context_categories.timeline;
+              if (Array.isArray(parsedTask.context_categories.pinned)) contextData.pinnedMessages = parsedTask.context_categories.pinned;
+              if (Array.isArray(parsedTask.context_categories.similarity)) contextData.similarityMessages = parsedTask.context_categories.similarity;
+              if (Array.isArray(parsedTask.context_categories.tag_relative)) contextData.tagRelativeMessages = parsedTask.context_categories.tag_relative;
+              if (Array.isArray(parsedTask.context_categories.keyword)) contextData.keywordMessages = parsedTask.context_categories.keyword;
+              if (Array.isArray(parsedTask.context_categories.random)) contextData.randomMessages = parsedTask.context_categories.random;
+            }
+            if (parsedTask.context_category_ids) {
+              contextData.categoryIds = parsedTask.context_category_ids;
+            }
             if (parsedTask.user_profile) {
               contextData.userProfile = parsedTask.user_profile;
             }
@@ -999,6 +1012,11 @@ async function buildThinkingBlocksAndDag(
       const steps: any[] = [];
       let content = '';
       let outputAnswer = row.answer ? String(row.answer) : undefined;
+      let fullPrompt = '';
+      let fullRawResponse = '';
+      let sumInputTokens = 0;
+      let sumOutputTokens = 0;
+      let hasActTools = false;
 
       if (iterJson) {
         try {
@@ -1006,6 +1024,11 @@ async function buildThinkingBlocksAndDag(
           if (Array.isArray(iters)) {
             for (const iter of iters) {
               if (iter.think) {
+                if (iter.think.prompt && !fullPrompt) fullPrompt = String(iter.think.prompt);
+                if (iter.think.raw_response && !fullRawResponse) fullRawResponse = String(iter.think.raw_response);
+                if (iter.think.input_tokens) sumInputTokens += Number(iter.think.input_tokens);
+                if (iter.think.output_tokens) sumOutputTokens += Number(iter.think.output_tokens);
+
                 const reasoning = String(iter.think.reasoning ?? '');
                 if (reasoning) {
                   content += (content ? '\n' : '') + reasoning;
@@ -1021,6 +1044,7 @@ async function buildThinkingBlocksAndDag(
               if (iter.act) {
                 const toolName = String(iter.act.tool_type || iter.act.tool_id || 'Tool');
                 if (toolName !== 'NONE') {
+                  hasActTools = true;
                   steps.push({
                     phase: 'ACT',
                     iteration: iter.iteration_index ?? (steps.length + 1),
@@ -1035,6 +1059,11 @@ async function buildThinkingBlocksAndDag(
                 }
               }
               if (iter.reflect) {
+                if (iter.reflect.prompt && !fullPrompt) fullPrompt = String(iter.reflect.prompt);
+                if (iter.reflect.raw_response && !fullRawResponse) fullRawResponse = String(iter.reflect.raw_response);
+                if (iter.reflect.input_tokens) sumInputTokens += Number(iter.reflect.input_tokens);
+                if (iter.reflect.output_tokens) sumOutputTokens += Number(iter.reflect.output_tokens);
+
                 steps.push({
                   phase: 'REFLECT',
                   iteration: iter.iteration_index ?? (steps.length + 1),
@@ -1043,8 +1072,14 @@ async function buildThinkingBlocksAndDag(
                   elapsedMs: iter.iteration_elapsed_ms,
                 });
               }
-              if (iter.answer && iter.answer.answer && !outputAnswer) {
-                outputAnswer = String(iter.answer.answer);
+              if (iter.answer) {
+                if (iter.answer.prompt && !fullPrompt) fullPrompt = String(iter.answer.prompt);
+                if (iter.answer.raw_response) fullRawResponse = String(iter.answer.raw_response);
+                if (iter.answer.input_tokens) sumInputTokens += Number(iter.answer.input_tokens);
+                if (iter.answer.output_tokens) sumOutputTokens += Number(iter.answer.output_tokens);
+                if (iter.answer.answer && !outputAnswer) {
+                  outputAnswer = String(iter.answer.answer);
+                }
               }
             }
           }
@@ -1054,6 +1089,18 @@ async function buildThinkingBlocksAndDag(
       if (!content && inputQuery) {
         content = inputQuery;
       }
+      if (!fullPrompt && inputQuery) {
+        fullPrompt = inputQuery;
+      }
+      if (!fullRawResponse) {
+        fullRawResponse = outputAnswer || content || '';
+      }
+      if (sumInputTokens === 0 && sumOutputTokens === 0 && tokenUsage > 0) {
+        sumInputTokens = Math.round(tokenUsage * 0.7);
+        sumOutputTokens = Math.max(0, tokenUsage - sumInputTokens);
+      }
+
+      const thinkingStrategy = hasActTools ? 'ReACT' : 'CoT';
 
       const block = {
         id: `block-think-${wid}-${agentId}`,
@@ -1063,7 +1110,12 @@ async function buildThinkingBlocksAndDag(
         content,
         summary: '',
         durationMs: Number(row.elapsed_ms ?? 0),
-        tokenUsage,
+        tokenUsage: tokenUsage || (sumInputTokens + sumOutputTokens),
+        inputTokens: sumInputTokens,
+        outputTokens: sumOutputTokens,
+        thinkingStrategy,
+        prompt: fullPrompt,
+        rawResponse: fullRawResponse,
         agentInfo: {
           id: agentId,
           name: agentName,
@@ -1073,7 +1125,7 @@ async function buildThinkingBlocksAndDag(
         },
         context: contextData,
         input: inputQuery,
-        output: outputAnswer,
+        output: outputAnswer || fullRawResponse,
         steps,
         meta: {
           status: 'done',
@@ -2295,11 +2347,27 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // const blocks = workBlocksMap.get(workId) ?? [];
         // sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks });
 
-        // ===== 修改后：同时下发 Planning 策略拆解（Task DAG / Agent DAG），供"思考过程"弹窗展示 =====
+        // ===== 原始实现（保留参考）：同时完整查询并下发 Blocks 与 Planning DAG =====
+        /*
         const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
         const blocks = workBlocksMap.get(workId) ?? [];
         const dag = workDagMap.get(workId);
         sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks, dag: dag ?? null });
+        */
+
+        // ===== 修改后：支持模块化独立查询（module=dag / module=blocks / module=all），实现各模块独立加载与渐进式展示 =====
+        const reqModule = String(params.get('module') ?? 'all').toLowerCase();
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
+        const blocks = (reqModule === 'dag') ? [] : (workBlocksMap.get(workId) ?? []);
+        const dag = (reqModule === 'blocks') ? null : (workDagMap.get(workId) ?? null);
+        sendJson(res, 200, {
+          work_id: workId,
+          interact_id: interactId,
+          count: blocks.length,
+          blocks,
+          dag,
+          module: reqModule,
+        });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];

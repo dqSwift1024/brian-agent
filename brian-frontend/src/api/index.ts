@@ -61,8 +61,15 @@ export const chatApi = {
     request<{ sessions: ChatSession[] }>(`/chat/search?keyword=${encodeURIComponent(keyword)}`).then(r => r.sessions),
   pinMessage: (infoId: string) =>
     request<{ pin: boolean }>(`/chat/message/${encodeURIComponent(infoId)}/pin`, { method: 'POST' }),
-  thinking: (infoId: string) =>
-    request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null }>(`/chat/thinking?info_id=${encodeURIComponent(infoId)}`).then(r => r),
+  // ===== 原始 thinking 方法（保留参考） =====
+  // thinking: (infoId: string) =>
+  //   request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null }>(`/chat/thinking?info_id=${encodeURIComponent(infoId)}`).then(r => r),
+
+  // ===== 修改后：支持模块化独立的思考过程数据采集 (module='all'|'dag'|'blocks') =====
+  thinking: (infoId: string, module: 'all' | 'dag' | 'blocks' = 'all') =>
+    request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null; module?: string }>(
+      `/chat/thinking?info_id=${encodeURIComponent(infoId)}&module=${module}`,
+    ).then(r => r),
   agentChain: (exchangeId: string) =>
     request<{ nodes: AgentChainNode[] }>(`/chat/agent-chain/${encodeURIComponent(exchangeId)}`).then(r => r.nodes),
   cancelTask: (exchangeId: string) =>

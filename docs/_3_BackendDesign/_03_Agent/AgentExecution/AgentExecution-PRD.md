@@ -43,8 +43,9 @@
 
 3. **构建初始上下文**
    a. 调用 AgentContext.buildAgentContext({ session_id, agent_id, work_id, trace_id }) 构建当前 session 的上下文数据，同时持久化上下文快照（返回 context_data 和 context_id）；
-   b. 将 task_content 拼接到上下文前端；
-   c. 调用 SoulProvider.getSoul(soul_id) 获取 Soul 内容，作为系统 prompt 头部；
+   b. 上下文结构化渲染：通过 `formatContextCategories` 将 InfoCore 多路召回的结果脱敏数据库非内容属性（剔除 `info_id`、`created` 等），并按来源打上 XML 分类标签节点包装（`<指定消息>`、`<钉住的消息>`、`<时间线消息>`、`<引用关联消息>`、`<标签关联消息>`、`<向量语义消息>`、`<关键词匹配消息>`、`<探查随机消息>`），组装为结构化 Prompt 上下文；
+   c. 将 task_content 拼接到上下文前端；
+   d. 调用 SoulProvider.getSoul(soul_id) 获取 Soul 内容，作为系统 prompt 头部；
 
 4. **执行循环（调度器驱动）**
    a. 调用 AgentStrategy.getStrategy(strategy_id) 获取策略配置（原子操作调用顺序和执行控制逻辑）；
