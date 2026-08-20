@@ -1712,8 +1712,10 @@ export class InfoCoreService {
     const simLimit = contextConfig?.base_similarity_count ?? 150;
     const kwLimit = contextConfig?.base_keyword_count ?? 100;
     const randLimit = contextConfig?.base_random_count ?? 50;
-    const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
-    const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
+
+    // ===== 原始计算方式（保留作为参考）=====
+    // const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
+    // const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
 
     // 2.1 收集各维度候选原始消息
     // PINNED (会话内钉住消息)
@@ -1808,11 +1810,21 @@ export class InfoCoreService {
 
     // RANDOM (随机采样消息：优先抽取未在前面维度被选中的新消息)
     let randCandidates: InfoRawRecord[] = [];
-    if (randLimit > 0 && randomMaxPercent > 0) {
+    if (randLimit > 0) {
       try {
-        const effectivePercent = randomMaxPercent;
-        const maxByPercent = Math.max(1, Math.floor(maxTotal * (effectivePercent / 100)));
-        const finalRandCount = Math.min(randLimit, maxByPercent);
+        // 动态收缩：其他维度已采集越多，随机采样这种弱相关信息就越少
+        const otherCollected =
+          pinnedCandidates.length +
+          citingCandidates.length +
+          timelineCandidates.length +
+          tagCandidates.length +
+          simCandidates.length +
+          kwCandidates.length;
+        const dynamicRandCount =
+          maxTotal > 0
+            ? Math.max(1, Math.floor((otherCollected * randLimit) / maxTotal))
+            : 1;
+        const finalRandCount = Math.min(randLimit, dynamicRandCount);
 
         if (finalRandCount > 0) {
           const existingIds = new Set<string>([
