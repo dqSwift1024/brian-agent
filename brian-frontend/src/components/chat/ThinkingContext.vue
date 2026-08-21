@@ -147,6 +147,16 @@ function formatJson(val: unknown): string {
     return String(val)
   }
 }
+
+// 只渲染消息内容（不展示 info_id 等属性）
+function msgContent(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (val && typeof val === 'object' && 'content' in val) {
+    const c = (val as { content?: unknown }).content
+    return typeof c === 'string' ? c : ''
+  }
+  return ''
+}
 </script>
 
 <template>
@@ -214,7 +224,7 @@ function formatJson(val: unknown): string {
               </div>
               <ul class="space-y-1 mt-1">
                 <li v-for="(msg, mIdx) in stat.msgs" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 bg-white/70 dark:bg-apple-gray-900/70 p-1.5 rounded border border-apple-gray-100 dark:border-apple-gray-800">
-                  • {{ formatJson(msg) }}
+                  • {{ msgContent(msg) }}
                 </li>
               </ul>
             </div>

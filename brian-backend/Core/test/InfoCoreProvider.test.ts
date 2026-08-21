@@ -154,10 +154,15 @@ describe('InfoCoreProvider', () => {
       expect(childOut.info_id).not.toBe(parentOut.info_id);
     });
 
-    it('should handle empty work_id and interact_id', async () => {
-      const input = makeSaveInput({ work_id: '', interact_id: '' });
+    it('should reject empty work_id but allow empty interact_id', async () => {
+      const input = makeSaveInput({ work_id: '' });
+      await expect(
+        infoCore.saveInfo(input, new InfoCoreContext(), new SaveInfoOutput()),
+      ).rejects.toThrow(ValidationError);
+
+      const okInput = makeSaveInput({ interact_id: '' });
       const output = new SaveInfoOutput();
-      await infoCore.saveInfo(input, new InfoCoreContext(), output);
+      await infoCore.saveInfo(okInput, new InfoCoreContext(), output);
       expect(output.info_id).toBeTruthy();
     });
 
@@ -669,6 +674,7 @@ describe('InfoCoreProvider', () => {
 
       const input = new ContextInfoInput();
       input.session_id = sessionId;
+      input.work_id = `work-${sessionId}`;
       const output = new ContextInfoOutput();
       await infoCore.context(input, new InfoCoreContext(), output);
 
@@ -696,6 +702,7 @@ describe('InfoCoreProvider', () => {
       // Select message 2 and 3 in CUSTOM mode
       const input = new ContextInfoInput();
       input.session_id = sessionId;
+      input.work_id = `work-${sessionId}`;
       input.mode = 'CUSTOM';
       input.selected_msg_ids = [createdIds[2], createdIds[3]];
       const output = new ContextInfoOutput();
@@ -723,6 +730,7 @@ describe('InfoCoreProvider', () => {
 
       const input = new ContextInfoInput();
       input.session_id = sessionId;
+      input.work_id = `work-${sessionId}`;
       const output = new ContextInfoOutput();
       await infoCore.context(input, new InfoCoreContext(), output);
 
@@ -754,6 +762,7 @@ describe('InfoCoreProvider', () => {
 
       const input = new ContextInfoInput();
       input.session_id = sessionId;
+      input.work_id = `work-${sessionId}`;
       const output = new ContextInfoOutput();
       await infoCore.context(input, new InfoCoreContext(), output);
 
@@ -779,6 +788,7 @@ describe('InfoCoreProvider', () => {
       try {
         const input = new ContextInfoInput();
         input.session_id = sessionId;
+        input.work_id = `work-${sessionId}`;
         const output = new ContextInfoOutput();
         await infoCore.context(input, new InfoCoreContext(), output);
 

@@ -1,29 +1,18 @@
 import type { RelationDBAccess } from '@brian-agent/base';
-import { IdGenerator, Operator, OperationType, ValidationError } from '@brian-agent/base';
+import { IdGenerator, Operator, ValidationError } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import {
-  ContextInfoInput, ContextInfoOutput, InfoCoreContext,
+  InfoCoreContext, SoContextByWorkInput, SoContextByWorkOutput,
 } from '@brian-agent/core';
-import type { AgentContextContext } from '../domain/types';
+import type { AgentContextContext, AgentContextConfigRecord } from '../domain/types';
 import {
-  AGENT_CONTEXT_TABLE,
-  AGENT_CONTEXT_ITEM_TABLE,
   AGENT_CONTEXT_CONFIG_TABLE,
   DEFAULT_MAX_CONTEXT_ITEMS,
   DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE,
-  BuildAgentContextInput,
-  BuildAgentContextOutput,
-  GetContextByTraceInput,
-  GetContextByTraceOutput,
-  GetContextByAgentInput,
-  GetContextByAgentOutput,
   GetContextDetailInput,
   GetContextDetailOutput,
   ConfigAgentContextInput,
   ConfigAgentContextOutput,
-} from '../domain/types';
-import type {
-  AgentContextConfigRecord,
 } from '../domain/types';
 
 export class AgentContextService {
@@ -32,252 +21,27 @@ export class AgentContextService {
     private readonly infoCore: InfoCoreAccess,
   ) {}
 
-  // ===== 原始方法（保留作为参考）=====
-  // async buildAgentContext(
-  //   input: BuildAgentContextInput,
-  //   _ctx: AgentContextContext,
-  //   output: BuildAgentContextOutput,
-  // ): Promise<boolean> {
-  //   if (!input.session_id) {
-  //     throw new ValidationError('session_id 为必填');
-  //   }
-  //
-  //   const ctxOutput = new ContextInfoOutput();
-  //   await this.infoCore.context(
-  //     Object.assign(new ContextInfoInput(), { session_id: input.session_id }),
-  //     new InfoCoreContext(),
-  //     ctxOutput,
-  //   );
-  //
-  //   const rawList = ctxOutput.list;
-  //   const contextData = rawList.map((item) => ({
-  //     info_id: item.info_id,
-  //     content: item.info,
-  //     source: '',
-  //   }));
-  //
-  //   const contextId = IdGenerator.generate();
-  //   const now = IdGenerator.now();
-  //
-  //   const sourceCounts: Record<string, number> = {};
-  //   for (const item of contextData) {
-  //     const src = item.source || 'unknown';
-  //     sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-  //   }
-  //
-  //   const config = await this.getConfigInternal();
-  //   if (config && config.enable_snapshot_persistence !== 0) {
-  //     await this.relationDb.insert(AGENT_CONTEXT_TABLE, [
-  //       { field: 'id', value: IdGenerator.generate() },
-  //       { field: 'created', value: now },
-  //       { field: 'updated', value: now },
-  //       { field: 'context_id', value: contextId },
-  //       { field: 'session_id', value: input.session_id },
-  //       { field: 'agent_id', value: input.agent_id || '' },
-  //       { field: 'work_id', value: input.work_id || '' },
-  //       { field: 'trace_id', value: input.trace_id || '' },
-  //       { field: 'context_total_count', value: contextData.length },
-  //       { field: 'context_sources_summary', value: JSON.stringify(sourceCounts) },
-  //     ]);
-  //
-  //     if (contextData.length > 0) {
-  //       const itemOps = contextData.map((item) => ({
-  //         type: OperationType.INSERT,
-  //         table: AGENT_CONTEXT_ITEM_TABLE,
-  //         data: [
-  //           { field: 'id', value: IdGenerator.generate() },
-  //           { field: 'created', value: now },
-  //           { field: 'updated', value: now },
-  //           { field: 'context_id', value: contextId },
-  //           { field: 'info_id', value: item.info_id },
-  //           { field: 'source', value: item.source || '' },
-  //         ],
-  //       }));
-  //       this.relationDb.transactionRaw(itemOps);
-  //     }
-  //   }
-  //
-  //   output.context_data = contextData;
-  //   output.context_id = contextId;
-  //   output.total_context_count = contextData.length;
-  //   return true;
-  // }
-
-  // ===== 修改后的方法 =====
-  async buildAgentContext(
-    input: BuildAgentContextInput,
-    _ctx: AgentContextContext,
-    output: BuildAgentContextOutput,
-  ): Promise<boolean> {
-    if (!input.session_id) {
-      throw new ValidationError('session_id 为必填');
-    }
-
-    const ctxOutput = new ContextInfoOutput();
-    // ===== 原始代码（保留作为参考）=====
-    // await this.infoCore.context(
-    //   Object.assign(new ContextInfoInput(), {
-    //     session_id: input.session_id,
-    //     selected_msg_ids: input.selected_msg_ids,
-    //   }),
-    //   new InfoCoreContext(),
-    //   ctxOutput,
-    // );
-
-    // ===== 修改后的代码：支持传入 user_query/info 以精准匹配向量/关键词/标签相关消息 =====
-    const ctxInput = Object.assign(new ContextInfoInput(), {
-      session_id: input.session_id,
-      selected_msg_ids: input.selected_msg_ids,
-      info: input.info || input.user_query,
-    });
-    await this.infoCore.context(
-      ctxInput,
-      new InfoCoreContext(),
-      ctxOutput,
-    );
-
-    const rawList = ctxOutput.list;
-    const contextData = rawList.map((item) => ({
-      info_id: item.info_id,
-      content: item.info,
-      source: (item as { source?: string }).source || '',
-    }));
-
-    const contextId = IdGenerator.generate();
-    const now = IdGenerator.now();
-
-    const sourceCounts: Record<string, number> = {};
-    for (const item of contextData) {
-      const src = item.source || 'unknown';
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-    }
-
-    const config = await this.getConfigInternal();
-    if (config && config.enable_snapshot_persistence !== 0) {
-      await this.relationDb.insert(AGENT_CONTEXT_TABLE, [
-        { field: 'id', value: IdGenerator.generate() },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'context_id', value: contextId },
-        { field: 'session_id', value: input.session_id },
-        { field: 'agent_id', value: input.agent_id || '' },
-        { field: 'work_id', value: input.work_id || '' },
-        { field: 'trace_id', value: input.trace_id || '' },
-        { field: 'context_total_count', value: contextData.length },
-        { field: 'context_sources_summary', value: JSON.stringify(sourceCounts) },
-      ]);
-
-      if (contextData.length > 0) {
-        const itemOps = contextData.map((item) => ({
-          type: OperationType.INSERT,
-          table: AGENT_CONTEXT_ITEM_TABLE,
-          data: [
-            { field: 'id', value: IdGenerator.generate() },
-            { field: 'created', value: now },
-            { field: 'updated', value: now },
-            { field: 'context_id', value: contextId },
-            { field: 'info_id', value: item.info_id },
-            { field: 'source', value: item.source || '' },
-          ],
-        }));
-        this.relationDb.transactionRaw(itemOps);
-      }
-    }
-
-    output.context_data = contextData;
-    output.context_id = contextId;
-    output.total_context_count = contextData.length;
-    return true;
-  }
-
-  async getContextByTrace(
-    input: GetContextByTraceInput,
-    _ctx: AgentContextContext,
-    output: GetContextByTraceOutput,
-  ): Promise<boolean> {
-    if (!input.trace_id) {
-      throw new ValidationError('trace_id 为必填');
-    }
-
-    const row = await this.relationDb.selectOne(AGENT_CONTEXT_TABLE, [
-      { field: 'trace_id', operator: Operator.EQ, value: input.trace_id },
-    ]);
-
-    if (!row) return true;
-
-    output.context_id = String(row.context_id || '');
-    output.trace_id = String(row.trace_id || '');
-    output.agent_id = String(row.agent_id || '');
-    output.work_id = String(row.work_id || '');
-    output.total_context_count = Number(row.context_total_count || 0);
-    output.sources = this.parseSourceSummary(String(row.context_sources_summary || '{}'));
-    return true;
-  }
-
-  async getContextByAgent(
-    input: GetContextByAgentInput,
-    _ctx: AgentContextContext,
-    output: GetContextByAgentOutput,
-  ): Promise<boolean> {
-    if (!input.agent_id || !input.work_id) {
-      throw new ValidationError('agent_id 和 work_id 为必填');
-    }
-
-    const row = await this.relationDb.selectOne(AGENT_CONTEXT_TABLE, [
-      { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
-      { field: 'work_id', operator: Operator.EQ, value: input.work_id },
-    ]);
-
-    if (!row) return true;
-
-    output.context_id = String(row.context_id || '');
-    output.agent_id = String(row.agent_id || '');
-    output.work_id = String(row.work_id || '');
-    output.total_context_count = Number(row.context_total_count || 0);
-    output.sources = this.parseSourceSummary(String(row.context_sources_summary || '{}'));
-    return true;
-  }
-
+  /**
+   * 按 work_id 查询该次问答的上下文（三对象结构），历史上下文查看入口。
+   * 上下文来源关系由 InfoCoreProvider 落盘到 info_context_source 表。
+   */
   async getContextDetail(
     input: GetContextDetailInput,
     _ctx: AgentContextContext,
     output: GetContextDetailOutput,
   ): Promise<boolean> {
-    if (!input.context_id) {
-      throw new ValidationError('context_id 为必填');
+    if (!input.work_id) {
+      throw new ValidationError('work_id 为必填');
     }
 
-    const snapshot = await this.relationDb.selectOne(AGENT_CONTEXT_TABLE, [
-      { field: 'context_id', operator: Operator.EQ, value: input.context_id },
-    ]);
-    if (!snapshot) return true;
+    const soInput = Object.assign(new SoContextByWorkInput(), { work_id: input.work_id });
+    const soOutput = new SoContextByWorkOutput();
+    await this.infoCore.soContextByWork(soInput, new InfoCoreContext(), soOutput);
 
-    const conditions: Array<{ field: string; operator: string; value: unknown }> = [
-      { field: 'context_id', operator: Operator.EQ, value: input.context_id },
-    ];
-    if (input.sources && input.sources.length > 0) {
-      conditions.push({
-        field: 'source',
-        operator: Operator.IN,
-        value: input.sources,
-      });
-    }
-
-    const items = await this.relationDb.select(AGENT_CONTEXT_ITEM_TABLE, { conditions });
-
-    const sourceGroups: Record<string, { count: number; info_ids: string[] }> = {};
-    for (const item of items) {
-      const src = String(item.source || 'unknown');
-      if (!sourceGroups[src]) {
-        sourceGroups[src] = { count: 0, info_ids: [] };
-      }
-      sourceGroups[src].count++;
-      sourceGroups[src].info_ids.push(String(item.info_id || ''));
-    }
-
-    output.context_id = input.context_id;
-    output.total_context_count = Number(snapshot.context_total_count || 0);
-    output.sources = sourceGroups;
+    output.source_ids_map = soOutput.source_ids_map as Record<string, string[]>;
+    output.content_map = soOutput.content_map;
+    output.attribute_map = soOutput.attribute_map as unknown as Record<string, Record<string, unknown>>;
+    output.total_context_count = Object.keys(soOutput.content_map).length;
     return true;
   }
 
@@ -336,21 +100,6 @@ export class AgentContextService {
       ? updated.enable_snapshot_persistence !== 0
       : true;
     return true;
-  }
-
-  private parseSourceSummary(
-    raw: string,
-  ): Record<string, { count: number }> {
-    try {
-      const parsed = JSON.parse(raw);
-      const result: Record<string, { count: number }> = {};
-      for (const [key, value] of Object.entries(parsed)) {
-        result[key] = { count: Number(value) || 0 };
-      }
-      return result;
-    } catch {
-      return {};
-    }
   }
 
   private async getConfigInternal(): Promise<AgentContextConfigRecord | null> {

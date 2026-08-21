@@ -167,6 +167,7 @@ export class AgentExecutionService {
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: sessionId,
+            work_id: input.work_id || ctx.work_id || '',
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.task_content,
           }),
@@ -317,7 +318,7 @@ export class AgentExecutionService {
         await this.infoCore.saveInfo(
           Object.assign(new SaveInfoInput(), {
             session_id: sessionId,
-            work_id: input.work_id || ctx.work_id || '',
+            work_id: input.work_id || ctx.work_id,
             interact_id: input.interact_id || ctx.interact_id || '',
             info_type: InfoType.ACT,
             info_creator_role: 'AGENT',
@@ -1400,7 +1401,7 @@ export class AgentExecutionService {
       await this.infoCore.saveInfo(
         Object.assign(new SaveInfoInput(), {
           session_id: ctx.session_id,
-          work_id: ctx.work_id || '',
+          work_id: ctx.work_id,
           interact_id: ctx.interact_id || '',
           info_type: infoType,
           info_creator_role: creatorRole,

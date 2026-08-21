@@ -334,6 +334,33 @@ export class GraphInfoOutput extends Output {
 
 export type ContextCollectionSource = CollectionSource;
 
+// ---------------------------------------------------------------------------
+// 三对象结构（上下文加载结果，无 work_id 层，一次只取一个 work 的上下文）
+// ---------------------------------------------------------------------------
+
+/** 对象1：采集来源 → info_id 列表 */
+export type ContextSourceIdMap = Partial<Record<CollectionSource, string[]>>;
+
+/** 对象2：info_id → 消息内容 */
+export type ContextContentMap = Record<string, string>;
+
+/** 对象3 的单个值：消息属性（不含内容，内容在对象2） */
+export interface ContextInfoAttribute {
+  info_id: string;
+  session_id: string;
+  work_id: string;
+  interact_id: string;
+  info_type: InfoType | string;
+  info_creator_role: string;
+  info_creator_id: string;
+  pin: number;
+  created: number;
+  updated: number;
+}
+
+/** 对象3：info_id → 消息属性 */
+export type ContextAttributeMap = Record<string, ContextInfoAttribute>;
+
 export interface ContextInfoItem {
   id: string;
   info_id: string;
@@ -371,6 +398,8 @@ export interface ContextInfoCategories {
 /** context 入参 */
 export class ContextInfoInput extends Input {
   session_id!: string;
+  /** 本次问答的 work_id（上下文区分维度，落盘 info_context_source 表），必填 */
+  work_id!: string;
   info_id?: string;
   /** 参考信息文本内容，用于检索语义相似/关键词/标签关联消息 */
   info?: string;
@@ -397,6 +426,28 @@ export class ContextInfoOutput extends Output {
     random: string[];
   };
   sources_summary?: Record<string, number>;
+  /** 对象1：采集来源 → info_id 列表（无 work_id 层） */
+  source_ids_map?: ContextSourceIdMap;
+  /** 对象2：info_id → 消息内容 */
+  content_map?: ContextContentMap;
+  /** 对象3：info_id → 消息属性 */
+  attribute_map?: ContextAttributeMap;
+}
+
+// ---------------------------------------------------------------------------
+// soContextByWork
+// ---------------------------------------------------------------------------
+
+/** soContextByWork 入参：按 work_id 查询该次问答的上下文 */
+export class SoContextByWorkInput extends Input {
+  work_id!: string;
+}
+
+/** soContextByWork 出参：返回三对象结构（来源→ID、ID→内容、ID→属性） */
+export class SoContextByWorkOutput extends Output {
+  source_ids_map: ContextSourceIdMap = {};
+  content_map: ContextContentMap = {};
+  attribute_map: ContextAttributeMap = {};
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +571,7 @@ export class ExistInfoOutput extends Output {
 // ---------------------------------------------------------------------------
 
 export const INFO_RAW_TABLE = 'info_raw';
+export const INFO_CONTEXT_SOURCE_TABLE = 'info_context_source';
 export const INFO_GRAPH_TABLE = 'info_graph';
 export const INFO_VECTOR_TABLE = 'info_vector';
 export const INFO_TAG_TABLE = 'info_tag';

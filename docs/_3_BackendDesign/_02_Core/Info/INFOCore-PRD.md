@@ -469,10 +469,11 @@
 
 ### 2.5.7. 构建上下文（context）
 
-**功能**：根据 session_id 构建上下文，支持「默认构建」（多维度收集去重）与「自定义构建」（指定消息 ID + 钉住消息）。
+**功能**：根据 session_id 构建上下文，支持「默认构建」（多维度收集去重）与「自定义构建」（指定消息 ID + 钉住消息）。构建结果按 work_id 落盘到 `info_context_source` 表（来源 → info_id 关系），供历史上下文查看。
 **入参**：
 - input：ContextInfoInput（继承 Input），包含以下字段：
   - session_id：会话 ID（必选）
+  - work_id：问答工作 ID（必选，作为本次上下文快照的区分维度）
   - info_id：信息 ID（可选，用于辅助检索关联消息）
   - mode：构建模式（可选：`DEFAULT` 默认构建 / `CUSTOM` 自定义构建）
   - selected_msg_ids / custom_info_ids：自定义消息 ID 列表（可选；若提供且非空，自动按自定义构建模式处理）
@@ -485,10 +486,14 @@
     - `summary_length`：消息摘要长度
     - `info_length` / `content_length`：消息内容长度
     - `info_type`：消息类型（`REQUEST` / `RESPONSE` / `SELF_LEARNING` / `AGENT` 等）
-    - `collection_source`：采集方式（`PINNED` / `TIMELINE` / `TAG_RELATIVE` / `SIMILARITY` / `KEYWORD` / `RANDOM` / `CUSTOM`）
-    - `source`：小写来源标注（`pinned` / `timeline` / `tag_relative` / `similarity` / `keyword` / `random` / `selected`）
-  - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `tag_relative`, `similarity`, `keyword`, `random`）
+    - `collection_source`：采集方式（`PINNED` / `TIMELINE` / `CITING` / `TAG_RELATIVE` / `SIMILARITY` / `KEYWORD` / `RANDOM` / `CUSTOM`）
+    - `source`：来源标注
+  - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `citing`, `tag_relative`, `similarity`, `keyword`, `random`）
   - sources_summary：各分类消息数量汇总统计（`Record<string, number>`）
+  - **三对象结构（本次新增，用于内容/属性归一化与历史查看）**：
+    - `source_ids_map`：对象1，采集来源 → info_id 列表（`Record<CollectionSource, string[]>`，无 work_id 层）
+    - `content_map`：对象2，info_id → 消息内容（去重）
+    - `attribute_map`：对象3，info_id → 消息属性（不含内容，字段：`info_id/session_id/work_id/interact_id/info_type/info_creator_role/info_creator_id/pin/created/updated`）
 
 **处理流程**：
 
@@ -510,7 +515,27 @@
    c. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
    d. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；
    e. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
-   f. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回。
+   f. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回；
+   g. 组装三对象（`source_ids_map` / `content_map` / `attribute_map`）到 output（按 info_id 全局去重）；
+   h. 将 `source_ids_map`（来源 → info_id 关系）按 work_id 落盘到 `info_context_source` 表（幂等：先删除该 work_id 旧记录，再逐条插入），内容与属性不落库、需要时经 `info_raw` 实时回查。
+
+### 2.5.8. 按 work_id 查询上下文（soContextByWork）
+
+**功能**：根据 work_id 查询该次问答使用到的上下文，以三对象结构返回（供历史「思考过程」上下文查看）。
+**入参**：
+- input：SoContextByWorkInput（继承 Input）：
+  - work_id：问答工作 ID（必选）
+- output：SoContextByWorkOutput（继承 Output）：
+  - source_ids_map：采集来源 → info_id 列表
+  - content_map：info_id → 消息内容
+  - attribute_map：info_id → 消息属性
+
+**处理流程**：
+
+1. 调用 RelationDBProvider.selectDB 查询 `info_context_source` 表，按 work_id 分组得到各来源的 info_id 列表（`source_ids_map`）；
+2. 遍历所有 info_id，调用 `getInfoByInfoId` 回查 `info_raw` 表获取内容与属性；
+3. 对老化清空（`info` 为空）的消息执行摘要回退（`info_summary` 表，前缀 `[摘要] `）；
+4. 填充 `output.source_ids_map` / `output.content_map` / `output.attribute_map` 返回。
 
 ## 2.6. 老化清理
 
@@ -761,6 +786,21 @@
 | total | 上下文总数 | INT | N | | 默认为1000 |
 | enable_snapshot_persistence | 启用上下文快照持久化 | INT | N | | 默认1 (true) |
 | priority_order | 维度优先级顺序 | TEXT | N | | 默认 PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM |
+
+### 3.13. 上下文采集来源表（SQLite）
+
+- 表名：info_context_source
+- 库名：info
+- 说明：保存每次问答（work_id）构建上下文时，各采集来源命中的 info_id 关系。内容与属性不落库，需要时经 info_raw 实时回查。
+
+| 字段名 | 含义 | 类型 | 是否可以为空（Y可以为空/N不能为空） | 索引类型 | 备注 |
+| ------ | ----- | ----- | ----- | ----- | ----- |
+| id | 数据唯一标识 | UUID | N | 主键 | |
+| created | 创建时间 | timestamp | N | 普通索引 | |
+| updated | 最后更新时间 | timestamp | N | 普通索引 | |
+| work_id | 问答工作ID | UUID | N | 普通索引 | 上下文区分维度 |
+| source | 采集来源 | VARCHAR | N | 联合索引 | CollectionSource 枚举（PINNED/TIMELINE/CITING/TAG_RELATIVE/SIMILARITY/KEYWORD/RANDOM/CUSTOM） |
+| info_id | 信息ID | UUID | N | | 命中的消息 ID |
 
 ## 4. HTTP 路由映射（dev-server.ts 装配）
 

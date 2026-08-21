@@ -753,7 +753,7 @@ export class VisualizationService {
         case 'context': {
           const out = new GetContextDetailOutput();
           await this.agentContext.getContextDetail(
-            Object.assign(new GetContextDetailInput(), { context_id: resource_id }),
+            Object.assign(new GetContextDetailInput(), { work_id: resource_id }),
             new AgentContextContext(),
             out,
           );

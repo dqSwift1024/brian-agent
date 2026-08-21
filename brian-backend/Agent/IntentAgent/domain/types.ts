@@ -13,6 +13,7 @@ export const INTENT_SOUL_USAGE = '系统内置 - 需求理解与意图匹配评�
 
 export class UnderstandRequirementInput extends Input {
   session_id!: string;
+  work_id?: string;
   user_query!: string;
   citing_msg_ids?: string[];
   selected_msg_ids?: string[];

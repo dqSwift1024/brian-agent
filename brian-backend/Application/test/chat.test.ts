@@ -1129,12 +1129,14 @@ describe('ChatService', () => {
     it('TC-CHAT-090: Returns messages with citing_count from lastNInfo', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'hello',
       });
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
+        work_id: 'test-work-id',
         info_creator_id: 'agent-1',
         info_type: 'RESPONSE',
         info: 'world',
@@ -1168,6 +1170,7 @@ describe('ChatService', () => {
     it('getChatHistory: Uses provided lastN when specified', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'test msg',
@@ -1186,6 +1189,7 @@ describe('ChatService', () => {
       for (const info of ['1', '2', '3']) {
         const saveInput = Object.assign(new SaveInfoInput(), {
           session_id: 'test',
+          work_id: 'test-work-id',
           info_creator_id: '',
           info_type: 'REQUEST',
           info,
@@ -1311,6 +1315,7 @@ describe('ChatService', () => {
     it('TC-CHAT-115: Valid graph returns graph_structure with nodes and edges', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'message 1',
@@ -1320,6 +1325,7 @@ describe('ChatService', () => {
 
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
+        work_id: 'test-work-id',
         info_creator_id: 'agent-1',
         info_type: 'RESPONSE',
         info: 'message 2',
@@ -1704,6 +1710,7 @@ describe('ChatService', () => {
     it('getChatHistory: messages contain citing_count field', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'cited message',
@@ -1803,6 +1810,7 @@ describe('ChatService', () => {
     it('TC-CHAT-119: node properties include info_id, info_creator_role, created, pin', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'graph-props',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'node message',
@@ -1822,6 +1830,7 @@ describe('ChatService', () => {
     it('TC-CHAT-120: edge properties include citing_info_id and cited_info_id', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'edge-props',
+        work_id: 'test-work-id',
         info_creator_id: '',
         info_type: 'REQUEST',
         info: 'edge source',
@@ -1830,6 +1839,7 @@ describe('ChatService', () => {
 
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'edge-props',
+        work_id: 'test-work-id',
         info_creator_id: 'agent-1',
         info_type: 'RESPONSE',
         info: 'edge target',

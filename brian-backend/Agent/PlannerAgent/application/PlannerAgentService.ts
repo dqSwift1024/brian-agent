@@ -99,6 +99,7 @@ export class PlannerAgentService {
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: ctx.session_id,
+            work_id: ctx.work_id || '',
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.task_content,
           }),

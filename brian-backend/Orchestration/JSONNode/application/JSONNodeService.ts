@@ -678,6 +678,9 @@ export class JSONNodeService {
     let sessionContext: Record<string, unknown> = {};
     let contextCategories: unknown = undefined;
     let contextCategoryIds: unknown = undefined;
+    let contextSourceIdsMap: unknown = undefined;
+    let contextContentMap: unknown = undefined;
+    let contextAttributeMap: unknown = undefined;
     try {
       const selectedMsgIds = Array.isArray(sharedData.selected_msg_ids) ? sharedData.selected_msg_ids as string[] : undefined;
       // ===== 原始代码（保留作为参考）=====
@@ -690,6 +693,7 @@ export class JSONNodeService {
       const userQuery = typeof sharedData.user_query === 'string' ? sharedData.user_query : undefined;
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: sessionId,
+        work_id: workId,
         selected_msg_ids: selectedMsgIds,
         info: userQuery,
       });
@@ -698,6 +702,9 @@ export class JSONNodeService {
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
       contextCategories = ctxInfoOutput.categories;
       contextCategoryIds = ctxInfoOutput.category_ids;
+      contextSourceIdsMap = ctxInfoOutput.source_ids_map;
+      contextContentMap = ctxInfoOutput.content_map;
+      contextAttributeMap = ctxInfoOutput.attribute_map;
     } catch { /* degrade gracefully */ }
 
     let userProfile: Record<string, unknown> = {};
@@ -734,6 +741,9 @@ export class JSONNodeService {
       session_context: sessionContext,
       context_categories: contextCategories,
       context_category_ids: contextCategoryIds,
+      context_source_ids_map: contextSourceIdsMap,
+      context_content_map: contextContentMap,
+      context_attribute_map: contextAttributeMap,
       user_profile: userProfile,
       recent_works: recentWorks,
       created_at: IdGenerator.now(),

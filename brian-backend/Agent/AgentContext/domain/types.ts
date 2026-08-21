@@ -6,28 +6,6 @@ export class AgentContextContext extends Context {
   interact_id?: string;
 }
 
-export interface AgentContextRecord {
-  id: string;
-  created: number;
-  updated: number;
-  context_id: string;
-  session_id: string;
-  agent_id: string;
-  work_id: string;
-  trace_id: string;
-  context_total_count: number;
-  context_sources_summary: string;
-}
-
-export interface AgentContextItemRecord {
-  id: string;
-  created: number;
-  updated: number;
-  context_id: string;
-  info_id: string;
-  source: string;
-}
-
 export interface AgentContextConfigRecord {
   id: string;
   created: number;
@@ -36,56 +14,17 @@ export interface AgentContextConfigRecord {
   enable_snapshot_persistence: number;
 }
 
-export class BuildAgentContextInput extends Input {
-  session_id!: string;
-  agent_id?: string;
-  work_id?: string;
-  user_query?: string;
-  info?: string;
-  selected_msg_ids?: string[];
-}
-
-export class BuildAgentContextOutput extends Output {
-  context_data: Array<{ info_id: string; content: string; source: string }> = [];
-  context_id = '';
-  total_context_count = 0;
-}
-
-export class GetContextByTraceInput extends Input {
-  declare trace_id: string;
-}
-
-export class GetContextByTraceOutput extends Output {
-  context_id = '';
-  trace_id = '';
-  agent_id = '';
-  work_id = '';
-  total_context_count = 0;
-  sources: Record<string, { count: number }> = {};
-}
-
-export class GetContextByAgentInput extends Input {
-  agent_id!: string;
+/** getContextDetail 入参：按 work_id 查询该次问答的上下文（三对象结构） */
+export class GetContextDetailInput extends Input {
   work_id!: string;
 }
 
-export class GetContextByAgentOutput extends Output {
-  context_id = '';
-  agent_id = '';
-  work_id = '';
-  total_context_count = 0;
-  sources: Record<string, { count: number }> = {};
-}
-
-export class GetContextDetailInput extends Input {
-  context_id!: string;
-  sources?: string[];
-}
-
+/** getContextDetail 出参：三对象结构（来源→ID、ID→内容、ID→属性） */
 export class GetContextDetailOutput extends Output {
-  context_id = '';
+  source_ids_map: Record<string, string[]> = {};
+  content_map: Record<string, string> = {};
+  attribute_map: Record<string, Record<string, unknown>> = {};
   total_context_count = 0;
-  sources: Record<string, { count: number; info_ids: string[] }> = {};
 }
 
 export class ConfigAgentContextInput extends Input {
@@ -98,21 +37,7 @@ export class ConfigAgentContextOutput extends Output {
   enable_snapshot_persistence = true;
 }
 
-export const AGENT_CONTEXT_TABLE = 'agent_context';
-export const AGENT_CONTEXT_ITEM_TABLE = 'agent_context_item';
 export const AGENT_CONTEXT_CONFIG_TABLE = 'agent_context_config';
 
 export const DEFAULT_MAX_CONTEXT_ITEMS = 200;
 export const DEFAULT_ENABLE_SNAPSHOT_PERSISTENCE = 1;
-
-export const CONTEXT_SOURCE_VALID = [
-  'selected',
-  'pinned',
-  'timeline',
-  'tag_relative',
-  'similarity',
-  'keyword',
-  'random',
-] as const;
-
-export type ContextSource = (typeof CONTEXT_SOURCE_VALID)[number];

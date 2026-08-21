@@ -10,6 +10,7 @@
 import type { RelationDBAccess } from '@brian-agent/base';
 import {
   INFO_RAW_TABLE,
+  INFO_CONTEXT_SOURCE_TABLE,
   INFO_GRAPH_TABLE,
   INFO_VECTOR_TABLE,
   INFO_TAG_TABLE,
@@ -70,6 +71,24 @@ export class InfoCoreSchemaInitializer {
     );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_created" ON "${INFO_RAW_TABLE}" ("created")`,
+    );
+
+    // info_context_source — 每次问答（work_id）的上下文采集来源 → info_id 关系
+    this.relationDb.executeRaw(`
+      CREATE TABLE IF NOT EXISTS "${INFO_CONTEXT_SOURCE_TABLE}" (
+        "id"        TEXT    NOT NULL PRIMARY KEY,
+        "created"   INTEGER NOT NULL,
+        "updated"   INTEGER NOT NULL,
+        "work_id"   TEXT    NOT NULL,
+        "source"    TEXT    NOT NULL,
+        "info_id"   TEXT    NOT NULL
+      )
+    `);
+    this.relationDb.executeRaw(
+      `CREATE INDEX IF NOT EXISTS "idx_${INFO_CONTEXT_SOURCE_TABLE}_work_id" ON "${INFO_CONTEXT_SOURCE_TABLE}" ("work_id")`,
+    );
+    this.relationDb.executeRaw(
+      `CREATE INDEX IF NOT EXISTS "idx_${INFO_CONTEXT_SOURCE_TABLE}_work_source" ON "${INFO_CONTEXT_SOURCE_TABLE}" ("work_id", "source")`,
     );
 
     // info_graph — 信息引用关系图

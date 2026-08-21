@@ -87,6 +87,7 @@ export class OrchestrationEntryService {
     if (this.intentAgent && !input.skip_intent_check) {
       const intentIn = Object.assign(new UnderstandRequirementInput(), {
         session_id: input.session_id,
+        work_id: workId,
         user_query: input.user_query,
         citing_msg_ids: input.citing_msg_ids ?? [],
         selected_msg_ids: input.selected_msg_ids ?? [],
@@ -567,6 +568,9 @@ export class OrchestrationEntryService {
     let sessionContext: Record<string, unknown> = {};
     let contextCategories: unknown = undefined;
     let contextCategoryIds: unknown = undefined;
+    let contextSourceIdsMap: unknown = undefined;
+    let contextContentMap: unknown = undefined;
+    let contextAttributeMap: unknown = undefined;
     try {
       // ===== 原始代码（保留作为参考）=====
       // const ctxInfoInput = Object.assign(new ContextInfoInput(), {
@@ -577,6 +581,7 @@ export class OrchestrationEntryService {
       // ===== 修改后的代码：传入 info: input.user_query 以支撑向量/关键词/标签召回 =====
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: input.session_id,
+        work_id: input.work_id,
         selected_msg_ids: input.selected_msg_ids,
         info: input.user_query,
       });
@@ -585,6 +590,9 @@ export class OrchestrationEntryService {
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
       contextCategories = ctxInfoOutput.categories;
       contextCategoryIds = ctxInfoOutput.category_ids;
+      contextSourceIdsMap = ctxInfoOutput.source_ids_map;
+      contextContentMap = ctxInfoOutput.content_map;
+      contextAttributeMap = ctxInfoOutput.attribute_map;
     } catch { /* degrade gracefully */ }
 
     let userProfile: Record<string, unknown> = {};
@@ -623,6 +631,9 @@ export class OrchestrationEntryService {
       session_context: sessionContext,
       context_categories: contextCategories,
       context_category_ids: contextCategoryIds,
+      context_source_ids_map: contextSourceIdsMap,
+      context_content_map: contextContentMap,
+      context_attribute_map: contextAttributeMap,
       user_profile: userProfile,
       recent_works: recentWorks,
       selected_msg_ids: input.selected_msg_ids ?? [],

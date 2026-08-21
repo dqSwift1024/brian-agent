@@ -5,9 +5,6 @@ import { AgentContextSchemaInitializer } from '../infrastructure/AgentContextSch
 import { AgentContextService } from '../application/AgentContextService';
 import type {
   AgentContextContext,
-  BuildAgentContextInput, BuildAgentContextOutput,
-  GetContextByTraceInput, GetContextByTraceOutput,
-  GetContextByAgentInput, GetContextByAgentOutput,
   GetContextDetailInput, GetContextDetailOutput,
   ConfigAgentContextInput, ConfigAgentContextOutput,
 } from '../domain/types';
@@ -27,33 +24,6 @@ export class AgentContextAccess {
   }
 
   async initialize(): Promise<void> { await this.initPromise; }
-
-  async buildAgentContext(
-    i: BuildAgentContextInput,
-    c: AgentContextContext,
-    o: BuildAgentContextOutput,
-  ): Promise<boolean> {
-    await this.initPromise;
-    return this.service.buildAgentContext(i, c, o);
-  }
-
-  async getContextByTrace(
-    i: GetContextByTraceInput,
-    c: AgentContextContext,
-    o: GetContextByTraceOutput,
-  ): Promise<boolean> {
-    await this.initPromise;
-    return this.service.getContextByTrace(i, c, o);
-  }
-
-  async getContextByAgent(
-    i: GetContextByAgentInput,
-    c: AgentContextContext,
-    o: GetContextByAgentOutput,
-  ): Promise<boolean> {
-    await this.initPromise;
-    return this.service.getContextByAgent(i, c, o);
-  }
 
   async getContextDetail(
     i: GetContextDetailInput,

@@ -46,6 +46,8 @@ import {
   GraphInfoOutput,
   ContextInfoInput,
   ContextInfoOutput,
+  SoContextByWorkInput,
+  SoContextByWorkOutput,
   SoInfoTagConfigInput,
   SoInfoTagConfigOutput,
   UpdateInfoTagConfigInput,
@@ -265,6 +267,15 @@ export class InfoCoreAccess {
     output: ContextInfoOutput,
   ): Promise<boolean> {
     return this.service.context(input, context, output);
+  }
+
+  /** 按 work_id 查询该次问答使用到的上下文（三对象结构） */
+  async soContextByWork(
+    input: SoContextByWorkInput,
+    context: InfoCoreContext,
+    output: SoContextByWorkOutput,
+  ): Promise<boolean> {
+    return this.service.soContextByWork(input, context, output);
   }
 
   // -------------------------------------------------------------------------

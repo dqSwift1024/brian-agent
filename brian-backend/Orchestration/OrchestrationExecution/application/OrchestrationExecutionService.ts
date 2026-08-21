@@ -284,7 +284,7 @@ export class OrchestrationExecutionService {
     context: OrchestrationExecutionContext,
     output: ExecSingleAgentOutput,
   ): Promise<boolean> {
-    const { work_id, interact_id, agent_id, task_content, plan_id, task_id, work_context } = input;
+    const { work_id, interact_id, agent_id, task_content, plan_id, task_id } = input;
 
     if (!task_content) {
       return false;
@@ -293,9 +293,9 @@ export class OrchestrationExecutionService {
     const execRecordId = IdGenerator.generate();
     const now = IdGenerator.now();
 
-    const enhancedContent = work_context
-      ? `${work_context}\n---\n${task_content}`
-      : task_content;
+    // work_context 不再拼入 task_content：上下文来源关系已由 InfoCoreProvider.context() 落盘
+    // info_context_source 表，历史上下文查看改经 soContextByWork(work_id) 查询，task_content 仅存纯任务内容。
+    const enhancedContent = task_content;
 
     const insInput = Object.assign(new InsertDBInput(), {
       table: ORCHESTRATION_AGENT_EXECUTION_TABLE,

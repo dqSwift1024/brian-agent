@@ -194,10 +194,14 @@ function createLogger(logAccess?: LogAccess): any {
     let source = 'system';
     let metadata: Record<string, unknown> | undefined;
     let elapsed: number | undefined;
+    let workId: string | undefined;
+    let interactId: string | undefined;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
       const m = meta as Record<string, unknown>;
       if (typeof m.source === 'string') source = m.source;
       if (typeof m.elapsed_ms === 'number') elapsed = m.elapsed_ms;
+      if (typeof m.work_id === 'string') workId = m.work_id;
+      if (typeof m.interact_id === 'string') interactId = m.interact_id;
       metadata = { ...m, log_source: 'AOP' };
     } else if (meta !== undefined && meta !== null) {
       metadata = { detail: meta, log_source: 'SYSTEM' };
@@ -206,7 +210,7 @@ function createLogger(logAccess?: LogAccess): any {
     }
     try {
       rawService.addLog(
-        { data: { level, source, message, metadata, elapsed_ms: elapsed } },
+        { data: { level, source, message, metadata, elapsed_ms: elapsed, work_id: workId, interact_id: interactId } },
         {} as any,
         {} as any,
       ).catch(() => {});
@@ -716,6 +720,7 @@ function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
 //          agent / agent_execution_trace 五张表；由 /api/chat/history 原始内联逻辑抽取而来。
 async function buildThinkingBlocksAndDag(
   relationDb: any,
+  infoCore: any,
   workIds: string[],
 ): Promise<{ workBlocksMap: Map<string, any[]>; workDagMap: Map<string, any> }> {
   const workBlocksMap = new Map<string, any[]>();
@@ -906,6 +911,20 @@ async function buildThinkingBlocksAndDag(
 
     let agentIndexCounter = new Map<string, number>();
 
+    // 预查询每个 work 的上下文三对象（source_ids_map / content_map / attribute_map），
+    // 由 InfoCoreProvider.soContextByWork 从 info_context_source 表 + info_raw 回查得到。
+    const workContextTriplesMap = new Map<string, any>();
+    if (infoCore && typeof infoCore.soContextByWork === 'function') {
+      for (const wid of workIds) {
+        if (!wid) continue;
+        try {
+          const soOut: any = { source_ids_map: {}, content_map: {}, attribute_map: {} };
+          await infoCore.soContextByWork({ work_id: wid }, new InfoCoreContext(), soOut);
+          workContextTriplesMap.set(wid, soOut);
+        } catch { /* ignore */ }
+      }
+    }
+
     for (const row of execRows) {
       const wid = String(row.work_id ?? '');
       if (!wid) continue;
@@ -992,67 +1011,49 @@ async function buildThinkingBlocksAndDag(
       //   }
       // }
 
-      // ===== 修改后的代码：剥离 work_context 前缀 JSON，重建完整分类 Context 数据与干净 Input Query =====
+      // ===== 修改后的代码：task_content 为纯任务内容（不再拼 work_context 前缀），
+      //      上下文改经 InfoCoreProvider.soContextByWork(work_id) 从 info_context_source 表 + info_raw 回查 =====
       if (row.task_content) {
-        let rawContentStr = String(row.task_content);
-        let extractedWorkContext: any = null;
-
+        const rawContentStr = String(row.task_content);
+        // 兼容历史数据：旧记录 task_content 可能仍携带 work_context JSON 前缀，按 \n---\n 剥离
         if (rawContentStr.includes('\n---\n')) {
           const idx = rawContentStr.indexOf('\n---\n');
-          const firstPart = rawContentStr.slice(0, idx).trim();
-          const restPart = rawContentStr.slice(idx + 5).trim();
-          if (firstPart.startsWith('{') && firstPart.endsWith('}')) {
-            try {
-              extractedWorkContext = JSON.parse(firstPart);
-              inputQuery = restPart;
-            } catch {
-              inputQuery = rawContentStr;
-            }
-          } else {
-            inputQuery = rawContentStr;
-          }
-        } else if (rawContentStr.startsWith('{') && rawContentStr.endsWith('}')) {
-          try {
-            const parsed = JSON.parse(rawContentStr);
-            if (parsed && typeof parsed === 'object') {
-              extractedWorkContext = parsed;
-              if (parsed.user_query) inputQuery = String(parsed.user_query);
-              else if (parsed.task_content) inputQuery = String(parsed.task_content);
-              else inputQuery = rawContentStr;
-            } else {
-              inputQuery = rawContentStr;
-            }
-          } catch {
-            inputQuery = rawContentStr;
-          }
+          inputQuery = rawContentStr.slice(idx + 5).trim();
         } else {
           inputQuery = rawContentStr;
         }
+      }
 
-        if (extractedWorkContext && typeof extractedWorkContext === 'object') {
-          if (Array.isArray(extractedWorkContext.session_context)) {
-            contextData.citingMessages = extractedWorkContext.session_context;
+      const triples = workContextTriplesMap.get(wid);
+      if (triples) {
+        const sourceIdsMap: Record<string, string[]> = triples.source_ids_map || {};
+        const contentMap: Record<string, string> = triples.content_map || {};
+        const attrMap: Record<string, Record<string, unknown>> = triples.attribute_map || {};
+
+        // 各来源的消息列表（只携带 info_id 与内容，不展示属性）
+        const toMessages = (sourceKey: string): Array<{ info_id: string; content: string }> | undefined => {
+          const ids = sourceIdsMap[sourceKey];
+          if (!Array.isArray(ids) || ids.length === 0) return undefined;
+          const msgs: Array<{ info_id: string; content: string }> = [];
+          for (const id of ids) {
+            const content = contentMap[id];
+            if (content) msgs.push({ info_id: id, content });
           }
-          if (extractedWorkContext.context_categories) {
-            contextData.categories = extractedWorkContext.context_categories;
-            if (Array.isArray(extractedWorkContext.context_categories.citing)) contextData.citingMessages = extractedWorkContext.context_categories.citing;
-            if (Array.isArray(extractedWorkContext.context_categories.timeline)) contextData.timelineMessages = extractedWorkContext.context_categories.timeline;
-            if (Array.isArray(extractedWorkContext.context_categories.pinned)) contextData.pinnedMessages = extractedWorkContext.context_categories.pinned;
-            if (Array.isArray(extractedWorkContext.context_categories.similarity)) contextData.similarityMessages = extractedWorkContext.context_categories.similarity;
-            if (Array.isArray(extractedWorkContext.context_categories.tag_relative)) contextData.tagRelativeMessages = extractedWorkContext.context_categories.tag_relative;
-            if (Array.isArray(extractedWorkContext.context_categories.keyword)) contextData.keywordMessages = extractedWorkContext.context_categories.keyword;
-            if (Array.isArray(extractedWorkContext.context_categories.random)) contextData.randomMessages = extractedWorkContext.context_categories.random;
-          }
-          if (extractedWorkContext.context_category_ids) {
-            contextData.categoryIds = extractedWorkContext.context_category_ids;
-          }
-          if (extractedWorkContext.user_profile) {
-            contextData.userProfile = extractedWorkContext.user_profile;
-          }
-          if (Array.isArray(extractedWorkContext.recent_works)) {
-            contextData.recentWorks = extractedWorkContext.recent_works;
-          }
-        }
+          return msgs.length > 0 ? msgs : undefined;
+        };
+
+        contextData.source_ids_map = sourceIdsMap;
+        contextData.content_map = contentMap;
+        contextData.attribute_map = attrMap;
+        contextData.selectedMessages = toMessages('CUSTOM');
+        contextData.citingMessages = toMessages('CITING');
+        contextData.timelineMessages = toMessages('TIMELINE');
+        contextData.pinnedMessages = toMessages('PINNED');
+        contextData.similarityMessages = toMessages('SIMILARITY');
+        contextData.tagRelativeMessages = toMessages('TAG_RELATIVE');
+        contextData.keywordMessages = toMessages('KEYWORD');
+        contextData.randomMessages = toMessages('RANDOM');
+        contextData.categoryIds = sourceIdsMap;
       }
 
       // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
@@ -2437,7 +2438,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
         // ===== 修改后：支持模块化独立查询（module=dag / module=blocks / module=all），实现各模块独立加载与渐进式展示 =====
         const reqModule = String(params.get('module') ?? 'all').toLowerCase();
-        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, workId ? [workId] : []);
         const blocks = (reqModule === 'dag') ? [] : (workBlocksMap.get(workId) ?? []);
         const dag = (reqModule === 'blocks') ? null : (workDagMap.get(workId) ?? null);
         sendJson(res, 200, {
@@ -3588,13 +3589,15 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const source = params.get('source') || undefined;
         const keyword = params.get('keyword') || undefined;
         const traceId = params.get('trace_id') || undefined;
+        const workId = params.get('work_id') || undefined;
+        const interactId = params.get('interact_id') || undefined;
         const logSource = params.get('log_source') || undefined;
         const startTime = params.get('start_time') ? Number(params.get('start_time')) : undefined;
         const endTime = params.get('end_time') ? Number(params.get('end_time')) : undefined;
         const page = params.get('page') ? Number(params.get('page')) : 1;
         const pageSize = params.get('pageSize') ? Number(params.get('pageSize')) : (params.get('limit') ? Number(params.get('limit')) : 50);
         try {
-          const result = await ctx.logAccess.queryLogs({ level, source, keyword, trace_id: traceId, log_source: logSource, start_time: startTime, end_time: endTime, page, pageSize });
+          const result = await ctx.logAccess.queryLogs({ level, source, keyword, trace_id: traceId, work_id: workId, interact_id: interactId, log_source: logSource, start_time: startTime, end_time: endTime, page, pageSize });
           sendJson(res, 200, {
             entries: (result.logs || []).map(l => ({
               id: l.id,
@@ -3604,6 +3607,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               message: l.message,
               trace_id: l.trace_id || '',
               caller: l.caller || '',
+              work_id: l.work_id || '',
+              interact_id: l.interact_id || '',
             })),
             total: result.total,
             page,

@@ -61,6 +61,8 @@ import {
   ContextInfoInput,
   ContextInfoOutput,
   ContextInfoCategories,
+  SoContextByWorkInput,
+  SoContextByWorkOutput,
   SoInfoTagConfigInput,
   SoInfoTagConfigOutput,
   UpdateInfoTagConfigInput,
@@ -86,6 +88,7 @@ import {
   ExistInfoInput,
   ExistInfoOutput,
   INFO_RAW_TABLE,
+  INFO_CONTEXT_SOURCE_TABLE,
   INFO_GRAPH_TABLE,
   INFO_VECTOR_TABLE,
   INFO_TAG_TABLE,
@@ -112,6 +115,9 @@ import type {
   InfoContextConfigRecord,
   ContextCollectionSource,
   ContextInfoItem,
+  ContextSourceIdMap,
+  ContextContentMap,
+  ContextAttributeMap,
 } from '../domain/types';
 import {
   ExecLLMInput,
@@ -246,6 +252,9 @@ export class InfoCoreService {
     if (!input.info || !input.session_id) {
       throw new ValidationError('saveInfo 需要提供 info 和 session_id');
     }
+    if (!input.work_id) {
+      throw new ValidationError('saveInfo 需要提供 work_id');
+    }
 
     const now = IdGenerator.now();
     const id = IdGenerator.generate();
@@ -256,7 +265,7 @@ export class InfoCoreService {
       { field: 'created', value: now },
       { field: 'updated', value: now },
       { field: 'session_id', value: input.session_id },
-      { field: 'work_id', value: input.work_id || '' },
+      { field: 'work_id', value: input.work_id },
       { field: 'interact_id', value: input.interact_id || '' },
       { field: 'info_id', value: infoId },
       { field: 'info_type', value: input.info_type || '' },
@@ -1577,6 +1586,9 @@ export class InfoCoreService {
     if (!input.session_id) {
       throw new ValidationError('context 需要提供 session_id');
     }
+    if (!input.work_id) {
+      throw new ValidationError('context 需要提供 work_id');
+    }
 
     const contextConfig = await this.getInfoContextConfig();
     const maxTotal = contextConfig?.total || 1000;
@@ -1703,6 +1715,7 @@ export class InfoCoreService {
         keyword: 0,
         random: 0,
       };
+      await this.fillContextTriplesAndPersist(output, resultList, input.work_id);
       return true;
     }
 
@@ -1954,6 +1967,78 @@ const rawPriority = priorityOrderStr
       random: output.categories.random.length,
     };
 
+    await this.fillContextTriplesAndPersist(output, resultList, input.work_id);
+
+    return true;
+  }
+
+  // =========================================================================
+  // Search Operations (context 查询)
+  // =========================================================================
+
+  /**
+   * 按 work_id 查询该次问答使用到的上下文（三对象结构）。
+   *
+   * 流程：
+   * 1. 从 info_context_source 表读取 work_id 下各来源的 info_id 列表。
+   * 2. 回查 info_raw 补内容与属性（info 已老化清空时回退摘要）。
+   */
+  async soContextByWork(
+    input: SoContextByWorkInput,
+    _context: InfoCoreContext,
+    output: SoContextByWorkOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) {
+      throw new ValidationError('soContextByWork 需要提供 work_id');
+    }
+
+    const rows = await this.relationDb.select(INFO_CONTEXT_SOURCE_TABLE, {
+      conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+      order_by: [{ field: 'created', direction: 'ASC' }],
+    });
+
+    const sourceIdsMap: ContextSourceIdMap = {};
+    for (const row of rows) {
+      const source = String(row['source'] ?? '') as CollectionSource;
+      const infoId = String(row['info_id'] ?? '');
+      if (!source || !infoId) continue;
+      if (!sourceIdsMap[source]) sourceIdsMap[source] = [];
+      sourceIdsMap[source]!.push(infoId);
+    }
+
+    const contentMap: ContextContentMap = {};
+    const attributeMap: ContextAttributeMap = {};
+
+    for (const infoIds of Object.values(sourceIdsMap)) {
+      for (const infoId of infoIds ?? []) {
+        if (!infoId || contentMap[infoId] !== undefined) continue;
+        const record = await this.getInfoByInfoId(infoId);
+        if (!record) continue;
+
+        let content = record.info || '';
+        if (!content) {
+          const summary = await this.getInfoSummaryRow(infoId);
+          if (summary?.summary) content = `[摘要] ${summary.summary}`;
+        }
+        contentMap[infoId] = content;
+        attributeMap[infoId] = {
+          info_id: record.info_id,
+          session_id: record.session_id,
+          work_id: record.work_id || '',
+          interact_id: record.interact_id || '',
+          info_type: record.info_type || '',
+          info_creator_role: record.info_creator_role || '',
+          info_creator_id: record.info_creator_id || '',
+          pin: record.pin ?? 0,
+          created: record.created,
+          updated: record.updated,
+        };
+      }
+    }
+
+    output.source_ids_map = sourceIdsMap;
+    output.content_map = contentMap;
+    output.attribute_map = attributeMap;
     return true;
   }
 
@@ -2608,6 +2693,84 @@ const rawPriority = priorityOrderStr
   // =========================================================================
   // Private: Context helpers
   // =========================================================================
+
+  /**
+   * 组装三对象（source_ids_map / content_map / attribute_map）到 output，并按 work_id 落盘来源关系。
+   */
+  private async fillContextTriplesAndPersist(
+    output: ContextInfoOutput,
+    resultList: ContextInfoItem[],
+    workId: string,
+  ): Promise<void> {
+    const sourceIdsMap: ContextSourceIdMap = {};
+    const contentMap: ContextContentMap = {};
+    const attributeMap: ContextAttributeMap = {};
+
+    for (const item of resultList) {
+      if (!item.info_id) continue;
+      const source = item.collection_source as CollectionSource;
+      if (source) {
+        if (!sourceIdsMap[source]) sourceIdsMap[source] = [];
+        if (!sourceIdsMap[source]!.includes(item.info_id)) {
+          sourceIdsMap[source]!.push(item.info_id);
+        }
+      }
+      if (contentMap[item.info_id] === undefined) {
+        contentMap[item.info_id] = item.info ?? item.content ?? '';
+      }
+      if (attributeMap[item.info_id] === undefined) {
+        attributeMap[item.info_id] = {
+          info_id: item.info_id,
+          session_id: item.session_id,
+          work_id: item.work_id || workId || '',
+          interact_id: item.interact_id || '',
+          info_type: item.info_type || '',
+          info_creator_role: item.info_creator_role || '',
+          info_creator_id: item.info_creator_id || '',
+          pin: item.pin ?? 0,
+          created: item.created,
+          updated: item.updated,
+        };
+      }
+    }
+
+    output.source_ids_map = sourceIdsMap;
+    output.content_map = contentMap;
+    output.attribute_map = attributeMap;
+
+    await this.persistContextSourceMap(workId, sourceIdsMap);
+  }
+
+  /** 将 work_id → 来源 → info_id 关系落盘到 info_context_source 表（幂等：先删后插）。 */
+  private async persistContextSourceMap(
+    workId: string,
+    sourceIdsMap: ContextSourceIdMap,
+  ): Promise<void> {
+    if (!workId) return;
+    try {
+      await this.relationDb.delete(INFO_CONTEXT_SOURCE_TABLE, [
+        { field: 'work_id', operator: Operator.EQ, value: workId },
+      ]);
+    } catch { /* ignore */ }
+
+    const now = IdGenerator.now();
+    for (const [source, infoIds] of Object.entries(sourceIdsMap)) {
+      if (!infoIds || infoIds.length === 0) continue;
+      for (const infoId of infoIds) {
+        if (!infoId) continue;
+        try {
+          await this.relationDb.insert(INFO_CONTEXT_SOURCE_TABLE, [
+            { field: 'id', value: IdGenerator.generate() },
+            { field: 'created', value: now },
+            { field: 'updated', value: now },
+            { field: 'work_id', value: workId },
+            { field: 'source', value: source },
+            { field: 'info_id', value: infoId },
+          ]);
+        } catch { /* ignore */ }
+      }
+    }
+  }
 
   private async lastNInfoTimeline(
     sessionId: string,

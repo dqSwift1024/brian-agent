@@ -87,7 +87,7 @@ export class IntentAgentService {
     const historyText = await this.fetchRecentHistory(input.session_id);
 
     // 2. 获取钉住的固定信息
-    const pinnedText = await this.fetchPinnedInfo(input.session_id);
+    const pinnedText = await this.fetchPinnedInfo(input.session_id, input.work_id);
 
     // 3. 获取显式引用的消息
     const citingText = await this.fetchCitingMessages(
@@ -98,7 +98,7 @@ export class IntentAgentService {
 
     // 4. 执行 Prompt 与 LLM 推理
     const promptIn = Object.assign(new ExecPromptInput(), {
-      prompt_template_id: PROMPT_IDS.intentUnderstanding,
+      id: PROMPT_IDS.intentUnderstanding,
       variables: {
         user_query: input.user_query,
         recent_history: historyText || '（无历史上下文）',
@@ -189,15 +189,18 @@ export class IntentAgentService {
     }
   }
 
-  private async fetchPinnedInfo(sessionId: string): Promise<string> {
+  private async fetchPinnedInfo(sessionId: string, workId?: string): Promise<string> {
     if (!sessionId) return '';
     try {
-      const ctxIn = Object.assign(new ContextInfoInput(), { session_id: sessionId });
+      const ctxIn = Object.assign(new ContextInfoInput(), {
+        session_id: sessionId,
+        work_id: workId || '',
+      });
       const ctxOut = new ContextInfoOutput();
       await this.infoCore.context(ctxIn, new InfoCoreContext(), ctxOut);
 
       return (ctxOut.categories?.pinned ?? [])
-        .map((pin: any, idx: number) => `${idx + 1}. ${pin.info_content}`)
+        .map((pin: any, idx: number) => `${idx + 1}. ${pin.info ?? pin.content ?? ''}`)
         .join('\n');
     } catch {
       return '';

@@ -178,6 +178,16 @@ function formatJson(val: unknown): string {
     return String(val)
   }
 }
+
+// 只渲染消息内容（不展示 info_id 等属性）
+function msgContent(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (val && typeof val === 'object' && 'content' in val) {
+    const c = (val as { content?: unknown }).content
+    return typeof c === 'string' ? c : ''
+  }
+  return ''
+}
 </script>
 
 <template>
@@ -255,7 +265,7 @@ function formatJson(val: unknown): string {
             <span class="font-semibold text-purple-800 dark:text-purple-300 text-[11px]">引用的历史上下文消息:</span>
             <ul class="space-y-1 mt-1">
               <li v-for="(msg, mIdx) in block.context.citingMessages" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 bg-purple-50/40 dark:bg-purple-900/20 p-1.5 rounded">
-                • {{ formatJson(msg) }}
+                • {{ msgContent(msg) }}
               </li>
             </ul>
           </div>
