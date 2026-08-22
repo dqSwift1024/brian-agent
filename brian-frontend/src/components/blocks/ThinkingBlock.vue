@@ -118,7 +118,8 @@ const fullRawResponse = computed(() => {
   if (props.block.rawResponse) return props.block.rawResponse
   if (typeof props.block.output === 'string') return props.block.output
   if (props.block.output) return JSON.stringify(props.block.output, null, 2)
-  return props.block.content || ''
+  // 不回退到 block.content（可能是思考内容/用户输入），避免“模型的完整回复”误显示成用户输入
+  return ''
 })
 
 // Markdown 格式化渲染模型的完整回复

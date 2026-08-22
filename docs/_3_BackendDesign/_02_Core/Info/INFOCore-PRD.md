@@ -486,9 +486,9 @@
     - `summary_length`：消息摘要长度
     - `info_length` / `content_length`：消息内容长度
     - `info_type`：消息类型（`REQUEST` / `RESPONSE` / `SELF_LEARNING` / `AGENT` 等）
-    - `collection_source`：采集方式（`PINNED` / `TIMELINE` / `CITING` / `TAG_RELATIVE` / `SIMILARITY` / `KEYWORD` / `RANDOM` / `CUSTOM`）
+    - `collection_source`：采集方式（`PINNED` / `TIMELINE` / `CITING` / `TAG_RELATIVE` / `SIMILARITY` / `KEYWORD` / `RANDOM` / `CUSTOM` / `CURRENT`）
     - `source`：来源标注
-  - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `citing`, `tag_relative`, `similarity`, `keyword`, `random`）
+  - categories：按来源分类的消息字典（`selected`, `pinned`, `timeline`, `citing`, `tag_relative`, `similarity`, `keyword`, `random`, `current`）
   - sources_summary：各分类消息数量汇总统计（`Record<string, number>`）
   - **三对象结构（本次新增，用于内容/属性归一化与历史查看）**：
     - `source_ids_map`：对象1，采集来源 → info_id 列表（`Record<CollectionSource, string[]>`，无 work_id 层）
@@ -506,18 +506,19 @@
 2. **默认构建模式**（`mode === 'DEFAULT'` 且未传入指定消息 ID）：
    a. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取配置：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`, `priority_order`；
    b. 并行/依次收集各维度候选消息：
-      - **按时间线消息（会话内）**：查询当前 session 下最近 `base_timeline_count` 条消息；
+      - **按时间线消息（会话内）**：查询当前 session 下最近 `base_timeline_count` 条消息（按 created 倒序）；
       - **标签相关性消息（全系统）**：根据参考消息通过 `relationKInfo` 检索 `base_tag_relative_count` 条；
       - **向量相似度消息（全系统）**：根据参考消息通过 `similarKInfo` 检索 `base_similarity_count` 条；
       - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索 `base_keyword_count` 条；
       - **随机关联消息（全系统）**：从全系统中随机抽样 `base_random_count` 条；
       - **钉住消息（会话内）**：查询当前 session 下所有 `pin=1` 的消息；
-   c. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
-   d. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；
-   e. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
-   f. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回；
-   g. 组装三对象（`source_ids_map` / `content_map` / `attribute_map`）到 output（按 info_id 全局去重）；
-   h. 将 `source_ids_map`（来源 → info_id 关系）按 work_id 落盘到 `info_context_source` 表（幂等：先删除该 work_id 旧记录，再逐条插入），内容与属性不落库、需要时经 `info_raw` 实时回查。
+   c. **当前消息拆分**：时间线中最新一条消息（即本次问答输入）单独拆出，标记为 `CURRENT`，不参与时间线上下文拼接，并从弱相关维度（标签/向量相似/关键词/随机）候选中剔除，避免与任务内容重复出现；
+   d. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
+   e. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；`CURRENT` 消息若已被钉住/引用等显式维度采集则不再重复标记；
+   f. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
+   g. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回；
+   h. 组装三对象（`source_ids_map` / `content_map` / `attribute_map`）到 output（按 info_id 全局去重）；
+   i. 将 `source_ids_map`（来源 → info_id 关系）按 work_id 落盘到 `info_context_source` 表（幂等：先删除该 work_id 旧记录，再逐条插入），内容与属性不落库、需要时经 `info_raw` 实时回查。
 
 ### 2.5.8. 按 work_id 查询上下文（soContextByWork）
 
@@ -799,7 +800,7 @@
 | created | 创建时间 | timestamp | N | 普通索引 | |
 | updated | 最后更新时间 | timestamp | N | 普通索引 | |
 | work_id | 问答工作ID | UUID | N | 普通索引 | 上下文区分维度 |
-| source | 采集来源 | VARCHAR | N | 联合索引 | CollectionSource 枚举（PINNED/TIMELINE/CITING/TAG_RELATIVE/SIMILARITY/KEYWORD/RANDOM/CUSTOM） |
+| source | 采集来源 | VARCHAR | N | 联合索引 | CollectionSource 枚举（PINNED/TIMELINE/CITING/TAG_RELATIVE/SIMILARITY/KEYWORD/RANDOM/CUSTOM/CURRENT） |
 | info_id | 信息ID | UUID | N | | 命中的消息 ID |
 
 ## 4. HTTP 路由映射（dev-server.ts 装配）
@@ -828,3 +829,19 @@ InfoCore 的业务方法通过 `dev-server.ts` 手写路由分发暴露给前端
 ### 4.2 Tag 图 / 关键词图说明
 
 Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两个标签（或关键词）出现在同一条 info 记录上即建立一条边，边权重为共现次数。该策略不依赖向量相似度（`similarTo` 边），保证在未完成向量化或标签建图时也能稳定展示关联网络。`graphTag` 构建的 `similarTo` 边仍用于 `relationKInfo` 相关性搜索与图搜索（`/api/memory/graph-search`）。
+
+## 5. 变更记录
+
+### [2026-08-22] context 将当前消息从时间线中拆出为 CURRENT 类型
+
+**变更原因**：WorkAgent 输入 Prompt 的 `<时间线消息>` 中包含了本次问答输入（与 `task_content` 重复）。
+
+**修改的方法**：
+- `InfoCoreService.context()` — 默认构建模式下，时间线最新一条消息拆出为 `CURRENT`（`CollectionSource.CURRENT`），不参与时间线/弱相关维度采集，作为独立 `current` 分类落盘 `info_context_source`；
+- 新增 `CollectionSource.CURRENT` 枚举、`ContextInfoCategories.current`、`category_ids.current` 与 `sources_summary.current` 字段。
+
+**影响的端点**：
+- 后端 InfoCore `context` 的调用方（`OrchestrationEntry.buildWorkContext` / JSONNode `BUILD_WORK_CONTEXT` / `AgentExecution.execAgent` 内部），以及历史「思考过程」上下文（`soContextByWork`）的 `CURRENT` 来源展示。
+
+**可能存在的问题**：
+- 若当前输入尚未保存至 `info_raw`，时间线最新一条可能为历史 RESPONSE（被误拆为 CURRENT）；标准编排流程由 `SAVE_USER_INPUT` 节点先落库，正常不受影响。

@@ -1,5 +1,31 @@
 # 代码变更记录 (CHANGELOG)
 
+## [2026-08-22] 思考过程 Prompt 去重与空维度渲染修复
+
+**变更原因**：
+1. 「需求理解 Agent」输入 Prompt 在无某类消息时仍渲染该维度标题与「（无历史上下文）/（无固定钉住信息）/（无显式引用消息）」等占位文案；
+2. 「general-专业编码与研究助手」等 WorkAgent 的输入 Prompt 中 `<时间线消息>` 包含了本次问答输入（与 `task_content` 重复）；
+3. `</上下文信息>` 标签之后额外拼接了原始任务内容，出现「什么是 AI]]>」等异常重复内容；
+4. 「模型的完整回复 (LLM Response)」在取不到 raw_response 时回退到了用户输入（content/inputQuery）。
+
+**修改的方法与模块**：
+- `PromptsService.execPrompt` / `PromptCatalog.renderTemplate` — 新增 `{{#if var}}...{{/if}}` 条件块渲染（空变量整块移除），并新增 `stripEmptyConditionalBlocks` 共用函数；
+- `PromptCatalog` — `intentUnderstanding` 模板改用 `{{#if}}` 条件块包裹可选维度；`think`/`reflect` 模板新增 `Task: {{task_content}}` 行；
+- `IntentAgentService.understandRequirement` — 空消息类型不再传占位文案，改为空字符串；
+- `InfoCoreProvider.context` — 时间线最新一条消息拆出为 `CURRENT` 类型（新增 `CollectionSource.CURRENT`），不再进入时间线/弱相关维度；`ContextInfoCategories`/`category_ids`/`sources_summary` 增加 `current` 字段；
+- `AgentExecutionService.execAgent` / `think` / `reflect` — `context_data` 不再拼接 `task_content`，任务内容经 `task_content` 变量单独注入 Think/Reflect/Answer；
+- `dev-server.buildThinkingBlocksAndDag` — `fullRawResponse` 回退仅允许 `outputAnswer`，禁止回退到 content/inputQuery；
+- 前端 `ThinkingBlock.vue` — 「模型的完整回复」不再回退到 `block.content`。
+
+**影响的端点**：
+- `POST /api/chat/stream` — WorkAgent 各阶段 Prompt 不再重复携带本次输入；
+- `GET /api/chat/thinking` — 「模型的完整回复」不再误显示为用户输入；
+- 后端 InfoCore `context` 相关调用（`buildWorkContext` / `execAgent` 内部）。
+
+**可能存在的问题/风险点**：
+- `think`/`reflect` 模板新增 `task_content` 依赖，需确保 `ThinkInput`/`ReflectInput` 均传入 `task_content`（已同步）；
+- `CURRENT` 为新增 CollectionSource 枚举值，老数据 `info_context_source` 表中无该来源，属正常（历史记录不受影响）。
+
 ## [2026-08-20] 系统核心功能增强与模版编排重构
 
 **变更原因**：

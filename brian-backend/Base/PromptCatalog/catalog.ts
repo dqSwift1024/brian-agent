@@ -60,9 +60,10 @@ export const BUILTIN_PROMPTS: BuiltinPromptDef[] = [
     id: PROMPT_IDS.think,
     title: 'Worker Think 阶段',
     brief: 'WorkAgent 思考阶段：推理并决定下一步动作（NONE/SKILL/MCP）',
-    variables: ['agent_name', 'soul', 'context_data', 'history', 'iteration', 'tools_json', 'domain'],
+    variables: ['agent_name', 'soul', 'task_content', 'context_data', 'history', 'iteration', 'tools_json', 'domain'],
     template: [
       'System: {{soul}}',
+      'Task: {{task_content}}',
       'Context: {{context_data}}',
       'History: {{history}}',
       'Tools: {{tools_json}}',
@@ -75,9 +76,10 @@ export const BUILTIN_PROMPTS: BuiltinPromptDef[] = [
     id: PROMPT_IDS.reflect,
     title: 'Worker Reflect 阶段',
     brief: 'WorkAgent 反思阶段：评估进度并决定是否继续迭代',
-    variables: ['agent_name', 'soul', 'context_data', 'history', 'iteration', 'max_iterations', 'tools_json', 'domain'],
+    variables: ['agent_name', 'soul', 'task_content', 'context_data', 'history', 'iteration', 'max_iterations', 'tools_json', 'domain'],
     template: [
       'System: {{soul}}',
+      'Task: {{task_content}}',
       'Context: {{context_data}}',
       'History: {{history}}',
       'Tools: {{tools_json}}',
@@ -367,19 +369,23 @@ export const BUILTIN_PROMPTS: BuiltinPromptDef[] = [
     brief: 'IntentAgent 结合本次输入、时间线上下文、钉住信息和引用消息，理解真实需求并给出匹配度评分',
     variables: ['user_query', 'recent_history', 'pinned_info', 'citing_messages'],
     template: [
-      '你是一个精通需求分析与意图识别的 AI 需求专家。请结合以下 4 个维度的信息，综合分析并推断用户本次沟通的真实、完整的核心需求，并评估系统理解的需求与用户原始输入的匹配程度。',
+      '你是一个精通需求分析与意图识别的 AI 需求专家。请结合用户本次输入以及可用的上下文信息，综合分析并推断用户本次沟通的真实、完整的核心需求，并评估系统理解的需求与用户原始输入的匹配程度。',
       '',
       '【维度 1：用户本次输入】',
       '{{user_query}}',
+      '{{#if recent_history}}',
       '',
       '【维度 2：基于时间的历史上下文】',
       '{{recent_history}}',
+      '{{/if}}{{#if pinned_info}}',
       '',
       '【维度 3：钉住的固定信息】',
       '{{pinned_info}}',
+      '{{/if}}{{#if citing_messages}}',
       '',
       '【维度 4：显式引用的消息】',
       '{{citing_messages}}',
+      '{{/if}}',
       '',
       '请返回严格的 JSON 结构，不能包含任何 Markdown 标记或多余文字：',
       '{',
@@ -428,11 +434,31 @@ export function getBuiltinTemplate(id: string): string | undefined {
 }
 
 /**
+ * 处理 {{#if var}}...{{/if}} 条件块：当 var 为空（undefined / null / 空白字符串）时整块移除。
+ * 供 renderTemplate 与 PromptsService.execPrompt 共用，避免空消息类型渲染出多余的空标题与占位内容。
+ */
+export function stripEmptyConditionalBlocks(
+  template: string,
+  variables: Record<string, unknown>,
+): string {
+  return template.replace(
+    /\{\{\s*#if\s+([A-Za-z0-9_]+)\s*\}\}([\s\S]*?)\{\{\s*\/if\s*\}\}/g,
+    (_full, key: string, body: string) => {
+      const v = variables[key];
+      const isEmpty = v === undefined || v === null || String(v).trim() === '';
+      return isEmpty ? '' : body;
+    },
+  );
+}
+
+/**
  * 内存渲染模板（`{{变量}}` 替换），作为 DB 未就绪时的兜底。
  * 与 PromptsService.execPrompt 的替换语义一致（缺省变量替换为空字符串）。
+ * 额外支持 {{#if var}}...{{/if}} 条件块。
  */
 export function renderTemplate(template: string, variables: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_full, key: string) => {
+  const stripped = stripEmptyConditionalBlocks(template, variables);
+  return stripped.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_full, key: string) => {
     const v = variables[key];
     return v === undefined || v === null ? '' : String(v);
   });

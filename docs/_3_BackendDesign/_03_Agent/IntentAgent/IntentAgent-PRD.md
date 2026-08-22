@@ -33,7 +33,7 @@
 **处理流程**：
 1. 校验入参 `session_id` 与 `user_query` 非空；
 2. 从 InfoCore 中装载关联会话的最近历史对话以及用户选定/引用的消息内容；
-3. 使用系统内置的 `INTENT_SOUL`（"内置需求理解与意图比对专家"）并结合 PromptCatalog / LLMCore 构造 prompt；
+3. 使用系统内置的 `INTENT_SOUL`（"内置需求理解与意图比对专家"）并结合 PromptCatalog / LLMCore 构造 prompt（历史上下文 / 钉住信息 / 引用消息在为空时不传入占位文案，由模板 `{{#if}}` 条件块整块隐藏对应维度）；
 4. 调用 LLM 进行需求意图提取与匹配评分，解析 JSON 结构化输出；
 5. 将 `understood_requirement`、`match_score`、`reasoning`、`should_modify_query` 填充至 `output` 返回。
 
@@ -41,3 +41,18 @@
 
 - **OrchestrationEntry / JSONNode**：在 Simple / Planning 编排策略准备阶段可选触发 IntentAgent 对模糊或复杂提问进行意图推算；
 - **System Agents 预装载**：系统启动时通过 dev-server 在 AgentLibrary 中自动预先注册/建立 IntentAgent 关联。
+
+## 4. 变更记录
+
+### [2026-08-22] 空消息类型不再渲染维度与占位文案
+
+**变更原因**：无历史上下文 / 无钉住信息 / 无引用消息时，Prompt 仍渲染对应维度标题与「（无历史上下文）/（无固定钉住信息）/（无显式引用消息）」占位文案。
+
+**修改的方法**：
+- `IntentAgentService.understandRequirement()` — 原始代码为 `historyText || '（无历史上下文）'` 等兜底文案；改为直接传空字符串 `historyText` / `pinnedText` / `citingText`，由 PromptCatalog `builtin.intent_understanding` 的 `{{#if}}` 条件块整块隐藏空维度。
+
+**影响的端点**：
+- `POST /api/chat/stream` 中 IntentAgent 的 Prompt 组装（「思考过程」弹窗展示的 Prompt）。
+
+**可能存在的问题**：
+- 依赖 PromptsProvider 与 PromptCatalog 的 `{{#if}}` 条件块渲染能力（已同步实现）。

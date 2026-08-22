@@ -167,7 +167,7 @@
 **处理流程**：
 
 1. 根据 ID 获取 Prompt 模板内容；
-2. 在沙箱中完成变量替换、逻辑渲染及安全检查；
+2. 在沙箱中完成变量替换、逻辑渲染及安全检查；其中支持 `{{#if var}}...{{/if}}` 条件块：当 `var` 为空（undefined / null / 空白字符串）时整块移除，避免空消息类型渲染出多余的空标题与占位内容；
 3. 生成最终的完整 Prompt 字符串（或消息列表）；
 4. 调用成功后，通过 RelationDBProvider 更新 `prompt_template_usage` 表当天的 usage_count + 1；
 
@@ -269,3 +269,18 @@
 8. PromptsProvider 用到的所有配置项（含 Prompts 组件启用 / 禁用状态 `enabled`）统一存储于关系数据库配置表 prompts_config（库名 `prompts`，见 4.3），运行时按需读取；enablePrompts 的启用 / 禁用状态同步持久化，组件初始化时恢复，避免状态丢失；
 9. `enablePrompts` 为运行时启用 / 禁用（可恢复），`closePrompts` 为系统关闭时的终态释放（不可恢复，需重新初始化组件）；
 10. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；
+
+## 6. 变更记录
+
+### [2026-08-22] execPrompt 支持条件块渲染（{{#if}}）
+
+**变更原因**：需求理解 Agent 等 Prompt 在无某类消息时仍会渲染该维度标题与「无 xxx」占位文案，产生冗余内容。
+
+**修改的方法**：
+- `PromptsService.execPrompt()` — 原始代码仅做 `{{variable}}` 逐键替换；改为：先调用 `stripEmptyConditionalBlocks` 处理 `{{#if var}}...{{/if}}`（空变量整块移除），再做变量替换。
+
+**影响的端点**：
+- 所有经 `execPrompt` 渲染的 Prompt（含 `builtin.intent_understanding`）在变量为空时不再出现空维度标题与占位文案。
+
+**可能存在的问题**：
+- `{{#if}}` 条件变量名限定为 `[A-Za-z0-9_]`，普通变量替换仍支持任意键名（沿用 escapeRegExp 逐键匹配）。

@@ -393,6 +393,8 @@ export interface ContextInfoCategories {
   similarity: ContextInfoItem[];
   keyword: ContextInfoItem[];
   random: ContextInfoItem[];
+  /** 当前消息（本次问答输入）：从时间线中单独拆出，不参与时间线/上下文拼接 */
+  current: ContextInfoItem[];
 }
 
 /** context 入参 */
@@ -424,6 +426,7 @@ export class ContextInfoOutput extends Output {
     similarity: string[];
     keyword: string[];
     random: string[];
+    current: string[];
   };
   sources_summary?: Record<string, number>;
   /** 对象1：采集来源 → info_id 列表（无 work_id 层） */

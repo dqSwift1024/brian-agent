@@ -745,8 +745,9 @@ describe('InfoCoreProvider', () => {
       expect(item.info_length).toBe(11);
       expect(item.content_length).toBe(11);
       expect(item.info_type).toBeTruthy();
-      expect(item.collection_source).toBe(CollectionSource.TIMELINE);
-      expect(item.source).toBe(CollectionSource.TIMELINE);
+      // 单条消息即时间线中最新的消息，按新语义从时间线拆出为当前消息 (CURRENT)
+      expect(item.collection_source).toBe(CollectionSource.CURRENT);
+      expect(item.source).toBe(CollectionSource.CURRENT);
     });
 
     it('should respect priority order when deduplicating messages in default mode', async () => {
@@ -792,9 +793,11 @@ describe('InfoCoreProvider', () => {
         const output = new ContextInfoOutput();
         await infoCore.context(input, new InfoCoreContext(), output);
 
-        // 未钉住任何消息，且 TIMELINE 维度被关闭，故不应收集到任何消息
-        expect(output.list.length).toBe(0);
+        // 未钉住任何消息，且 TIMELINE 维度被关闭，故不采集任何时间线/维度消息；
+        // 但最新一条消息会作为当前消息 (CURRENT) 被单独拆出，不参与维度采集。
+        expect(output.list.length).toBe(1);
         expect(output.categories?.timeline.length).toBe(0);
+        expect(output.categories?.current.length).toBe(1);
       } finally {
         // 恢复默认优先级顺序，避免影响后续用例
         const resetIn = new UpdateInfoContextConfigInput();

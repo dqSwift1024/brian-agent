@@ -101,9 +101,9 @@ export class IntentAgentService {
       id: PROMPT_IDS.intentUnderstanding,
       variables: {
         user_query: input.user_query,
-        recent_history: historyText || '（无历史上下文）',
-        pinned_info: pinnedText || '（无固定钉住信息）',
-        citing_messages: citingText || '（无显式引用消息）',
+        recent_history: historyText,
+        pinned_info: pinnedText,
+        citing_messages: citingText,
       },
     });
     const promptOut = new ExecPromptOutput();

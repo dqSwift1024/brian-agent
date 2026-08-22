@@ -180,9 +180,11 @@ export class AgentExecutionService {
         // }
 
         // ===== 修改后的方法：按分类分类节点包裹内容且脱敏非内容属性 =====
+        // 当前消息（本次输入）已由 InfoCoreProvider.context 单独拆出为 CURRENT 类型，
+        // 不再拼入上下文；上下文仅包含历史引用消息，任务内容经 task_content 变量单独注入。
         const formattedCtx = formatContextCategories(ctxOut);
         if (formattedCtx) {
-          contextData = `${formattedCtx}\n${input.task_content}`;
+          contextData = formattedCtx;
         }
       } catch {
         /* best-effort */
@@ -466,6 +468,7 @@ export class AgentExecutionService {
       {
         agent_name: input.agent_name,
         soul: system,
+        task_content: input.task_content,
         context_data: input.context_data,
         history: input.history,
         iteration: input.iteration,
@@ -570,6 +573,7 @@ export class AgentExecutionService {
       {
         agent_name: input.agent_name,
         soul: system,
+        task_content: input.task_content,
         context_data: input.context_data,
         history: input.history,
         iteration: input.iteration,
@@ -1069,6 +1073,7 @@ export class AgentExecutionService {
             agent_name: agentName,
             llm_id: llmId,
             soul_id: agent.soul_id,
+            task_content: input.task_content,
             context_data: contextData,
             history,
             iteration,
@@ -1161,6 +1166,7 @@ export class AgentExecutionService {
             agent_name: agentName,
             llm_id: llmId,
             soul_id: agent.soul_id,
+            task_content: input.task_content,
             context_data: contextData,
             history,
             iteration,

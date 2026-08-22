@@ -63,6 +63,7 @@ export class ThinkInput extends Input {
   agent_name!: string;
   llm_id!: string;
   soul_id!: string;
+  task_content!: string;
   context_data!: string;
   history!: string;
   iteration!: number;
@@ -107,6 +108,7 @@ export class ReflectInput extends Input {
   agent_name!: string;
   llm_id!: string;
   soul_id!: string;
+  task_content!: string;
   context_data!: string;
   history!: string;
   iteration!: number;

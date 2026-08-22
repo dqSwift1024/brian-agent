@@ -10,6 +10,7 @@
 
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
+import { stripEmptyConditionalBlocks } from '../../PromptCatalog/catalog';
 import {
   ComponentDisabledError,
   ValidationError,
@@ -457,8 +458,12 @@ export class PromptsService {
       throw new ValidationError(`Prompt ${input.id} 已禁用`);
     }
 
-    // 2. 变量替换：将 {{variable_name}} 替换为 variables 中对应的值
-    let rendered = record.prompt_template;
+    // 2. 变量替换：先处理 {{#if var}}...{{/if}} 条件块（空变量移除整块），
+    //    再将 {{variable_name}} 替换为 variables 中对应的值
+    let rendered = stripEmptyConditionalBlocks(
+      record.prompt_template,
+      input.variables as Record<string, unknown>,
+    );
     for (const [key, value] of Object.entries(input.variables)) {
       const pattern = new RegExp(
         `\\{\\{\\s*${this.escapeRegExp(key)}\\s*\\}\\}`,

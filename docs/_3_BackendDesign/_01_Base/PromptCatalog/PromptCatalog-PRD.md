@@ -38,9 +38,25 @@
 
 ### 2.3. 内存渲染与变量替换（renderTemplate）
 
-**功能**：以 `{{variable}}` 方式替换 Prompt 模板中的占位变量。若变量不存在，自动替换为空字符串，保障模型渲染不崩溃。
+**功能**：以 `{{variable}}` 方式替换 Prompt 模板中的占位变量。若变量不存在，自动替换为空字符串，保障模型渲染不崩溃。额外支持 `{{#if var}}...{{/if}}` 条件块：当 `var` 为空（undefined / null / 空白字符串）时整块移除（经 `stripEmptyConditionalBlocks`），供空消息类型按需隐藏维度小节。
 
 ## 3. 关联影响
 
 - **PromptsProvider**：将 PromptCatalog 作为底层模板库支撑；
 - **Agent / Core / Orchestration 层**：所有 Prompt 模版调用统一使用 `PROMPT_IDS`，彻底解耦提示词硬编码。
+
+## 4. 变更记录
+
+### [2026-08-22] 模板条件渲染与任务内容注入
+
+**变更原因**：
+1. `builtin.intent_understanding` 无条件渲染 4 个维度，空消息类型产生冗余标题与占位文案；
+2. `builtin.think` / `builtin.reflect` 模板缺少任务内容，且 `context_data` 曾混入 `task_content` 导致重复。
+
+**修改的方法**：
+- `builtin.intent_understanding` — 4 个维度改为「维度 1（用户输入）+ `{{#if}}` 包裹的维度 2/3/4」，空类型不再显示；
+- `builtin.think` / `builtin.reflect` — 新增 `Task: {{task_content}}` 行，变量列表增加 `task_content`；
+- `renderTemplate` / 新增 `stripEmptyConditionalBlocks` — 支持 `{{#if}}` 条件块。
+
+**影响的端点**：
+- 所有经 `renderTemplate`（DB 未就绪兜底）或 `execPrompt` 渲染的 Prompt。

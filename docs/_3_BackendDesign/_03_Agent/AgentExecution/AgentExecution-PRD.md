@@ -309,3 +309,20 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 4. **评估**：execAgent 完成后向 MQ 队列 `agent.eval` 投递，由 Evolutor 消费；不直接回调 Evolutor。
 5. **ID/时间**：统一 `IdGenerator.generate()` / `IdGenerator.now()`（毫秒）。
 6. **DB**：业务 CRUD 经 RelationDBAccess.insert/select/update/count，禁止业务路径 queryRaw 拼条件。
+
+## 变更记录
+
+### [2026-08-22] context_data 不再拼接 task_content，Think/Reflect 独立注入任务内容
+
+**变更原因**：`execAgent` 组装 `contextData = ${formattedCtx}\n${task_content}`，导致 `answer` 模板中任务内容在 `Task:` 与 `Context:` 中重复出现（`</上下文信息>` 后出现重复的用户输入）。
+
+**修改的方法**：
+- `AgentExecutionService.execAgent()` — 原始代码 `contextData = ${formattedCtx}\n${input.task_content}`；改为 `contextData = formattedCtx`（仅上下文，不含任务内容）；
+- `ThinkInput` / `ReflectInput` — 新增 `task_content` 字段；
+- `think()` / `reflect()` / `executeAtomic()` — 向 Think/Reflect 渲染变量传入 `task_content`，模板新增 `Task: {{task_content}}` 行。
+
+**影响的端点**：
+- `POST /api/chat/stream` 中 WorkAgent 的 Think/Reflect/Answer 各阶段 Prompt 组装。
+
+**可能存在的问题**：
+- 依赖 PromptCatalog 的 `builtin.think`/`builtin.reflect` 模板已同步新增 `Task:` 行（已同步），否则 Think/Reflect 阶段将缺少任务内容。

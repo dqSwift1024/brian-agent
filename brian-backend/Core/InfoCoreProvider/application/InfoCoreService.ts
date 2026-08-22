@@ -1693,6 +1693,7 @@ export class InfoCoreService {
         similarity: [],
         keyword: [],
         random: [],
+        current: [],
       };
       output.categories = categories;
       output.category_ids = {
@@ -1704,6 +1705,7 @@ export class InfoCoreService {
         similarity: [],
         keyword: [],
         random: [],
+        current: [],
       };
       output.sources_summary = {
         selected: categories.selected.length,
@@ -1714,6 +1716,7 @@ export class InfoCoreService {
         similarity: 0,
         keyword: 0,
         random: 0,
+        current: 0,
       };
       await this.fillContextTriplesAndPersist(output, resultList, input.work_id);
       return true;
@@ -1758,6 +1761,13 @@ export class InfoCoreService {
     const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
     for (const item of tl) {
       timelineCandidates.push(item);
+    }
+
+    // 当前消息（本次问答输入）：时间线按 created DESC 排序，最新一条即本次输入，
+    // 从时间线中单独拆出作为 CURRENT 类型，避免与 task_content 重复出现在上下文中。
+    let currentCandidate: InfoRawRecord | null = null;
+    if (timelineCandidates.length > 0) {
+      currentCandidate = timelineCandidates.shift() ?? null;
     }
 
     // 获取参考文本：优先使用 input.info（当前用户提问文本），其次查找 input.info_id 记录，最后从 CITING/TIMELINE 中提取
@@ -1883,6 +1893,16 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
+    // 当前消息仅应作为 CURRENT（或经显式钉住/引用）出现；
+    // 从弱相关维度（标签/向量相似/关键词/随机）中剔除，避免当前输入被重复采集。
+    if (currentCandidate) {
+      const curId = currentCandidate.info_id;
+      for (const list of [tagCandidates, simCandidates, kwCandidates, randCandidates]) {
+        const idx = list.findIndex((c) => c.info_id === curId);
+        if (idx >= 0) list.splice(idx, 1);
+      }
+    }
+
     // 2.2 组装候选映射表
     const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
       [CollectionSource.PINNED, pinnedCandidates],
@@ -1930,6 +1950,13 @@ const rawPriority = priorityOrderStr
       }
     }
 
+    // 当前消息：作为 CURRENT 类型加入结果（供溯源/落盘），但不参与时间线上下文拼接；
+    // 若当前消息已通过其它维度（如钉住/引用）采集，则去重，不再重复标记为 CURRENT。
+    if (currentCandidate && !seenIds.has(currentCandidate.info_id)) {
+      const currentItem = await toContextItem(currentCandidate, CollectionSource.CURRENT);
+      collectedItems.unshift(currentItem);
+    }
+
     // 2.5 截取 total 条
     const resultList = collectedItems.slice(0, maxTotal);
 
@@ -1943,6 +1970,7 @@ const rawPriority = priorityOrderStr
       similarity: resultList.filter((i) => i.collection_source === CollectionSource.SIMILARITY),
       keyword: resultList.filter((i) => i.collection_source === CollectionSource.KEYWORD),
       random: resultList.filter((i) => i.collection_source === CollectionSource.RANDOM),
+      current: resultList.filter((i) => i.collection_source === CollectionSource.CURRENT),
     };
 
     output.category_ids = {
@@ -1954,6 +1982,7 @@ const rawPriority = priorityOrderStr
       similarity: output.categories.similarity.map((i) => i.info_id),
       keyword: output.categories.keyword.map((i) => i.info_id),
       random: output.categories.random.map((i) => i.info_id),
+      current: output.categories.current.map((i) => i.info_id),
     };
 
     output.sources_summary = {
@@ -1965,6 +1994,7 @@ const rawPriority = priorityOrderStr
       similarity: output.categories.similarity.length,
       keyword: output.categories.keyword.length,
       random: output.categories.random.length,
+      current: output.categories.current.length,
     };
 
     await this.fillContextTriplesAndPersist(output, resultList, input.work_id);

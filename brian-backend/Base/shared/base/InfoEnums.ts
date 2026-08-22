@@ -41,6 +41,7 @@ export enum CollectionSource {
   KEYWORD = 'KEYWORD',
   RANDOM = 'RANDOM',
   CUSTOM = 'CUSTOM',
+  CURRENT = 'CURRENT',
 }
 
 /**

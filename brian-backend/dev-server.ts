@@ -1160,8 +1160,10 @@ async function buildThinkingBlocksAndDag(
       if (!fullPrompt && inputQuery) {
         fullPrompt = inputQuery;
       }
+      // 模型的完整回复只允许回退到最终答案，禁止回退到 content/inputQuery（用户输入），
+      // 否则“模型的完整回复 (LLM Response)”会误显示成用户本次发送的内容。
       if (!fullRawResponse) {
-        fullRawResponse = outputAnswer || content || '';
+        fullRawResponse = outputAnswer || '';
       }
       // ===== 原始代码（保留参考）=====
       // if (sumInputTokens === 0 && sumOutputTokens === 0 && tokenUsage > 0) {
