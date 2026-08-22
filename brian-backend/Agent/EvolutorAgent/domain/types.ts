@@ -56,6 +56,8 @@ export interface EvalScores {
 }
 
 export class EvalWorkAgentOutput extends Output {
+  // 实际执行评估的 Evolutor 系统 Agent 的 agent_id（注意：input.agent_id 为被评估的 Work Agent）
+  agent_id = '';
   eval_id = '';
   scores: EvalScores = { correctness: 0, completeness: 0, efficiency: 0, relevance: 0, overall: 0 };
   suggestions: string[] = [];
@@ -84,6 +86,8 @@ export interface WriterEvalScores {
 }
 
 export class EvalWriterAgentOutput extends Output {
+  // 实际执行评估的 Evolutor 系统 Agent 的 agent_id（注意：input.agent_id 为被评估的 Writer Agent）
+  agent_id = '';
   eval_id = '';
   scores: WriterEvalScores = { clarity: 0, informativeness: 0, user_alignment: 0, conciseness: 0, overall: 0 };
   suggestions: string[] = [];

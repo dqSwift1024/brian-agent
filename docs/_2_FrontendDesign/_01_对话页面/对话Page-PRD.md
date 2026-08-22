@@ -190,6 +190,17 @@
 
 ## 7. 变更记录
 
+### [2026-08-22] "执行过程"聚合块展示 Write Agent 与评估 Agent 的执行结果
+- **变更原因**：Writer / Evolutor 系统 Agent 不经过 `orchestration_agent_execution`（`execSingleAgent` 的 ReACT 循环），其执行结果未落库，导致「思考过程」弹窗的"执行过程"看不到 Write Agent 与评估 Agent 的执行结果（属展示缺失，非调度缺失）。
+- **功能变更**（后端）：
+  1. **系统 Agent 执行轨迹落库**：`OrchestrationExecutionService` 新增 `recordSystemAgentExecution`，`JSONNodeService.handleWriteResult`（Writer）与 `handleEvalResult`（Evolutor，抽取共享 `runEval`）调用其将执行结果写入 `orchestration_agent_execution` 表。
+  2. **系统 Agent ID 回填**：`WriteOutput` / `EvalWriterAgentOutput` / `EvalWorkAgentOutput` 新增 `agent_id` 字段，`WriterAgentService.write` / `EvolutorAgentService.eval*` 回填系统 Agent 自身 ID。
+  3. **展示侧无需改动**：`ThinkingModal.vue` 的"执行过程"聚合块按 `orchestration_agent_execution.created ASC` 聚合展示，Writer（type=WRITER → "表达 Agent"）、Evolutor（type=EVOLUTOR → "进化 Agent"）随记录落库自动出现在列表中。
+- **行为差异**：
+  - 修改前："执行过程"仅展示 Intent / Planner / Worker，看不到 Writer 与评估 Agent。
+  - 修改后：完整执行链路（Intent → Planner → Worker → Writer → Evolutor）按顺序展示；Writer 的 `answer` 为最终回复、Evolutor 的 `answer` 为评分 JSON。Evolutor 评估为异步，评估完成前打开弹窗可能暂时缺失，稍后刷新即可。
+- **新增边界条件**：Writer / Evolutor 仅记录 `answer` 与 `task_content`（未写 `agent_execution_trace`），其"完整 Prompt / 思考步骤"展示描述性文本而非真实 LLM prompt。
+
 ### [2026-08-22] "思考过程"弹窗：Intent 需求理解 Agent 展示输入/输出 Token 用量
 - **变更原因**："思考过程"弹窗中 Intent（需求理解）Agent 节点缺少输入/输出 Token 用量展示，与其他工作 Agent 的 Token 用量展示不一致。
 - **功能变更**：

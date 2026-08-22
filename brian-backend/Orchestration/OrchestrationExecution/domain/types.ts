@@ -212,6 +212,21 @@ export class ConfigOrchestrationExecutionOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// recordSystemAgentExecution
+// ---------------------------------------------------------------------------
+
+export class RecordSystemAgentExecutionInput extends Input {
+  work_id!: string;
+  interact_id!: string;
+  agent_id!: string;
+  task_content!: string;
+  answer!: string;
+  elapsed_ms?: number;
+}
+
+export class RecordSystemAgentExecutionOutput extends Output {}
+
+// ---------------------------------------------------------------------------
 // Tables (re-exported from shared)
 // ---------------------------------------------------------------------------
 

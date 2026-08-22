@@ -54,6 +54,8 @@ export interface Block {
 }
 
 export class WriteOutput extends Output {
+  // 本次 write 实际使用的系统 Writer Agent 的 agent_id（用于编排层记录执行轨迹）
+  agent_id = '';
   response = '';
   response_format = '';
   token_usage = 0;

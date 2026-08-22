@@ -406,6 +406,7 @@ export function createMockWriterAgent(opts?: { failWrite?: boolean; response?: s
   return {
     write: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       if (opts?.failWrite) { o.error = 'write failed'; return false; }
+      o.agent_id = 'mock-writer-id';
       o.response = opts?.response ?? 'This is a mock writer response.';
       o.response_format = 'MARKDOWN';
       o.token_usage = 50;
@@ -425,6 +426,7 @@ export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
   return {
     evalWorkAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       if (opts?.failEval) { o.error = 'eval failed'; return false; }
+      o.agent_id = 'mock-evolutor-id';
       o.eval_id = 'mock-eval-id';
       o.scores = { correctness: 80, completeness: 75, efficiency: 85, relevance: 90, overall: 82 };
       o.suggestions = ['Improve accuracy'];
@@ -433,6 +435,7 @@ export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
     }),
     evalWriterAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       if (opts?.failEval) { o.error = 'eval failed'; return false; }
+      o.agent_id = 'mock-evolutor-id';
       o.eval_id = 'mock-writer-eval-id';
       o.scores = { correctness: 85, completeness: 80, efficiency: 90, relevance: 95, overall: 87 };
       o.suggestions = [];
@@ -559,6 +562,7 @@ export function createMockExecutionAccess(opts?: { failExec?: boolean; failBuild
       return true;
     }),
     execDAGAsync: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.job_id = 'mock-job-id'; return true; }),
+    recordSystemAgentExecution: vi.fn().mockResolvedValue(true),
     getDAGProgress: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.progress = { work_id: 'mock-work-id', plan_id: '', total_tasks: 0, completed_tasks: 0, running_tasks: 0, failed_tasks: 0, pending_tasks: 0, node_details: [], total_elapsed_ms: 0 };
       return true;

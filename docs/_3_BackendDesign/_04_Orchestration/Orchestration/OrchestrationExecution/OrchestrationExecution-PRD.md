@@ -281,6 +281,25 @@
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
+### 2.9. 记录系统 Agent 执行（recordSystemAgentExecution）
+
+**功能**：为不经过 `execSingleAgent`（无 ReACT 循环）的系统 Agent（Writer / Evolutor）记录其完成态执行结果，写入与其他 Agent 相同的 `orchestration_agent_execution` 表，保证采集方式一致。
+**入参**：
+- input：RecordSystemAgentExecutionInput（继承 Input），包含以下字段：
+  - work_id：工作 ID
+  - interact_id：交互 ID
+  - agent_id：系统 Agent ID
+  - task_content：任务内容（描述性文本，如"汇总执行结果并生成最终回复"）
+  - answer：执行结果
+  - elapsed_ms：耗时（可选）
+- context：OrchestrationExecutionContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
+- output：RecordSystemAgentExecutionOutput（继承 Output）
+
+**处理流程**：
+
+1. 调用 RelationDBProvider.insertDB 向 `orchestration_agent_execution` 表写入完成态执行记录（execution_type: SYSTEM，status: COMPLETED，answer/task_content/elapsed_ms 已填充，trace_id/iterations 置空）；
+2. 返回 true；
+
 ## 重要内容
 
 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
@@ -345,7 +364,7 @@
 | agent_id | Agent ID | UUID | N | 普通索引 | |
 | plan_id | 规划 ID | UUID | Y | 普通索引 | Planning 模式下关联 |
 | task_id | 任务 ID | UUID | Y | | 关联 PlannerAgent 的 task_id |
-| execution_type | 执行类型 | VARCHAR | N | | SINGLE / DAG |
+| execution_type | 执行类型 | VARCHAR | N | | SINGLE / DAG / SYSTEM |
 | task_content | 执行的任务内容 | TEXT | N | | |
 | status | 执行状态 | VARCHAR | N | | PENDING / RUNNING / COMPLETED / FAILED / BUILD_FAILED / CANCELLED |
 | answer | 执行结果 | TEXT | Y | | 仅在 COMPLETED 状态有值 |
@@ -393,3 +412,18 @@
 **可能存在的问题**：
 - 存量库中若存在历史脏数据（全局重复边）需先清理；当前生产库无 (plan_id, from, to) 重复，迁移安全。
 - 若历史 work 已被标记 FAILED（如本次 fb50e6af-6954-49c9-8409-9aa7b40335dd），修复后需用户重新发起相同请求才会按新逻辑成功执行。
+
+### [2026-08-22] 新增 recordSystemAgentExecution 记录系统 Agent 执行轨迹
+**变更原因**：Writer / Evolutor 系统 Agent 不经过 `execSingleAgent` 的 ReACT 循环，其执行结果未写入 `orchestration_agent_execution` 表，导致「思考过程 / 执行过程」弹窗看不到这两个 Agent。为与其他 Agent 采集方式一致，新增统一入口记录其完成态执行结果。
+
+**修改的方法**：
+  - `OrchestrationExecutionService.recordSystemAgentExecution(input, context, output)` — 新增方法，向 `orchestration_agent_execution` 表写入 `execution_type=SYSTEM`、`status=COMPLETED` 的记录。
+  - `OrchestrationExecutionAccess.recordSystemAgentExecution` — Access 层新增对应方法。
+  - `RecordSystemAgentExecutionInput / RecordSystemAgentExecutionOutput` — domain/types 新增类型。
+
+**影响的端点**：
+  - 后端编排链路 `JSONNodeService.handleWriteResult` / `handleEvalResult` — 调用本方法落库。
+  - `buildThinkingBlocksAndDag`（思考过程采集）— 无需改动，自动采集新增记录。
+
+**可能存在的问题**：
+  - `execution_type` 新增 `SYSTEM` 枚举值；`getDAGProgress` 等按 status 统计的逻辑不受影响（SYSTEM 记录 status 为 COMPLETED）。

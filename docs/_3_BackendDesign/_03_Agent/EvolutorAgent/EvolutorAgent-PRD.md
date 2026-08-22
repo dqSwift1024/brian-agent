@@ -23,6 +23,7 @@
   - trace_id：执行追踪 ID
 - context：EvalWorkAgentContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：EvalWorkAgentOutput（继承 Output），承载返回内容：
+  - agent_id：实际执行评估的 Evolutor 系统 Agent ID（注意：input.agent_id 为被评估的 Work Agent）
   - eval_id：评估 ID
   - scores：分项评分
     - correctness：正确性（0-100）
@@ -78,6 +79,7 @@
   - agent_results：上游 Agent 的原始结果汇总
 - context：EvalWriterAgentContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：EvalWriterAgentOutput（继承 Output），承载返回内容：
+  - agent_id：实际执行评估的 Evolutor 系统 Agent ID（注意：input.agent_id 为被评估的 Writer Agent）
   - eval_id：评估 ID
   - scores：分项评分
     - clarity：清晰度（0-100）
@@ -255,3 +257,18 @@
 4. **stopEvalSchedule**：调用 MQCore.stopWorker(identifier)。
 5. **评分刷新**：`eval_score` 不再被单次评估直接覆盖，evalWorkAgent 评估后由 `refreshEvalScore` 以 usage_count 加权平均刷新（`new = (old × usage_count + overall) / (usage_count + 1)`）。
 6. **评估频率阈值**：`eval_frequency_threshold` 作为定时调度 Worker 触发批量评估的「累计未评估次数」阈值（需为正整数）；仅当某 Agent 近期未评估 usage 数达到该阈值时才触发评估。
+
+## 代码变更记录
+
+### [2026-08-22] Eval 输出回填 agent_id 以支持编排层采集 Evolutor 执行轨迹
+**变更原因**：EvolutorAgent 的评估结果未写入 `orchestration_agent_execution` 表，导致「思考过程 / 执行过程」弹窗看不到评估 Agent 的执行结果。为使 Evolutor 与其他 Agent 的采集方式一致，需在 `evalWorkAgent` / `evalWriterAgent` 完成后将本次实际使用的 Evolutor 系统 Agent ID 回填给编排层。
+
+**修改的方法**：
+  - `EvalWorkAgentOutput` / `EvalWriterAgentOutput` — 新增 `agent_id` 字段（实际执行评估的 Evolutor 系统 Agent ID）。
+  - `EvolutorAgentService.evalWorkAgent` / `evalWriterAgent` — 调用 `buildSystemAgent` 后回填 `output.agent_id = buildOut.agent_id`。
+
+**影响的端点**：
+  - 后端编排链路 `JSONNodeService.handleEvalResult`（EVAL_RESULT 节点）— 读取 `evalWriterOutput.agent_id` 写入执行记录。
+
+**可能存在的问题**：
+  - 无已知问题；`agent_id` 为新增默认字段，向下兼容。

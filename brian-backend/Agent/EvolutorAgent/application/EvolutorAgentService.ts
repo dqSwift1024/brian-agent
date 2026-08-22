@@ -211,6 +211,7 @@ export class EvolutorAgentService {
       );
     }
 
+    output.agent_id = buildOut.agent_id;
     output.eval_id = evalId;
     output.scores = scores;
     output.suggestions = suggestions;
@@ -319,6 +320,7 @@ export class EvolutorAgentService {
       );
     }
 
+    output.agent_id = buildOut.agent_id;
     output.eval_id = evalId;
     output.scores = scores;
     output.suggestions = suggestions;

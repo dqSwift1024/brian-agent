@@ -250,6 +250,7 @@
 1. 从 shared_data 读取 agent_results 和 user_query；
 2. 调用 WriterAgent.write 生成回复；
 3. 将 response 写入 shared_data；
+4. 调用 OrchestrationExecution.recordSystemAgentExecution 将 Writer 执行结果（answer=最终回复）写入 `orchestration_agent_execution` 表，供「思考过程 / 执行过程」统一采集展示（与其他 Agent 采集方式一致）；
 
 ### 3.11. EVAL_RESULT — EvolutorAgent 评估
 
@@ -267,6 +268,8 @@
 **处理逻辑**：
 1. 若 async=true：通过 MQ sendMQ 投递评估任务，不等待结果；
 2. 若 async=false：同步调用 EvolutorAgent.evalWorkAgent / evalWriterAgent；
+3. 评估完成后调用 OrchestrationExecution.recordSystemAgentExecution 将 Evolutor 评估结果（answer=评分 JSON）写入 `orchestration_agent_execution` 表，供「思考过程 / 执行过程」统一采集展示（与其他 Agent 采集方式一致）；
+   > 同步 / setImmediate / MQ worker 三处评估序列复用统一的 `runEval` 私有方法，避免重复代码。
 
 ### 3.12. SAVE_RESPONSE — 保存最终回复
 
@@ -663,3 +666,20 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 5. **JSONNode 定义与策略解耦**：JSONNode 定义支持序列化/反序列化，策略通过引用 jsonnode_definition 定义流程；修改定义不需要修改执行引擎代码。
 6. **超时保护**：单节点执行超过 node_timeout_ms 时中断当前节点，跳转 on_error。
 7. **AOP**：所有方法经 AopProxy.wrap 生成代理。
+
+## 代码变更记录
+
+### [2026-08-22] WRITE_RESULT / EVAL_RESULT 节点记录系统 Agent 执行轨迹
+**变更原因**：Writer / Evolutor 系统 Agent 不经过 `OrchestrationExecution.execSingleAgent`（无 ReACT 循环），其执行结果未写入 `orchestration_agent_execution` 表，导致「思考过程 / 执行过程」弹窗看不到 Write Agent 与评估 Agent 的执行结果。
+
+**修改的方法**：
+  - `JSONNodeService.handleWriteResult` — 调用 `WriterAgent.write` 后经 `recordSystemAgentExecution` 写入 Writer 执行结果。
+  - `JSONNodeService.handleEvalResult` — 抽取共享私有方法 `runEval`（同步 / setImmediate / MQ worker 三处复用），评估完成后写入 Evolutor 执行结果。
+  - `JSONNodeService.recordSystemAgentExecution`（私有）— 统一调用 `OrchestrationExecution.recordSystemAgentExecution` 落库，best-effort 降级。
+
+**影响的端点**：
+  - 后端编排链路 `POST /api/chat`（Simple / Planning 策略）— 执行完成后 `orchestration_agent_execution` 表新增 Writer / Evolutor 记录，`buildThinkingBlocksAndDag` 据此在「执行过程」中展示。
+
+**可能存在的问题**：
+  - Evolutor 评估为异步（setImmediate / MQ），用户在评估完成前打开弹窗时可能暂时看不到评估结果，稍后刷新历史即可。
+  - Writer / Evolutor 仅记录 `answer` 与 `task_content`，未写 `agent_execution_trace`，故「执行过程」中其 Prompt / 思考步骤为描述性文本（后续可选扩展）。

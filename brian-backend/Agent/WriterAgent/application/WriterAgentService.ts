@@ -358,6 +358,7 @@ export class WriterAgentService {
       new RecordAgentUsageOutput(),
     );
 
+    output.agent_id = buildOut.agent_id;
     output.response = response;
     output.response_format = preferences.format || 'MARKDOWN';
     output.token_usage = tokens;

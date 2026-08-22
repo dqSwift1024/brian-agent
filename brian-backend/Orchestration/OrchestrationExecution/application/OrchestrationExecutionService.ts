@@ -39,6 +39,8 @@ import {
   GetOrchestrationExecQueueStatusOutput,
   ConfigOrchestrationExecutionInput,
   ConfigOrchestrationExecutionOutput,
+  RecordSystemAgentExecutionInput,
+  RecordSystemAgentExecutionOutput,
   AgentDAG,
   AgentNode,
   AgentEdge,
@@ -524,6 +526,44 @@ export class OrchestrationExecutionService {
 
       return false;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // recordSystemAgentExecution
+  // -------------------------------------------------------------------------
+
+  // 系统 Agent（Writer / Evolutor 等）不经过 execAgent 的 ReACT 循环，无法复用
+  // execSingleAgent 的 RUNNING→COMPLETED 生命周期；此处仅记录其完成态执行结果，
+  // 写入与 execSingleAgent 相同的 orchestration_agent_execution 表，供
+  // buildThinkingBlocksAndDag 统一采集展示，保证与其他 Agent 采集方式一致。
+  async recordSystemAgentExecution(
+    input: RecordSystemAgentExecutionInput,
+    _context: OrchestrationExecutionContext,
+    _output: RecordSystemAgentExecutionOutput,
+  ): Promise<boolean> {
+    const now = IdGenerator.now();
+    const insInput = Object.assign(new InsertDBInput(), {
+      table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
+      data: [
+        { field: 'id', value: IdGenerator.generate() },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'work_id', value: input.work_id },
+        { field: 'agent_id', value: input.agent_id },
+        { field: 'plan_id', value: '' },
+        { field: 'task_id', value: '' },
+        { field: 'execution_type', value: 'SYSTEM' },
+        { field: 'task_content', value: input.task_content },
+        { field: 'status', value: 'COMPLETED' },
+        { field: 'answer', value: input.answer },
+        { field: 'trace_id', value: '' },
+        { field: 'iterations', value: 0 },
+        { field: 'elapsed_ms', value: input.elapsed_ms ?? 0 },
+        { field: 'error_info', value: '' },
+      ] as DataObject[],
+    });
+    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    return true;
   }
 
   // -------------------------------------------------------------------------

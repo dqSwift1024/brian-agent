@@ -14,6 +14,7 @@ import {
   CancelExecutionInput, CancelExecutionOutput,
   GetOrchestrationExecQueueStatusInput, GetOrchestrationExecQueueStatusOutput,
   ConfigOrchestrationExecutionInput, ConfigOrchestrationExecutionOutput,
+  RecordSystemAgentExecutionInput, RecordSystemAgentExecutionOutput,
 } from '../domain/types';
 
 export class OrchestrationExecutionAccess {
@@ -62,6 +63,13 @@ export class OrchestrationExecutionAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.execDAG(i, c, o);
+  }
+
+  async recordSystemAgentExecution(
+    i: RecordSystemAgentExecutionInput, c: OrchestrationExecutionContext, o: RecordSystemAgentExecutionOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.recordSystemAgentExecution(i, c, o);
   }
 
   async execDAGAsync(

@@ -39,6 +39,7 @@ import {
   ExecSingleAgentInput, ExecSingleAgentOutput,
   BuildAgentDAGInput, BuildAgentDAGOutput,
   ExecDAGInput, ExecDAGOutput,
+  RecordSystemAgentExecutionInput, RecordSystemAgentExecutionOutput,
   type AgentDAG, type TaskDAG,
 } from '../../OrchestrationExecution/domain/types';
 import {
@@ -1073,9 +1074,22 @@ export class JSONNodeService {
       agent_results: agentResults,
     });
     const writeOutput = new WriteOutput();
+    const writeStartedAt = Date.now();
     await this.writerAgent.write(writeInput, new WriterAgentContext(), writeOutput);
+    const writeElapsed = Date.now() - writeStartedAt;
 
     sharedData[saveKey] = writeOutput.response;
+
+    // 与其他 Agent 采集方式保持一致：Writer 执行结果写入 orchestration_agent_execution，
+    // 供 buildThinkingBlocksAndDag 在「思考过程 / 执行过程」中统一采集展示。
+    await this.recordSystemAgentExecution(
+      workId,
+      interactId,
+      writeOutput.agent_id,
+      '汇总执行结果并生成最终回复',
+      writeOutput.response,
+      writeElapsed,
+    );
 
     const updData: DataObject[] = [
       { field: 'status', value: 'WRITING' },
@@ -1089,6 +1103,88 @@ export class JSONNodeService {
       ] as Condition[],
     });
     await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+  }
+
+  // 与其他 Agent 采集方式保持一致：系统 Agent 执行结果统一写入 orchestration_agent_execution 表，
+  // 供 buildThinkingBlocksAndDag 在「思考过程 / 执行过程」中采集展示。
+  private async recordSystemAgentExecution(
+    workId: string,
+    interactId: string,
+    agentId: string,
+    taskContent: string,
+    answer: string,
+    elapsedMs: number,
+  ): Promise<void> {
+    if (!agentId) return;
+    try {
+      await this.orchestrationExecution.recordSystemAgentExecution(
+        Object.assign(new RecordSystemAgentExecutionInput(), {
+          work_id: workId,
+          interact_id: interactId,
+          agent_id: agentId,
+          task_content: taskContent,
+          answer,
+          elapsed_ms: elapsedMs,
+        }),
+        new OrchestrationExecutionContext(),
+        new RecordSystemAgentExecutionOutput(),
+      );
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // 执行评估序列：evalWriterAgent（评估最终回复）→ 逐 Work Agent evalWorkAgent → 启动后台评估调度。
+  // 抽取为共享方法供同步 / setImmediate / MQ worker 三处复用，避免重复代码。
+  private async runEval(payload: {
+    work_id: string;
+    interact_id: string;
+    user_query: string;
+    final_response: string;
+    agent_results: Record<string, unknown>[];
+  }): Promise<void> {
+    const { work_id, interact_id, user_query, final_response, agent_results } = payload;
+
+    const evalWriterInput = Object.assign(new EvalWriterAgentInput(), {
+      agent_id: '',
+      work_id,
+      interact_id,
+      user_query,
+      final_response,
+      agent_results,
+    });
+    const evalWriterOutput = new EvalWriterAgentOutput();
+    const evalWriterStartedAt = Date.now();
+    await this.evolutorAgent.evalWriterAgent(evalWriterInput, new EvolutorAgentContext(), evalWriterOutput);
+    const evalWriterElapsed = Date.now() - evalWriterStartedAt;
+
+    await this.recordSystemAgentExecution(
+      work_id,
+      interact_id,
+      evalWriterOutput.agent_id,
+      '评估最终回复质量',
+      JSON.stringify({
+        scores: evalWriterOutput.scores,
+        suggestions: evalWriterOutput.suggestions,
+        need_optimize: evalWriterOutput.need_optimize,
+      }),
+      evalWriterElapsed,
+    );
+
+    for (const ar of agent_results) {
+      const evalWorkInput = Object.assign(new EvalWorkAgentInput(), {
+        agent_id: (ar.agent_id as string) ?? '',
+        work_id,
+        interact_id,
+        task_content: (ar.task_content as string) ?? '',
+        agent_output: (ar.answer ?? ar.result) as string,
+        trace_id: (ar.trace_id as string) ?? '',
+      });
+      await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvolutorAgentContext(), new EvalWorkAgentOutput());
+    }
+
+    const startEvalInput = Object.assign(new StartEvalScheduleInput(), {});
+    await this.evolutorAgent.startEvalSchedule(startEvalInput, new EvolutorAgentContext(), new StartEvalScheduleOutput());
   }
 
   private async handleEvalResult(
@@ -1107,30 +1203,13 @@ export class JSONNodeService {
 
     const evalFn = async () => {
       try {
-        const evalWriterInput = Object.assign(new EvalWriterAgentInput(), {
-          agent_id: '',
+        await this.runEval({
           work_id: workId,
           interact_id: interactId,
           user_query: userQuery,
           final_response: finalResponse,
           agent_results: agentResults,
         });
-        await this.evolutorAgent.evalWriterAgent(evalWriterInput, new EvolutorAgentContext(), new EvalWriterAgentOutput());
-
-        for (const ar of agentResults) {
-          const evalWorkInput = Object.assign(new EvalWorkAgentInput(), {
-            agent_id: (ar.agent_id as string) ?? '',
-            work_id: workId,
-            interact_id: interactId,
-            task_content: (ar.task_content as string) ?? '',
-            agent_output: (ar.answer ?? ar.result) as string,
-            trace_id: (ar.trace_id as string) ?? '',
-          });
-          await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvolutorAgentContext(), new EvalWorkAgentOutput());
-        }
-
-        const startEvalInput = Object.assign(new StartEvalScheduleInput(), {});
-        await this.evolutorAgent.startEvalSchedule(startEvalInput, new EvolutorAgentContext(), new StartEvalScheduleOutput());
       } catch (err: unknown) {
         this.logger?.error?.('handleEvalResult: evaluation failed', {
           error: err instanceof Error ? err.message : String(err),
@@ -1166,36 +1245,13 @@ export class JSONNodeService {
                 handler: async (msg: Record<string, unknown>) => {
                   try {
                     const payload = (msg.payload as Record<string, unknown>) ?? {};
-                    const pw = payload.work_id as string ?? '';
-                    const pi = payload.interact_id as string ?? '';
-                    const pq = payload.user_query as string ?? '';
-                    const pr = payload.final_response as string ?? '';
-                    const pa = (payload.agent_results as Record<string, unknown>[]) ?? [];
-
-                    const evalWriterInput = Object.assign(new EvalWriterAgentInput(), {
-                      agent_id: '',
-                      work_id: pw,
-                      interact_id: pi,
-                      user_query: pq,
-                      final_response: pr,
-                      agent_results: pa,
+                    await this.runEval({
+                      work_id: payload.work_id as string ?? '',
+                      interact_id: payload.interact_id as string ?? '',
+                      user_query: payload.user_query as string ?? '',
+                      final_response: payload.final_response as string ?? '',
+                      agent_results: (payload.agent_results as Record<string, unknown>[]) ?? [],
                     });
-                    await this.evolutorAgent.evalWriterAgent(evalWriterInput, new EvolutorAgentContext(), new EvalWriterAgentOutput());
-
-                    for (const ar of pa) {
-                      const evalWorkInput = Object.assign(new EvalWorkAgentInput(), {
-                        agent_id: (ar.agent_id as string) ?? '',
-                        work_id: pw,
-                        interact_id: pi,
-                        task_content: (ar.task_content as string) ?? '',
-                        agent_output: (ar.answer ?? ar.result) as string,
-                        trace_id: (ar.trace_id as string) ?? '',
-                      });
-                      await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvolutorAgentContext(), new EvalWorkAgentOutput());
-                    }
-
-                    const startEvalInput = Object.assign(new StartEvalScheduleInput(), {});
-                    await this.evolutorAgent.startEvalSchedule(startEvalInput, new EvolutorAgentContext(), new StartEvalScheduleOutput());
                     return true;
                   } catch (err: unknown) {
                     this.logger?.error?.('MQ eval worker: evaluation failed', {

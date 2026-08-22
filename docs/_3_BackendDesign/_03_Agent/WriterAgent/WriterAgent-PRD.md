@@ -24,6 +24,7 @@
   - user_preferences：用户偏好配置（可选，格式见 3.1）
 - context：WriteContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：WriteOutput（继承 Output），承载返回内容：
+  - agent_id：本次写作实际使用的系统 Writer Agent ID（供编排层记录执行轨迹）
   - response：最终用户可见回复
   - response_format：回复格式（TEXT / MARKDOWN / JSON）
   - token_usage：Token 用量
@@ -177,4 +178,17 @@
 
 **可能存在的问题**：
   - 无已知问题；改动均向下兼容旧格式数据。
+
+### [2026-08-22] WriteOutput 回填 agent_id 以支持编排层采集 Writer 执行轨迹
+**变更原因**：WriterAgent 的执行结果未写入 `orchestration_agent_execution` 表，导致「思考过程 / 执行过程」弹窗看不到 Writer Agent 的执行结果。为使 Writer 与其他 Agent 的采集方式一致，需在 `write` 完成后将本次实际使用的系统 Writer Agent ID 回填给编排层。
+
+**修改的方法**：
+  - `WriteOutput` — 新增 `agent_id` 字段。
+  - `WriterAgentService.write(input, ctx, output)` — 调用 `buildSystemAgent` 后回填 `output.agent_id = buildOut.agent_id`。
+
+**影响的端点**：
+  - 后端编排链路 `JSONNodeService.handleWriteResult`（WRITE_RESULT 节点）— 读取 `writeOutput.agent_id` 写入执行记录。
+
+**可能存在的问题**：
+  - 无已知问题；`agent_id` 为新增默认字段，向下兼容。
 
