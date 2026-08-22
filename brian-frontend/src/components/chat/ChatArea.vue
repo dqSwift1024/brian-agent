@@ -572,6 +572,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         threshold_score: payload.threshold_score,
         should_modify_query: payload.should_modify_query,
       }
+      if (typeof payload.input_tokens === 'number') intentBlock.inputTokens = payload.input_tokens
+      if (typeof payload.output_tokens === 'number') intentBlock.outputTokens = payload.output_tokens
+      if (typeof payload.elapsed_ms === 'number') intentBlock.durationMs = payload.elapsed_ms
       if (!intentBlock.steps) intentBlock.steps = []
       intentBlock.steps.push({
         phase: 'THINK',
@@ -589,6 +592,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         content: intentBlock.content,
         output: intentBlock.output,
         steps: intentBlock.steps,
+        inputTokens: intentBlock.inputTokens,
+        outputTokens: intentBlock.outputTokens,
+        durationMs: intentBlock.durationMs,
       })
       sessionStore.setAgentStatus(intentAgentId, 'SUCCESS', '需求理解 Agent (Intent)')
       break

@@ -36,7 +36,7 @@
 
 2. **需求理解 Agent (IntentAgent) 前置执行**
    a. 若 `skip_intent_check` 为 false，调用 IntentAgent.understandRequirement 分析用户真实需求；
-   b. 推送 `intent_agent_result` SSE 事件（含 understood_requirement、match_score、reasoning），供前端"思考过程"弹窗展示；
+   b. 推送 `intent_agent_result` SSE 事件（含 understood_requirement、match_score、reasoning、prompt、input_tokens、output_tokens），供前端"思考过程"弹窗展示；
    c. 将 IntentAgent 结果持久化到 `orchestration_work.metadata` 的 `intent_agent` 字段，供历史查询；
    d. 若 match_score 低于阈值（should_modify_query=true），推送 `intent_confirmation_required` 事件暂停工作等待用户确认；
    e. IntentAgent 失败时降级继续原始流程（不阻塞）；

@@ -190,6 +190,17 @@
 
 ## 7. 变更记录
 
+### [2026-08-22] "思考过程"弹窗：Intent 需求理解 Agent 展示输入/输出 Token 用量
+- **变更原因**："思考过程"弹窗中 Intent（需求理解）Agent 节点缺少输入/输出 Token 用量展示，与其他工作 Agent 的 Token 用量展示不一致。
+- **功能变更**：
+  1. **后端 Token 用量回填**：`IntentAgentService.understandRequirement` 在 LLM 调用完成后回填 `output.input_tokens` / `output.output_tokens`（`UnderstandRequirementOutput` 新增 `input_tokens` / `output_tokens` 字段）。
+  2. **编排层透传**：`OrchestrationEntryService` 将 `intentOut.input_tokens` / `output_tokens` 透传至 `intent_agent_result` SSE 事件与 `orchestration_work.metadata` 的 `intent_agent` 字段。
+  3. **思考块重建**：`dev-server.ts` 的 `buildThinkingBlocksAndDag` 在重建 Intent 思考块时回填 `inputTokens` / `outputTokens`。
+  4. **前端展示**：`ChatArea.vue` 的 `handleStreamEvent` 在 `intent_agent_result` 事件中解析并写入 `inputTokens` / `outputTokens` / `durationMs`，供思考过程弹窗的 Intent 节点展示。
+- **行为差异**：
+  - 修改前：Intent 节点 Token 用量显示为 0 或不展示。
+  - 修改后：Intent 节点正确展示输入/输出 Token 用量与耗时。
+
 ### [2026-08-22] "思考过程"弹窗：上下文折叠、引用消息标签切换与"执行过程"聚合块
 - **变更原因**：① "运行与对话上下文环境 (Context)" 内容块较长且无法折叠，占满弹窗顶部空间；② "引用的消息与上下文背景"将所有采集方式的引用消息一次性平铺展示，无法按标签聚焦查看某类消息；③ 弹窗将 Agent 按类型（工作 Agent / Writer / 系统 Agent）拆为三个区块，割裂了 Agent 的实际执行时序，无法直观看到完整执行链路。
 - **功能变更**：

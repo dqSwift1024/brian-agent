@@ -26,6 +26,9 @@
   - `reasoning`: 匹配打分与需求推断推导分析
   - `should_modify_query`: 是否建议优化/改写用户 Query（当 `match_score < threshold_score` 时为 `true`）
   - `threshold_score`: 阈值设定（默认 80）
+  - `prompt`: PromptProvider 渲染返回的完整 Prompt（供"思考过程"弹窗展示）
+  - `input_tokens`: 本次 LLM 调用的输入 Token 数
+  - `output_tokens`: 本次 LLM 调用的输出 Token 数
 
 **处理流程**：
 1. 校验入参 `session_id` 与 `user_query` 非空；

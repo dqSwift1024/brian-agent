@@ -110,6 +110,8 @@ export class OrchestrationEntryService {
             reasoning: intentOut.reasoning,
             should_modify_query: intentOut.should_modify_query,
             prompt: intentOut.prompt,
+            input_tokens: intentOut.input_tokens,
+            output_tokens: intentOut.output_tokens,
           });
         }
 
@@ -123,6 +125,8 @@ export class OrchestrationEntryService {
             reasoning: intentOut.reasoning,
             should_modify_query: intentOut.should_modify_query,
             prompt: intentOut.prompt,
+            input_tokens: intentOut.input_tokens,
+            output_tokens: intentOut.output_tokens,
           },
         };
         const intentMetaData: DataObject[] = [

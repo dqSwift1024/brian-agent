@@ -116,6 +116,10 @@ export class IntentAgentService {
     const llmOut = new ExecLLMOutput();
     await this.llmAccess.execLLM(llmIn, new LLMContext(), llmOut);
 
+    // 回填输入 / 输出 Token 用量，供前端"思考过程"弹窗展示
+    output.input_tokens = llmOut.input_tokens ?? 0;
+    output.output_tokens = llmOut.output_tokens ?? 0;
+
     const parsed = parseJsonObject(llmOut.result);
     if (parsed && typeof parsed.understood_requirement === 'string') {
       output.understood_requirement = parsed.understood_requirement.trim() || input.user_query;

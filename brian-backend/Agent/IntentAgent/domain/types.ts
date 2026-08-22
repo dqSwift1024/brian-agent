@@ -29,7 +29,7 @@ export class UnderstandRequirementInput extends Input {
 //   threshold_score = 80;
 // }
 
-// ===== 修改后的 UnderstandRequirementOutput 定义：追加 PromptProvider 返回的完整 Prompt =====
+// ===== 修改后的 UnderstandRequirementOutput 定义：追加 PromptProvider 返回的完整 Prompt 与 Token 用量 =====
 export class UnderstandRequirementOutput extends Output {
   understood_requirement = '';
   match_score = 100;
@@ -37,4 +37,6 @@ export class UnderstandRequirementOutput extends Output {
   should_modify_query = false;
   threshold_score = 80;
   prompt = '';
+  input_tokens = 0;
+  output_tokens = 0;
 }

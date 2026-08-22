@@ -890,6 +890,8 @@ async function buildThinkingBlocksAndDag(
           },
           input: `需求理解: ${String(intentData.understood_requirement ?? '')}`,
           prompt: String(intentData.prompt ?? ''),
+          inputTokens: Number(intentData.input_tokens ?? 0) || 0,
+          outputTokens: Number(intentData.output_tokens ?? 0) || 0,
           output: {
             understood_requirement: intentData.understood_requirement,
             match_score: intentData.match_score,
