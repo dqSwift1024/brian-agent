@@ -13,6 +13,7 @@
  */
 
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
+import type { PromptsAccess } from '../../PromptsProvider/access/PromptsAccess';
 import { LLMSchemaInitializer } from '../infrastructure/LLMSchemaInitializer';
 import { LLMService } from '../application/LLMService';
 import {
@@ -43,6 +44,8 @@ import {
   ExecLLMOutput,
   EmbedLLMInput,
   EmbedLLMOutput,
+  GenLLMAttrInput,
+  GenLLMAttrOutput,
   VisualizedLLMInput,
   VisualizedLLMOutput,
   EnableLLMInput,
@@ -77,12 +80,13 @@ export class LLMAccess {
   /**
    * @param relationDb RelationDBProvider 接入层实例
    * @param logger 可选日志记录器
+   * @param promptsAccess 可选 PromptsProvider 接入层实例（genLLMAttr 依赖）
    */
-  constructor(relationDb: RelationDBAccess, logger?: Logger) {
+  constructor(relationDb: RelationDBAccess, logger?: Logger, promptsAccess?: PromptsAccess) {
     // 初始化表结构
     new LLMSchemaInitializer(relationDb).init();
     // 创建 Service 并通过代理模式增加切面注入能力
-    const rawService = new LLMService(relationDb, logger);
+    const rawService = new LLMService(relationDb, logger, promptsAccess);
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
@@ -230,6 +234,15 @@ export class LLMAccess {
     output: EmbedLLMOutput,
   ): Promise<boolean> {
     return this.service.embedLLM(input, context, output);
+  }
+
+  /** 一键补全模型属性（生成简介与模型用途） */
+  async genLLMAttr(
+    input: GenLLMAttrInput,
+    context: LLMContext,
+    output: GenLLMAttrOutput,
+  ): Promise<boolean> {
+    return this.service.genLLMAttr(input, context, output);
   }
 
   /** 可视化数据 */

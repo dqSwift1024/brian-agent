@@ -129,6 +129,7 @@ import {
   SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput,
   GetLLMInput, GetLLMOutput, DelLLMInput, DelLLMOutput,
   UpdateLLMInput, UpdateLLMOutput, AddLLMInput, AddLLMOutput,
+  GenLLMAttrInput, GenLLMAttrOutput,
 } from './Base/LLMProvider';
 import {
   SoulContext, SoSoulInput, SoSoulOutput, AddSoulInput, AddSoulOutput,
@@ -329,11 +330,14 @@ async function buildContext() {
   await logAccess.initialize();
   const logger = createLogger(logAccess);
 
-  const llmAccess = new LLMAccess(relationDb, logger);
+  // PromptsProvider 需在 LLMProvider 之前创建，供 genLLMAttr 一键补全模型属性使用
+  const promptsAccess = new PromptsAccess(relationDb, logger);
+  await promptsAccess.initialize();
+
+  const llmAccess = new LLMAccess(relationDb, logger, promptsAccess);
   await llmAccess.initialize();
 
   const mcpAccess = new MCPAccess(relationDb, logger);
-
   // 启动时通过 npm list -g 同步一次 mcp_install 表的安装状态（清理全局已卸载的 npm 记录）
   try {
     const synced = await mcpAccess.syncInstallStatus();
@@ -350,9 +354,6 @@ async function buildContext() {
 
   const skillAccess = new SkillAccess(relationDb, logger);
   await skillAccess.initialize();
-
-  const promptsAccess = new PromptsAccess(relationDb, logger);
-  await promptsAccess.initialize();
 
   const graphDBAccess = new GraphDBAccess(relationDb, { dbPath: path.join(DATA_DIR, 'graph.db') }, logger);
   await graphDBAccess.initialize();
@@ -1531,6 +1532,21 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           });
         } catch (err: any) {
           sendJson(res, 500, { error: err?.message || '向量化调用失败' });
+        }
+
+      } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/autofill$/.test(pathname)) {
+        const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
+        try {
+          const genInput = Object.assign(new GenLLMAttrInput(), { id });
+          const genOutput = new GenLLMAttrOutput();
+          await ctx.llmAccess.genLLMAttr(genInput, new LLMContext(), genOutput);
+          sendJson(res, 200, {
+            llm_brief: genOutput.llm_brief ?? '',
+            model_usage: genOutput.model_usage ?? '',
+            error: genOutput.error || '',
+          });
+        } catch (err: any) {
+          sendJson(res, 500, { error: err?.message || '一键补全模型属性失败' });
         }
 
       } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/default$/.test(pathname)) {

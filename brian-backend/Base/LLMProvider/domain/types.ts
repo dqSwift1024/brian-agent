@@ -461,6 +461,24 @@ export class EmbedLLMOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// genLLMAttr
+// ---------------------------------------------------------------------------
+
+/** genLLMAttr 入参 */
+export class GenLLMAttrInput extends Input {
+  /** 模型 ID（llm_available.id），为该模型生成「简介」与「模型用途」 */
+  id!: string;
+}
+
+/** genLLMAttr 出参 */
+export class GenLLMAttrOutput extends Output {
+  /** 生成的简介（llm_brief） */
+  llm_brief = '';
+  /** 生成的模型用途（model_usage） */
+  model_usage = '';
+}
+
+// ---------------------------------------------------------------------------
 // visualizedLLM
 // ---------------------------------------------------------------------------
 

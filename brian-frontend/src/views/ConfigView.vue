@@ -1650,6 +1650,7 @@ const modelForm = ref({
   providerMaxTokens: 0,
 })
 const modelSubmitting = ref(false)
+const modelAttrLoading = ref(false)
 
 // 模型测试（发送消息并展示原始结果）
 const modelChatPrompt = ref('')
@@ -1753,6 +1754,25 @@ function openModelModal(model?: BackendModel) {
 }
 
 function closeModelModal() { modelModalVisible.value = false; editingModel.value = null }
+
+async function autoFillModelAttr() {
+  if (!editingModel.value || modelAttrLoading.value) return
+  modelAttrLoading.value = true
+  try {
+    const res = await configApi.model.autofill(editingModel.value.id)
+    if (res.error) {
+      showToast(res.error, 'error')
+      return
+    }
+    if (res.llm_brief) modelForm.value.brief = res.llm_brief
+    if (res.model_usage) modelForm.value.usageDesc = res.model_usage
+    showToast('已补全模型属性', 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '一键补全失败')
+  } finally {
+    modelAttrLoading.value = false
+  }
+}
 
 async function submitModelForm() {
   modelSubmitting.value = true
@@ -5954,6 +5974,16 @@ watch(activeSubSection, async (val) => {
           </div>
           <div class="flex justify-end gap-2 px-5 py-4 border-t border-apple-gray-200 dark:border-apple-gray-700">
             <button class="px-4 py-2 text-sm font-medium rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600 transition-colors" @click="closeModelModal">取消</button>
+            <button
+              v-if="editingModel"
+              class="flex items-center justify-center w-9 h-9 rounded-lg text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 transition-colors disabled:opacity-60"
+              :disabled="modelAttrLoading || modelSubmitting"
+              title="一键补全模型属性"
+              @click="autoFillModelAttr"
+            >
+              <Loader2 v-if="modelAttrLoading" :size="16" class="animate-spin" />
+              <Star v-else :size="16" />
+            </button>
             <button class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90 transition-colors disabled:opacity-60" :disabled="modelSubmitting || !modelForm.title.trim()" @click="submitModelForm">
               <Loader2 v-if="modelSubmitting" :size="14" class="animate-spin" />
               <Save v-else :size="14" />

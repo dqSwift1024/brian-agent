@@ -363,6 +363,39 @@
 
 **返回**：Boolean，表示调用是否完成
 
+#### 3.3.3. 一键补全模型属性（genLLMAttr）
+
+**功能**：为指定模型一键生成「简介」（llm_brief）与「模型用途」（model_usage）并保存到 `llm_available` 表
+
+**方法签名**：`Boolean genLLMAttr(GenLLMAttrInput input, LLMContext context, GenLLMAttrOutput output)`
+
+**入参（GenLLMAttrInput extends Input）**：
+
+| 属性 | 类型 | 是否必填 | 说明 |
+| ------ | ----- | ----- | ----- |
+| id | STRING | Y | 模型 ID（llm_available.id），为该模型生成「简介」与「模型用途」 |
+
+**处理流程**：
+
+1. 根据 ID 读取待补全的模型（`llm_available`）及其提供商名称（`llm_provider.llm_provider_title`）；
+2. 调用 PromptsProvider 的 `execPrompt` 渲染内置 Prompt「模型属性生成」（`builtin.llm_attr_gen`），变量为 `model_name` / `llm_type` / `provider_title`；若 PromptsProvider 未注入或模板缺失，回退为内存渲染内置模板（`renderTemplate`）；
+3. 调用大模型生成属性（复用 `execLLM` 的空 ID 降级逻辑，模型选择顺序：默认模型 → 启用的第一个模型）；
+4. 解析大模型返回的 JSON（容忍 Markdown 代码块包裹），提取 `llm_brief` 与 `model_usage`；
+5. 将结果写入 `llm_available` 表的 `llm_brief` / `model_usage` 字段并更新 `updated`；
+
+**出参（GenLLMAttrOutput extends Output）**：
+
+| 属性 | 类型 | 说明 |
+| ------ | ----- | ----- |
+| llm_brief | STRING | 生成的简介 |
+| model_usage | STRING | 生成的模型用途 |
+| error | STRING? | 错误信息（生成 / 解析失败时） |
+| error_code | STRING? | 错误码（GEN_ATTR_FAILED / PARSE_ERROR / EMPTY_RESULT） |
+
+**返回**：Boolean，表示生成与保存是否完成
+
+> 注：LLMProvider 通过构造参数可选注入 `PromptsAccess`（`new LLMAccess(relationDb, logger, promptsAccess)`），在 dev-server 装配时 PromptsProvider 先于 LLMProvider 初始化。
+
 ### 3.4. 可视化与运维
 
 #### 3.4.1. 可视化数据（visualizedLLM）

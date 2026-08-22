@@ -26,6 +26,7 @@
 - `strategy_selector_prompt`：编排策略选择 Prompt
 - `builtin.summary`：摘要生成 Prompt
 - `builtin.intent_understanding`：IntentAgent 需求理解与意图比对 Prompt
+- `builtin.llm_attr_gen`：LLMProvider 一键补全模型属性（生成简介与模型用途）Prompt
 
 ### 2.2. 种子数据播种（seed）
 

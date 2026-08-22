@@ -15,6 +15,9 @@
 
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { Logger } from '../../shared/aop/AopProxy';
+import type { PromptsAccess } from '../../PromptsProvider/access/PromptsAccess';
+import { PromptContext, ExecPromptInput, ExecPromptOutput } from '../../PromptsProvider/domain/types';
+import { PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '../../PromptCatalog/catalog';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
 import { TOOL_CONFIG_TABLE } from '../../ToolProvider/domain/types';
@@ -58,6 +61,8 @@ import {
   ExecLLMOutput,
   EmbedLLMInput,
   EmbedLLMOutput,
+  GenLLMAttrInput,
+  GenLLMAttrOutput,
   VisualizedLLMInput,
   VisualizedLLMOutput,
   EnableLLMInput,
@@ -110,10 +115,12 @@ export class LLMService {
   /**
    * @param relationDb RelationDBProvider 接入层
    * @param logger 可选日志记录器
+   * @param promptsAccess 可选 PromptsProvider 接入层（genLLMAttr 依赖）
    */
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly logger?: Logger,
+    private readonly promptsAccess?: PromptsAccess,
   ) {
     this.config = new ConfigService(relationDb, LLM_CONFIG_TABLE);
     this.http = new HttpAccess(new ConfigService(relationDb, TOOL_CONFIG_TABLE));
@@ -1681,6 +1688,135 @@ export class LLMService {
     }
 
     await this.upsertUsage(input.id, output.input_tokens, 0);
+    return true;
+  }
+
+  /**
+   * 一键补全模型属性（genLLMAttr）。
+   *
+   * 流程：
+   * 1. 读取待补全的模型（llm_available）及其提供商名称；
+   * 2. 调用 PromptsProvider 渲染内置「模型属性生成」Prompt；
+   * 3. 调用大模型生成「简介」与「模型用途」（模型选择：默认模型 → 启用的第一个模型）；
+   * 4. 解析 JSON 结果并保存到 llm_available（llm_brief / model_usage）。
+   */
+  async genLLMAttr(
+    input: GenLLMAttrInput,
+    _context: LLMContext,
+    output: GenLLMAttrOutput,
+  ): Promise<boolean> {
+    this.ensureEnabled();
+    if (!input.id) {
+      throw new ValidationError('id 不能为空');
+    }
+
+    // 1. 读取待补全的模型信息
+    const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
+      { field: 'id', operator: Operator.EQ, value: input.id },
+    ]);
+    if (!llmRow) {
+      throw new NotFoundError('LLM', input.id);
+    }
+    const llm = llmRow as unknown as LLMAvailableRecord;
+
+    // 2. 读取提供商名称
+    let providerTitle = '';
+    try {
+      const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
+        { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
+      ]);
+      providerTitle =
+        (providerRow as unknown as LLMProviderRecord | null)?.llm_provider_title ?? '';
+    } catch {
+      /* ignore */
+    }
+
+    // 3. 通过 PromptsProvider 渲染 Prompt
+    let prompt = '';
+    if (this.promptsAccess) {
+      const execPromptInput = Object.assign(new ExecPromptInput(), {
+        id: PROMPT_IDS.llmAttrGen,
+        variables: {
+          model_name: llm.llm_title,
+          llm_type: llm.llm_type || 'text',
+          provider_title: providerTitle,
+        },
+      });
+      const execPromptOutput = new ExecPromptOutput();
+      await this.promptsAccess.execPrompt(
+        execPromptInput,
+        new PromptContext(),
+        execPromptOutput,
+      );
+      prompt = execPromptOutput.prompt || '';
+    }
+    // 兜底：PromptsProvider 未注入或模板缺失时，用内存内置模板渲染
+    if (!prompt) {
+      const template = getBuiltinTemplate(PROMPT_IDS.llmAttrGen);
+      if (template) {
+        prompt = renderTemplate(template, {
+          model_name: llm.llm_title,
+          llm_type: llm.llm_type || 'text',
+          provider_title: providerTitle,
+        });
+      }
+    }
+    if (!prompt) {
+      throw new ValidationError('模型属性生成 Prompt 不可用');
+    }
+
+    // 4. 调用大模型生成属性（空 id 复用 execLLM 的默认模型 → 启用模型降级顺序）
+    const execInput = Object.assign(new ExecLLMInput(), { id: '', prompt });
+    const execOutput = new ExecLLMOutput();
+    const ok = await this.execLLM(execInput, new LLMContext(), execOutput);
+    if (!ok || !execOutput.result) {
+      output.error = execOutput.error || '大模型生成模型属性失败';
+      output.error_code = execOutput.error_code || 'GEN_ATTR_FAILED';
+      return false;
+    }
+
+    // 5. 解析 JSON 结果（容忍 Markdown 代码块包裹）
+    let brief = '';
+    let usage = '';
+    try {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(execOutput.result);
+      } catch {
+        const cleaned = execOutput.result
+          .replace(/```json/gi, '')
+          .replace(/```/g, '')
+          .trim();
+        parsed = JSON.parse(cleaned);
+      }
+      const obj = parsed as Record<string, unknown>;
+      brief = typeof obj.llm_brief === 'string' ? obj.llm_brief.trim() : '';
+      usage = typeof obj.model_usage === 'string' ? obj.model_usage.trim() : '';
+    } catch {
+      output.error = '解析大模型返回的模型属性失败';
+      output.error_code = 'PARSE_ERROR';
+      return false;
+    }
+
+    if (!brief && !usage) {
+      output.error = '大模型未返回有效的模型属性';
+      output.error_code = 'EMPTY_RESULT';
+      return false;
+    }
+
+    // 6. 保存到 llm_available
+    await this.relationDb.update(
+      LLM_AVAILABLE_TABLE,
+      [
+        { field: 'llm_brief', value: brief },
+        { field: 'model_usage', value: usage },
+        { field: 'updated', value: IdGenerator.now() },
+      ],
+      [{ field: 'id', operator: Operator.EQ, value: input.id }],
+    );
+
+    output.llm_brief = brief;
+    output.model_usage = usage;
     return true;
   }
 
