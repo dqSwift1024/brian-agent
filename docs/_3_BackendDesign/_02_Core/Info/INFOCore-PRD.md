@@ -832,6 +832,21 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 ## 5. 变更记录
 
+### [2026-08-22] info_raw 新增 trace_id 列并随 saveInfo 落库
+
+**变更原因**：trace_id 此前仅停留在 SSE 事件与 `orchestration_work.metadata`，未随消息落库，历史加载后无法还原真实 trace_id，导致前端「复制 TraceId」复制到 work_id。
+
+**修改的方法**：
+- `InfoCoreService.saveInfo` — 写入 `info_raw.trace_id` 字段（取自 `SaveInfoInput.trace_id`）；
+- `InfoCoreService.toInfoRawRecord` / `InfoRawRecord` — 透传 `trace_id`；
+- `InfoCoreSchemaInitializer` — `info_raw` 新增 `trace_id` 列（含迁移与 `idx_info_raw_trace_id` 索引）。
+
+**影响的端点**：
+- 所有经 `saveInfo` 落库的消息（REQUEST / RESPONSE / 错误回复等），以及依赖 `lastNInfo` / `getChatHistory` 读取 `info_raw` 的历史查询接口。
+
+**可能存在的问题**：
+- 历史旧数据 `trace_id` 为空，回退展示 `work_id`；`trace_id` 仍依赖上层编排在各 `saveInfo` 调用处携带。
+
 ### [2026-08-22] context 将当前消息从时间线中拆出为 CURRENT 类型
 
 **变更原因**：WorkAgent 输入 Prompt 的 `<时间线消息>` 中包含了本次问答输入（与 `task_content` 重复）。

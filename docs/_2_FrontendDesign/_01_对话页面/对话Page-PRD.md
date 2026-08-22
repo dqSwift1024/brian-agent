@@ -52,7 +52,7 @@
     -   **选中消息展示框**：点击消息卡片使其高亮聚焦（`ring-2 ring-brian-blue`）；该节点关联的所有连线变色联动高亮（其发出的被引用连线显示为紫色 `#8b5cf6`，其接收的引用连线显示为天蓝色 `#0284c7`），其余无关连线半透明淡化；
     -   **选中连线**：点击任意连线（含 14px 隐形点击响应热区），仅当前被点击的连线加粗变色高亮（`#2563eb`），其他连线与节点保持原样；
     -   **取消选中**：点击画布空白区域重置所有选中态与高亮样式。
--   **消息框结构一致性**：ChatMap 区与对话区复用同一消息框组件（`MessageCard`），结构完全一致（顶部栏 = 时间/错误标识/复选框/钉住开关；内容区 = 摘要 + 原文双区；底部栏 = 引用/被引用胶囊、思考过程按钮、复制 TraceId、消息长度）。摘要与原文双区均支持折叠/展开，且均渲染 Markdown 内容；两区差异仅通过 `mode` 样式覆盖区分（字号、最大高度、配色）：
+-   **消息框结构一致性**：ChatMap 区与对话区复用同一消息框组件（`MessageCard`），结构完全一致（顶部栏 = 时间/错误标识/复选框/钉住开关；内容区 = 摘要 + 原文双区；底部栏 = 引用/被引用胶囊、思考过程按钮、评估结果按钮、复制 TraceId、消息长度）。摘要与原文双区均支持折叠/展开，且均渲染 Markdown 内容；两区差异仅通过 `mode` 样式覆盖区分（字号、最大高度、配色）：
     -   **ChatMap 区**（`mode=map`）：默认展开**摘要**、折叠**原文**（折叠时仅显示标签行，可手动展开）；
     -   **对话区**（`mode=timeline`）：默认展开**原文（Markdown 全文）**、折叠**摘要**；
     -   **折叠/展开可交互**：用户可随时手动切换任意一区的展开状态，折叠状态由响应式状态保存，不受组件重渲染影响；摘要为空时回退原文展示，双区均为空时摘要区显示「(无内容)」。
@@ -189,6 +189,23 @@
 -   **移动端适配**：针对触摸操作、横向溢出、工具栏触发方式做专项适配。
 
 ## 7. 变更记录
+
+### [2026-08-22] trace_id 全链路透传并落库 info_raw、消息框新增「评估结果」按钮
+- **变更原因**：
+  1. 消息框底部的「复制 TraceId」按钮此前复制的是 `work_id`（后端 `/api/chat/history` 将 `traceId` 字段错误回填为 `work_id || interact_id || info_id`），与真实 trace_id（前端 `crypto.randomUUID()` 生成）语义不符，误导排查与日志检索；
+  2. trace_id 仅停留在 SSE 事件与 `orchestration_work.metadata`，未随消息落库，历史加载后无法还原真实 trace_id；
+  3. 缺少从消息框直接查看某次工作 Evolutor 评估评分 JSON 的入口（此前只能在「思考过程」弹窗的"执行过程"聚合块中查看）。
+- **功能变更**：
+  1. **trace_id 落库**：`info_raw` 表新增 `trace_id` 列（含迁移与索引）；`SaveInfoInput` 透传 `trace_id`，`InfoCoreService.saveInfo` 落库，`toInfoRawRecord` / `GetChatHistoryOutput` / `ChatService.getChatHistory` 回传；`JSONNodeService`（handleSaveUserInput / handleSaveResponse / handleError）与 `OrchestrationEntryService`（错误回退）在各 `saveInfo` 调用中携带 `trace_id`。
+  2. **trace_id 独立且全链路自动生成**：traceId 与 `work_id` / `interact_id` / `info_id` 相互独立，不再互相回退。AOP 层（`AopProxy`）在任意方法入口自动生成缺失的 trace_id（经 `ToolProvider.IdGenerator`，优先级：`Input.trace_id` → `Context.trace_id` → 新生成，回填到 `Context` 避免污染查询类入参的 trace_id 过滤字段）；业务入口（`/api/chat/stream` / `/api/chat/send`）显式生成并透传。日志系统（`LogService.addLog`）持久化 `trace_id`，AOP 日志拦截器与 `createLogger` 自动写入，可按 `trace_id` 检索。
+  3. **历史返回真实 trace_id**：`/api/chat/history` 的 `traceId` 字段改为 `m.trace_id || ''`（仅真实 trace_id，不回落业务 ID）；`/api/visualization/message-dag` 节点同样回传 `trace_id`。
+  4. **新增「评估结果」按钮**：`MessageCard` 底部栏在「思考过程」按钮旁新增「评估结果」按钮（Gauge 图标），点击后弹出 `EvalResultModal` 展示对应 work 的 Evolutor 评估评分 JSON（解析 scores / suggestions / need_optimize 结构化展示，并保留原始 JSON 与 trace_id）。
+  5. **后端新增接口**：`GET /api/chat/eval-result?info_id=xxx`（或 `work_id`），按 info_id 反查 `info_raw` 得到 `work_id` 与 `trace_id`，再从 `orchestration_agent_execution`（`execution_type=SYSTEM` 且 `agent_type=EVOLUTOR`）读取最新评估 `answer` 返回。
+  6. **状态管理**：`session.ts` 新增 `evalResultVisible` / `evalResultLoading` / `evalResult` / `evalResultError` / `evalTraceId` 与 `openEvalResult` / `closeEvalResult`。
+- **行为差异**：
+  - 修改前：消息框复制按钮复制 `work_id` 却标注为 TraceId；trace_id 不随消息历史还原；无「评估结果」按钮。
+  - 修改后：消息框「复制 TraceId」复制真实客户端 trace_id；traceId 独立于业务 ID，任意方法缺失时自动生成，日志统一保存 trace_id；点击「评估结果」可直接查看评分 JSON，评估未完成时提示"暂无评估结果（评估可能尚未完成，稍后重试）"。
+- **新增边界条件**：Evolutor 评估为异步（setImmediate / MQ），评估完成前点击「评估结果」可能返回 `found=false`，稍后重试即可；历史旧数据无 `trace_id` 列值时「复制 TraceId」按钮不展示（不回落业务 ID）。
 
 ### [2026-08-22] "执行过程"聚合块展示 Write Agent 与评估 Agent 的执行结果
 - **变更原因**：Writer / Evolutor 系统 Agent 不经过 `orchestration_agent_execution`（`execSingleAgent` 的 ReACT 循环），其执行结果未落库，导致「思考过程」弹窗的"执行过程"看不到 Write Agent 与评估 Agent 的执行结果（属展示缺失，非调度缺失）。

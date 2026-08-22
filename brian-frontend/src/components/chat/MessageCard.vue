@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check, Brain } from '@lucide/vue'
+import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check, Brain, Gauge } from '@lucide/vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -49,6 +49,7 @@ const emit = defineEmits<{
   (e: 'clickCard', id: string): void
   (e: 'jumpTo', id: string): void
   (e: 'showThinking', id: string): void
+  (e: 'showEval', id: string): void
 }>()
 
 const expandedCiting = ref(false)
@@ -86,7 +87,7 @@ const renderedSummary = computed(() => {
   return DOMPurify.sanitize(marked.parse(raw) as string)
 })
 
-const effectiveTraceId = computed(() => props.traceId || props.workId || targetId.value || '')
+const effectiveTraceId = computed(() => props.traceId || '')
 
 const textLength = computed(() => props.content ? props.content.length : 0)
 
@@ -138,6 +139,10 @@ function handleJump(cid: string) {
 
 function handleShowThinking() {
   emit('showThinking', targetId.value)
+}
+
+function handleShowEval() {
+  emit('showEval', targetId.value)
 }
 
 async function copyTraceId() {
@@ -268,6 +273,15 @@ async function copyTraceId() {
       >
         <Brain :size="10" />
         思考过程
+      </button>
+
+      <button
+        class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/60"
+        title="查看评估结果"
+        @click.stop="handleShowEval"
+      >
+        <Gauge :size="10" />
+        评估结果
       </button>
 
       <button

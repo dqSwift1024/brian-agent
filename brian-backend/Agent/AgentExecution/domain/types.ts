@@ -4,7 +4,7 @@ export class AgentExecutionContext extends Context {
   session_id?: string;
   work_id?: string;
   interact_id?: string;
-  trace_id?: string;
+  declare trace_id?: string;
   selected_msg_ids?: string[];
 }
 

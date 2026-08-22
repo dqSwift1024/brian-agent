@@ -54,9 +54,18 @@ export class InfoCoreSchemaInitializer {
         "info_creator_id"   TEXT    NOT NULL DEFAULT '',
         "info"              TEXT    NOT NULL,
         "info_length"       INTEGER NOT NULL DEFAULT 0,
-        "pin"               INTEGER NOT NULL DEFAULT 0
+        "pin"               INTEGER NOT NULL DEFAULT 0,
+        "trace_id"          TEXT    NOT NULL DEFAULT ''
       )
     `);
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${INFO_RAW_TABLE}" ADD COLUMN "trace_id" TEXT NOT NULL DEFAULT ''`);
+    } catch {
+      // 字段已存在
+    }
+    this.relationDb.executeRaw(
+      `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_trace_id" ON "${INFO_RAW_TABLE}" ("trace_id")`,
+    );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_session_id" ON "${INFO_RAW_TABLE}" ("session_id")`,
     );

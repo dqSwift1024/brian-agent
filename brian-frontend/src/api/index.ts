@@ -71,6 +71,10 @@ export const chatApi = {
     request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null; module?: string }>(
       `/chat/thinking?info_id=${encodeURIComponent(infoId)}&module=${module}`,
     ).then(r => r),
+  evalResult: (infoId: string) =>
+    request<{ work_id: string; trace_id: string; found: boolean; evaluation: { answer: string; created: number; elapsed_ms: number; agent_name: string } | null }>(
+      `/chat/eval-result?info_id=${encodeURIComponent(infoId)}`,
+    ),
   agentChain: (exchangeId: string) =>
     request<{ nodes: AgentChainNode[] }>(`/chat/agent-chain/${encodeURIComponent(exchangeId)}`).then(r => r.nodes),
   cancelTask: (exchangeId: string) =>

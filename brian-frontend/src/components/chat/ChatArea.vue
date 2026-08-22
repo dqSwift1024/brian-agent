@@ -16,6 +16,7 @@ import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
 // ===== 原始导入（保留参考）：对话区渲染 Planning 策略拆解（AgentDagFlow）时使用，现已在对话区移除 =====
 // import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingModal from './ThinkingModal.vue'
+import EvalResultModal from './EvalResultModal.vue'
 
 const sessionStore = useSessionStore()
 
@@ -1025,7 +1026,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
                 :citing-count="getCitingCount(entry.message)"
                 :cited-info-ids="getCitedIds(entry.message)"
                 :citing-info-ids="getCitingIds(entry.message)"
-                :trace-id="entry.message.traceId || entry.message.workId"
+                :trace-id="entry.message.traceId"
                 :work-id="entry.message.workId"
                 mode="timeline"
                 :node-map="nodeMap"
@@ -1034,6 +1035,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
                 @click-card="centerMapOn"
                 @jump-to="jumpTo"
                 @show-thinking="showThinking"
+                @show-eval="sessionStore.openEvalResult"
               />
             </div>
 
@@ -1071,5 +1073,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     <!-- 思考过程弹窗 -->
     <ThinkingModal />
+
+    <!-- 评估结果弹窗 -->
+    <EvalResultModal />
   </div>
 </template>

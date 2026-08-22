@@ -484,7 +484,7 @@ export class VisualizationService {
           { field: 'session_id', operator: Operator.EQ, value: input.session_id },
         ],
         order_by: [{ field: 'created', direction: 'DESC' as const }],
-        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin'],
+        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin', 'trace_id'],
       });
     } catch (err) {
       this.logWarn('query info_raw failed', err);
@@ -527,6 +527,7 @@ export class VisualizationService {
         interact_id: String(row.interact_id ?? ''),
         info_type: String(row.info_type ?? ''),
         info_creator_role: String(row.info_creator_role ?? ''),
+        trace_id: String(row.trace_id ?? ''),
         // ===== 原始代码（保留作为参考） =====
         // info_summary: this.truncate(String(row.info ?? ''), summaryLength),
         // ===== 修改后的代码：使用 info_summary 表的完整摘要 =====

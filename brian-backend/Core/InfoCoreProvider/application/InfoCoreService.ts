@@ -274,6 +274,7 @@ export class InfoCoreService {
       { field: 'info', value: input.info },
       { field: 'info_length', value: input.info.length },
       { field: 'pin', value: 0 },
+      { field: 'trace_id', value: input.trace_id || '' },
     ]);
 
     // 创建图引用边
@@ -3026,6 +3027,7 @@ const rawPriority = priorityOrderStr
       info: raw['info'] as string,
       info_length: raw['info_length'] as number,
       pin: raw['pin'] as number,
+      trace_id: raw['trace_id'] as string,
     };
   }
 

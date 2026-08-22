@@ -455,3 +455,18 @@ Chat 模块的配置通过 Config Application 统一管理（`/api/config/update
 | Agent 节点详情 | 委托 Visualization Application | `GET /api/visualization/agent/:agent_id/trace` |
 | Work 执行时间线 | 委托 Visualization Application | `GET /api/visualization/work/:work_id/timeline` |
 | 取消工作 | cancelWork | 中断正在执行的 work |
+
+## 7. 变更记录
+
+### [2026-08-22] getChatHistory 返回真实 trace_id
+**变更原因**：`/api/chat/history` 此前将 `traceId` 字段错误回填为 `work_id || interact_id || info_id`，前端「复制 TraceId」复制到 work_id。
+
+**修改的方法**：
+- `ChatService.getChatHistory` — 消息映射新增 `trace_id`（取自 `info_raw.trace_id`），`GetChatHistoryOutput.messages` 新增 `trace_id` 字段；
+- `dev-server.ts` `/api/chat/history` — `traceId` 改为 `m.trace_id || ''`（仅真实 trace_id，不回落业务 ID）。
+
+**影响的端点**：
+- `GET /api/chat/history/:session_id` — 历史消息携带真实 `trace_id`，前端 `MessageCard`「复制 TraceId」据此复制真实 trace_id。
+
+**可能存在的问题**：
+- 历史旧数据 `info_raw.trace_id` 为空时「复制 TraceId」按钮不展示；`trace_id` 依赖上游编排在 `saveInfo` 时落库，缺失时由 AOP 层自动生成。

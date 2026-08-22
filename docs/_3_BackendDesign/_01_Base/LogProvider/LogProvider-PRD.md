@@ -322,3 +322,16 @@ const soulAccess = new SoulAccess(relationDb, {
   interceptors: [logInterceptor],
 });
 ```
+
+## 10. 变更记录
+
+### [2026-08-22] AOP 层自动生成 trace_id 并回填 Context，日志统一保存 trace_id
+- **变更原因**：traceId 需独立于 work_id / interact_id / info_id 等业务 ID，在任意方法缺失时自动生成，并保证日志统一保存 trace_id 供链路追踪。
+- **功能变更**：
+  - `Context` 基类新增 `trace_id` 字段；
+  - `AopProxy.wrap` 在方法入口计算有效 trace_id（优先级：`Input.trace_id` → `Context.trace_id` → `IdGenerator.generate()`），回填到 `Context`（不回填 `Input`，避免污染查询类入参的 trace_id 过滤字段，如 `SoLogInput`）；
+  - `AopProxy.createLoggerInterceptor` 将 `trace_id` / `work_id` / `interact_id` 写入日志 meta，`createLogger`（dev-server）提取并调用 `LogService.addLog` 持久化。
+- **影响的端点**：
+  - 所有经 AopProxy 包装的 Service 方法——日志 `log_record.trace_id` 恒有值，可经 `/api/logs?trace_id=` 检索。
+- **可能存在的问题**：
+  - 查询类方法（`soLog` / `queryLogs`）的 `trace_id` 入参为过滤条件，AOP 只回填 `Context` 不回填 `Input`，故不影响查询语义。

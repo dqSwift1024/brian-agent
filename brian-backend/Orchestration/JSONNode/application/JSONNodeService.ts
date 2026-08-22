@@ -636,6 +636,7 @@ export class JSONNodeService {
       info_creator_id: (sharedData.info_creator_id as string) ?? '',
       info: userQuery,
       parent_info_ids: citingIds,
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     const saveOut = new SaveInfoOutput();
     try {
@@ -1332,6 +1333,7 @@ export class JSONNodeService {
       info: finalResponse,
       parent_info_ids: parentInfoIds,
       summary: await this.generateResponseSummary(InfoType.RESPONSE, finalResponse, sessionId, workId, interactId),
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
@@ -1392,6 +1394,7 @@ export class JSONNodeService {
       info: responseText,
       parent_info_ids: parentInfoIds,
       summary: await this.generateResponseSummary(InfoType.RESPONSE, responseText, sessionId, workId, interactId),
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     try {
       await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());

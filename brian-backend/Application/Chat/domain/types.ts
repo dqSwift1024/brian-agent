@@ -103,6 +103,7 @@ export class GetChatHistoryOutput extends Output {
     pin: boolean;
     work_id?: string;
     interact_id?: string;
+    trace_id?: string;
     citing_count: number;
     cited_count: number;
     citing_info_ids: string[];

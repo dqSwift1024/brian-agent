@@ -343,6 +343,7 @@ export interface ChatMapNode {
   citedInfoIds: string[]
   workId?: string
   interactId?: string
+  traceId?: string
   x: number
   y: number
 }

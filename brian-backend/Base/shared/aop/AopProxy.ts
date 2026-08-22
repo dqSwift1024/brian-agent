@@ -14,6 +14,7 @@
  */
 
 import type { Interceptor, InterceptContext } from './Interceptor';
+import { IdGenerator } from '../../ToolProvider/IdGenerator';
 
 /**
  * 日志记录器接口，供调用方注入自定义 logger。
@@ -107,6 +108,17 @@ export class AopProxy {
         return function wrapped(this: unknown, ...args: unknown[]): unknown {
           if (!enableAop) {
             return fn.apply(obj, args);
+          }
+
+          // trace_id 自动生成：traceId 独立于 work_id / interact_id / info_id 等业务 ID。
+          // 有效 trace_id 优先级：入参 Input.trace_id（显式传播）→ Context.trace_id → 新生成。
+          // 生成结果回填到 Context（供日志与后续读取），不回填 Input（避免污染查询类入参的 trace_id 过滤字段）。
+          let effectiveTraceId = AopProxy.pickField(args[0], 'trace_id');
+          if (!effectiveTraceId) effectiveTraceId = AopProxy.pickField(args[1], 'trace_id');
+          if (!effectiveTraceId) effectiveTraceId = IdGenerator.generate();
+          const contextArg = args[1];
+          if (contextArg && typeof contextArg === 'object' && !Array.isArray(contextArg)) {
+            (contextArg as { trace_id?: string }).trace_id = effectiveTraceId;
           }
 
           const startedAt = Date.now();
@@ -269,6 +281,9 @@ export class AopProxy {
         logger.debug(`${ctx.methodName} invoke`, {
           source: ctx.targetName,
           args: AopProxy.summarizeValue(ctx.input),
+          trace_id: AopProxy.pickTraceId(ctx),
+          work_id: AopProxy.pickField(ctx.input, 'work_id'),
+          interact_id: AopProxy.pickField(ctx.input, 'interact_id'),
         });
       },
       afterExecute(ctx: InterceptContext, error?: Error): void {
@@ -276,16 +291,36 @@ export class AopProxy {
           logger.error(`${ctx.methodName} failed`, {
             source: ctx.targetName,
             elapsed_ms: ctx.elapsedMs,
+            trace_id: AopProxy.pickTraceId(ctx),
             error: error.message,
           });
         } else {
           logger.debug(`${ctx.methodName} done`, {
             source: ctx.targetName,
             elapsed_ms: ctx.elapsedMs,
+            trace_id: AopProxy.pickTraceId(ctx),
           });
         }
       },
     };
+  }
+
+  /**
+   * 提取有效 trace_id：优先 Context（AOP 已回填），其次 Input（显式传播），无则 undefined。
+   */
+  private static pickTraceId(ctx: InterceptContext): string | undefined {
+    return AopProxy.pickField(ctx.context, 'trace_id') ?? AopProxy.pickField(ctx.input, 'trace_id');
+  }
+
+  /**
+   * 从对象中提取指定字段值（用于日志记录，无则返回 undefined）。
+   */
+  private static pickField(input: unknown, field: string): string | undefined {
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      const value = (input as Record<string, unknown>)[field];
+      if (typeof value === 'string' && value) return value;
+    }
+    return undefined;
   }
 
   /**

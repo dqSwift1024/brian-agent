@@ -32,6 +32,12 @@ export const useSessionStore = defineStore('session', () => {
   const thinkingDag = ref<AgentDagData | null>(null)
   // 每个 Agent 独立的执行运行时状态（思考中/成功/失败），key = agent_id
   const agentExecutions = ref<Record<string, AgentRuntimeInfo>>({})
+  // 评估结果弹窗：展示某消息对应 work 的 Evolutor 评估评分 JSON
+  const evalResultVisible = ref(false)
+  const evalResultLoading = ref(false)
+  const evalResult = ref<{ answer: string; created: number; elapsed_ms: number; agent_name: string } | null>(null)
+  const evalResultError = ref('')
+  const evalTraceId = ref('')
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -177,6 +183,7 @@ export const useSessionStore = defineStore('session', () => {
         citedInfoIds: (n.cited_info_ids as string[]) ?? [],
         workId: n.work_id ? String(n.work_id) : undefined,
         interactId: n.interact_id ? String(n.interact_id) : undefined,
+        traceId: n.trace_id ? String(n.trace_id) : undefined,
         x: 0,
         y: 0,
       }))
@@ -504,6 +511,36 @@ export const useSessionStore = defineStore('session', () => {
     resetAgentStatus()
   }
 
+  // ===== 评估结果弹窗：打开时按 info_id 拉取 Evolutor 评估结果并展示 =====
+  async function openEvalResult(infoId: string) {
+    evalResultVisible.value = true
+    evalResultLoading.value = true
+    evalResult.value = null
+    evalResultError.value = ''
+    evalTraceId.value = ''
+    try {
+      const res = await chatApi.evalResult(infoId)
+      evalTraceId.value = res.trace_id || ''
+      if (res.found && res.evaluation) {
+        evalResult.value = res.evaluation
+      } else {
+        evalResultError.value = '暂无评估结果（评估可能尚未完成，稍后重试）'
+      }
+    } catch (e) {
+      evalResultError.value = e instanceof Error ? e.message : '加载评估结果失败'
+    } finally {
+      evalResultLoading.value = false
+    }
+  }
+
+  function closeEvalResult() {
+    evalResultVisible.value = false
+    evalResult.value = null
+    evalResultError.value = ''
+    evalResultLoading.value = false
+    evalTraceId.value = ''
+  }
+
   // Planning 拆解状态管理（流式期间实时更新）
   function resetPlanning() {
     planning.value = { status: 'idle' }
@@ -567,6 +604,8 @@ export const useSessionStore = defineStore('session', () => {
     setStreaming, setCancelController, cancelCurrentTask,
     startThinkingLoading, setThinkingDag, setThinkingBlocks,
     openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning,
-    setAgentStatus, resetAgentStatus
+    setAgentStatus, resetAgentStatus,
+    evalResultVisible, evalResultLoading, evalResult, evalResultError, evalTraceId,
+    openEvalResult, closeEvalResult
   }
 })

@@ -35,6 +35,7 @@ export interface InfoRawRecord {
   info: string;
   info_length: number;
   pin: number;
+  trace_id: string;
 }
 
 /** info_graph 表记录 */

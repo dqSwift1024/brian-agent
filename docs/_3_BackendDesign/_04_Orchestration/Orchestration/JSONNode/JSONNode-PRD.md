@@ -669,6 +669,19 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 
 ## 代码变更记录
 
+### [2026-08-22] SAVE_USER_INPUT / SAVE_RESPONSE / HANDLE_ERROR 节点携带 trace_id 落库
+**变更原因**：trace_id 需贯穿整条处理链路并随消息落库 `info_raw`，供历史查询与日志检索。
+
+**修改的方法**：
+  - `JSONNodeService.handleSaveUserInput` — `SaveInfoInput` 新增 `trace_id: sharedData.trace_id`。
+  - `JSONNodeService.handleSaveResponse` / `handleError` — 保存 RESPONSE 时携带 `trace_id: sharedData.trace_id`。
+
+**影响的端点**：
+  - 后端编排链路 `POST /api/chat`（Simple / Planning 策略）— 落库的 REQUEST / RESPONSE 消息携带真实 trace_id，历史接口据此还原。
+
+**可能存在的问题**：
+  - 依赖 `sharedData.trace_id`（由 `initial_data.trace_id` 注入）非空；历史旧数据无 trace_id。
+
 ### [2026-08-22] WRITE_RESULT / EVAL_RESULT 节点记录系统 Agent 执行轨迹
 **变更原因**：Writer / Evolutor 系统 Agent 不经过 `OrchestrationExecution.execSingleAgent`（无 ReACT 循环），其执行结果未写入 `orchestration_agent_execution` 表，导致「思考过程 / 执行过程」弹窗看不到 Write Agent 与评估 Agent 的执行结果。
 

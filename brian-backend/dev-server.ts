@@ -197,12 +197,14 @@ function createLogger(logAccess?: LogAccess): any {
     let elapsed: number | undefined;
     let workId: string | undefined;
     let interactId: string | undefined;
+    let traceId: string | undefined;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
       const m = meta as Record<string, unknown>;
       if (typeof m.source === 'string') source = m.source;
       if (typeof m.elapsed_ms === 'number') elapsed = m.elapsed_ms;
       if (typeof m.work_id === 'string') workId = m.work_id;
       if (typeof m.interact_id === 'string') interactId = m.interact_id;
+      if (typeof m.trace_id === 'string') traceId = m.trace_id;
       metadata = { ...m, log_source: 'AOP' };
     } else if (meta !== undefined && meta !== null) {
       metadata = { detail: meta, log_source: 'SYSTEM' };
@@ -211,7 +213,7 @@ function createLogger(logAccess?: LogAccess): any {
     }
     try {
       rawService.addLog(
-        { data: { level, source, message, metadata, elapsed_ms: elapsed, work_id: workId, interact_id: interactId } },
+        { data: { level, source, message, metadata, elapsed_ms: elapsed, work_id: workId, interact_id: interactId, trace_id: traceId } },
         {} as any,
         {} as any,
       ).catch(() => {});
@@ -2428,7 +2430,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             timestamp: m.created,
             pin: m.pin,
             workId: m.work_id,
-            traceId: m.work_id || m.interact_id || m.info_id,
+            traceId: m.trace_id || '',
             citingCount: m.citing_count ?? 0,
             citedCount: m.cited_count ?? 0,
             citingInfoIds: m.citing_info_ids ?? [],
@@ -2496,6 +2498,64 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           module: reqModule,
         });
 
+      } else if (method === 'GET' && pathname === '/api/chat/eval-result') {
+        // 评估结果采集接口：返回某次工作（work）的 Evolutor 评估结果（评分 JSON）。
+        // 数据来源：orchestration_agent_execution（execution_type=SYSTEM 且 agent_type=EVOLUTOR）的 answer 字段。
+        const infoId = String(params.get('info_id') ?? '');
+        let workId = String(params.get('work_id') ?? '');
+        let traceId = String(params.get('trace_id') ?? '');
+
+        if (!workId && !infoId) {
+          sendJson(res, 400, { error: '请至少提供 work_id / info_id 中的一个参数' });
+          return;
+        }
+
+        // 未显式提供 work_id 时，按 info_id 反查 info_raw 得到 work_id 与 trace_id
+        if (!workId && infoId) {
+          try {
+            const rows = ctx.relationDb.queryRaw<{ work_id: string; trace_id: string }>(
+              `SELECT "work_id", "trace_id" FROM "info_raw" WHERE "info_id" = ? LIMIT 1`,
+              [infoId],
+            );
+            if (rows.length > 0) {
+              workId = String(rows[0].work_id ?? '');
+              traceId = String(rows[0].trace_id ?? '');
+            }
+          } catch { /* degrade gracefully */ }
+        }
+
+        if (!workId) {
+          sendJson(res, 200, { work_id: '', trace_id: traceId, found: false, evaluation: null });
+          return;
+        }
+
+        const evalRows = ctx.relationDb.queryRaw<{ answer: string; created: number; elapsed_ms: number; agent_name: string }>(
+          `SELECT e.answer, e.created, e.elapsed_ms, a.agent_name
+           FROM orchestration_agent_execution e
+           LEFT JOIN agent a ON (e.agent_id = a.id OR e.agent_id = a.agent_id)
+           WHERE e.work_id = ? AND e.execution_type = 'SYSTEM' AND a.agent_type = 'EVOLUTOR'
+           ORDER BY e.created DESC LIMIT 1`,
+          [workId],
+        );
+
+        if (evalRows.length === 0) {
+          sendJson(res, 200, { work_id: workId, trace_id: traceId, found: false, evaluation: null });
+          return;
+        }
+
+        const evalRow = evalRows[0];
+        sendJson(res, 200, {
+          work_id: workId,
+          trace_id: traceId,
+          found: true,
+          evaluation: {
+            answer: String(evalRow.answer ?? ''),
+            created: Number(evalRow.created ?? 0),
+            elapsed_ms: Number(evalRow.elapsed_ms ?? 0),
+            agent_name: String(evalRow.agent_name ?? ''),
+          },
+        });
+
       } else if (method === 'GET' && pathname.startsWith('/api/chat/exchanges/')) {
         const sid = pathname.split('/api/chat/exchanges/')[1];
         const input = Object.assign(new GetChatHistoryInput(), { session_id: sid });
@@ -2513,6 +2573,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           msg_content: body.msg_content || body.content,
           citing_msg_ids: allCitingIds,
           selected_msg_ids: selectedMsgIds,
+          trace_id: (typeof body.trace_id === 'string' && body.trace_id) ? body.trace_id : IdGenerator.generate(),
         });
         const output = new SubmitWorkOutput();
         const context = new ChatContext();

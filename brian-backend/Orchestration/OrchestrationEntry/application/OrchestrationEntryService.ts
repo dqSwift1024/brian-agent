@@ -92,6 +92,7 @@ export class OrchestrationEntryService {
         citing_msg_ids: input.citing_msg_ids ?? [],
         selected_msg_ids: input.selected_msg_ids ?? [],
         interact_id: interactId,
+        trace_id: input.trace_id ?? '',
       });
       const intentOut = new UnderstandRequirementOutput();
       try {
@@ -195,6 +196,7 @@ export class OrchestrationEntryService {
     } else {
       const selInput = Object.assign(new SelectOrchestrationStrategyInput(), {
         user_query: input.user_query,
+        trace_id: input.trace_id ?? '',
       });
       const selOutput = new SelectOrchestrationStrategyOutput();
       await this.selectOrchestrationStrategy(selInput, context, selOutput);
@@ -220,6 +222,7 @@ export class OrchestrationEntryService {
       work_id: workId,
       user_query: input.user_query,
       selected_msg_ids: input.selected_msg_ids,
+      trace_id: input.trace_id ?? '',
     });
     const buildCtxOutput = new BuildWorkContextOutput();
     await this.buildWorkContext(buildCtxInput, context, buildCtxOutput);
@@ -269,6 +272,7 @@ export class OrchestrationEntryService {
           info: errResponse,
           parent_info_ids: parentInfoIds,
           summary: await this.generateResponseSummary(InfoType.RESPONSE, errResponse, input.session_id, workId, interactId),
+          trace_id: input.trace_id ?? '',
         });
         await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
       } catch { /* best-effort */ }

@@ -323,7 +323,7 @@ watch(() => sessionStore.centerInfoId, async (id) => {
           :citing-count="n.citingCount"
           :cited-info-ids="n.citedInfoIds"
           :citing-info-ids="n.citingInfoIds"
-          :trace-id="n.workId || n.interactId || n.infoId"
+          :trace-id="n.traceId"
           :work-id="n.workId"
           mode="map"
           :active="activeNodeId === n.id"
@@ -333,6 +333,7 @@ watch(() => sessionStore.centerInfoId, async (id) => {
           @click-card="onNodeClick(n)"
           @jump-to="jumpTo"
           @show-thinking="showThinking"
+          @show-eval="sessionStore.openEvalResult"
         />
       </div>
     </div>
