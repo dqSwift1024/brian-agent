@@ -285,9 +285,8 @@ async function copyTraceId() {
       </button>
 
       <button
-        v-if="effectiveTraceId"
         class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700"
-        :title="`复制 TraceId: ${effectiveTraceId}`"
+        :title="effectiveTraceId ? `复制 TraceId: ${effectiveTraceId}` : '复制 TraceId'"
         @click.stop="copyTraceId"
       >
         <component :is="copied ? Check : Copy" :size="10" />
