@@ -1468,7 +1468,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           supportsVision: false,
           supportsTools: true,
           isDefault: !!r.is_default,
-          status: r.enable ? 'active' : 'inactive',
+          enable: !!r.enable,
           llm_brief: r.llm_brief || '',
           model_usage: r.model_usage || '',
         }));
@@ -1479,7 +1479,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const row = ctx.relationDb.queryRaw<{ id: string; llm_title: string; llm_provider_id: string; enable: number }>(
           'SELECT "id", "llm_title", "llm_provider_id", "enable" FROM "llm_available" WHERE "id" = ?', [id],
         )[0];
-        sendJson(res, 200, row ? { id: row.id, modelName: row.llm_title, providerId: row.llm_provider_id, status: row.enable ? 'active' : 'inactive' } : { id, name: 'unknown' });
+        sendJson(res, 200, row ? { id: row.id, modelName: row.llm_title, providerId: row.llm_provider_id, enable: !!row.enable } : { id, name: 'unknown' });
 
       } else if (method === 'POST' && /\/api\/config\/model\/[^/]+\/test$/.test(pathname)) {
         const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
@@ -1578,8 +1578,18 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'PUT' && pathname.startsWith('/api/config/model/') && !/\/default$/.test(pathname)) {
         const id = pathname.split('/api/config/model/')[1];
         const data = (body as Record<string, unknown>).data || body;
-        try { ctx.relationDb.executeRaw('UPDATE "llm_available" SET "llm_brief" = ?, "enable" = ?, "model_usage" = ?, "max_tokens" = ? WHERE "id" = ?',
-          [data.llm_brief || '', (data.enable ?? data.enabled) ? 1 : 0, (data.model_usage || ''), (data.maxTokens || 0), id]); } catch {}
+        // 仅当显式传入 enable/enabled 时才更新启用状态，避免编辑其它字段时把 enable 静默重置为 0
+        const hasEnable = data.enable !== undefined || data.enabled !== undefined;
+        const enableVal = (data.enable ?? data.enabled) ? 1 : 0;
+        try {
+          if (hasEnable) {
+            ctx.relationDb.executeRaw('UPDATE "llm_available" SET "llm_brief" = ?, "enable" = ?, "model_usage" = ?, "max_tokens" = ? WHERE "id" = ?',
+              [data.llm_brief || '', enableVal, (data.model_usage || ''), (data.maxTokens || 0), id]);
+          } else {
+            ctx.relationDb.executeRaw('UPDATE "llm_available" SET "llm_brief" = ?, "model_usage" = ?, "max_tokens" = ? WHERE "id" = ?',
+              [data.llm_brief || '', (data.model_usage || ''), (data.maxTokens || 0), id]);
+          }
+        } catch {}
         sendJson(res, 200, { success: true, id });
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/config/model/')) {

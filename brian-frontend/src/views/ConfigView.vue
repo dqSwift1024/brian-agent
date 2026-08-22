@@ -1621,7 +1621,7 @@ interface BackendModel {
   providerName?: string
   providerId?: string
   maxTokens?: number
-  status?: string
+  enable?: boolean
   isDefault?: boolean
   llm_type?: string
   llm_brief?: string
@@ -1786,6 +1786,7 @@ async function submitModelForm() {
       llm_brief: modelForm.value.brief,
       maxTokens: tokens,
       model_usage: modelForm.value.usageDesc,
+      enable: editingModel.value ? editingModel.value.enable !== false : true,
     }
     if (editingModel.value) {
       await configApi.model.update(editingModel.value.id, data)
@@ -1819,6 +1820,19 @@ async function handleSetDefault(modelId: string) {
     await loadModels()
   } catch (e: unknown) {
     showToast(e instanceof Error ? e.message : '设置失败')
+  }
+}
+
+async function handleToggleModel(modelId: string) {
+  const m = models.value.find(x => x.id === modelId)
+  if (!m) return
+  const newEnable = m.enable !== true
+  try {
+    await configApi.model.update(modelId, { enable: newEnable })
+    m.enable = newEnable
+    showToast(newEnable ? '已启用' : '已停用', 'success')
+  } catch (e: unknown) {
+    showToast(e instanceof Error ? e.message : '切换失败')
   }
 }
 
@@ -4565,7 +4579,7 @@ watch(activeSubSection, async (val) => {
                     <p class="text-[11px] text-apple-gray-400 truncate">{{ m.providerName || m.providerId || '' }}</p>
                   </div>
                   <span v-if="m.isDefault" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-brian-blue/10 text-brian-blue flex-shrink-0"><Star :size="10" /> 默认</span>
-                  <span v-else class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="m.status === 'active' ? 'bg-success-green' : 'bg-apple-gray-300'" />
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :class="m.enable ? 'bg-success-green' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" :title="m.enable ? '启用' : '停用'" />
                 </div>
                 <p class="text-[11px] text-apple-gray-400">
                   {{ (m.maxTokens || 0) >= 1000000 ? ((m.maxTokens || 0) / 1000000).toFixed(1) + 'M' : (m.maxTokens || 0) >= 1000 ? ((m.maxTokens || 0) / 1000).toFixed(0) + 'K' : (m.maxTokens || 0) }} tokens
@@ -4573,6 +4587,9 @@ watch(activeSubSection, async (val) => {
               </div>
               <div class="flex items-center justify-end pt-3 border-t border-apple-gray-100 dark:border-apple-gray-700 mt-auto">
                 <div class="flex items-center gap-1">
+                  <button class="relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0" :class="m.enable ? 'bg-brian-blue' : 'bg-apple-gray-300 dark:bg-apple-gray-600'" title="启用/停用" @click.stop="handleToggleModel(m.id)">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200" :class="m.enable ? 'translate-x-4' : ''" />
+                  </button>
                   <button
                     class="flex items-center gap-1 px-1.5 py-1 text-[10px] font-medium rounded transition-colors"
                     :class="m.isDefault ? 'bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-400 cursor-not-allowed' : 'bg-brian-blue/10 text-brian-blue hover:bg-brian-blue/20'"

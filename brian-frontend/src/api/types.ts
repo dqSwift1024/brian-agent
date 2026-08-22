@@ -430,7 +430,7 @@ export interface ModelInfo {
   supportsVision: boolean
   supportsTools: boolean
   isDefault: boolean
-  status: 'active' | 'inactive'
+  enable: boolean
 }
 
 export interface LearningStats {

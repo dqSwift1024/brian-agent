@@ -381,6 +381,8 @@ Config Application 同时作为 Base 层资源（LLM、Soul、Skill、MCP、Prom
 | `/api/config/llm/quota` | POST | LLMCore.limitLLM | 设置 LLM 限额 |
 | `/api/config/llm/quota/check` | GET | LLMCore.checkLLMQuota | 检查限额 |
 
+> **模型启用状态约定**：模型的启用/停用统一以**布尔字段 `enable`**（`true`/`false`）表达，接口层不再使用 `'active'/'inactive'` 字符串。`PUT` 更新模型时采用**部分更新语义**——仅当请求体显式携带 `enable`（或 `enabled`）时才更新启用状态，否则保持 `llm_available.enable` 原值，避免编辑其它字段时误将默认模型禁用。
+
 #### 3.4.2. Soul 管理
 
 | HTTP 接口 | 方法 | 代理调用 | 说明 |

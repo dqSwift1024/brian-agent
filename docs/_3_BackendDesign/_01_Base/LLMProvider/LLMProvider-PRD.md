@@ -251,6 +251,8 @@
 
 > 可更新字段：llm_title、llm_brief、llm_type、enable、max_tokens、model_usage。
 
+> **部分更新语义**：`data` 为 `Partial<LLMData>`，仅更新 `data` 中显式提供的字段；未提供的字段（尤其是 `enable`）**必须保持原值，不得重置**。`enable` 为布尔值（`true`/`false`），持久化到 `llm_available.enable` 时以 1/0 存储。
+
 **返回**：Boolean，表示更新是否完成；影响行数通过 output 参数返回
 
 #### 3.2.4. 搜索可用模型（soLLM）

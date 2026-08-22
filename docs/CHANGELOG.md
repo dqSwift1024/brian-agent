@@ -1,5 +1,26 @@
 # 代码变更记录 (CHANGELOG)
 
+## [2026-08-22] 模型启用状态布尔化与保存误禁用修复
+
+**变更原因**：
+1. `PUT /api/config/model/:id` 无条件执行 `enable = (data.enable ?? data.enabled) ? 1 : 0`，前端保存模型时未携带 `enable`，导致每次编辑模型（如"一键补全"后保存）都会把 `llm_available.enable` 静默重置为 0，默认模型被误禁用，后续对话报 `LLM xxx 已禁用`；
+2. 前端模型卡片对默认模型只显示"默认"角标、不显示启停状态，且无启停开关，用户无法发现也无法恢复；
+3. 模型启用状态以字符串 `status: 'active'/'inactive'` 表达，语义不统一。
+
+**修改的方法与模块**：
+- `dev-server.ts` — `GET /api/config/model` 与 `GET /api/config/model/:id` 返回布尔 `enable`（替代 `status` 字符串）；`PUT /api/config/model/:id` 改为部分更新语义，仅当显式携带 `enable`/`enabled` 时更新启用状态，否则保留原值；
+- 前端 `api/types.ts` — `ModelInfo.status` 改为 `enable: boolean`；
+- 前端 `ConfigView.vue` — `BackendModel` 用 `enable?: boolean`；`submitModelForm` 保存时携带 `enable`；新增 `handleToggleModel`，模型卡片增加启用/停用 toggle 开关与状态圆点（默认模型也展示）。
+
+**影响的端点**：
+- `GET /api/config/model` / `GET /api/config/model/:id` — 返回结构由 `status` 改为 `enable`；
+- `PUT /api/config/model/:id` — 未传 `enable` 时不再修改启用状态；
+- 前端配置页 `/config` 模型管理视图。
+
+**可能存在的问题/风险点**：
+- `enable` 布尔化后，若存在依赖旧 `status` 字符串的前端/第三方消费方需同步（已全局排查，仅模型卡片使用，已改）；
+- 存量数据中已误禁用的模型需手动重新启用（本次已恢复默认模型 `deepseek-v4-flash-260425`）。
+
 ## [2026-08-22] 思考过程 Prompt 去重与空维度渲染修复
 
 **变更原因**：
