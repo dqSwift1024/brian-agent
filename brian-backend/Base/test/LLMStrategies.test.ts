@@ -2,7 +2,7 @@
  * @fileoverview LLM 提供商策略模式单元测试。
  *
  * 验证 LLMStrategyFactory、BaseLLMStrategy、OpenAIStrategy、GoogleStrategy、
- * AnthropicStrategy、OllamaStrategy 的请求构造与响应解析多态行为。
+ * AnthropicStrategy、OllamaStrategy、VolcanoEngineStrategy 的请求构造与响应解析多态行为。
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,6 +13,7 @@ import {
   GoogleStrategy,
   AnthropicStrategy,
   OllamaStrategy,
+  VolcanoEngineStrategy,
 } from '../LLMProvider/application/strategies';
 import type { LLMProviderRecord, LLMAvailableRecord, ExecLLMInput } from '../LLMProvider/domain/types';
 
@@ -69,12 +70,20 @@ describe('LLM Strategies & Factory', () => {
       expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(OllamaStrategy);
     });
 
-    it('通用或 DeepSeek / Moonshot / Volcano 提供商应路由到通用 OpenAIStrategy', () => {
+    it('通用或 DeepSeek / Moonshot 提供商应路由到通用 OpenAIStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'DeepSeek', llm_provider_url: 'https://api.deepseek.com/v1' });
       expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(OpenAIStrategy);
 
-      const p2 = createMockProvider({ llm_provider_title: 'Volcano Engine', llm_provider_url: 'https://ark.cn-beijing.volces.com/api/v3' });
+      const p2 = createMockProvider({ llm_provider_title: 'Moonshot', llm_provider_url: 'https://api.moonshot.cn/v1' });
       expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(OpenAIStrategy);
+    });
+
+    it('应该将 Volcano Engine 提供商正确路由到 VolcanoEngineStrategy', () => {
+      const p1 = createMockProvider({ llm_provider_title: 'Volcano Engine', llm_provider_url: 'https://ark.cn-beijing.volces.com/api/v3' });
+      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(VolcanoEngineStrategy);
+
+      const p2 = createMockProvider({ llm_provider_title: 'Custom', llm_provider_url: 'https://ark.cn-beijing.volces.com/api/v3' });
+      expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(VolcanoEngineStrategy);
     });
   });
 
@@ -198,6 +207,32 @@ describe('LLM Strategies & Factory', () => {
       expect(list[0].description).toBe('llama 8.0B');
       expect(list[1].modelId).toBe('qwen2.5:7b');
       expect(list[1].description).toBe('qwen2 7.6B');
+    });
+  });
+
+  describe('VolcanoEngineStrategy', () => {
+    const strategy = new VolcanoEngineStrategy();
+
+    it('parseListModelsResponse 应该优先取带版本号的 id 而非裸族名 name', () => {
+      const json = {
+        data: [
+          { id: 'deepseek-v4-flash-260425', name: 'deepseek-v4-flash', version: '260425' },
+          { id: 'deepseek-v4-pro-260425', name: 'deepseek-v4-pro', version: '260425' },
+        ],
+      };
+      const list = strategy.parseListModelsResponse(json, JSON.stringify(json));
+      expect(list).toHaveLength(2);
+      expect(list[0].modelId).toBe('deepseek-v4-flash-260425');
+      expect(list[1].modelId).toBe('deepseek-v4-pro-260425');
+    });
+
+    it('parseListModelsResponse 在缺少 id 时应回退到 name', () => {
+      const json = {
+        data: [{ name: 'some-bare-model' }],
+      };
+      const list = strategy.parseListModelsResponse(json, JSON.stringify(json));
+      expect(list).toHaveLength(1);
+      expect(list[0].modelId).toBe('some-bare-model');
     });
   });
 });

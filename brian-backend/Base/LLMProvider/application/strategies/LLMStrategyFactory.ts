@@ -12,6 +12,7 @@ import { OpenAIStrategy } from './OpenAIStrategy';
 import { GoogleStrategy } from './GoogleStrategy';
 import { AnthropicStrategy } from './AnthropicStrategy';
 import { OllamaStrategy } from './OllamaStrategy';
+import { VolcanoEngineStrategy } from './VolcanoEngineStrategy';
 
 export class LLMStrategyFactory {
   private static readonly strategies: ILLMProviderStrategy[] = [];
@@ -22,6 +23,7 @@ export class LLMStrategyFactory {
     this.registerStrategy(new GoogleStrategy());
     this.registerStrategy(new AnthropicStrategy());
     this.registerStrategy(new OllamaStrategy());
+    this.registerStrategy(new VolcanoEngineStrategy());
     this.registerStrategy(new OpenAIStrategy());
   }
 
