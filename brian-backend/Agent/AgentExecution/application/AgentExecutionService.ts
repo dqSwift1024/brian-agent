@@ -379,7 +379,14 @@ export class AgentExecutionService {
     output.iterations = iteration || traceIterations.length;
     output.trace_id = traceId;
     output.elapsed_ms = end - start;
-    return true;
+
+    // 空答案视为执行失败：LLM 不可用时 ReACT 循环可能“正常”跑完但产出为空，
+    // 需显式失败，避免上游编排层把空输出当作成功结果继续 Writer / Evolutor 阶段。
+    const producedOutput = Boolean(finalAnswer && finalAnswer.trim());
+    if (!producedOutput) {
+      output.error = 'Work Agent 未产生有效输出（LLM 调用失败或返回为空）';
+    }
+    return producedOutput;
   }
 
   async execAgentAsync(
@@ -458,6 +465,34 @@ export class AgentExecutionService {
     return true;
   }
 
+  /**
+   * 统一封装 LLM 文本生成调用：execLLM 失败（返回 false）时抛出带阶段名的
+   * ValidationError，保证 think / reflect / answer 三阶段对 LLM 失败的语义一致，
+   * 避免下游把“空输出”误判为正常完成。
+   */
+  private async execLLMOrThrow(
+    llmId: string,
+    prompt: string,
+    stepName: string,
+    system?: string,
+  ): Promise<ExecLLMOutput> {
+    const llmOut = new ExecLLMOutput();
+    const ok = await this.llmAccess.execLLM(
+      Object.assign(new ExecLLMInput(), {
+        id: llmId,
+        prompt,
+        ...(system ? { system } : {}),
+      }),
+      new LLMContext(),
+      llmOut,
+    );
+    if (!ok) {
+      const reason = llmOut.error ?? 'unknown error';
+      throw new ValidationError(`${stepName} execLLM failed: ${reason}`);
+    }
+    return llmOut;
+  }
+
   async think(input: ThinkInput, ctx: AgentExecutionContext, output: ThinkOutput): Promise<boolean> {
     if (!input.llm_id) throw new ValidationError('think 需要 llm_id');
     const config = await this.getConfig();
@@ -477,17 +512,7 @@ export class AgentExecutionService {
       },
     );
 
-    const llmOut = new ExecLLMOutput();
-    const ok = await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), {
-        id: input.llm_id,
-        prompt,
-        ...(system ? { system } : {}),
-      }),
-      new LLMContext(),
-      llmOut,
-    );
-    if (!ok) throw new ValidationError('think execLLM failed');
+    const llmOut = await this.execLLMOrThrow(input.llm_id, prompt, 'think', system);
 
     const parsed = parseJsonObject(llmOut.result);
     output.prompt = prompt;
@@ -583,16 +608,7 @@ export class AgentExecutionService {
       },
     );
 
-    const llmOut = new ExecLLMOutput();
-    await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), {
-        id: input.llm_id,
-        prompt,
-        ...(system ? { system } : {}),
-      }),
-      new LLMContext(),
-      llmOut,
-    );
+    const llmOut = await this.execLLMOrThrow(input.llm_id, prompt, 'reflect', system);
 
     const parsed = parseJsonObject(llmOut.result);
     output.prompt = prompt;
@@ -624,16 +640,7 @@ export class AgentExecutionService {
       },
     );
 
-    const llmOut = new ExecLLMOutput();
-    await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), {
-        id: input.llm_id,
-        prompt,
-        ...(system ? { system } : {}),
-      }),
-      new LLMContext(),
-      llmOut,
-    );
+    const llmOut = await this.execLLMOrThrow(input.llm_id, prompt, 'answer', system);
     output.prompt = prompt;
     output.raw_response = llmOut.result || '';
     output.answer = llmOut.result || '';

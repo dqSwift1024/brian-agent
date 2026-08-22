@@ -892,21 +892,45 @@ export class JSONNodeService {
       trace_id: (sharedData.trace_id as string) ?? '',
     });
     const execOutput = new ExecSingleAgentOutput();
-    await this.orchestrationExecution.execSingleAgent(
+    const execSuccess = await this.orchestrationExecution.execSingleAgent(
       execInput,
       { session_id: context.session_id, work_id: workId, interact_id: interactId } as OrchestrationExecutionContext,
       execOutput,
     );
 
-    sharedData[saveResultKey] = execOutput.answer;
+    const answer = execOutput.answer;
     const results = (sharedData.agent_results as Record<string, unknown>[]) ?? [];
     results.push({
       agent_id: agentId,
       task_content: (sharedData.user_query as string) ?? '',
-      answer: execOutput.answer,
+      answer,
       trace_id: execOutput.trace_id,
     });
+
+    if (!execSuccess) {
+      throw new Error(`Work Agent ${agentId} 执行失败：${(execOutput as unknown as { error?: string }).error ?? 'execSingleAgent 返回失败'}`);
+    }
+    // 短路保护：Work Agent 无有效输出时不进入 WRITE_RESULT / EVAL_RESULT 阶段
+    this.ensureWorkAgentOutput(results);
+
+    sharedData[saveResultKey] = answer;
     sharedData.agent_results = results;
+  }
+
+  /**
+   * 校验 Work Agent 是否产出有效（非空）输出。
+   *
+   * 空输出时抛错，由 JSONNode 引擎按节点 on_error 路由到 HANDLE_ERROR，
+   * 短路 WRITE_RESULT / EVAL_RESULT 阶段，避免基于空结果继续汇总与评估
+   * （并误在前端展示 Writer / Evolutor Agent）。
+   */
+  private ensureWorkAgentOutput(
+    results: Array<{ agent_id?: string; answer?: string } | undefined>,
+  ): void {
+    const hasOutput = results.some((r) => Boolean(r?.answer && String(r.answer).trim()));
+    if (!hasOutput) {
+      throw new Error('Work Agent 未产生有效输出，短路汇总与评估阶段');
+    }
   }
 
   private async handlePlanWork(
@@ -1051,6 +1075,9 @@ export class JSONNodeService {
       { session_id: context.session_id, work_id: workId, interact_id: context.interact_id } as OrchestrationExecutionContext,
       execOutput,
     );
+
+    // 短路保护：DAG 全部 Work Agent 无有效输出时不进入 WRITE_RESULT / EVAL_RESULT 阶段
+    this.ensureWorkAgentOutput(execOutput.agent_results);
 
     sharedData[saveResultsKey] = execOutput.agent_results;
   }

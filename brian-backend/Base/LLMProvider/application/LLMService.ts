@@ -1430,6 +1430,9 @@ export class LLMService {
    * 1. 显式指定的模型 (input.id)
    * 2. 默认模型 (is_default = 1 且 enable = 1)
    * 3. 数据库中其余所有启用的模型 (enable = 1)
+   *
+   * 所有候选均过滤掉 embedding 向量模型：execLLM 面向文本/多模态生成，
+   * 向量模型（如 nomic-embed-text）不具备对话能力，不可作为文本生成候选。
    */
   private async resolveCandidateModels(specifiedId?: string): Promise<string[]> {
     const candidates: string[] = [];
@@ -1447,12 +1450,13 @@ export class LLMService {
       addCandidate(specifiedId);
     }
 
-    // 2. 系统默认模型
+    // 2. 系统默认模型（仅文本/多模态，排除 embedding）
     try {
       const defaultRows = await this.relationDb.select(LLM_AVAILABLE_TABLE, {
         conditions: [
           { field: 'is_default', operator: Operator.EQ, value: 1 },
           { field: 'enable', operator: Operator.EQ, value: 1 },
+          { field: 'llm_type', operator: Operator.NE, value: 'embedding' },
         ],
       });
       for (const row of defaultRows) {
@@ -1462,11 +1466,12 @@ export class LLMService {
       /* ignore */
     }
 
-    // 3. 其余所有已启用的模型
+    // 3. 其余所有已启用的模型（仅文本/多模态，排除 embedding）
     try {
       const allEnabledRows = await this.relationDb.select(LLM_AVAILABLE_TABLE, {
         conditions: [
           { field: 'enable', operator: Operator.EQ, value: 1 },
+          { field: 'llm_type', operator: Operator.NE, value: 'embedding' },
         ],
       });
       for (const row of allEnabledRows) {
@@ -1477,6 +1482,17 @@ export class LLMService {
     }
 
     return candidates;
+  }
+
+  /**
+   * 判断模型是否具备对话/文本生成能力。
+   *
+   * execLLM 走 OpenAI 兼容 chat 接口，仅 text / vision 类型模型可用；
+   * embedding 向量模型（如 nomic-embed-text）不支持 chat 补全，必须排除。
+   * 历史数据可能缺少 llm_type，视为默认 text 以保证向后兼容。
+   */
+  private isChatCapable(llmType?: string): boolean {
+    return (llmType ?? 'text') !== 'embedding';
   }
 
   /**
@@ -1499,6 +1515,11 @@ export class LLMService {
     const llm = llmRow as unknown as LLMAvailableRecord;
     if (!llm.enable) {
       output.error = `LLM ${llmId} 已禁用`;
+      output.error_code = 'VALIDATION_ERROR';
+      return false;
+    }
+    if (!this.isChatCapable(llm.llm_type)) {
+      output.error = `LLM ${llmId} 是 ${llm.llm_type ?? '未知'} 模型，无法用于文本生成`;
       output.error_code = 'VALIDATION_ERROR';
       return false;
     }

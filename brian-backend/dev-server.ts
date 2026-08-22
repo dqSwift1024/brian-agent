@@ -837,7 +837,7 @@ async function buildThinkingBlocksAndDag(
     }
 
     const execRows = relationDb.queryRaw<Record<string, unknown>>(
-      `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created,
+      `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created, e.execution_type,
               a.agent_name, a.agent_type, a.soul_id,
               t.iterations_json, t.total_token_usage
        FROM orchestration_agent_execution e
@@ -847,6 +847,17 @@ async function buildThinkingBlocksAndDag(
        ORDER BY e.created ASC`,
       workIds,
     );
+
+    // 预计算每个 work 的 Work Agent 是否产生有效输出：Work Agent 空输出时，
+    // 后续 Writer / Evolutor 等系统 Agent 的展示块应被跳过（不应展示在思考过程里）。
+    const workAgentHasOutput = new Map<string, boolean>();
+    for (const row of execRows) {
+      if (String(row.execution_type ?? '') === 'SINGLE') {
+        const wid = String(row.work_id ?? '');
+        const ans = row.answer ? String(row.answer).trim() : '';
+        if (ans) workAgentHasOutput.set(wid, true);
+      }
+    }
 
     // 查询 orchestration_work.metadata 获取 IntentAgent 需求理解结果
     const intentMetaRows = relationDb.queryRaw<{ work_id: string; metadata: string }>(
@@ -931,6 +942,11 @@ async function buildThinkingBlocksAndDag(
     for (const row of execRows) {
       const wid = String(row.work_id ?? '');
       if (!wid) continue;
+
+      // 系统 Agent（Writer / Evolutor）在 Work Agent 无有效输出时不应展示
+      if (String(row.execution_type ?? '') === 'SYSTEM' && !workAgentHasOutput.get(wid)) {
+        continue;
+      }
 
       const agentId = String(row.agent_id ?? '');
       let rawAgentName = String(row.agent_name ?? '');
