@@ -128,10 +128,8 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- LogProvider ---
   base('log_provider', 'basic', 'enabled', '日志组件启用', 'BOOLEAN', true, '日志组件是否启用'),
   base('log_provider', 'basic', 'default_level', '默认日志级别', 'ENUM', 'INFO', '日志未指定级别时使用的默认级别', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
-  base('log_provider', 'basic', 'file_path', '日志文件根目录', 'STRING', './data/logs', '日志文件存储路径'),
-  base('log_provider', 'basic', 'max_file_size', '单文件最大大小（字节）', 'INT', 209715200, '200MB，超过自动滚动'),
-  base('log_provider', 'basic', 'retention_days', '日志保留天数', 'INT', 14, '超过自动清理'),
-  base('log_provider', 'basic', 'write_mode', '写入模式', 'ENUM', 'BOTH', 'FILE（仅文件）/ SQLITE（仅数据库）/ BOTH（双写）', ['FILE', 'SQLITE', 'BOTH']),
+  base('log_provider', 'aging', 'retention_days', '日志保留天数', 'INT', 30, '超过自动清理'),
+  base('log_provider', 'aging', 'max_log_count', '日志最大保留条数', 'INT', 700000, '70 万条，超过自动清理最旧记录'),
 
   // --- MQProvider ---
   base('mq_provider', 'basic', 'enabled', 'MQ 组件启用', 'BOOLEAN', true, 'MQ 组件是否启用'),

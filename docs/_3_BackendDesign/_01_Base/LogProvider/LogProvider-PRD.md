@@ -11,43 +11,21 @@
 LogProvider 是日志的唯一操作入口，上层不可直接调用 console.log 或其他日志库。
 所有组件的日志输出（包括 AOP 切面自动记录的日志）均通过 LogProvider 完成。
 
-LogProvider **支持双存储模式**：本地文件 + SQLite 持久化，可通过 `write_mode` 配置项切换：
-- `FILE`：仅写入本地文件（默认行为，向后兼容）
-- `BOTH`：双写模式（文件 + SQLite），支持日志查询和统计
-- `SQLITE`：仅写入 SQLite，不写文件
+LogProvider **日志仅持久化于 SQLite**（`log_record` 表），不写入本地文件，支持日志查询、统计与可视化。
 
 ### 1.3 集成依赖
 
 - 依赖 RelationDBProvider：日志规则（log_rule）与配置项（log_config）存储于关系数据库
 - 依赖 shared/aop（AOP 基础框架）：LogProvider 提供 LogInterceptor，实现 shared/aop 的 Interceptor 接口，作为 AOP 四切入点中日志切面的具体实现
 
-### 1.4 日志文件存储设计
+### 1.4 日志存储设计
 
-日志只写入本地文件，不存储于数据库。每个模块只有一个日志文件，最大 200MB，自动清理超过两周的日志。
+日志只写入 SQLite（`log_record` 表），不写入本地文件。日志按保留天数与最大条数自动老化：
+- 超过保留天数（默认 30 天）的日志自动清理；
+- 日志总条数超过最大保留条数（默认 70 万条）时，自动删除最旧记录。
 
-```
-{file_path}/                          # 默认 ./data/logs
-├── SoulService/                      # 按模块名分目录
-│   └── SoulService.log               # 唯一日志文件（≤ 200MB）
-├── LLMService/
-│   └── LLMService.log
-└── RelationDBService/
-    └── RelationDBService.log
-```
-
-**文件命名规则**：`{模块名}.log`（每个模块只有一个文件）
-
-**文件大小控制**：
-- 每个文件最大 200MB（由配置项 `max_file_size` 控制）
-- 写入后若文件超过 200MB，触发清理：
-  1. 先删除超过两周（14 天）的日志行
-  2. 若清理后仍超过 200MB，从文件头部截断，仅保留最近的日志内容
-
-**日志行格式**（单行，便于解析）：
-```
-[2026-07-25T10:30:00.123Z] [INFO] [SoulService] [trace:abc123] addSoul done | {"key":"value"} | 15ms
-```
-格式：`[时间戳] [级别] [模块名] [trace_id] 消息 | 元数据JSON | 耗时`
+老化策略参数从关系数据库配置表 `log_config` 读取（`retention_days` / `max_log_count`），
+可在「配置中心」页面动态配置，无需修改代码。
 
 ## 2. 公共定义
 
@@ -74,7 +52,7 @@ LogProvider **支持双存储模式**：本地文件 + SQLite 持久化，可通
 
 #### 3.1.1 addLog
 
-写入日志到本地文件。按模块名分目录存储，文件采用滚动方式（每个文件最大 200MB）。
+写入日志到 SQLite（`log_record` 表）。写入后按老化策略节流触发清理。
 
 **方法签名**
 
@@ -156,7 +134,7 @@ await logAccess.enableLog(
 
 #### 3.3.2 configLog
 
-配置日志组件的运行时参数（启用状态、默认级别、文件路径、大小限制、保留天数、写入模式）。
+配置日志组件的运行时参数（启用状态、默认级别、保留天数、最大保留条数）。
 
 **方法签名**
 
@@ -168,10 +146,8 @@ await logAccess.enableLog(
 | ------ | ---- | ---- | ---- |
 | enabled | BOOLEAN | 否 | 日志组件是否启用 |
 | default_level | STRING | 否 | 默认日志级别（DEBUG / INFO / WARN / ERROR），`addLog` 未指定 level 时使用 |
-| file_path | STRING | 否 | 日志文件根目录 |
-| max_file_size | INT | 否 | 单文件最大大小（字节） |
-| retention_days | INT | 否 | 日志保留天数 |
-| write_mode | STRING | 否 | 写入模式：FILE / SQLITE / BOTH |
+| retention_days | INT | 否 | 日志保留天数（默认 30 天） |
+| max_log_count | INT | 否 | 日志最大保留条数（默认 70 万条） |
 
 **出参（ConfigLogOutput）**
 
@@ -183,7 +159,7 @@ await logAccess.enableLog(
 
 1. 仅更新入参中非 `undefined` 的字段（部分更新）；
 2. 更新 `log_config` 表（upsert），并实时刷新运行时缓存；
-3. `default_level` 校验为 DEBUG / INFO / WARN / ERROR；`write_mode` 校验为 FILE / SQLITE / BOTH；`max_file_size` 为正数；`retention_days` 为非负数。
+3. `default_level` 校验为 DEBUG / INFO / WARN / ERROR；`retention_days` 与 `max_log_count` 为非负整数。
 
 ### 3.7 查询日志（queryLogs）
 
@@ -218,11 +194,9 @@ await logAccess.enableLog(
 
 **返回**：`{ distribution: Array<{ level: string; count: number }> }`
 
-**注意**：queryLogs 和 getLogStats 仅在 `write_mode` 为 `BOTH` 或 `SQLITE` 时有效。若为 `FILE` 模式，SQLite 中无数据。
-
 ## 4. 数据库表结构
 
-> 日志记录在 `FILE` 模式下不存储于数据库，在 `BOTH` / `SQLITE` 模式下双写到 `log_record` 表。
+> 日志记录持久化于 `log_record` 表。
 > 日志规则（log_rule）和配置项（log_config）始终存储于关系数据库。
 
 ### 4.1 log_rule 表
@@ -261,14 +235,12 @@ await logAccess.enableLog(
 | ------ | ----- | ----- | ----- |
 | enabled | true | BOOLEAN | LogProvider 是否启用 |
 | default_level | INFO | STRING | 默认日志级别 |
-| file_path | ./data/logs | STRING | 日志文件根目录 |
-| max_file_size | 209715200 | INT | 单文件最大大小（字节，200MB = 200 * 1024 * 1024） |
-| retention_days | 14 | INT | 日志保留天数（两周，超过则自动清理） |
-| write_mode | BOTH | STRING | 写入模式：FILE（仅文件）/ SQLITE（仅数据库）/ BOTH（双写，默认） |
+| retention_days | 30 | INT | 日志保留天数（30 天，超过则自动清理） |
+| max_log_count | 700000 | INT | 日志最大保留条数（70 万条，超过自动清理最旧记录） |
 
 ### 4.3 log_record 表
 
-日志持久化表，在 `write_mode` 为 `BOTH` 或 `SQLITE` 时存储日志记录。
+日志持久化表，存储日志记录。
 
 | 字段 | 类型 | 约束 | 说明 |
 | ------ | ---- | ---- | ---- |

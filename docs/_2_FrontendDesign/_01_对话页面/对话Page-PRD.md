@@ -158,7 +158,7 @@
     -   重命名：会话条目提供编辑按钮（Edit3 图标），点击进入内联编辑，回车或点击确认（Check）调用 `chatApi.updateTitle`（`PUT /api/chat/session/:sessionId/title`）保存，X 取消。名称优先展示 `sessionTitle`，为空回退 `lastMessage` 或「新会话」。
 -   **溢出保护**：切换会话前调用 `checkSessionOverflow()`，超限则 Toast 提示并阻断操作。
 -   **会话切换清理**：切换会话时，清空当前 Block 列表并重新初始化流解析器，避免跨会话 Block 状态污染。
--   **刷新恢复**：页面挂载（onMounted）时，若 localStorage 存在当前会话 ID，自动调用 `getChatHistory` / `getAgentChain` / `loadExchanges` 恢复历史消息与 ChatMap，刷新后不丢失对话。
+-   **刷新恢复**：页面挂载（onMounted）时，若 localStorage 存在当前会话 ID，自动调用 `getChatHistory`（`GET /api/chat/history`）恢复历史消息，并调用 `getVisualizedMessageDAG`（`GET /api/visualization/message-dag`）恢复 ChatMap 消息关系图谱，刷新后不丢失对话。
 
 ### 4.5 Agent 编排 DAG 弹窗
 
@@ -189,6 +189,16 @@
 -   **移动端适配**：针对触摸操作、横向溢出、工具栏触发方式做专项适配。
 
 ## 7. 变更记录
+
+### [2026-08-21] 修复刷新后系统回复重复展示与移除冗余 exchanges 请求
+- **变更原因**：刷新对话页面后，对话区将系统回复消息展示两次——一次经 `MessageCard`（正确消息框结构），另一次经 `loadChatHistory` 中为 blocks 为空消息构造的 `TextParagraph` 兜底块（纯文本段落，非消息框结构），不符合「对话结束拉取历史消息后应避免与官方 MessageCard 产生双份重复渲染」的要求；同时页面挂载/切换会话时发起了无实际用途的 `/api/chat/exchanges` 请求（结果被丢弃）。
+- **功能变更**：
+  1. **移除兜底 TextParagraph 块**：`session.ts` 的 `loadChatHistory` 不再为 blocks 为空的 assistant 消息构造 `TextParagraph` 兜底块（原代码注释保留为参考）。系统回复内容统一由 `messages` 经 `MessageCard` 渲染；`blocks` 仅用于承载后端下发的 ThinkingChain 等思考块（供「思考过程」弹窗采集，对话区不直接展示）。
+  2. **移除冗余 exchanges 请求**：删除 `session.ts` 的 `loadExchanges`、`api/index.ts` 的 `chatApi.exchanges` 及 `ChatView.vue` 中的两处调用（原代码注释保留为参考）。页面刷新/切换会话仅保留 `GET /api/chat/history` 与 `GET /api/visualization/message-dag` 两个必要接口。
+- **行为差异**：
+  - 修改前：刷新后系统回复在对话区出现两次，其中一次为非消息框结构的纯文本段落；页面刷新会额外发起 `/api/chat/exchanges` 请求。
+  - 修改后：系统回复在对话区仅经 `MessageCard` 展示一次；页面刷新仅发起历史消息与消息图谱两个必要接口。
+- **新增边界条件**：后端 `/api/chat/exchanges` 路由保留（供 e2e 测试与后续扩展使用），仅前端不再调用。
 
 ### [2026-08-19] 对话区不展示 Planning 策略拆解
 - **变更原因**：用户要求对话区只保留 REQUEST/RESPONSE 消息的清爽展示，"Planning 策略拆解"卡片不应混入消息流。

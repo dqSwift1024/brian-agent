@@ -127,9 +127,9 @@ export class BaseLLMStrategy implements ILLMProviderStrategy {
       const tl = m.token_limits as Record<string, unknown> | undefined;
       const topProvider = m.top_provider as Record<string, unknown> | undefined;
       const maxTokens = Number(
-        m.inputTokenLimit || m.context_length || tl?.context_window
-        || m.max_tokens || m.max_completion_tokens
-        || (topProvider?.max_completion_tokens) || 0,
+        m.max_completion_tokens || (topProvider?.max_completion_tokens)
+        || m.max_tokens || m.inputTokenLimit || m.context_length
+        || tl?.context_window || 0,
       );
 
       result.push({
@@ -171,7 +171,7 @@ export class BaseLLMStrategy implements ILLMProviderStrategy {
     if (input.max_tokens !== undefined) {
       body.max_tokens = input.max_tokens;
     } else if (model.max_tokens) {
-      body.max_tokens = model.max_tokens;
+      body.max_tokens = model.max_tokens > 100000 ? 4096 : model.max_tokens;
     }
 
     if (input.extra) {

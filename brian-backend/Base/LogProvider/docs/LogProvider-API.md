@@ -70,6 +70,8 @@ const soulAccess = new SoulAccess(relationDb, {
 |------------|-------------|------------|
 | enabled | true | BOOLEAN |
 | default_level | INFO | STRING |
-| console_output | true | BOOLEAN |
-| file_output | false | BOOLEAN |
 | retention_days | 30 | INT |
+| max_log_count | 700000 | INT |
+
+> 日志仅持久化于 SQLite（`log_record` 表），不写入本地文件。
+> 老化策略（`retention_days` / `max_log_count`）从数据库配置表读取，可在「配置中心」页面配置。

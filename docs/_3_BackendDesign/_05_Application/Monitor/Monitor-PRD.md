@@ -195,7 +195,7 @@ Monitor 模块本身不维护独立数据表。Token 统计使用 `llm_usage` �
 ## 6. 重要内容
 
 1. Monitor Application 不直接操作 Provider，通过现有的 `systemRoutes`（系统资源）、`analyticsRoutes`（Token 统计）和新增的 `monitorRoutes`（健康检查 + 日志查询）实现；
-2. 日志查询依赖 LogProvider 的 SQLite 持久化模式（`write_mode=BOTH`）；
+2. 日志查询依赖 LogProvider 的 SQLite 持久化（`log_record` 表，日志仅存 SQLite 不写文件）；
 3. 系统资源数据通过 Node.js `os` 和 `fs` 模块实时获取，不缓存；
 4. Token 统计通过 `llm_usage` 表的 SQL 聚合查询实现（`SUM(input_tokens + output_tokens)`）；
 5. 健康检查为真实探测：RelationDB `SELECT 1`、GraphDB/VectorDB/LLM Provider `visualized*(scope='health')`、MCP `soMcp`、MQ `getQueueStats`，不再使用静态状态标识；

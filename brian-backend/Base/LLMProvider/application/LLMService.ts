@@ -936,6 +936,77 @@ export class LLMService {
       ? [{ field: 'id', operator: Operator.IN, value: input.ids }]
       : input.conditions!;
 
+    let modelIds: string[] = [];
+    if (input.ids) {
+      modelIds = input.ids;
+    } else {
+      const rows = await this.relationDb.select(LLM_AVAILABLE_TABLE, {
+        conditions: input.conditions!,
+        fields: ['id'],
+      });
+      modelIds = rows.map((r) => String(r.id));
+    }
+
+    if (modelIds.length > 0) {
+      await this.relationDb.delete(LLM_USAGE_TABLE, [
+        { field: 'llm_available_id', operator: Operator.IN, value: modelIds },
+      ]);
+      try {
+        await this.relationDb.delete('agent_llm', [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* 表可能不存在 */ }
+      try {
+        await this.relationDb.update('planner_agent_config', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('evolutor_agent_config', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('writer_agent_config', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('self_learning_config', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('self_learning_config', [
+          { field: 'document_query_llm_id', value: '' },
+        ], [
+          { field: 'document_query_llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('user_profiles', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+      try {
+        await this.relationDb.update('soul_core_config', [
+          { field: 'llm_id', value: '' },
+        ], [
+          { field: 'llm_id', operator: Operator.IN, value: modelIds },
+        ]);
+      } catch { /* ignore */ }
+    }
+
     output.affected_rows = await this.relationDb.delete(
       LLM_AVAILABLE_TABLE,
       conditions,
@@ -1430,7 +1501,7 @@ export class LLMService {
     if (input.max_tokens !== undefined) {
       body.max_tokens = input.max_tokens;
     } else if (llm.max_tokens) {
-      body.max_tokens = llm.max_tokens;
+      body.max_tokens = llm.max_tokens > 100000 ? 4096 : llm.max_tokens;
     }
     // 透传其他参数（extra 中的参数原样进入请求体）
     if (input.extra) {

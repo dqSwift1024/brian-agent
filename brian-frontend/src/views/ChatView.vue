@@ -44,10 +44,12 @@ onMounted(async () => {
   try {
     await sessionStore.loadChatHistory(sid, 'default-user')
   } catch { /* ignore */ }
-  await Promise.all([
-    sessionStore.loadDag(sid, 'default-user'),
-    sessionStore.loadExchanges(sid, 'default-user'),
-  ])
+  // ===== 原始代码（保留参考）：加载 exchanges 请求冗余且结果被丢弃，已移除 =====
+  // await Promise.all([
+  //   sessionStore.loadDag(sid, 'default-user'),
+  //   sessionStore.loadExchanges(sid, 'default-user'),
+  // ])
+  await sessionStore.loadDag(sid, 'default-user')
 })
 
 function toggleSidebar() {
@@ -93,10 +95,12 @@ async function handleSelectChat(sessionId: string) {
       setTimeout(() => { overflowWarning.value = false }, 5000)
     }
   } catch { /* ignore */ }
-  await Promise.all([
-    sessionStore.loadExchanges(sessionId, 'default-user'),
-    sessionStore.loadDag(sessionId, 'default-user'),
-  ])
+  // ===== 原始代码（保留参考）：加载 exchanges 请求冗余且结果被丢弃，已移除 =====
+  // await Promise.all([
+  //   sessionStore.loadExchanges(sessionId, 'default-user'),
+  //   sessionStore.loadDag(sessionId, 'default-user'),
+  // ])
+  await sessionStore.loadDag(sessionId, 'default-user')
   showSidebar.value = false
 }
 

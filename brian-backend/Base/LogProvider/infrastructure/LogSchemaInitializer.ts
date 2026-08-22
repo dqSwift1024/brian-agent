@@ -1,8 +1,8 @@
 /**
  * @fileoverview LogProvider 表结构初始化。
  *
- * 日志记录不存储于数据库，只写入本地文件。
- * 数据库仅存储日志规则（log_rule）和配置项（log_config）。
+ * 日志记录持久化于 SQLite（log_record 表），不写本地文件。
+ * 数据库同时存储日志规则（log_rule）和配置项（log_config）。
  */
 
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
@@ -68,5 +68,26 @@ export class LogSchemaInitializer {
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${LOG_RECORD_TABLE}_source" ON "${LOG_RECORD_TABLE}" ("source")`,
     );
+
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE "${LOG_RECORD_TABLE}" ADD COLUMN "work_id" TEXT`,
+      );
+    } catch { /* 列已存在 */ }
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE "${LOG_RECORD_TABLE}" ADD COLUMN "interact_id" TEXT`,
+      );
+    } catch { /* 列已存在 */ }
+    try {
+      this.relationDb.executeRaw(
+        `CREATE INDEX IF NOT EXISTS "idx_${LOG_RECORD_TABLE}_work_id" ON "${LOG_RECORD_TABLE}" ("work_id")`,
+      );
+    } catch { /* ignore */ }
+    try {
+      this.relationDb.executeRaw(
+        `CREATE INDEX IF NOT EXISTS "idx_${LOG_RECORD_TABLE}_interact_id" ON "${LOG_RECORD_TABLE}" ("interact_id")`,
+      );
+    } catch { /* ignore */ }
   }
 }

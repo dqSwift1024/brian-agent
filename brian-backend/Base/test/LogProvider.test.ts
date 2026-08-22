@@ -4,12 +4,13 @@
  * 测试范围：
  * - 日志管理：addLog / getLog / soLog / delLog / countLog
  * - 可视化：visualizedLog（health / volume / levelDistribution / sourceDistribution）
- * - 运维：enableLog（日志规则配置）
+ * - 运维：enableLog（日志规则配置）/ configLog（组件配置）
+ * - 老化策略：applyAging（按保留天数 / 最大条数清理）
  * - AOP 切面：LogInterceptor（beforeExecute / afterExecute）
  * - 组件生命周期：initialize / enabled 状态
  *
- * 遵循 PRD `docs/_01_Base/LogProvider/LogProvider-PRD.md` 的全部需求。
- * 所有测试使用真实的 SQLite 数据库和本地文件系统，不使用任何 MOCK。
+ * 日志仅持久化于 SQLite（log_record 表），不写入本地文件。
+ * 所有测试使用真实的 SQLite 数据库，不使用任何 MOCK。
  * 每个测试用例在 temp 目录中创建独立的数据库文件，测试后清理。
  */
 
@@ -42,6 +43,9 @@ import {
   EnableLogOutput,
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
+  LOG_RECORD_TABLE,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_MAX_LOG_COUNT,
 } from '../LogProvider';
 import type { LogData, LogRule } from '../LogProvider';
 import type { InterceptContext } from '../shared/aop/Interceptor';
@@ -58,13 +62,24 @@ function makeLogData(overrides?: Partial<LogData>): LogData {
   };
 }
 
-/** 读取模块日志文件内容 */
-function readLogFile(logDir: string, moduleName: string): string {
-  const filePath = path.join(logDir, moduleName, `${moduleName}.log`);
-  if (!fs.existsSync(filePath)) {
-    return '';
-  }
-  return fs.readFileSync(filePath, 'utf-8');
+/** 等待指定毫秒 */
+function wait(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** 直接向 log_record 表插入一条日志（用于构造带自定义时间戳的数据） */
+async function insertRawLog(
+  relationDb: RelationDBAccess,
+  opts: { id: string; created: number; source: string; message: string; level?: string },
+): Promise<void> {
+  await relationDb.insert(LOG_RECORD_TABLE, [
+    { field: 'id', value: opts.id },
+    { field: 'created', value: opts.created },
+    { field: 'updated', value: opts.created },
+    { field: 'level', value: opts.level ?? 'INFO' },
+    { field: 'source', value: opts.source },
+    { field: 'message', value: opts.message },
+  ]);
 }
 
 /** 确保 LogProvider 重新读取配置 */
@@ -87,17 +102,6 @@ describe('LogProvider', () => {
 
     // 构造 LogAccess（创建表结构）
     logAccess = new LogAccess(relationDb);
-
-    // 在 initialize 前插入自定义 file_path，使日志写入 temp 目录
-    const logDir = path.join(tempDir, 'data', 'logs');
-    await relationDb.insert(LOG_CONFIG_TABLE, [
-      { field: 'config_key', value: 'file_path' },
-      { field: 'config_value', value: logDir },
-      { field: 'value_type', value: 'STRING' },
-      { field: 'description', value: 'Test log directory' },
-      { field: 'updated', value: Date.now() },
-    ]);
-
     await logAccess.initialize();
   });
 
@@ -107,7 +111,7 @@ describe('LogProvider', () => {
     } catch {
       // 可能已关闭
     }
-    await new Promise((r) => setTimeout(r, 50));
+    await wait(50);
     if (tempDir && fs.existsSync(tempDir)) {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -122,7 +126,7 @@ describe('LogProvider', () => {
   // ==========================================================================
 
   describe('addLog', () => {
-    it('应写入日志到本地文件并返回 id', async () => {
+    it('应写入日志到 SQLite 并返回 id', async () => {
       const output = new AddLogOutput();
       const ok = await logAccess.addLog(
         { data: makeLogData() } as AddLogInput,
@@ -134,121 +138,102 @@ describe('LogProvider', () => {
       expect(typeof output.id).toBe('string');
     });
 
-    it('应创建模块目录和日志文件', async () => {
+    it('日志应持久化到 SQLite（log_record 表）', async () => {
       await logAccess.addLog(
-        { data: makeLogData({ source: 'UniqueModule' }) } as AddLogInput,
+        { data: makeLogData({ source: 'SqlitePersist', message: 'persist me' }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const moduleDir = path.join(tempDir, 'data', 'logs', 'UniqueModule');
-      const logFile = path.join(moduleDir, 'UniqueModule.log');
-      expect(fs.existsSync(moduleDir)).toBe(true);
-      expect(fs.existsSync(logFile)).toBe(true);
+      const rows = relationDb.queryRaw(
+        `SELECT * FROM "${LOG_RECORD_TABLE}" WHERE "source" = ?`,
+        ['SqlitePersist'],
+      );
+      expect(rows.length).toBe(1);
+      expect((rows[0] as any).message).toBe('persist me');
     });
 
-    it('写入的日志行包含时间戳、级别、模块名、消息', async () => {
+    it('写入的日志包含级别、模块名、消息', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.WARN, source: 'TestModule', message: '警告消息' }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('[WARN]');
-      expect(content).toContain('[TestModule]');
-      expect(content).toContain('警告消息');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs.length).toBe(1);
+      expect(ql.logs[0].level).toBe('WARN');
+      expect(ql.logs[0].source).toBe('TestModule');
+      expect(ql.logs[0].message).toBe('警告消息');
     });
 
-    it('写入的日志行应包含 trace_id', async () => {
+    it('写入的日志应包含 trace_id', async () => {
       await logAccess.addLog(
         { data: makeLogData({ trace_id: 'trace-abc-123' }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('[trace-abc-123]');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].trace_id).toBe('trace-abc-123');
     });
 
-    it('trace_id 为空时应输出 [-]', async () => {
+    it('trace_id 为空时应为 undefined', async () => {
       await logAccess.addLog(
         { data: makeLogData({ trace_id: undefined }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('[-]');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].trace_id).toBeUndefined();
     });
 
-    it('写入的日志行应包含 metadata JSON', async () => {
+    it('写入的日志应包含 metadata JSON', async () => {
       await logAccess.addLog(
         { data: makeLogData({ metadata: { key: 'value', num: 42 } }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('{"key":"value","num":42}');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].metadata).toEqual({ key: 'value', num: 42 });
     });
 
-    it('无 metadata 时应输出 -', async () => {
+    it('无 metadata 时应为 undefined', async () => {
       await logAccess.addLog(
         { data: makeLogData({ metadata: undefined }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      const parts = content.split(' | ');
-      expect(parts[1]).toBe('-');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].metadata).toBeUndefined();
     });
 
-    it('写入的日志行应包含 elapsed_ms', async () => {
+    it('写入的日志应包含 elapsed_ms', async () => {
       await logAccess.addLog(
         { data: makeLogData({ elapsed_ms: 123 }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('123');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].elapsed_ms).toBe(123);
     });
 
-    it('无 elapsed_ms 时应输出 -', async () => {
-      await logAccess.addLog(
-        { data: makeLogData({ elapsed_ms: undefined }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
-      );
-
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      const parts = content.split(' | ');
-      expect(parts[2].trim()).toBe('-');
-    });
-
-    it('caller 字段通过 LogInterceptor 正确设置', async () => {
-      // caller 存储在 LogData 中但不在日志行输出中直接显示，
-      // 仅通过 AOP LogInterceptor 在 context.caller 中提取并传递给 LogData
-      // 此处验证 addLog 可接受 caller 字段不报错
+    it('caller 字段应正确存储', async () => {
       await logAccess.addLog(
         { data: makeLogData({ caller: 'TestCaller' }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      // 通过 soLog 获取日志，验证 caller 字段被存储
-      const output = new SoLogOutput();
-      await logAccess.soLog(
-        { source: 'TestModule' } as SoLogInput,
-        new LogContext(),
-        output,
-      );
-      expect(output.list.length).toBeGreaterThanOrEqual(1);
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].caller).toBe('TestCaller');
     });
 
-    it('不同模块的日志应写入不同目录', async () => {
+    it('不同模块的日志应存储为不同 source', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'ModuleA', message: 'A msg' }) } as AddLogInput,
         new LogContext(),
@@ -260,18 +245,13 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      const dirA = path.join(tempDir, 'data', 'logs', 'ModuleA');
-      const dirB = path.join(tempDir, 'data', 'logs', 'ModuleB');
-      expect(fs.existsSync(dirA)).toBe(true);
-      expect(fs.existsSync(dirB)).toBe(true);
-
-      const contentA = readLogFile(path.join(tempDir, 'data', 'logs'), 'ModuleA');
-      const contentB = readLogFile(path.join(tempDir, 'data', 'logs'), 'ModuleB');
-      expect(contentA).toContain('A msg');
-      expect(contentB).toContain('B msg');
+      const qlA = await logAccess.queryLogs({ source: 'ModuleA' });
+      const qlB = await logAccess.queryLogs({ source: 'ModuleB' });
+      expect(qlA.logs[0].message).toBe('A msg');
+      expect(qlB.logs[0].message).toBe('B msg');
     });
 
-    it('同一模块多次写入应追加到同一文件', async () => {
+    it('同一模块多次写入应全部存储', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'RepeatedModule', message: 'first' }) } as AddLogInput,
         new LogContext(),
@@ -283,30 +263,20 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'RepeatedModule');
-      const lines = content.split('\n').filter((l) => l.trim());
-      expect(lines.length).toBe(2);
-      expect(lines[0]).toContain('first');
-      expect(lines[1]).toContain('second');
+      const ql = await logAccess.queryLogs({ source: 'RepeatedModule' });
+      expect(ql.total).toBe(2);
     });
 
     it('level 为空时使用默认级别 INFO', async () => {
-      const output = new AddLogOutput();
-      const result = await logAccess.addLog(
+      await logAccess.addLog(
         { data: makeLogData({ level: '', source: 'DefaultLevelTest' }) } as AddLogInput,
         new LogContext(),
-        output,
+        new AddLogOutput(),
       );
-      expect(result).toBe(true);
 
-      const soOutput = new SoLogOutput();
-      await logAccess.soLog(
-        { source: 'DefaultLevelTest' } as SoLogInput,
-        new LogContext(),
-        soOutput,
-      );
-      expect(soOutput.list.length).toBeGreaterThan(0);
-      expect(soOutput.list[0].level).toBe(LogLevel.INFO);
+      const ql = await logAccess.queryLogs({ source: 'DefaultLevelTest' });
+      expect(ql.logs.length).toBeGreaterThan(0);
+      expect(ql.logs[0].level).toBe(LogLevel.INFO);
     });
 
     it('应拒绝 source 为空的日志', async () => {
@@ -332,7 +302,6 @@ describe('LogProvider', () => {
     });
 
     it('LogProvider 禁用时应抛出 ComponentDisabledError', async () => {
-      // 通过更新配置表禁用 LogProvider
       await relationDb.update(LOG_CONFIG_TABLE, [
         { field: 'config_value', value: 'false' },
         { field: 'updated', value: Date.now() },
@@ -358,8 +327,8 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('[DEBUG]');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].level).toBe('DEBUG');
     });
 
     it('应支持 ERROR 级别日志', async () => {
@@ -369,8 +338,8 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TestModule');
-      expect(content).toContain('[ERROR]');
+      const ql = await logAccess.queryLogs({ source: 'TestModule' });
+      expect(ql.logs[0].level).toBe('ERROR');
     });
 
     it('每条日志应各自返回不同的 id', async () => {
@@ -381,7 +350,7 @@ describe('LogProvider', () => {
         out1,
       );
 
-      await new Promise((r) => setTimeout(r, 5));
+      await wait(5);
 
       const out2 = new AddLogOutput();
       await logAccess.addLog(
@@ -391,6 +360,39 @@ describe('LogProvider', () => {
       );
 
       expect(out1.id).not.toBe(out2.id);
+    });
+  });
+
+  // ==========================================================================
+  // 日志仅存储于 SQLite（不写文件）
+  // ==========================================================================
+
+  describe('SQLite 存储（不写文件）', () => {
+    it('addLog 后不产生日志文件', async () => {
+      await logAccess.addLog(
+        { data: makeLogData({ source: 'NoFileModule', message: 'no file' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      // 确认 temp 目录下没有 .log 文件
+      const found = findLogFiles(tempDir);
+      expect(found.length).toBe(0);
+    });
+
+    it('soLog 与 queryLogs 均可查询 SQLite 中的日志', async () => {
+      await logAccess.addLog(
+        { data: makeLogData({ source: 'SqliteMode', message: 'sqlite only' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const soOutput = new SoLogOutput();
+      await logAccess.soLog({ source: 'SqliteMode' } as SoLogInput, new LogContext(), soOutput);
+      expect(soOutput.list.length).toBe(1);
+
+      const ql = await logAccess.queryLogs({ source: 'SqliteMode' });
+      expect(ql.logs.length).toBe(1);
     });
   });
 
@@ -441,7 +443,6 @@ describe('LogProvider', () => {
 
   describe('soLog', () => {
     beforeEach(async () => {
-      // 准备测试数据：多个模块、多种级别
       await logAccess.addLog(
         { data: makeLogData({ source: 'ServiceA', level: LogLevel.INFO, message: '用户登录成功' }) } as AddLogInput,
         new LogContext(),
@@ -518,7 +519,7 @@ describe('LogProvider', () => {
     });
 
     it('应按 start_time 过滤', async () => {
-      await new Promise((r) => setTimeout(r, 5));
+      await wait(5);
       const beforeTime = Date.now();
       await logAccess.addLog(
         { data: makeLogData({ source: 'TimeModule', message: 'after' }) } as AddLogInput,
@@ -538,7 +539,7 @@ describe('LogProvider', () => {
 
     it('应按 end_time 过滤', async () => {
       const cutoffTime = Date.now();
-      await new Promise((r) => setTimeout(r, 10));
+      await wait(10);
 
       const output = new SoLogOutput();
       await logAccess.soLog(
@@ -603,64 +604,62 @@ describe('LogProvider', () => {
   });
 
   // ==========================================================================
-  // 写入模式（write_mode）- 数据库 / 文件 / 双写
+  // 老化策略（applyAging）
   // ==========================================================================
 
-  describe('写入模式 write_mode', () => {
-    async function setWriteMode(mode: string) {
-      await logAccess.configLog(
-        { write_mode: mode } as any,
-        new LogContext(),
-        {} as any,
-      );
-    }
+  describe('老化策略 applyAging', () => {
+    it('applyAging 应删除超过默认保留天数（30 天）的日志', async () => {
+      const raw = logAccess.getRawService();
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
 
-    it('FILE 模式：仅写文件，soLog 可查，queryLogs 无数据', async () => {
-      await setWriteMode('FILE');
-      await logAccess.addLog(
-        { data: makeLogData({ source: 'FileMode', message: 'file only' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
-      );
+      await insertRawLog(relationDb, { id: 'old-1', created: now - 40 * oneDay, source: 'DirectAging', message: 'very old' });
+      await insertRawLog(relationDb, { id: 'new-1', created: now, source: 'DirectAging', message: 'fresh' });
 
-      const soOutput = new SoLogOutput();
-      await logAccess.soLog({ source: 'FileMode' } as SoLogInput, new LogContext(), soOutput);
-      expect(soOutput.list.length).toBeGreaterThan(0);
+      const deleted = await raw.applyAging();
+      expect(deleted).toBeGreaterThanOrEqual(1);
 
-      const ql = await logAccess.queryLogs({ source: 'FileMode' });
-      expect(ql.logs.length).toBe(0);
+      const ql = await logAccess.queryLogs({ source: 'DirectAging' });
+      const messages = ql.logs.map((l) => l.message);
+      expect(messages).toContain('fresh');
+      expect(messages).not.toContain('very old');
     });
 
-    it('SQLITE 模式：仅写数据库，queryLogs 可查，soLog 无数据', async () => {
-      await setWriteMode('SQLITE');
-      await logAccess.addLog(
-        { data: makeLogData({ source: 'SqliteMode', message: 'sqlite only' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
-      );
+    it('configLog 修改 retention_days 后应立即清理超期日志', async () => {
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
 
-      const soOutput = new SoLogOutput();
-      await logAccess.soLog({ source: 'SqliteMode' } as SoLogInput, new LogContext(), soOutput);
-      expect(soOutput.list.length).toBe(0);
+      await insertRawLog(relationDb, { id: 'old-1', created: now - 2 * oneDay, source: 'AgingModule', message: 'old message' });
+      await insertRawLog(relationDb, { id: 'new-1', created: now, source: 'AgingModule', message: 'new message' });
 
-      const ql = await logAccess.queryLogs({ source: 'SqliteMode' });
-      expect(ql.logs.length).toBeGreaterThan(0);
+      // 将保留天数设为 1，2 天前的日志应被立即清理
+      await logAccess.configLog({ retention_days: 1 } as any, new LogContext(), {} as any);
+
+      const ql = await logAccess.queryLogs({ source: 'AgingModule' });
+      const messages = ql.logs.map((l) => l.message);
+      expect(messages).toContain('new message');
+      expect(messages).not.toContain('old message');
     });
 
-    it('BOTH 模式：双写，soLog 与 queryLogs 均可查', async () => {
-      await setWriteMode('BOTH');
-      await logAccess.addLog(
-        { data: makeLogData({ source: 'BothMode', message: 'both write' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
-      );
+    it('configLog 修改 max_log_count 后应立即裁剪到最大条数', async () => {
+      const now = Date.now();
+      for (let i = 0; i < 5; i++) {
+        await insertRawLog(relationDb, { id: `bulk-${i}`, created: now + i, source: 'BulkAging', message: `msg-${i}` });
+      }
 
-      const soOutput = new SoLogOutput();
-      await logAccess.soLog({ source: 'BothMode' } as SoLogInput, new LogContext(), soOutput);
-      expect(soOutput.list.length).toBeGreaterThan(0);
+      await logAccess.configLog({ max_log_count: 3 } as any, new LogContext(), {} as any);
 
-      const ql = await logAccess.queryLogs({ source: 'BothMode' });
-      expect(ql.logs.length).toBeGreaterThan(0);
+      const ql = await logAccess.queryLogs({ source: 'BulkAging' });
+      expect(ql.total).toBe(3);
+      const messages = ql.logs.map((l) => l.message).sort();
+      expect(messages).toEqual(['msg-2', 'msg-3', 'msg-4']);
+    });
+
+    it('保留天数与最大条数应可从配置中心读取（默认值正确）', async () => {
+      const output: any = {};
+      await logAccess.configLog({} as any, new LogContext(), output);
+      expect(output.config.retention_days).toBe(DEFAULT_RETENTION_DAYS);
+      expect(output.config.max_log_count).toBe(DEFAULT_MAX_LOG_COUNT);
     });
   });
 
@@ -682,7 +681,7 @@ describe('LogProvider', () => {
       );
     });
 
-    it('应按模块名删除日志文件', async () => {
+    it('应按模块名删除日志', async () => {
       const output = new DelLogOutput();
       await logAccess.delLog(
         { ids: ['DelModule'] } as DelLogInput,
@@ -690,12 +689,11 @@ describe('LogProvider', () => {
         output,
       );
 
-      const logPath = path.join(tempDir, 'data', 'logs', 'DelModule', 'DelModule.log');
-      expect(fs.existsSync(logPath)).toBe(false);
+      const qlDel = await logAccess.queryLogs({ source: 'DelModule' });
+      expect(qlDel.total).toBe(0);
 
-      // KeepModule 不受影响
-      const keepPath = path.join(tempDir, 'data', 'logs', 'KeepModule', 'KeepModule.log');
-      expect(fs.existsSync(keepPath)).toBe(true);
+      const qlKeep = await logAccess.queryLogs({ source: 'KeepModule' });
+      expect(qlKeep.total).toBe(1);
     });
 
     it('按模块名删除应返回 affected_rows', async () => {
@@ -718,9 +716,8 @@ describe('LogProvider', () => {
       expect(output.affected_rows).toBe(0);
     });
 
-    it('应按 before_time 删除过期日志行', async () => {
-      // 等待确保后续日志有时间差
-      await new Promise((r) => setTimeout(r, 10));
+    it('应按 before_time 删除过期日志', async () => {
+      await wait(10);
       const cutoff = Date.now();
 
       await logAccess.addLog(
@@ -736,10 +733,9 @@ describe('LogProvider', () => {
         output,
       );
 
-      // 验证较早的日志被删除，新的保留
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'KeepModule');
-      expect(content).toContain('new message');
-      // to keep 可能在 cutoff 之前
+      const ql = await logAccess.queryLogs({ source: 'KeepModule' });
+      const messages = ql.logs.map((l) => l.message);
+      expect(messages).toContain('new message');
     });
 
     it('LogProvider 禁用时应抛出 ComponentDisabledError', async () => {
@@ -876,9 +872,9 @@ describe('LogProvider', () => {
 
       const data = output.data as Record<string, unknown>;
       expect(data.enabled).toBe(true);
-      expect(typeof data.log_dir).toBe('string');
-      expect(data.dir_exists).toBe(true);
-      expect(typeof data.max_file_size).toBe('number');
+      expect(typeof data.retention_days).toBe('number');
+      expect(typeof data.max_log_count).toBe('number');
+      expect(typeof data.total_count).toBe('number');
     });
 
     it('scope=volume 应返回容量统计', async () => {
@@ -890,10 +886,7 @@ describe('LogProvider', () => {
       );
 
       const data = output.data as Record<string, unknown>;
-      expect(data.file_count).toBe(2);
-      expect(typeof data.total_size_bytes).toBe('number');
-      expect(typeof data.total_size_mb).toBe('number');
-      expect((data.total_size_bytes as number) > 0).toBe(true);
+      expect(data.record_count).toBe(3);
     });
 
     it('scope=levelDistribution 应返回级别分布', async () => {
@@ -981,7 +974,6 @@ describe('LogProvider', () => {
         new EnableLogOutput(),
       );
 
-      // 直接从 DB 验证
       const rows = await relationDb.select(LOG_RULE_TABLE, {
         conditions: [
           { field: 'source', operator: Operator.EQ, value: 'SoulService' },
@@ -1004,11 +996,8 @@ describe('LogProvider', () => {
 
       const rawService = logAccess.getRawService();
 
-      // SoulService 的任意方法应记录
       expect(rawService.shouldLog('SoulService', 'addSoul')).toBe(true);
       expect(rawService.shouldLog('SoulService', 'delSoul')).toBe(true);
-
-      // 其他模块不应记录
       expect(rawService.shouldLog('OtherService', 'someMethod')).toBe(false);
     });
 
@@ -1065,7 +1054,6 @@ describe('LogProvider', () => {
         new EnableLogOutput(),
       );
 
-      // 更新为 disable
       await logAccess.enableLog(
         { rules: [{ source: 'UpsertModule', method: 'test', enable: false }] } as EnableLogInput,
         new LogContext(),
@@ -1075,7 +1063,6 @@ describe('LogProvider', () => {
       const rawService = logAccess.getRawService();
       expect(rawService.shouldLog('UpsertModule', 'test')).toBe(false);
 
-      // DB 中应只有一条记录
       const rows = await relationDb.select(LOG_RULE_TABLE, {
         conditions: [
           { field: 'source', operator: Operator.EQ, value: 'UpsertModule' },
@@ -1137,7 +1124,6 @@ describe('LogProvider', () => {
     });
 
     it('enableLog 在组件禁用时仍应正常工作', async () => {
-      // 先禁用
       await relationDb.update(LOG_CONFIG_TABLE, [
         { field: 'config_value', value: 'false' },
         { field: 'updated', value: Date.now() },
@@ -1146,7 +1132,6 @@ describe('LogProvider', () => {
       ]);
       await reinitializeLogAccess(logAccess);
 
-      // enableLog 在禁用状态下仍应工作（配置方法不受 enabled 影响）
       const output = new EnableLogOutput();
       const ok = await logAccess.enableLog(
         { rules: [{ source: 'Test', method: 'test', enable: true }] } as EnableLogInput,
@@ -1182,16 +1167,18 @@ describe('LogProvider', () => {
       };
 
       interceptor.beforeExecute(ctx);
+      await wait(30);
 
-      // 验证日志已写入文件
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'SoulService');
-      expect(content).toContain('[DEBUG]');
-      expect(content).toContain('addSoul invoke');
+      const ql = await logAccess.queryLogs({ source: 'SoulService' });
+      expect(ql.logs.length).toBeGreaterThan(0);
+      const debugLog = ql.logs.find((l) => l.level === 'DEBUG');
+      expect(debugLog).toBeDefined();
+      expect(debugLog!.message).toContain('addSoul invoke');
     });
 
     it('afterExecute 成功时应写入 INFO 级别日志', async () => {
       const startedAt = Date.now();
-      await new Promise((r) => setTimeout(r, 5));
+      await wait(5);
       const ctx: InterceptContext = {
         targetName: 'SoulService',
         methodName: 'addSoul',
@@ -1203,10 +1190,10 @@ describe('LogProvider', () => {
       };
 
       interceptor.afterExecute(ctx);
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'SoulService');
-      expect(content).toContain('[INFO]');
-      expect(content).toContain('addSoul done');
+      const ql = await logAccess.queryLogs({ source: 'SoulService' });
+      expect(ql.logs.some((l) => l.level === 'INFO' && l.message.includes('addSoul done'))).toBe(true);
     });
 
     it('afterExecute 失败时应写入 ERROR 级别日志', async () => {
@@ -1221,11 +1208,13 @@ describe('LogProvider', () => {
       };
 
       interceptor.afterExecute(ctx, new Error('连接超时'));
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'LLMService');
-      expect(content).toContain('[ERROR]');
-      expect(content).toContain('execLLM failed');
-      expect(content).toContain('连接超时');
+      const ql = await logAccess.queryLogs({ source: 'LLMService' });
+      const errorLog = ql.logs.find((l) => l.level === 'ERROR');
+      expect(errorLog).toBeDefined();
+      expect(errorLog!.message).toContain('execLLM failed');
+      expect(errorLog!.message).toContain('连接超时');
     });
 
     it('beforeExecute 应提取 input.trace_id', async () => {
@@ -1240,9 +1229,10 @@ describe('LogProvider', () => {
       };
 
       interceptor.beforeExecute(ctx);
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'TraceService');
-      expect(content).toContain('[trace-from-input]');
+      const ql = await logAccess.queryLogs({ source: 'TraceService' });
+      expect(ql.logs[0].trace_id).toBe('trace-from-input');
     });
 
     it('afterExecute 应包含 elapsed_ms', async () => {
@@ -1257,9 +1247,10 @@ describe('LogProvider', () => {
       };
 
       interceptor.afterExecute(ctx);
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'ElapsedService');
-      expect(content).toContain('250');
+      const ql = await logAccess.queryLogs({ source: 'ElapsedService' });
+      expect(ql.logs[0].elapsed_ms).toBe(250);
     });
 
     it('afterExecute 应提取 context.caller', async () => {
@@ -1274,9 +1265,10 @@ describe('LogProvider', () => {
       };
 
       interceptor.afterExecute(ctx);
+      await wait(30);
 
-      // 虽然 caller 存储在 LogData 中，但日志行格式不包含 caller 字段
-      // 但可以通过读取文件确认 caller 存在于日志数据中
+      const ql = await logAccess.queryLogs({ source: 'CallerService' });
+      expect(ql.logs[0].caller).toBe('test-caller-id');
     });
 
     it('日志中应包含 AOP 来源标识', async () => {
@@ -1291,13 +1283,13 @@ describe('LogProvider', () => {
       };
 
       interceptor.beforeExecute(ctx);
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'AopModule');
-      expect(content).toContain('"log_source":"AOP"');
+      const ql = await logAccess.queryLogs({ source: 'AopModule' });
+      expect(ql.logs[0].metadata).toEqual({ log_source: 'AOP' });
     });
 
     it('应遵循 enableLog 规则（未启用的模块不记录）', async () => {
-      // 只允许 SoulService 的日志
       await logAccess.enableLog(
         { rules: [
           { source: '*', method: '*', enable: false },
@@ -1329,12 +1321,13 @@ describe('LogProvider', () => {
 
       interceptor.beforeExecute(allowedCtx);
       interceptor.beforeExecute(blockedCtx);
+      await wait(30);
 
-      const allowedContent = readLogFile(path.join(tempDir, 'data', 'logs'), 'SoulService');
-      expect(allowedContent).toContain('allowedMethod invoke');
+      const allowedQl = await logAccess.queryLogs({ source: 'SoulService' });
+      expect(allowedQl.logs.some((l) => l.message.includes('allowedMethod invoke'))).toBe(true);
 
-      const blockedContent = readLogFile(path.join(tempDir, 'data', 'logs'), 'BlockedService');
-      expect(blockedContent).toBe('');
+      const blockedQl = await logAccess.queryLogs({ source: 'BlockedService' });
+      expect(blockedQl.total).toBe(0);
     });
 
     it('afterExecute 在规则禁用时不应写入日志', async () => {
@@ -1357,9 +1350,10 @@ describe('LogProvider', () => {
       };
 
       interceptor.afterExecute(ctx);
+      await wait(30);
 
-      const dir = path.join(tempDir, 'data', 'logs', 'DisabledService');
-      expect(fs.existsSync(dir)).toBe(false);
+      const ql = await logAccess.queryLogs({ source: 'DisabledService' });
+      expect(ql.total).toBe(0);
     });
 
     it('interceptor 应能处理无 input 的上下文', async () => {
@@ -1376,7 +1370,7 @@ describe('LogProvider', () => {
       expect(() => interceptor.beforeExecute(ctx)).not.toThrow();
     });
 
-    it('beforeExecute 和 afterExecute 应各自记录独立的日志行', async () => {
+    it('beforeExecute 和 afterExecute 应各自记录独立的日志', async () => {
       const startedAt = Date.now();
       const ctx: InterceptContext = {
         targetName: 'FullCycle',
@@ -1390,18 +1384,18 @@ describe('LogProvider', () => {
 
       interceptor.beforeExecute(ctx);
 
-      await new Promise((r) => setTimeout(r, 10));
+      await wait(10);
       const afterCtx: InterceptContext = {
         ...ctx,
         elapsedMs: Date.now() - startedAt,
       };
       interceptor.afterExecute(afterCtx);
+      await wait(30);
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'FullCycle');
-      const lines = content.split('\n').filter((l) => l.trim());
-      expect(lines.length).toBe(2);
-      expect(lines[0]).toContain('invoke');
-      expect(lines[1]).toContain('done');
+      const ql = await logAccess.queryLogs({ source: 'FullCycle' });
+      expect(ql.total).toBe(2);
+      expect(ql.logs.some((l) => l.message.includes('invoke'))).toBe(true);
+      expect(ql.logs.some((l) => l.message.includes('done'))).toBe(true);
     });
   });
 
@@ -1411,7 +1405,6 @@ describe('LogProvider', () => {
 
   describe('Component lifecycle', () => {
     it('initialize 应创建 log_rule 和 log_config 表', async () => {
-      // 通过查询表验证表存在
       const configRows = await relationDb.select(LOG_CONFIG_TABLE);
       expect(configRows.length).toBeGreaterThan(0);
     });
@@ -1422,9 +1415,15 @@ describe('LogProvider', () => {
 
       expect(keys).toContain('enabled');
       expect(keys).toContain('default_level');
-      expect(keys).toContain('file_path');
-      expect(keys).toContain('max_file_size');
       expect(keys).toContain('retention_days');
+      expect(keys).toContain('max_log_count');
+    });
+
+    it('默认配置值应符合老化策略（30 天 / 70 万条）', async () => {
+      const configRows = await relationDb.select(LOG_CONFIG_TABLE);
+      const map = new Map(configRows.map((r) => [String(r.config_key), String(r.config_value)]));
+      expect(map.get('retention_days')).toBe(String(DEFAULT_RETENTION_DAYS));
+      expect(map.get('max_log_count')).toBe(String(DEFAULT_MAX_LOG_COUNT));
     });
 
     it('initialize 默认应启用 LogProvider', async () => {
@@ -1447,7 +1446,6 @@ describe('LogProvider', () => {
     });
 
     it('initialize 应从 log_config 恢复 enabled 状态', async () => {
-      // 修改 DB 中的配置
       await relationDb.update(LOG_CONFIG_TABLE, [
         { field: 'config_value', value: 'false' },
         { field: 'updated', value: Date.now() },
@@ -1455,10 +1453,8 @@ describe('LogProvider', () => {
         { field: 'config_key', operator: Operator.EQ, value: 'enabled' },
       ]);
 
-      // 重新初始化以读取禁用状态
       await logAccess.initialize();
 
-      // 禁用后 visualizedLog 应抛出 ComponentDisabledError
       await expect(
         logAccess.visualizedLog(
           { scope: 'health' } as VisualizedLogInput,
@@ -1469,7 +1465,6 @@ describe('LogProvider', () => {
     });
 
     it('log_rule 表应正确创建索引', async () => {
-      // 直接执行查询验证索引存在
       const indexes = relationDb.queryRaw(
         `SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='${LOG_RULE_TABLE}'`,
       );
@@ -1493,11 +1488,11 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'SpecialModule');
-      expect(content).toContain(specialMsg);
+      const ql = await logAccess.queryLogs({ source: 'SpecialModule' });
+      expect(ql.logs[0].message).toBe(specialMsg);
     });
 
-    it('日志消息包含换行符应按原样写入', async () => {
+    it('日志消息包含换行符应按原样存储', async () => {
       const multilineMsg = 'line1\nline2\nline3';
       await logAccess.addLog(
         { data: makeLogData({ source: 'MultilineModule', message: multilineMsg }) } as AddLogInput,
@@ -1505,11 +1500,10 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      // 换行符会被原样写入文件，导致日志跨多行
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'MultilineModule');
-      expect(content).toContain('line1');
-      expect(content).toContain('line2');
-      expect(content).toContain('line3');
+      const ql = await logAccess.queryLogs({ source: 'MultilineModule' });
+      expect(ql.logs[0].message).toContain('line1');
+      expect(ql.logs[0].message).toContain('line2');
+      expect(ql.logs[0].message).toContain('line3');
     });
 
     it('不存在的模块搜索应返回空', async () => {
@@ -1523,7 +1517,7 @@ describe('LogProvider', () => {
       expect(output.total).toBe(0);
     });
 
-    it('应正确解析标准格式的日志行', async () => {
+    it('应正确解析标准格式的日志记录', async () => {
       await logAccess.addLog(
         { data: makeLogData({
           source: 'ParseModule',
@@ -1537,16 +1531,9 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      // 通过 soLog 验证解析结果
-      const output = new SoLogOutput();
-      await logAccess.soLog(
-        { source: 'ParseModule' } as SoLogInput,
-        new LogContext(),
-        output,
-      );
-
-      expect(output.list.length).toBe(1);
-      const record = output.list[0];
+      const ql = await logAccess.queryLogs({ source: 'ParseModule' });
+      expect(ql.logs.length).toBe(1);
+      const record = ql.logs[0];
       expect(record.level).toBe('INFO');
       expect(record.source).toBe('ParseModule');
       expect(record.trace_id).toBe('trace-xyz');
@@ -1580,7 +1567,7 @@ describe('LogProvider', () => {
         new LogContext(),
         new AddLogOutput(),
       );
-      await new Promise((r) => setTimeout(r, 10));
+      await wait(10);
       await logAccess.addLog(
         { data: makeLogData({ source: 'OrderModule', message: 'second' }) } as AddLogInput,
         new LogContext(),
@@ -1605,9 +1592,8 @@ describe('LogProvider', () => {
         new AddLogOutput(),
       );
 
-      // AOP 作为 source 值，会被当作模块名创建目录
-      const content = readLogFile(path.join(tempDir, 'data', 'logs'), 'AOP');
-      expect(content).toContain('AOP source test');
+      const ql = await logAccess.queryLogs({ source: LogSource.AOP });
+      expect(ql.logs[0].message).toBe('AOP source test');
     });
 
     it('日志 SQLite 实例应与业务 SQLite 实例完全独立', async () => {
@@ -1620,22 +1606,35 @@ describe('LogProvider', () => {
       const standaloneLogAccess = new LogAccess({ dbPath: logDbPath });
       await standaloneLogAccess.initialize();
 
-      // 在 standaloneLogAccess 插入日志
       await standaloneLogAccess.addLog(
         { data: makeLogData({ source: 'IsolatedModule', message: 'isolated log test' }) } as AddLogInput,
         new LogContext(),
         new AddLogOutput(),
       );
 
-      // 验证业务数据库 bizDb 中无 log_record 表记录或查询抛错（表不存在）
       expect(() => {
         bizDb.queryRaw('SELECT * FROM "log_record"');
       }).toThrow();
 
-      // 验证日志数据库中包含 log_record 表并存在写入的日志记录
       const logRows = standaloneLogAccess.getRelationDb().queryRaw('SELECT * FROM "log_record" WHERE "source" = ?', ['IsolatedModule']);
       expect(logRows.length).toBeGreaterThan(0);
       expect((logRows[0] as any).message).toBe('isolated log test');
     });
   });
 });
+
+/** 递归查找目录下的 .log 文件 */
+function findLogFiles(dir: string): string[] {
+  const results: string[] = [];
+  if (!fs.existsSync(dir)) return results;
+  for (const entry of fs.readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) {
+      results.push(...findLogFiles(full));
+    } else if (entry.endsWith('.log')) {
+      results.push(full);
+    }
+  }
+  return results;
+}

@@ -45,6 +45,10 @@ export interface LogData {
   trace_id?: string;
   /** 调用方标识 */
   caller?: string;
+  /** 工作 ID */
+  work_id?: string;
+  /** 交互 ID */
+  interact_id?: string;
   /** 附加元数据 */
   metadata?: Record<string, unknown>;
   /** 耗时（毫秒），AOP 切面使用 */
@@ -94,6 +98,8 @@ export class SoLogInput extends Input {
   level?: string;
   source?: string;
   // trace_id 继承自 Input 基类
+  work_id?: string;
+  interact_id?: string;
   start_time?: number;
   end_time?: number;
   order_by?: OrderBy[];
@@ -180,14 +186,10 @@ export class ConfigLogInput extends Input {
   enabled?: boolean;
   /** 默认日志级别（addLog 未指定 level 时使用） */
   default_level?: string;
-  /** 日志文件根目录 */
-  file_path?: string;
-  /** 单文件最大大小（字节） */
-  max_file_size?: number;
-  /** 日志保留天数 */
+  /** 日志保留天数（超过自动清理） */
   retention_days?: number;
-  /** 写入模式：FILE / SQLITE / BOTH */
-  write_mode?: string;
+  /** 日志最大保留条数（超过自动清理最旧记录） */
+  max_log_count?: number;
 }
 
 export class ConfigLogOutput extends Output {
@@ -202,4 +204,7 @@ export const LOG_RULE_TABLE = 'log_rule';
 export const LOG_CONFIG_TABLE = 'log_config';
 export const LOG_RECORD_TABLE = 'log_record';
 
-export type WriteMode = 'FILE' | 'BOTH' | 'SQLITE';
+/** 默认日志保留天数（30 天） */
+export const DEFAULT_RETENTION_DAYS = 30;
+/** 默认日志最大保留条数（70 万条） */
+export const DEFAULT_MAX_LOG_COUNT = 700000;

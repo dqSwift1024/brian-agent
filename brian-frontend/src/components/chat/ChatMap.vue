@@ -17,8 +17,9 @@ const panStart = ref({ x: 0, y: 0 })
 const activeNodeId = ref<string | null>(null)
 const activeEdgeId = ref<string | null>(null)
 
-const NODE_W = 220
-const NODE_H = 108
+// 消息框尺寸：宽/高在原始基础上放大为 1.5 倍（220→330，108→162）
+const NODE_W = 330
+const NODE_H = 162
 
 const nodes = computed(() => sessionStore.chatMapNodes)
 const edges = computed(() => sessionStore.chatMapEdges)
@@ -49,7 +50,7 @@ function formatTime(ts: number) {
 }
 
 function nodeStyle(n: ChatMapNode) {
-  return { left: `${n.x}px`, top: `${n.y}px`, width: `${NODE_W}px` }
+  return { left: `${n.x}px`, top: `${n.y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }
 }
 
 function edgeKey(e: { source: string; target: string; edgeType: string }) {

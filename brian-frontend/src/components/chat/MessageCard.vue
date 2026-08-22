@@ -213,7 +213,7 @@ async function copyTraceId() {
           摘要
         </summary>
         <div
-          class="markdown-body break-words max-h-20 overflow-y-auto"
+          class="markdown-body break-words max-h-[120px] overflow-y-auto"
           :class="mode === 'map'
             ? 'text-xs text-apple-gray-700 dark:text-apple-gray-200'
             : 'text-[11px] text-apple-gray-600 dark:text-apple-gray-300'"
@@ -234,7 +234,7 @@ async function copyTraceId() {
         </summary>
         <div
           class="markdown-body break-words overflow-y-auto"
-          :class="mode === 'map' ? 'text-[11px] max-h-20' : 'text-sm'"
+            :class="mode === 'map' ? 'text-[11px] max-h-[120px]' : 'text-sm'"
           v-html="renderedContent"
         />
       </details>

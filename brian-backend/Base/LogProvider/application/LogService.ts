@@ -1,26 +1,26 @@
 /**
  * @fileoverview LogProvider 应用服务层。
  *
- * 日志只写入本地文件，按模块分目录存储，文件采用滚动方式（每个文件最大 200MB）。
+ * 日志只写入 SQLite（log_record 表），不写入本地文件。
  * 日志规则（log_rule）和配置项（log_config）存储于关系数据库。
+ *
+ * 日志老化策略（从 log_config 表读取，运行时实时生效）：
+ * - retention_days：日志保留天数，默认 30 天，超过自动清理；
+ * - max_log_count：日志最大保留条数，默认 70 万条，超过自动清理最旧记录。
  *
  * 实现所有用例：addLog / getLog / soLog / delLog / countLog / visualizedLog / enableLog。
  */
 
-import { existsSync, mkdirSync, appendFileSync, statSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
-import type { Condition, DataObject } from '../../shared/query';
+import type { Condition } from '../../shared/query';
 import {
   LogContext,
-  LogData,
   LogRecord,
   LogRule,
-  LogLevel,
   AddLogInput,
   AddLogOutput,
   GetLogInput,
@@ -40,57 +40,52 @@ import {
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
   LOG_RECORD_TABLE,
-  type WriteMode,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_MAX_LOG_COUNT,
 } from '../domain/types';
-
-/** 200MB（字节） */
-const DEFAULT_MAX_FILE_SIZE = 200 * 1024 * 1024;
 
 /**
  * LogProvider 应用服务。
  *
- * 日志只写入本地文件，不存储于数据库。
+ * 日志只写入 SQLite，不写文件。
  * 日志规则与配置项存储于关系数据库（log_rule / log_config 表）。
  */
 export class LogService {
   private enabled = true;
   private readonly config: ConfigService;
   private rules: LogRule[] = [];
-  /** 日志文件根目录（从配置读取，缓存） */
-  private logDir = './data/logs';
-  /** 单文件最大大小（字节，从配置读取，缓存） */
-  private maxFileSize = DEFAULT_MAX_FILE_SIZE;
   /** 日志保留天数（从配置读取，缓存） */
-  private retentionDays = 14;
-  /** 日志写入模式 */
-  private writeMode: WriteMode = 'BOTH';
+  private retentionDays = DEFAULT_RETENTION_DAYS;
+  /** 日志最大保留条数（从配置读取，缓存） */
+  private maxLogCount = DEFAULT_MAX_LOG_COUNT;
   /** 默认日志级别（addLog 未指定 level 时使用，从配置读取，缓存） */
   private defaultLevel = 'INFO';
+
+  /** 老化执行最小间隔（毫秒），避免高频写入时频繁全表扫描 */
+  private static readonly AGING_INTERVAL_MS = 60_000;
+  /** 上次老化执行时间戳 */
+  private lastAgingAt = 0;
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, LOG_CONFIG_TABLE);
   }
 
-  /** 初始化：写入默认配置、恢复 enabled 状态、加载日志规则、读取文件路径配置 */
+  /** 初始化：写入默认配置、恢复 enabled 状态、加载日志规则、读取老化参数 */
   async initialize(): Promise<void> {
     // 写入默认配置项（仅在配置项不存在时写入，不覆盖已有值）
     await this.config.initDefaults([
       { config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN', description: 'LogProvider 是否启用' },
       { config_key: 'default_level', config_value: 'INFO', value_type: 'STRING', description: '默认日志级别' },
-      { config_key: 'file_path', config_value: './data/logs', value_type: 'STRING', description: '日志文件根目录' },
-      { config_key: 'max_file_size', config_value: String(DEFAULT_MAX_FILE_SIZE), value_type: 'INT', description: '单文件最大大小（字节）' },
-      { config_key: 'retention_days', config_value: '14', value_type: 'INT', description: '日志保留天数' },
-      { config_key: 'write_mode', config_value: 'BOTH', value_type: 'STRING', description: '写入模式' },
+      { config_key: 'retention_days', config_value: String(DEFAULT_RETENTION_DAYS), value_type: 'INT', description: '日志保留天数' },
+      { config_key: 'max_log_count', config_value: String(DEFAULT_MAX_LOG_COUNT), value_type: 'INT', description: '日志最大保留条数' },
     ]);
 
     this.enabled = await this.config.getBoolean('enabled', true);
-    this.logDir = await this.config.getString('file_path', './data/logs') ?? './data/logs';
-    this.maxFileSize = await this.config.getInt('max_file_size', DEFAULT_MAX_FILE_SIZE);
-    this.retentionDays = await this.config.getInt('retention_days', 14);
     this.defaultLevel = await this.config.getString('default_level', 'INFO') ?? 'INFO';
-    const modeStr = await this.config.getString('write_mode', 'BOTH') ?? 'BOTH';
-    this.writeMode = (modeStr === 'BOTH' || modeStr === 'SQLITE' || modeStr === 'FILE') ? modeStr : 'BOTH';
+    this.retentionDays = await this.config.getInt('retention_days', DEFAULT_RETENTION_DAYS);
+    this.maxLogCount = await this.config.getInt('max_log_count', DEFAULT_MAX_LOG_COUNT);
     await this.loadRules();
+    await this.applyAging();
   }
 
   /** 从 log_rule 表加载规则到内存缓存 */
@@ -139,145 +134,61 @@ export class LogService {
   }
 
   // -------------------------------------------------------------------------
-  // 文件操作工具
+  // 老化策略
   // -------------------------------------------------------------------------
 
-  /** 获取模块日志目录路径 */
-  private getModuleDir(source: string): string {
-    return join(this.logDir, source);
-  }
-
-  /** 格式化日志行为字符串 */
-  private formatLogLine(data: LogData): string {
-    const ts = new Date().toISOString();
-    const trace = data.trace_id ? `[${data.trace_id}]` : '[-]';
-    const meta = data.metadata ? JSON.stringify(data.metadata) : '-';
-    const elapsed = data.elapsed_ms !== undefined ? `${data.elapsed_ms}` : '-';
-    return `[${ts}] [${data.level}] [${data.source}] ${trace} ${data.message} | ${meta} | ${elapsed}\n`;
-  }
-
-  /** 解析日志行为 LogRecord */
-  private parseLogLine(line: string, source: string): LogRecord | null {
-    const match = line.match(/^\[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] (.+?) \| (.+?) \| (.+?)$/);
-    if (!match) {
-      return null;
-    }
-    const [, ts, level, src, traceId, message, metaStr, elapsedStr] = match;
-    let metadata: Record<string, unknown> | undefined;
-    if (metaStr && metaStr !== '-') {
-      try {
-        metadata = JSON.parse(metaStr) as Record<string, unknown>;
-      } catch {
-        // 忽略解析失败
-      }
-    }
-    return {
-      id: `${ts}|${source}|${message}`,
-      created: new Date(ts).getTime(),
-      updated: new Date(ts).getTime(),
-      level,
-      source: src,
-      message,
-      trace_id: traceId !== '-' ? traceId : undefined,
-      metadata,
-      elapsed_ms: elapsedStr !== '-' ? parseInt(elapsedStr, 10) : undefined,
-    };
-  }
-
   /**
-   * 获取模块的唯一日志文件路径。
+   * 执行日志老化：
+   * 1. 删除超过 retention_days 天的日志；
+   * 2. 若仍超过 max_log_count，删除最旧记录直至条数达标。
    *
-   * 每个模块只有一个日志文件：`{logDir}/{source}/{source}.log`
-   * 若目录不存在则创建。
+   * @returns 被清理的日志条数
    */
-  private getModuleLogFile(source: string): string {
-    const dir = this.getModuleDir(source);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    return join(dir, `${source}.log`);
-  }
+  async applyAging(): Promise<number> {
+    let deleted = 0;
 
-  /**
-   * 清理日志文件。
-   *
-   * 1. 删除超过 retentionDays 天的日志行；
-   * 2. 若清理后文件仍超过 maxFileSize，从头部截断仅保留最近内容；
-   *
-   * @param filePath 日志文件路径
-   */
-  private cleanLogFile(filePath: string): void {
-    let content: string;
-    try {
-      content = readFileSync(filePath, 'utf-8');
-    } catch {
-      return;
-    }
-
-    const lines = content.split('\n').filter((l) => l.trim());
-    if (lines.length === 0) {
-      return;
-    }
-
-    // 1. 删除超过保留天数的日志行
+    // 1. 删除超过保留天数的日志
     const cutoff = Date.now() - this.retentionDays * 24 * 60 * 60 * 1000;
-    const filtered = lines.filter((line) => {
-      const record = this.parseLogLine(line, '');
-      // 保留无法解析的行和未过期的行
-      return record ? record.created >= cutoff : true;
-    });
-
-    // 2. 若仍超过 maxFileSize，从头部截断
-    let result = filtered.join('\n') + '\n';
-    while (Buffer.byteLength(result, 'utf-8') > this.maxFileSize && filtered.length > 1) {
-      filtered.shift();
-      result = filtered.join('\n') + '\n';
-    }
-
-    // 重写文件
     try {
-      writeFileSync(filePath, result, 'utf-8');
+      deleted += await this.relationDb.delete(LOG_RECORD_TABLE, [
+        { field: 'created', operator: Operator.LT, value: cutoff },
+      ]);
     } catch {
-      // 忽略写入失败
+      // 忽略异常
     }
-  }
 
-  /** 获取指定模块的所有日志文件路径 */
-  private getModuleFiles(source: string): string[] {
-    const dir = this.getModuleDir(source);
-    if (!existsSync(dir)) {
-      return [];
-    }
-    return readdirSync(dir)
-      .filter((f) => f.endsWith('.log'))
-      .sort()
-      .map((f) => join(dir, f));
-  }
-
-  /** 获取所有模块的日志文件路径 */
-  private getAllModuleFiles(): Array<{ source: string; file: string }> {
-    if (!existsSync(this.logDir)) {
-      return [];
-    }
-    const result: Array<{ source: string; file: string }> = [];
-    const modules = readdirSync(this.logDir).filter((f) => {
-      const stat = statSync(join(this.logDir, f));
-      return stat.isDirectory();
-    });
-    for (const mod of modules) {
-      const files = this.getModuleFiles(mod);
-      for (const file of files) {
-        result.push({ source: mod, file });
+    // 2. 裁剪到最大条数（删除最旧记录）
+    try {
+      const total = await this.relationDb.count(LOG_RECORD_TABLE);
+      const excess = total - this.maxLogCount;
+      if (excess > 0) {
+        this.relationDb.executeRaw(
+          `DELETE FROM "${LOG_RECORD_TABLE}" WHERE "id" IN (SELECT "id" FROM "${LOG_RECORD_TABLE}" ORDER BY "created" ASC, "id" ASC LIMIT ?)`,
+          [excess],
+        );
+        deleted += excess;
       }
+    } catch {
+      // 忽略异常
     }
-    return result;
+
+    return deleted;
+  }
+
+  /** 节流触发老化，避免高频写入时频繁全表扫描 */
+  private scheduleAging(): void {
+    const now = Date.now();
+    if (now - this.lastAgingAt >= LogService.AGING_INTERVAL_MS) {
+      this.lastAgingAt = now;
+      this.applyAging().catch(() => {});
+    }
   }
 
   // -------------------------------------------------------------------------
   // 日志管理
   // -------------------------------------------------------------------------
 
-  /** 写入日志到本地文件（addLog），同时支持 SQLite 持久化 */
+  /** 写入日志到 SQLite（addLog） */
   async addLog(
     input: AddLogInput,
     _context: LogContext,
@@ -298,76 +209,59 @@ export class LogService {
     const logId = IdGenerator.generate();
     const now = IdGenerator.now();
 
-    // 文件写入（FILE / BOTH 模式）
-    if (this.writeMode === 'FILE' || this.writeMode === 'BOTH') {
-      const line = this.formatLogLine(data);
-      const filePath = this.getModuleLogFile(data.source);
-      appendFileSync(filePath, line, 'utf-8');
-
-      try {
-        const size = statSync(filePath).size;
-        if (size >= this.maxFileSize) {
-          this.cleanLogFile(filePath);
-        }
-      } catch {
-        // 忽略
-      }
+    try {
+      await this.relationDb.insert(LOG_RECORD_TABLE, [
+        { field: 'id', value: logId },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'level', value: data.level },
+        { field: 'source', value: data.source },
+        { field: 'message', value: data.message },
+        { field: 'trace_id', value: data.trace_id ?? null },
+        { field: 'caller', value: data.caller ?? null },
+        { field: 'work_id', value: data.work_id ?? null },
+        { field: 'interact_id', value: data.interact_id ?? null },
+        { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
+        { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
+      ]);
+    } catch {
+      // SQLite 写入失败不影响业务
     }
 
-    // SQLite 写入（SQLITE / BOTH 模式）
-    if (this.writeMode === 'SQLITE' || this.writeMode === 'BOTH') {
-      try {
-        await this.relationDb.insert(LOG_RECORD_TABLE, [
-          { field: 'id', value: logId },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'level', value: data.level },
-          { field: 'source', value: data.source },
-          { field: 'message', value: data.message },
-          { field: 'trace_id', value: data.trace_id ?? null },
-          { field: 'caller', value: data.caller ?? null },
-          { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
-          { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
-        ]);
-      } catch {
-        // SQLite 写入失败不影响业务
-      }
-    }
+    this.scheduleAging();
 
     output.id = logId;
     return true;
   }
 
-  // ===== 原始 getLog 方法（保留作为参考）=====
-  /*
-  async getLog(
-    input: GetLogInput,
-    _context: LogContext,
-    output: GetLogOutput,
-  ): Promise<boolean> {
-    this.ensureEnabled();
-    // getLog 在文件模式下通过 soLog 逻辑查找第一条
-    const soOutput = new SoLogOutput();
-    const soInput = new SoLogInput();
-    if (input.conditions) {
-      // 将简单条件转为搜索参数
-      for (const cond of input.conditions) {
-        if (cond.field === 'source' && cond.operator === Operator.EQ) {
-          soInput.source = String(cond.value);
-        }
-        if (cond.field === 'level' && cond.operator === Operator.EQ) {
-          soInput.level = String(cond.value);
-        }
-      }
-    }
-    soInput.page = { current: 1, size: 1 };
-    await this.soLog(soInput, _context, soOutput);
-    output.log = soOutput.list.length > 0 ? soOutput.list[0] : null;
-    return true;
+  /** 将数据库行转换为 LogRecord */
+  private rowToLogRecord(row: Record<string, unknown>): LogRecord {
+    return {
+      id: String(row.id),
+      created: Number(row.created),
+      updated: Number(row.updated),
+      level: String(row.level),
+      source: String(row.source),
+      message: String(row.message),
+      trace_id: row.trace_id ? String(row.trace_id) : undefined,
+      caller: row.caller ? String(row.caller) : undefined,
+      work_id: row.work_id ? String(row.work_id) : undefined,
+      interact_id: row.interact_id ? String(row.interact_id) : undefined,
+      metadata: row.metadata ? this.parseMetadata(String(row.metadata)) : undefined,
+      elapsed_ms: row.elapsed_ms ? Number(row.elapsed_ms) : undefined,
+    };
   }
-  */
 
-  /** 获取日志（getLog）- 从文件或 SQLite 中查找第一条匹配记录 */
+  /** 解析 metadata JSON 字符串 */
+  private parseMetadata(raw: string): Record<string, unknown> | undefined {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** 获取日志（getLog）- 从 SQLite 中查找第一条匹配记录 */
   async getLog(
     input: GetLogInput,
     _context: LogContext,
@@ -380,18 +274,7 @@ export class LogService {
         { field: 'id', operator: Operator.EQ, value: input.id },
       ]);
       if (row) {
-        output.log = {
-          id: String(row.id),
-          created: Number(row.created),
-          updated: Number(row.updated),
-          level: String(row.level),
-          source: String(row.source),
-          message: String(row.message),
-          trace_id: row.trace_id ? String(row.trace_id) : undefined,
-          caller: row.caller ? String(row.caller) : undefined,
-          metadata: row.metadata ? (() => { try { return JSON.parse(String(row.metadata)) as Record<string, unknown>; } catch { return undefined; } })() : undefined,
-          elapsed_ms: row.elapsed_ms ? Number(row.elapsed_ms) : undefined,
-        };
+        output.log = this.rowToLogRecord(row);
         return true;
       }
     }
@@ -414,8 +297,7 @@ export class LogService {
     return true;
   }
 
-  // ===== 原始 soLog 方法（保留作为参考）=====
-  /*
+  /** 搜索日志（soLog）- 从 SQLite 查询并过滤 */
   async soLog(
     input: SoLogInput,
     _context: LogContext,
@@ -423,123 +305,49 @@ export class LogService {
   ): Promise<boolean> {
     this.ensureEnabled();
 
-    // 确定搜索范围
-    const files: Array<{ source: string; file: string }> = input.source
-      ? this.getModuleFiles(input.source).map((f) => ({ source: input.source!, file: f }))
-      : this.getAllModuleFiles();
-
-    const results: LogRecord[] = [];
-    for (const { source, file } of files) {
-      let content: string;
-      try {
-        content = readFileSync(file, 'utf-8');
-      } catch {
-        continue;
-      }
-      const lines = content.split('\n').filter((l) => l.trim());
-      for (const line of lines) {
-        const record = this.parseLogLine(line, source);
-        if (!record) {
-          continue;
-        }
-        // 过滤
-        if (input.level && record.level !== input.level) {
-          continue;
-        }
-        if (input.source && record.source !== input.source) {
-          continue;
-        }
-        if (input.trace_id && record.trace_id !== input.trace_id) {
-          continue;
-        }
-        if (input.keyword && !record.message.includes(input.keyword)) {
-          continue;
-        }
-        if (input.start_time !== undefined && record.created < input.start_time) {
-          continue;
-        }
-        if (input.end_time !== undefined && record.created > input.end_time) {
-          continue;
-        }
-        results.push(record);
-      }
+    const conditions: Condition[] = [];
+    if (input.level) {
+      conditions.push({ field: 'level', operator: Operator.EQ, value: input.level });
+    }
+    if (input.source) {
+      conditions.push({ field: 'source', operator: Operator.EQ, value: input.source });
+    }
+    if (input.trace_id) {
+      conditions.push({ field: 'trace_id', operator: Operator.EQ, value: input.trace_id });
+    }
+    if (input.work_id) {
+      conditions.push({ field: 'work_id', operator: Operator.EQ, value: input.work_id });
+    }
+    if (input.interact_id) {
+      conditions.push({ field: 'interact_id', operator: Operator.EQ, value: input.interact_id });
+    }
+    if (input.keyword) {
+      conditions.push({ field: 'message', operator: Operator.LIKE, value: `%${input.keyword}%` });
+    }
+    if (input.start_time !== undefined) {
+      conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
+    }
+    if (input.end_time !== undefined) {
+      conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
     }
 
-    // 排序（默认 created DESC）
-    results.sort((a, b) => b.created - a.created);
-
-    // 分页
+    const orderBy = input.order_by ?? [{ field: 'created', direction: 'DESC' }];
     const page = input.page ?? { current: 1, size: 50 };
-    const offset = (page.current - 1) * page.size;
-    output.list = results.slice(offset, offset + page.size);
-    output.total = results.length;
-    return true;
-  }
-  */
+    const queryConditions = conditions.length > 0 ? conditions : undefined;
 
-  /** 搜索日志（soLog）- 从文件中读取并过滤 */
-  async soLog(
-    input: SoLogInput,
-    _context: LogContext,
-    output: SoLogOutput,
-  ): Promise<boolean> {
-    this.ensureEnabled();
+    const rows = await this.relationDb.select(LOG_RECORD_TABLE, {
+      conditions: queryConditions,
+      order_by: orderBy,
+      page,
+    });
+    const total = await this.relationDb.count(LOG_RECORD_TABLE, queryConditions);
 
-    // 确定搜索文件范围
-    const files: Array<{ source: string; file: string }> = input.source
-      ? this.getModuleFiles(input.source).map((f) => ({ source: input.source!, file: f }))
-      : this.getAllModuleFiles();
-
-    const results: LogRecord[] = [];
-    for (const { source, file } of files) {
-      let content: string;
-      try {
-        content = readFileSync(file, 'utf-8');
-      } catch {
-        continue;
-      }
-      const lines = content.split('\n').filter((l) => l.trim());
-      for (const line of lines) {
-        const record = this.parseLogLine(line, source);
-        if (!record) {
-          continue;
-        }
-        // 过滤
-        if (input.level && record.level !== input.level) {
-          continue;
-        }
-        if (input.source && record.source !== input.source) {
-          continue;
-        }
-        if (input.trace_id && record.trace_id !== input.trace_id) {
-          continue;
-        }
-        if (input.keyword && !record.message.includes(input.keyword)) {
-          continue;
-        }
-        if (input.start_time !== undefined && record.created < input.start_time) {
-          continue;
-        }
-        if (input.end_time !== undefined && record.created > input.end_time) {
-          continue;
-        }
-        results.push(record);
-      }
-    }
-
-    // 排序（默认 created DESC）
-    results.sort((a, b) => b.created - a.created);
-
-    // 分页
-    const page = input.page ?? { current: 1, size: 50 };
-    const offset = (page.current - 1) * page.size;
-    output.list = results.slice(offset, offset + page.size);
-    output.total = results.length;
+    output.list = rows.map((r) => this.rowToLogRecord(r));
+    output.total = total;
     return true;
   }
 
-  // ===== 原始 delLog 方法（保留作为参考）=====
-  /*
+  /** 删除日志（delLog）- 从 SQLite 删除 */
   async delLog(
     input: DelLogInput,
     _context: LogContext,
@@ -548,140 +356,36 @@ export class LogService {
     this.ensureEnabled();
 
     let deletedCount = 0;
-
-    // 按模块删除
-    if (input.ids) {
-      // ids 在文件模式下视为模块名，删除该模块的所有日志文件
-      for (const moduleName of input.ids) {
-        const files = this.getModuleFiles(moduleName);
-        for (const file of files) {
-          try {
-            unlinkSync(file);
-            deletedCount++;
-          } catch {
-            // 忽略
-          }
-        }
-      }
-    }
-
-    // 按时间删除（before_time 之前的日志行）
-    if (input.before_time !== undefined) {
-      const allFiles = this.getAllModuleFiles();
-      for (const { file } of allFiles) {
-        try {
-          const content = readFileSync(file, 'utf-8');
-          const lines = content.split('\n').filter((l) => l.trim());
-          const kept = lines.filter((line) => {
-            const record = this.parseLogLine(line, '');
-            // 保留无法解析的行和未过期的行
-            return record ? record.created >= input.before_time! : true;
-          });
-          if (kept.length < lines.length) {
-            deletedCount += lines.length - kept.length;
-            writeFileSync(file, kept.join('\n') + '\n', 'utf-8');
-          }
-        } catch {
-          // 忽略
-        }
-      }
-    }
-
-    output.affected_rows = deletedCount;
-    return true;
-  }
-  */
-
-  /** 删除日志（delLog）- 支持删除 SQLite 与文件中的日志 */
-  async delLog(
-    input: DelLogInput,
-    _context: LogContext,
-    output: DelLogOutput,
-  ): Promise<boolean> {
-    this.ensureEnabled();
-
-    let deletedCount = 0;
-
-    // 文件清理
-    if (this.writeMode === 'FILE' || this.writeMode === 'BOTH') {
-      if (input.ids) {
-        for (const moduleName of input.ids) {
-          const files = this.getModuleFiles(moduleName);
-          for (const file of files) {
-            try {
-              unlinkSync(file);
-              deletedCount++;
-            } catch {
-              // 忽略
-            }
-          }
+    try {
+      if (input.ids && input.ids.length > 0) {
+        for (const idOrSource of input.ids) {
+          deletedCount += await this.relationDb.delete(LOG_RECORD_TABLE, [
+            { field: 'id', operator: Operator.EQ, value: idOrSource },
+          ]);
+          deletedCount += await this.relationDb.delete(LOG_RECORD_TABLE, [
+            { field: 'source', operator: Operator.EQ, value: idOrSource },
+          ]);
         }
       }
 
       if (input.before_time !== undefined) {
-        const allFiles = this.getAllModuleFiles();
-        for (const { file } of allFiles) {
-          try {
-            const content = readFileSync(file, 'utf-8');
-            const lines = content.split('\n').filter((l) => l.trim());
-            const kept = lines.filter((line) => {
-              const record = this.parseLogLine(line, '');
-              return record ? record.created >= input.before_time! : true;
-            });
-            if (kept.length < lines.length) {
-              deletedCount += lines.length - kept.length;
-              writeFileSync(file, kept.join('\n') + '\n', 'utf-8');
-            }
-          } catch {
-            // 忽略
-          }
-        }
+        deletedCount += await this.relationDb.delete(LOG_RECORD_TABLE, [
+          { field: 'created', operator: Operator.LT, value: input.before_time },
+        ]);
       }
-    }
 
-    // SQLite 清理
-    if (this.writeMode === 'SQLITE' || this.writeMode === 'BOTH') {
-      try {
-        if (input.ids && input.ids.length > 0) {
-          for (const idOrSource of input.ids) {
-            const dbDeletedById = await this.relationDb.delete(LOG_RECORD_TABLE, [
-              { field: 'id', operator: Operator.EQ, value: idOrSource },
-            ]);
-            const dbDeletedBySource = await this.relationDb.delete(LOG_RECORD_TABLE, [
-              { field: 'source', operator: Operator.EQ, value: idOrSource },
-            ]);
-            if (this.writeMode === 'SQLITE') {
-              deletedCount += dbDeletedById + dbDeletedBySource;
-            }
-          }
-        }
-
-        if (input.before_time !== undefined) {
-          const dbDeleted = await this.relationDb.delete(LOG_RECORD_TABLE, [
-            { field: 'created', operator: Operator.LT, value: input.before_time },
-          ]);
-          if (this.writeMode === 'SQLITE') {
-            deletedCount += dbDeleted;
-          }
-        }
-
-        if (input.conditions && input.conditions.length > 0) {
-          const dbDeleted = await this.relationDb.delete(LOG_RECORD_TABLE, input.conditions);
-          if (this.writeMode === 'SQLITE') {
-            deletedCount += dbDeleted;
-          }
-        }
-      } catch {
-        // 忽略异常
+      if (input.conditions && input.conditions.length > 0) {
+        deletedCount += await this.relationDb.delete(LOG_RECORD_TABLE, input.conditions);
       }
+    } catch {
+      // 忽略异常
     }
 
     output.affected_rows = deletedCount;
     return true;
   }
 
-  // ===== 原始 countLog 方法（保留作为参考）=====
-  /*
+  /** 统计日志数量（countLog）- 从 SQLite 统计 */
   async countLog(
     input: CountLogInput,
     _context: LogContext,
@@ -689,80 +393,24 @@ export class LogService {
   ): Promise<boolean> {
     this.ensureEnabled();
 
-    const files = input.source
-      ? this.getModuleFiles(input.source)
-      : this.getAllModuleFiles().map((f) => f.file);
-
-    let count = 0;
-    for (const file of files) {
-      let content: string;
-      try {
-        content = readFileSync(file, 'utf-8');
-      } catch {
-        continue;
-      }
-      const lines = content.split('\n').filter((l) => l.trim());
-      for (const line of lines) {
-        const record = this.parseLogLine(line, '');
-        if (!record) {
-          continue;
-        }
-        if (input.level && record.level !== input.level) {
-          continue;
-        }
-        if (input.start_time !== undefined && record.created < input.start_time) {
-          continue;
-        }
-        if (input.end_time !== undefined && record.created > input.end_time) {
-          continue;
-        }
-        count++;
-      }
+    const conditions: Condition[] = [];
+    if (input.level) {
+      conditions.push({ field: 'level', operator: Operator.EQ, value: input.level });
     }
-    output.count = count;
-    return true;
-  }
-  */
-
-  /** 统计日志数量（countLog）- 从文件中统计 */
-  async countLog(
-    input: CountLogInput,
-    _context: LogContext,
-    output: CountLogOutput,
-  ): Promise<boolean> {
-    this.ensureEnabled();
-
-    const files = input.source
-      ? this.getModuleFiles(input.source)
-      : this.getAllModuleFiles().map((f) => f.file);
-
-    let count = 0;
-    for (const file of files) {
-      let content: string;
-      try {
-        content = readFileSync(file, 'utf-8');
-      } catch {
-        continue;
-      }
-      const lines = content.split('\n').filter((l) => l.trim());
-      for (const line of lines) {
-        const record = this.parseLogLine(line, '');
-        if (!record) {
-          continue;
-        }
-        if (input.level && record.level !== input.level) {
-          continue;
-        }
-        if (input.start_time !== undefined && record.created < input.start_time) {
-          continue;
-        }
-        if (input.end_time !== undefined && record.created > input.end_time) {
-          continue;
-        }
-        count++;
-      }
+    if (input.source) {
+      conditions.push({ field: 'source', operator: Operator.EQ, value: input.source });
     }
-    output.count = count;
+    if (input.start_time !== undefined) {
+      conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
+    }
+    if (input.end_time !== undefined) {
+      conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
+    }
+
+    output.count = await this.relationDb.count(
+      LOG_RECORD_TABLE,
+      conditions.length > 0 ? conditions : undefined,
+    );
     return true;
   }
 
@@ -780,73 +428,42 @@ export class LogService {
     const scope = String(input.scope);
 
     if (scope === 'health') {
+      const total = await this.relationDb.count(LOG_RECORD_TABLE);
       output.data = {
         enabled: this.enabled,
-        log_dir: this.logDir,
-        dir_exists: existsSync(this.logDir),
-        max_file_size: this.maxFileSize,
+        retention_days: this.retentionDays,
+        max_log_count: this.maxLogCount,
+        total_count: total,
       };
     } else if (scope === 'volume') {
-      const allFiles = this.getAllModuleFiles();
-      let totalSize = 0;
-      for (const { file } of allFiles) {
-        try {
-          totalSize += statSync(file).size;
-        } catch {
-          // 忽略
-        }
-      }
+      const total = await this.relationDb.count(LOG_RECORD_TABLE);
       output.data = {
-        file_count: allFiles.length,
-        total_size_bytes: totalSize,
-        total_size_mb: Math.round((totalSize / (1024 * 1024)) * 100) / 100,
+        record_count: total,
       };
     } else if (scope === 'levelDistribution') {
-      const allFiles = this.getAllModuleFiles();
+      const rows = this.relationDb.queryRaw<{ level: string; count: number }>(
+        `SELECT "level", COUNT(*) AS "count" FROM "${LOG_RECORD_TABLE}" GROUP BY "level"`,
+      );
       const distribution: Record<string, number> = {
         DEBUG: 0, INFO: 0, WARN: 0, ERROR: 0,
       };
-      for (const { file } of allFiles) {
-        let content: string;
-        try {
-          content = readFileSync(file, 'utf-8');
-        } catch {
-          continue;
-        }
-        const lines = content.split('\n').filter((l) => l.trim());
-        for (const line of lines) {
-          const record = this.parseLogLine(line, '');
-          if (record && record.level in distribution) {
-            distribution[record.level]++;
-          }
+      for (const r of rows) {
+        const level = String(r.level);
+        if (level in distribution) {
+          distribution[level] = Number(r.count);
         }
       }
       output.data = { distribution };
     } else if (scope === 'sourceDistribution') {
-      if (!existsSync(this.logDir)) {
-        output.data = { modules: [] };
-      } else {
-        const modules = readdirSync(this.logDir).filter((f) => {
-          try {
-            return statSync(join(this.logDir, f)).isDirectory();
-          } catch {
-            return false;
-          }
-        });
-        const sources = modules.map((mod) => {
-          const files = this.getModuleFiles(mod);
-          let size = 0;
-          for (const file of files) {
-            try {
-              size += statSync(file).size;
-            } catch {
-              // 忽略
-            }
-          }
-          return { module: mod, file_count: files.length, size_bytes: size };
-        });
-        output.data = { sources };
-      }
+      const rows = this.relationDb.queryRaw<{ source: string; count: number }>(
+        `SELECT "source", COUNT(*) AS "count" FROM "${LOG_RECORD_TABLE}" GROUP BY "source" ORDER BY "count" DESC`,
+      );
+      output.data = {
+        sources: rows.map((r) => ({
+          module: String(r.source),
+          record_count: Number(r.count),
+        })),
+      };
     } else {
       output.error = `未知的可视化范围: ${scope}`;
       output.error_code = 'INVALID_SCOPE';
@@ -917,6 +534,7 @@ export class LogService {
     _context: LogContext,
     output: ConfigLogOutput,
   ): Promise<boolean> {
+    let agingChanged = false;
     if (input.enabled !== undefined) {
       this.enabled = input.enabled;
       await this.config.set('enabled', input.enabled, 'BOOLEAN', 'LogProvider 是否启用');
@@ -928,35 +546,33 @@ export class LogService {
       this.defaultLevel = input.default_level;
       await this.config.set('default_level', input.default_level, 'STRING', '默认日志级别');
     }
-    if (input.file_path !== undefined) {
-      this.logDir = input.file_path;
-      await this.config.set('file_path', input.file_path, 'STRING', '日志文件根目录');
-    }
-    if (input.max_file_size !== undefined) {
-      if (input.max_file_size <= 0) throw new ValidationError('max_file_size must be positive');
-      this.maxFileSize = input.max_file_size;
-      await this.config.set('max_file_size', input.max_file_size, 'INT', '单文件最大大小（字节）');
-    }
     if (input.retention_days !== undefined) {
-      if (input.retention_days < 0) throw new ValidationError('retention_days must be non-negative');
+      if (!Number.isInteger(input.retention_days) || input.retention_days < 0) {
+        throw new ValidationError('retention_days must be a non-negative integer');
+      }
       this.retentionDays = input.retention_days;
       await this.config.set('retention_days', input.retention_days, 'INT', '日志保留天数');
+      agingChanged = true;
     }
-    if (input.write_mode !== undefined) {
-      if (!['FILE', 'SQLITE', 'BOTH'].includes(input.write_mode)) {
-        throw new ValidationError('write_mode must be FILE/SQLITE/BOTH');
+    if (input.max_log_count !== undefined) {
+      if (!Number.isInteger(input.max_log_count) || input.max_log_count < 0) {
+        throw new ValidationError('max_log_count must be a non-negative integer');
       }
-      this.writeMode = input.write_mode as WriteMode;
-      await this.config.set('write_mode', input.write_mode, 'STRING', '写入模式');
+      this.maxLogCount = input.max_log_count;
+      await this.config.set('max_log_count', input.max_log_count, 'INT', '日志最大保留条数');
+      agingChanged = true;
+    }
+
+    // 老化参数变更后立即执行一次清理，使新配置即时生效
+    if (agingChanged) {
+      await this.applyAging();
     }
 
     output.config = {
       enabled: this.enabled,
       default_level: this.defaultLevel,
-      file_path: this.logDir,
-      max_file_size: this.maxFileSize,
       retention_days: this.retentionDays,
-      write_mode: this.writeMode,
+      max_log_count: this.maxLogCount,
     };
     return true;
   }
@@ -967,6 +583,8 @@ export class LogService {
     source?: string;
     keyword?: string;
     trace_id?: string;
+    work_id?: string;
+    interact_id?: string;
     log_source?: string;
     start_time?: number;
     end_time?: number;
@@ -986,6 +604,12 @@ export class LogService {
     }
     if (options.trace_id) {
       conditions.push({ field: 'trace_id', operator: Operator.LIKE, value: `%${options.trace_id}%` });
+    }
+    if (options.work_id) {
+      conditions.push({ field: 'work_id', operator: Operator.EQ, value: options.work_id });
+    }
+    if (options.interact_id) {
+      conditions.push({ field: 'interact_id', operator: Operator.EQ, value: options.interact_id });
     }
     if (options.log_source) {
       conditions.push({ field: 'metadata', operator: Operator.LIKE, value: `%"log_source":"${options.log_source}"%` });
@@ -1011,18 +635,7 @@ export class LogService {
     const rows = await this.relationDb.select(LOG_RECORD_TABLE, selectOpts as any);
     const total = await this.relationDb.count(LOG_RECORD_TABLE, conditions);
 
-    let logs: LogRecord[] = rows.map((r) => ({
-      id: String(r.id),
-      created: Number(r.created),
-      updated: Number(r.updated),
-      level: String(r.level),
-      source: String(r.source),
-      message: String(r.message),
-      trace_id: r.trace_id ? String(r.trace_id) : undefined,
-      caller: r.caller ? String(r.caller) : undefined,
-      metadata: r.metadata ? (() => { try { return JSON.parse(String(r.metadata)) as Record<string, unknown>; } catch { return undefined; } })() : undefined,
-      elapsed_ms: r.elapsed_ms ? Number(r.elapsed_ms) : undefined,
-    }));
+    const logs: LogRecord[] = rows.map((r) => this.rowToLogRecord(r));
 
     return { logs, total };
   }
@@ -1033,23 +646,25 @@ export class LogService {
     end_time?: number;
   }): Promise<{ distribution: Array<{ level: string; count: number }> }> {
     this.ensureEnabled();
-    const conditions: Condition[] = [];
+    const conditions: string[] = [];
+    const params: unknown[] = [];
     if (options?.start_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.GE, value: options.start_time });
+      conditions.push(`"created" >= ?`);
+      params.push(options.start_time);
     }
     if (options?.end_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.LE, value: options.end_time });
+      conditions.push(`"created" <= ?`);
+      params.push(options.end_time);
     }
 
-    const rows = await this.relationDb.select(LOG_RECORD_TABLE, {
-      fields: ['level', 'COUNT(*) as count'],
-      conditions: conditions.length > 0 ? conditions : undefined,
-      group_by: 'level',
-      order_by: [{ field: 'count', direction: 'DESC' }],
-    } as any);
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const rows = this.relationDb.queryRaw<{ level: string; count: number }>(
+      `SELECT "level", COUNT(*) AS "count" FROM "${LOG_RECORD_TABLE}"${where} GROUP BY "level" ORDER BY "count" DESC`,
+      params,
+    );
 
     return {
-      distribution: rows.map((r: Record<string, unknown>) => ({
+      distribution: rows.map((r) => ({
         level: String(r.level),
         count: Number(r.count),
       })),

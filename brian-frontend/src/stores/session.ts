@@ -81,27 +81,32 @@ export const useSessionStore = defineStore('session', () => {
         for (const b of msg.blocks) {
           loadedBlocks.push(b)
         }
-      } else if (msg.role === 'assistant' && msg.content) {
-        // 兜底：如果 blocks 为空但 content 存在，构造一个 TextParagraph 块
-        loadedBlocks.push({
-          id: `block-text-${msg.id}`,
-          msgId: msg.id,
-          role: 'assistant',
-          type: 'TextParagraph',
-          content: msg.content,
-          meta: { status: 'done', createdAt: msg.timestamp || Date.now(), updatedAt: Date.now() },
-        } as Block)
       }
+      // ===== 原始代码（保留参考）：blocks 为空时为 assistant 消息构造 TextParagraph 兜底块 =====
+      // 该兜底导致系统回复同时以 MessageCard（消息框）与 TextParagraph（纯文本段落）重复展示，
+      // 不符合「避免与官方 MessageCard 产生双份重复渲染」的要求，故移除。系统回复内容统一由
+      // messages 经 MessageCard 渲染，ThinkingChain 等思考块仅用于思考过程弹窗采集。
+      // else if (msg.role === 'assistant' && msg.content) {
+      //   loadedBlocks.push({
+      //     id: `block-text-${msg.id}`,
+      //     msgId: msg.id,
+      //     role: 'assistant',
+      //     type: 'TextParagraph',
+      //     content: msg.content,
+      //     meta: { status: 'done', createdAt: msg.timestamp || Date.now(), updatedAt: Date.now() },
+      //   } as Block)
+      // }
     }
     blocks.value = loadedBlocks
     triggerRef(blocks)
   }
 
-  async function loadExchanges(sessionId: string, userId: string) {
-    try {
-      await chatApi.exchanges(sessionId, userId)
-    } catch { /* ignore */ }
-  }
+  // ===== 原始 loadExchanges（保留参考）：请求 /api/chat/exchanges 后丢弃结果，属冗余无实际用途的请求 =====
+  // async function loadExchanges(sessionId: string, userId: string) {
+  //   try {
+  //     await chatApi.exchanges(sessionId, userId)
+  //   } catch { /* ignore */ }
+  // }
 
   async function loadDag(sessionId: string, _userId: string) {
     try {
@@ -148,9 +153,10 @@ export const useSessionStore = defineStore('session', () => {
       // ===== 修改后的布局 =====
       // 规则1：对用户提问的系统回答放在提问正下方（问答同列，回答位于提问下方一行）
       // 规则2：引用方与被引用方的最下面的一个消息框处于相同的纵坐标（引用两边对齐底部行）
-      const NODE_MAP_ROW_H = 190
-      const NODE_MAP_COL_W = 260
-      const NODE_MAP_BASE_Y = 120
+      // 消息框尺寸放大 1.5 倍后，同步放大行高/列宽/基准偏移，避免节点重叠
+      const NODE_MAP_ROW_H = 285
+      const NODE_MAP_COL_W = 390
+      const NODE_MAP_BASE_Y = 180
 
       const nodes: ChatMapNode[] = msgNodes.map((n) => ({
         id: String(n.info_id ?? n.id ?? ''),
@@ -554,7 +560,7 @@ export const useSessionStore = defineStore('session', () => {
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
     thinkingLoading, dagLoading, blocksLoading,
     planning, thinkingDag, agentExecutions,
-    setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadExchanges, loadDag,
+    setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,

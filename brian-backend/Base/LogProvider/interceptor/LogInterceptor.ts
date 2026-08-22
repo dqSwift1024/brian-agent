@@ -75,6 +75,12 @@ export class LogInterceptor implements Interceptor {
         data.trace_id = traceId;
       }
     }
+    // 从 input 中提取 work_id 和 interact_id
+    if (ctx.input && typeof ctx.input === 'object') {
+      const input = ctx.input as { work_id?: string; interact_id?: string };
+      if (input.work_id) data.work_id = input.work_id;
+      if (input.interact_id) data.interact_id = input.interact_id;
+    }
 
     // fire-and-forget：不阻塞业务方法
     this.logService.addLog({ data }, {} as never, {} as never).catch(() => {});
@@ -117,6 +123,13 @@ export class LogInterceptor implements Interceptor {
       if (caller) {
         data.caller = caller;
       }
+    }
+
+    // 从 input 中提取 work_id 和 interact_id
+    if (ctx.input && typeof ctx.input === 'object') {
+      const input = ctx.input as { work_id?: string; interact_id?: string };
+      if (input.work_id) data.work_id = input.work_id;
+      if (input.interact_id) data.interact_id = input.interact_id;
     }
 
     // fire-and-forget：不阻塞业务方法

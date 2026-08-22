@@ -29,8 +29,9 @@ export const chatApi = {
     request<{ sessions: ChatSession[] }>(`/chat/list?userId=${encodeURIComponent(userId)}${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}${startTime ? `&start_time=${startTime}` : ''}${endTime ? `&end_time=${endTime}` : ''}`).then(r => r.sessions),
   history: (sessionId: string, userId: string) =>
     request<{ messages: ChatMessage[] }>(`/chat/history/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.messages),
-  exchanges: (sessionId: string, userId: string) =>
-    request<{ exchanges: unknown[] }>(`/chat/exchanges/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.exchanges),
+  // ===== 原始 exchanges 方法（保留参考）：前端加载后丢弃结果、无实际用途，已移除前端调用 =====
+  // exchanges: (sessionId: string, userId: string) =>
+  //   request<{ exchanges: unknown[] }>(`/chat/exchanges/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.exchanges),
   dag: (sessionId: string, userId: string) =>
     request<{ work_id: string; nodes: DagNode[]; edges: DagEdge[] }>(`/chat/dag?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}`),
   sendMessage: (sessionId: string, content: string, citingIds?: string[], selectedMsgIds?: string[]) =>

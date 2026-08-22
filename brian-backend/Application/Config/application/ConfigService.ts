@@ -1134,10 +1134,8 @@ export class ConfigService {
       const input: any = {};
       if (prefix.startsWith('log_provider.enabled')) input.enabled = value as boolean;
       else if (prefix.startsWith('log_provider.default_level')) input.default_level = value as string;
-      else if (prefix.startsWith('log_provider.file_path')) input.file_path = value as string;
-      else if (prefix.startsWith('log_provider.max_file_size')) input.max_file_size = value as number;
       else if (prefix.startsWith('log_provider.retention_days')) input.retention_days = value as number;
-      else if (prefix.startsWith('log_provider.write_mode')) input.write_mode = value as string;
+      else if (prefix.startsWith('log_provider.max_log_count')) input.max_log_count = value as number;
       const output: any = {};
       await this.logAccess.configLog(input as ConfigLogInput, {} as LogContext, output);
       return;

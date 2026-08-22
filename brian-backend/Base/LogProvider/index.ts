@@ -31,6 +31,9 @@ export {
   ConfigLogOutput,
   LOG_RULE_TABLE,
   LOG_CONFIG_TABLE,
+  LOG_RECORD_TABLE,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_MAX_LOG_COUNT,
 } from './domain/types';
 
-export type { LogData, LogRecord, LogRule, WriteMode } from './domain/types';
+export type { LogData, LogRecord, LogRule } from './domain/types';
