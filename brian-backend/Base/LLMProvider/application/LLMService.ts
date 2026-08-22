@@ -847,6 +847,23 @@ export class LLMService {
       }
     }
 
+    // 清理缓存中已失效的模型（本次拉取结果中已不存在的模型，如已下线的 Shutdown / Retiring）
+    const freshIds = parsedModels.map((m) => m.modelId).filter((id) => !!id);
+    if (freshIds.length > 0) {
+      await this.relationDb.delete(LLM_CACHE_TABLE, [
+        {
+          field: 'llm_provider_id',
+          operator: Operator.EQ,
+          value: input.llm_provider_id,
+        },
+        {
+          field: 'llm_title',
+          operator: Operator.NOT_IN,
+          value: freshIds,
+        },
+      ]);
+    }
+
     // 仅在成功获取并保存模型后更新模型列表缓存时间
     await this.updateModelsCacheTimestamp(input.llm_provider_id);
 
@@ -1384,6 +1401,15 @@ export class LLMService {
         throw new NotFoundError('LLM', candidateIds[0]);
       }
       throw new ValidationError(lastError);
+    }
+
+    // no_fallback 模式（如模型测试）仅调用指定模型，直接回传该模型自身的调用错误，
+    // 不包装成"所有可用模型均调用失败"的降级语义
+    if (input.no_fallback) {
+      output.error = lastError || '模型调用失败';
+      output.error_code = lastErrorCode || 'EXEC_FAILED';
+      output.duration_ms = Date.now() - startTime;
+      return false;
     }
 
     output.error = `所有可用模型均调用失败 (尝试了 ${maxAttempts} 个模型): ${lastError}`;

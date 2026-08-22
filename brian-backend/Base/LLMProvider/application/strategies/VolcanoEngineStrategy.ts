@@ -46,6 +46,10 @@ export class VolcanoEngineStrategy extends BaseLLMStrategy {
     const result: ParsedModelItem[] = [];
     for (const m of modelsArray) {
       if (!m || typeof m !== 'object') continue;
+      // 火山方舟特有：过滤已下线（Shutdown）/ 即将下线（Retiring）的模型，
+      // 避免列表中出现无法调用的模型（其余提供商不使用该 status 语义，故只在火山策略中过滤）
+      const status = String(m.status ?? '').trim().toLowerCase();
+      if (status === 'shutdown' || status === 'retiring') continue;
       // 关键差异：火山方舟必须用带版本号的 `id`，不能用裸族名 `name`
       const rawName = String(m.id || m.name || '');
       if (!rawName) continue;

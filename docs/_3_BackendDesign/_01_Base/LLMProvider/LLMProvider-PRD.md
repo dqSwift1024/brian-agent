@@ -177,8 +177,10 @@
 1. 根据 ID 获取 LLM 提供商信息；
 2. 缓存检查：仅在未指定 `force=true` 且 `models_fetched_at` 未过期时直接返回 `llm_cache` 本地缓存列表；
 3. 调用提供商 API（依据配置的 `models_path` 路径及 API Key）动态获取模型列表，通用兼容标准响应结构（如 `data` / `models` 数组，动态解析 `id`/`name`、`displayName`/`description`、`inputTokenLimit`/`max_tokens` 等）；
+   - 火山方舟（Volcano Engine）策略会额外解析模型 `status` 字段，过滤掉 `Shutdown`（已下线）/ `Retiring`（即将下线）的模型，避免列表中出现无法调用的模型（其余提供商不使用该 `status` 语义，不做过滤）；
 4. 将模型信息（含 `llm_param` JSON 参数）通过 RelationDBProvider 写入 `llm_cache` 表（upsert 语义）；
-5. 仅在远程请求成功后更新 `models_fetched_at` 缓存时间戳（请求失败或网络异常时不更新缓存时间戳）；
+5. 清理缓存：删除 `llm_cache` 中本次拉取结果已不存在的模型（如同步移除已下线的模型），使缓存与提供商当前模型列表保持一致；
+6. 仅在远程请求成功后更新 `models_fetched_at` 缓存时间戳（请求失败或网络异常时不更新缓存时间戳）；
 
 **返回**：Boolean，表示获取是否完成；模型列表通过 output 参数返回
 
@@ -292,6 +294,7 @@
 | system | STRING | N | 系统提示词，前置为 system 消息 |
 | temperature | NUMBER | N | 采样温度 |
 | max_tokens | NUMBER | N | 最大 Token 数，未指定时使用模型默认 max_tokens |
+| no_fallback | BOOLEAN | N | 是否禁用模型降级回退；为 true 时仅调用指定模型（`maxAttempts = 1`），不降级到默认/其他启用模型 |
 | extra | Record\<string, unknown\> | N | 其他透传参数，原样进入请求体 |
 
 **处理流程**：
@@ -308,6 +311,7 @@
    - 发起 HTTP 请求，若成功（HTTP 200 且返回合法数据），提取 `result`、`input_tokens`、`output_tokens`、`duration_ms`，更新 `llm_usage` 统计并返回 `true`；
    - 若遇到 HTTP 429 限流、网络超时、连接异常或服务商错误，记录调试日志并自动无缝回退至队列中的下一个候选模型；
 3. **全失败收敛**：若队列中所有候选模型均尝试失败，汇总错误信息写入 `output.error` / `output.error_code` 并返回 `false`。
+   - 当 `no_fallback = true` 时，仅尝试指定模型，失败后 `output.error` 直接回传该模型自身的调用错误（如 `LLM 调用失败: HTTP 404 ...`），不包装成"所有可用模型均调用失败"的降级语义。
 
 **出参（ExecLLMOutput extends Output）**：
 
@@ -424,7 +428,7 @@
 #### 3.5.2. 内置策略实现
 
 1. **BaseLLMStrategy / OpenAIStrategy**：
-   - 适用于 OpenAI、DeepSeek、Moonshot、Zhipu AI、Qwen、SiliconFlow、OpenRouter、Groq、Together、火山引擎等通用 OpenAI 兼容服务商；
+   - 适用于 OpenAI、DeepSeek、Moonshot、Zhipu AI、Qwen、SiliconFlow、OpenRouter、Groq、Together 等通用 OpenAI 兼容服务商；
    - 默认路由：`v1/chat/completions`、`v1/models`、`v1/embeddings`；
    - 标准鉴权：`Authorization: Bearer <api_key>`。
 2. **GoogleStrategy**：
@@ -441,6 +445,10 @@
 4. **OllamaStrategy**：
    - 适用于本地部署的 Ollama / 本地模型；
    - 免鉴权适配，支持 Ollama 原生 `/api/tags` 列表及 details 参数解析。
+5. **VolcanoEngineStrategy**（火山方舟）：
+   - 适用于火山方舟 ARK（`volces.com` / `ark.cn-beijing`）；
+   - 模型列表解析时优先取带版本号的完整 `id`（如 `doubao-pro-32k-241215`）而非裸族名 `name`，避免调用时触发 `InvalidEndpointOrModel.NotFound` 404；
+   - 过滤 `status` 为 `Shutdown`（已下线）/ `Retiring`（即将下线）的模型，避免列表中出现无法调用的模型（该 `status` 语义为火山方舟特有，其他提供商不采用）。
 
 #### 3.5.3. 策略工厂（LLMStrategyFactory）
 

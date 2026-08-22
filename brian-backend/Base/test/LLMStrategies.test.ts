@@ -234,5 +234,21 @@ describe('LLM Strategies & Factory', () => {
       expect(list).toHaveLength(1);
       expect(list[0].modelId).toBe('some-bare-model');
     });
+
+    it('parseListModelsResponse 应该过滤掉已下线 / 即将下线的模型', () => {
+      const json = {
+        data: [
+          { id: 'doubao-pro-32k-241215', name: 'doubao-pro-32k', status: 'Shutdown' },
+          { id: 'doubao-seed-1-8-251228', name: 'doubao-seed-1-8', status: 'Retiring' },
+          { id: 'doubao-seed-2-1-pro-260628', name: 'doubao-seed-2-1-pro' },
+          { id: 'glm-5-2-260617', name: 'glm-5-2', status: '' },
+        ],
+      };
+      const list = strategy.parseListModelsResponse(json, JSON.stringify(json));
+      expect(list.map((m) => m.modelId)).toEqual([
+        'doubao-seed-2-1-pro-260628',
+        'glm-5-2-260617',
+      ]);
+    });
   });
 });
