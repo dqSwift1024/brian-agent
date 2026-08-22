@@ -49,14 +49,19 @@ const planning = computed<PlanningData | null>(() => {
 const taskDag = computed(() => planning.value?.taskDag ?? null)
 const agentDag = computed(() => planning.value?.agentDag ?? null)
 
-// 将思考块按 Agent 类型分组：工作 Agent（WORKER）/ Writer / 其他系统 Agent（Planner / Evolutor）
-function typeOf(b: ThinkingBlock): string {
-  return (b.agentInfo?.type || 'WORKER').toUpperCase()
-}
+// ===== 原始代码（保留参考）：按 Agent 类型分组的类型判断工具（改为「执行过程」聚合展示后不再使用） =====
+// function typeOf(b: ThinkingBlock): string {
+//   return (b.agentInfo?.type || 'WORKER').toUpperCase()
+// }
 
-const workAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'WORKER'))
-const writerAgent = computed<ThinkingBlock | null>(() => thinkingBlocks.value.find((b) => typeOf(b) === 'WRITER') ?? null)
-const systemAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'PLANNER' || typeOf(b) === 'EVOLUTOR' || typeOf(b) === 'INTENT'))
+// ===== 原始代码（保留参考）：按 Agent 类型分组为 工作 Agent / Writer / 系统 Agent 三个独立区块 =====
+// const workAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'WORKER'))
+// const writerAgent = computed<ThinkingBlock | null>(() => thinkingBlocks.value.find((b) => typeOf(b) === 'WRITER') ?? null)
+// const systemAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'PLANNER' || typeOf(b) === 'EVOLUTOR' || typeOf(b) === 'INTENT'))
+
+// ===== 修改后：执行过程列表，按 Agent 执行顺序聚合所有 Agent（Intent / Planner / Worker / Writer / Evolutor） =====
+// thinkingBlocks 已按执行顺序返回（Intent 优先，其余按 orchestration_agent_execution.created ASC）
+const executionAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value)
 
 // 整体的"思考中"状态：任一 Agent 处于思考中（RUNNING）即整体显示"思考中"
 const overallStreaming = computed(() => {
@@ -130,56 +135,30 @@ function close() {
             <span>正在独立读取各 Agent 节点的思考输出...</span>
           </div>
 
-          <!-- 4. 工作 Agent（每个 Agent 独立：CoT/ReAct Canvas + Prompt + 模型输出 + Token/耗时） -->
-          <section v-if="workAgents.length > 0" class="mt-2.5">
+          <!-- 4. 执行过程（按 Agent 执行顺序聚合所有 Agent 的执行过程列表） -->
+          <section v-if="executionAgents.length > 0" class="mt-2.5">
             <div class="flex items-center gap-1.5 text-xs font-bold text-purple-900 dark:text-purple-200 mb-1 px-1">
               <Brain :size="13" class="text-purple-600 dark:text-purple-400" />
-              <span>工作 Agent (Work Agents)</span>
-              <span class="text-[10px] font-normal text-apple-gray-400">共 {{ workAgents.length }} 个</span>
+              <span>执行过程 (Execution Process)</span>
+              <span class="text-[10px] font-normal text-apple-gray-400">共 {{ executionAgents.length }} 个 Agent，按执行顺序排列</span>
             </div>
             <div
-              v-for="block in workAgents"
+              v-for="(block, idx) in executionAgents"
               :key="block.id"
               :data-agent-id="block.agentInfo?.id"
               class="rounded-xl transition-shadow"
             >
+              <div class="flex items-center gap-1 px-1 pb-0.5">
+                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-100/80 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                  {{ idx + 1 }}
+                </span>
+                <span class="text-[10px] text-apple-gray-400">{{ block.agentInfo?.name || 'Agent' }}</span>
+              </div>
               <ThinkingBlockView
                 :block="block"
                 hide-context
                 default-tab="io"
-                :start-expanded="focusedAgentId === block.agentInfo?.id || thinkingBlocks.length <= 2"
-              />
-            </div>
-          </section>
-
-          <!-- 5. Writer Agent（Prompt + 模型输出） -->
-          <section v-if="writerAgent" class="mt-2.5">
-            <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-200 mb-1 px-1">
-              <Brain :size="13" class="text-emerald-600 dark:text-emerald-400" />
-              <span>表达 Agent (Writer)</span>
-            </div>
-            <div :data-agent-id="writerAgent.agentInfo?.id">
-              <ThinkingBlockView
-                :block="writerAgent"
-                hide-context
-                default-tab="io"
-                :start-expanded="true"
-              />
-            </div>
-          </section>
-
-          <!-- 其他系统 Agent（Planner / Evolutor） -->
-          <section v-if="systemAgents.length > 0" class="mt-2.5">
-            <div class="flex items-center gap-1.5 text-xs font-bold text-apple-gray-600 dark:text-apple-gray-300 mb-1 px-1">
-              <Brain :size="13" class="text-apple-gray-500 dark:text-apple-gray-400" />
-              <span>系统 Agent (Planner / Evolutor)</span>
-            </div>
-            <div v-for="block in systemAgents" :key="block.id" :data-agent-id="block.agentInfo?.id">
-              <ThinkingBlockView
-                :block="block"
-                hide-context
-                default-tab="io"
-                :start-expanded="false"
+                :start-expanded="focusedAgentId === block.agentInfo?.id || executionAgents.length <= 2"
               />
             </div>
           </section>

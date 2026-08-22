@@ -7,7 +7,7 @@
 4. 最近工作与相关知识/背景
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   Database,
   UserRound,
@@ -22,13 +22,20 @@ import {
   Key,
   Shuffle,
   ListOrdered,
-  CheckSquare
+  CheckSquare,
+  ChevronRight
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
 
 const props = defineProps<{
   blocks: ThinkingBlock[]
 }>()
+
+// 上下文环境整体折叠状态（默认展开）
+const isContextCollapsed = ref(false)
+
+// 引用消息与上下文背景的标签切换（默认「全部」）
+const activeCategoryTab = ref<string>('all')
 
 interface ContextView {
   userProfile?: Record<string, unknown>
@@ -130,6 +137,21 @@ const collectionCategoryStats = computed(() => [
   { key: 'selected', name: '手动勾选消息', sourceKey: 'SELECTED', count: selectedCount.value, icon: CheckSquare, badgeCls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200', bgCls: 'bg-blue-50/40 dark:bg-blue-950/20', borderCls: 'border-blue-200/40', textCls: 'text-blue-800 dark:text-blue-300', msgs: agg.value.selectedMessages || [] },
 ])
 
+// 当前激活标签对应的采集方式分类（'all' 时返回 null，表示展示全部）
+const activeCategoryStat = computed(() => {
+  if (activeCategoryTab.value === 'all') return null
+  return collectionCategoryStats.value.find((s) => s.key === activeCategoryTab.value) ?? null
+})
+
+// 根据激活标签计算需要展示的分类列表（仅保留有消息的分类）
+const displayedCategoryStats = computed(() => {
+  if (activeCategoryTab.value === 'all') {
+    return collectionCategoryStats.value.filter((s) => s.msgs.length > 0)
+  }
+  const stat = activeCategoryStat.value
+  return stat && stat.msgs.length > 0 ? [stat] : []
+})
+
 const hasAny = computed(() => Boolean(
   (agg.value.userProfile && Object.keys(agg.value.userProfile).length > 0) ||
   totalCitedMessagesCount.value > 0 ||
@@ -162,16 +184,22 @@ function msgContent(val: unknown): string {
 <template>
   <div v-if="hasAny" class="my-2.5 p-3 rounded-xl border border-purple-200/90 dark:border-purple-800/80 bg-gradient-to-br from-purple-50/70 to-blue-50/40 dark:from-purple-950/40 dark:to-blue-950/20 shadow-sm select-text">
     <div class="flex items-center justify-between pb-2 border-b border-purple-100 dark:border-purple-900/40 mb-2">
-      <div class="flex items-center gap-2">
-        <Database :size="15" class="text-purple-600 dark:text-purple-400" />
-        <span class="text-xs font-bold text-purple-900 dark:text-purple-200">运行与对话上下文环境 (Context)</span>
-      </div>
-      <span v-if="agg.strategy" class="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-medium">
+      <button
+        type="button"
+        class="flex items-center gap-2 text-left min-w-0 flex-1 cursor-pointer"
+        :aria-expanded="!isContextCollapsed"
+        @click="isContextCollapsed = !isContextCollapsed"
+      >
+        <ChevronRight :size="15" class="text-purple-500 flex-shrink-0 transition-transform duration-200" :class="{ 'rotate-90': !isContextCollapsed }" />
+        <Database :size="15" class="text-purple-600 dark:text-purple-400 flex-shrink-0" />
+        <span class="text-xs font-bold text-purple-900 dark:text-purple-200 truncate">运行与对话上下文环境 (Context)</span>
+      </button>
+      <span v-if="agg.strategy" class="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-medium flex-shrink-0">
         策略: {{ agg.strategy }}
       </span>
     </div>
 
-    <div class="space-y-2.5 text-xs">
+    <div v-if="!isContextCollapsed" class="space-y-2.5 text-xs">
       <!-- 1. 用户画像 -->
       <div v-if="agg.userProfile" class="p-2 rounded-lg bg-white/80 dark:bg-apple-gray-900/80 border border-purple-100 dark:border-purple-900/40">
         <div class="flex items-center gap-1.5 font-semibold text-purple-800 dark:text-purple-300 text-[11px] mb-1">
@@ -193,28 +221,38 @@ function msgContent(val: unknown): string {
           </span>
         </div>
 
-        <!-- 采集方式分类与数量统计网格 (Category Statistics Grid) -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
-          <div
-            v-for="stat in collectionCategoryStats"
-            :key="stat.key"
-            class="flex items-center justify-between p-1.5 rounded border transition-colors"
-            :class="[stat.count > 0 ? stat.bgCls + ' ' + stat.borderCls : 'bg-apple-gray-50/50 dark:bg-apple-gray-800/30 border-apple-gray-100 dark:border-apple-gray-800 opacity-60']"
+        <!-- 采集方式标签页 (Category Tabs)：按标签切换对应的引用消息内容 -->
+        <div class="flex flex-wrap gap-1.5 text-[10px] pt-0.5">
+          <button
+            type="button"
+            class="px-2 py-1 rounded-lg border font-medium transition-colors"
+            :class="activeCategoryTab === 'all'
+              ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
+              : 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300'"
+            @click="activeCategoryTab = 'all'"
           >
-            <div class="flex items-center gap-1 truncate">
-              <component :is="stat.icon" :size="11" class="flex-shrink-0" />
-              <span class="truncate font-medium">{{ stat.name.split('消息')[0] }}</span>
-            </div>
-            <span class="px-1.5 py-0.2 rounded font-mono font-bold flex-shrink-0" :class="stat.badgeCls">
-              {{ stat.count }} 条
-            </span>
-          </div>
+            全部 ({{ totalCitedMessagesCount }})
+          </button>
+          <button
+            v-for="stat in collectionCategoryStats"
+            :key="'tab-' + stat.key"
+            type="button"
+            class="px-2 py-1 rounded-lg border font-medium transition-colors flex items-center gap-1"
+            :class="activeCategoryTab === stat.key
+              ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
+              : (stat.count > 0 ? 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300' : 'bg-apple-gray-50/50 dark:bg-apple-gray-800/30 text-apple-gray-400 border-apple-gray-100 dark:border-apple-gray-800 opacity-60')"
+            @click="activeCategoryTab = stat.key"
+          >
+            <component :is="stat.icon" :size="11" class="flex-shrink-0" />
+            <span class="truncate">{{ stat.name.split('消息')[0] }}</span>
+            <span class="px-1 rounded font-mono font-bold flex-shrink-0" :class="stat.badgeCls">{{ stat.count }}</span>
+          </button>
         </div>
 
-        <!-- 按采集方式分类展开详细消息 -->
+        <!-- 对应标签下的引用消息列表 -->
         <div v-if="totalCitedMessagesCount > 0" class="space-y-2 pt-1">
-          <template v-for="stat in collectionCategoryStats" :key="'list-' + stat.key">
-            <div v-if="stat.msgs.length > 0" class="p-2 rounded-lg border space-y-1" :class="[stat.bgCls, stat.borderCls]">
+          <template v-if="displayedCategoryStats.length > 0">
+            <div v-for="stat in displayedCategoryStats" :key="'list-' + stat.key" class="p-2 rounded-lg border space-y-1" :class="[stat.bgCls, stat.borderCls]">
               <div class="flex items-center justify-between font-semibold text-[11px]" :class="stat.textCls">
                 <div class="flex items-center gap-1.5">
                   <component :is="stat.icon" :size="12" />
@@ -229,6 +267,7 @@ function msgContent(val: unknown): string {
               </ul>
             </div>
           </template>
+          <div v-else class="text-[10px] text-apple-gray-400 italic p-1">该标签下暂无引用的消息</div>
         </div>
         <div v-else class="text-[10px] text-apple-gray-400 italic p-1">会话内未采集到任何关联或引用的消息</div>
       </div>
