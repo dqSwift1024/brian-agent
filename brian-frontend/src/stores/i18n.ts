@@ -21,7 +21,7 @@ const i18nMap: Record<string, Record<Locale, string>> = {
   'info.history': { 'zh-CN': '历史', 'en-US': 'History' },
   'info.memory': { 'zh-CN': '记忆', 'en-US': 'Memory' },
   'info.library': { 'zh-CN': '资料库', 'en-US': 'Library' },
-  'info.tagGraph': { 'zh-CN': 'Tag图', 'en-US': 'Tag Graph' },
+  'info.tagGraph': { 'zh-CN': '涌现', 'en-US': 'Emergence' },
   'info.keywordGraph': { 'zh-CN': '关键词图', 'en-US': 'Keyword Graph' },
   'info.profile': { 'zh-CN': '画像', 'en-US': 'Profile' },
   'learning.start': { 'zh-CN': '开始学习', 'en-US': 'Start Learning' },
