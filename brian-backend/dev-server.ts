@@ -3086,96 +3086,79 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const onlyActive = body.only_active !== false;
         const fanOutLimit = 500; // θ = 500, PRD 扇出熔断阈值
         try {
-          // 1. Search tags matching the query text
-          const matchedTags = ctx.relationDb.queryRaw<{ id: string; tag: string; info_id: string }>(
-            'SELECT DISTINCT "id", "tag", "info_id" FROM "info_tag" WHERE "tag" LIKE ? LIMIT 20',
+          const { GraphContext, SelectGraphInput, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
+          // 1. 搜索匹配的标签文本
+          const matchedTags = ctx.relationDb.queryRaw<{ tag: string; info_id: string }>(
+            'SELECT DISTINCT "tag", "info_id" FROM "info_tag" WHERE "tag" LIKE ? LIMIT 20',
             [`%${query.replace(/%/g, '').replace(/'/g, '')}%`],
           );
           if (!matchedTags || matchedTags.length === 0) {
             sendJson(res, 200, { root_tags: [], paths: [] });
             return;
           }
-          const rootTagMap = new Map<string, { tag: string; info_ids: string[] }>();
+          const tagInfoMap = new Map<string, string[]>();
           for (const t of matchedTags) {
-            if (!rootTagMap.has(t.id)) rootTagMap.set(t.id, { tag: t.tag, info_ids: [] });
-            rootTagMap.get(t.id)!.info_ids.push(t.info_id);
+            const list = tagInfoMap.get(t.tag) ?? [];
+            list.push(t.info_id);
+            tagInfoMap.set(t.tag, list);
           }
-          // Helper: fetch tag info
-          function getTagData(tagId: string): { tag: string; info_ids: string[] } {
-            const rows = ctx.relationDb.queryRaw<{ tag: string; info_id: string }>(
-              'SELECT "tag", "info_id" FROM "info_tag" WHERE "id" = ?', [tagId],
+          // 2. 标签文本 → GraphDB 节点 ID（节点以 node_type='Tag' + content.tag 存储）
+          const findTagNodeId = async (tagText: string): Promise<string> => {
+            const out = new SelectGraphOutput();
+            await ctx.graphDBAccess.selectGraph(
+              { target: GraphTarget.NODE, node_type: 'Tag' } as SelectGraphInput, new GraphContext(), out,
             );
-            return {
-              tag: rows.length > 0 ? rows[0].tag : tagId.substring(0, 8),
-              info_ids: rows.map(r => r.info_id),
-            };
-          }
-          // Helper: compute composite weight for an edge
-          interface WeightedEdge { from_id: string; to_id: string; weight: number; active: boolean; compositeWeight: number }
-          async function computeEdgeWeights(edgeRows: Array<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: number }>, hopDist: number): Promise<WeightedEdge[]> {
-            const results: WeightedEdge[] = [];
-            for (const e of edgeRows) {
-              try {
-                const cw = await ctx.graphDBAccess.computeEdgeWeight(e.id, hopDist);
-                results.push({ from_id: e.from_node_id, to_id: e.to_node_id, weight: e.weight, active: !!e.is_active, compositeWeight: cw });
-              } catch {
-                results.push({ from_id: e.from_node_id, to_id: e.to_node_id, weight: e.weight, active: !!e.is_active, compositeWeight: e.weight });
-              }
+            for (const node of out.list as Array<{ id: string; content: Record<string, unknown> }>) {
+              if (node.content?.['tag'] === tagText) return node.id;
             }
-            results.sort((a, b) => b.compositeWeight - a.compositeWeight);
-            return results;
-          }
-          // BFS traversal with weight ranking
+            return '';
+          };
+          // 3. 查询与 frontier 节点相连的 similarTo 边
+          const fetchEdges = async (frontier: string[]): Promise<Array<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: boolean }>> => {
+            const out = new SelectGraphOutput();
+            await ctx.graphDBAccess.selectGraph({
+              target: GraphTarget.EDGE,
+              edge_type: 'similarTo',
+              conditions: [
+                { field: 'from_node_id', operator: Operator.IN, value: frontier },
+                { field: 'to_node_id', operator: Operator.IN, value: frontier, logic: 'OR' },
+              ],
+            } as SelectGraphInput, new GraphContext(), out);
+            return (out.list as Array<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: boolean }>)
+              .filter((e) => !onlyActive || e.is_active)
+              .slice(0, fanOutLimit);
+          };
+          // 4. BFS 遍历
           interface TraversalNode { id: string; tag: string; info_ids: string[]; depth: number }
           interface TraversalEdge { from_id: string; to_id: string; weight: number; active: boolean; compositeWeight: number }
           const paths: Array<{ root_tag: string; root_id: string; nodes: TraversalNode[]; edges: TraversalEdge[] }> = [];
-          const processedSets: Array<Set<string>> = [];
-          for (const [rootId, rootData] of rootTagMap) {
+          for (const [tagText, infoIds] of tagInfoMap) {
+            const rootId = await findTagNodeId(tagText);
+            if (!rootId) continue;
             const visited = new Set<string>([rootId]);
-            const allNodes: Map<string, TraversalNode> = new Map();
+            const allNodes = new Map<string, TraversalNode>([[rootId, { id: rootId, tag: tagText, info_ids: [...infoIds], depth: 0 }]]);
             const allEdges: TraversalEdge[] = [];
-            allNodes.set(rootId, { id: rootId, tag: rootData.tag, info_ids: [...rootData.info_ids], depth: 0 });
             let frontier = [rootId];
-            for (let d = 0; d < maxDepth; d++) {
-              if (frontier.length === 0) break;
-              const placeholders = frontier.map(() => '?').join(',');
-              const activeFilter = onlyActive ? ' AND "is_active" = 1' : '';
-              // Fetch with limit to fan_out_threshold for safety
-              const edgeRows = ctx.relationDb.queryRaw<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: number }>(
-                `SELECT "id", "from_node_id", "to_node_id", "weight", "is_active" FROM "graph_edge" WHERE "edge_type" = 'similarTo' AND ("from_node_id" IN (${placeholders}) OR "to_node_id" IN (${placeholders}))${activeFilter} LIMIT ${fanOutLimit}`,
-                [...frontier, ...frontier],
-              );
-              if (!edgeRows || edgeRows.length === 0) break;
-              // Compute composite weights and sort
-              const weighted = await computeEdgeWeights(edgeRows, d + 1);
+            for (let d = 0; d < maxDepth && frontier.length > 0; d++) {
+              const edgeRows = await fetchEdges(frontier);
+              if (edgeRows.length === 0) break;
               const nextFrontier: string[] = [];
-              for (const we of weighted) {
-                const neighborId = frontier.includes(we.from_id) ? we.to_id : we.from_id;
+              for (const e of edgeRows) {
+                const neighborId = frontier.includes(e.from_node_id) ? e.to_node_id : e.from_node_id;
                 if (!visited.has(neighborId)) {
                   visited.add(neighborId);
                   nextFrontier.push(neighborId);
-                  const td = getTagData(neighborId);
-                  allNodes.set(neighborId, { id: neighborId, tag: td.tag, info_ids: td.info_ids, depth: d + 1 });
+                  allNodes.set(neighborId, { id: neighborId, tag: neighborId.substring(0, 8), info_ids: [], depth: d + 1 });
                 }
-                allEdges.push({
-                  from_id: we.from_id, to_id: we.to_id,
-                  weight: we.weight, active: we.active,
-                  compositeWeight: we.compositeWeight,
-                });
+                let cw = e.weight;
+                try { cw = await ctx.graphDBAccess.computeEdgeWeight(e.id, d + 1); } catch { /* keep weight */ }
+                allEdges.push({ from_id: e.from_node_id, to_id: e.to_node_id, weight: e.weight, active: !!e.is_active, compositeWeight: cw });
               }
               frontier = nextFrontier;
             }
-            const sig = JSON.stringify([...visited].sort());
-            if (processedSets.some((s) => JSON.stringify([...s].sort()) === sig)) continue;
-            processedSets.push(visited);
-            paths.push({
-              root_tag: rootData.tag,
-              root_id: rootId,
-              nodes: Array.from(allNodes.values()),
-              edges: allEdges,
-            });
+            paths.push({ root_tag: tagText, root_id: rootId, nodes: Array.from(allNodes.values()), edges: allEdges });
           }
-          sendJson(res, 200, { root_tags: Array.from(rootTagMap.values()), paths });
+          sendJson(res, 200, { root_tags: Array.from(tagInfoMap, ([tag, info_ids]) => ({ tag, info_ids })), paths });
         } catch { sendJson(res, 200, { root_tags: [], paths: [] }); }
       } else if (method === 'GET' && /\/api\/memory\/stats\//.test(pathname)) {
         const totalRows = ctx.relationDb.queryRaw<{ cnt: number }>(
