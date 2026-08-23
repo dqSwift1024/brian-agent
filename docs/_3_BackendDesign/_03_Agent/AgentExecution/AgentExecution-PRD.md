@@ -326,3 +326,16 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 **可能存在的问题**：
 - 依赖 PromptCatalog 的 `builtin.think`/`builtin.reflect` 模板已同步新增 `Task:` 行（已同步），否则 Think/Reflect 阶段将缺少任务内容。
+
+### [2026-08-23] 上下文拼接加单条/总量截断，防止 LLM 输入超限
+
+**变更原因**：PLANNING 策略下多 Work Agent 串行执行，每个 Agent 的完整 ReACT trace（含每轮 prompt/response，动辄数十万字符）落库到 `info_raw` 后被后续 Agent 的上下文召回重新拼入 Prompt，形成恶性膨胀，最终 answer 阶段 LLM 输入超限（`Input length 1208188 exceeds 1048566`）。
+
+**修改的方法**：
+- `Agent/shared/signature.ts#formatContextCategories` — 新增 `MAX_ITEM_CHARS=2000`（单条消息截断）与 `MAX_TOTAL_CHARS=150000`（总字符数上限），超出部分截断并标注「…(截断)」；fallback list 分支同样截断。
+
+**影响的端点**：
+- `AgentExecutionService` / `WriterAgentService` / `PlannerAgentService` 的上下文 Prompt 拼接（均复用 `formatContextCategories`）。
+
+**可能存在的问题**：
+- 截断是兜底防护，正常对话远低于上限不受影响；极端超长上下文会丢失部分次要信息（优先保留高优先级来源，逐类截断）。

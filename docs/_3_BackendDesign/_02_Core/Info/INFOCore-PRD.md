@@ -885,3 +885,17 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - 置信度为规则估算而非 LLM 评分，语义加工增益仅覆盖标签/长度/钉住维度，未纳入向量相似度与引用关系；后续可扩展。
+
+### [2026-08-23] context 召回剔除内部执行轨迹（ACT trace），防止 LLM 输入超限
+
+**变更原因**：Work Agent 的完整 ReACT trace（info_type=ACT、内容为 `{"type":"trace",...}` 的超大 JSON，含每轮完整 prompt/response）被落库到 `info_raw` 后，`context` 的时间线/标签/向量/关键词/随机召回不区分 info_type，将其重新拼入上下文，导致后续 Agent 的 Prompt 输入超限（实测单 session 7 条 trace 合计约 270 万字符，过滤后仅剩约 3.5 万字符）。
+
+**修改的方法**：
+- `InfoCoreService.context` — 组装候选映射表前，对 PINNED / CITING / TIMELINE / TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 全部维度统一 `withoutTraces` 过滤；
+- `InfoCoreService.isTraceInfo`（新增私有方法）— 识别 `info_type === ACT` 且 `info` 以 `{"type":"trace"` 开头的内部执行轨迹记录。
+
+**影响的端点**：
+- 后端编排链路中 WorkAgent / PlannerAgent / WriterAgent 的上下文构建（`InfoCore.context`）。
+
+**可能存在的问题**：
+- 仅剔除内部执行轨迹；正常的 REQUEST / RESPONSE / THINK / REFLECT 等语义内容仍参与召回；trace 记录仍落库用于 ChatMap/思考过程展示，仅不再作为 LLM 上下文。

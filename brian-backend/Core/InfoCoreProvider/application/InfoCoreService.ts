@@ -1803,14 +1803,18 @@ export class InfoCoreService {
     }
 
     // 2.2 组装候选映射表
+    // 内部执行轨迹（ACT trace JSON，含每轮完整 prompt/response，动辄数十万字符）不应作为
+    // 上下文重新喂给 LLM，统一剔除，避免 LLM 输入超限（Input length exceeds maximum）。
+    const withoutTraces = (list: InfoRawRecord[]): InfoRawRecord[] =>
+      list.filter((c) => !this.isTraceInfo(c));
     const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
-      [CollectionSource.PINNED, pinnedCandidates],
-      [CollectionSource.CITING, citingCandidates],
-      [CollectionSource.TIMELINE, timelineCandidates],
-      [CollectionSource.TAG_RELATIVE, tagCandidates],
-      [CollectionSource.SIMILARITY, simCandidates],
-      [CollectionSource.KEYWORD, kwCandidates],
-      [CollectionSource.RANDOM, randCandidates],
+      [CollectionSource.PINNED, withoutTraces(pinnedCandidates)],
+      [CollectionSource.CITING, withoutTraces(citingCandidates)],
+      [CollectionSource.TIMELINE, withoutTraces(timelineCandidates)],
+      [CollectionSource.TAG_RELATIVE, withoutTraces(tagCandidates)],
+      [CollectionSource.SIMILARITY, withoutTraces(simCandidates)],
+      [CollectionSource.KEYWORD, withoutTraces(kwCandidates)],
+      [CollectionSource.RANDOM, withoutTraces(randCandidates)],
     ]);
 
     // 2.3 解析优先级顺序并按配置列表确定采集维度
@@ -3045,6 +3049,13 @@ const rawPriority = priorityOrderStr
   /** 判断信息是否为正常结果（非错误信息）。 */
   private isCorrectInfo(record: { handle_result_type?: string }): boolean {
     return (record.handle_result_type ?? DEFAULT_HANDLE_RESULT_TYPE) === HandleResultType.CORRECT;
+  }
+
+  /** 判断是否为内部执行轨迹记录（ACT 类型的 trace JSON，超大中间产物，不应作为上下文）。 */
+  private isTraceInfo(record: { info_type?: string; info?: string }): boolean {
+    if (record.info_type !== InfoType.ACT) return false;
+    const info = String(record.info ?? '').trim();
+    return info.startsWith('{"type":"trace"') || info.startsWith('{"type": "trace"');
   }
 
   private toInfoRawRecord(raw: Record<string, unknown>): InfoRawRecord {
