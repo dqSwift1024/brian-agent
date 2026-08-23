@@ -8,7 +8,7 @@ import {
   Search, Trash2, Plus, ChevronRight, ChevronLeft, ArrowLeft,
   Folder, X, CheckSquare, Square, FileText,
   UserRound, History, RefreshCw, Sparkles, Loader2,
-  Edit3, Check,
+  Tag,
 } from '@lucide/vue'
 import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
 import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
@@ -59,27 +59,35 @@ const historyEndTime = ref('')
 const chatList = ref<ChatSession[]>([])
 const loadingHistory = ref(false)
 const selectedSessions = ref<Set<string>>(new Set())
-const editingSessionId = ref<string | null>(null)
-const editingTitle = ref('')
 
-function startEditTitle(session: ChatSession) {
-  editingSessionId.value = session.sessionId
-  editingTitle.value = session.sessionTitle || session.lastMessage || '新会话'
-}
+// ===== 原始会话标题编辑逻辑（保留参考，已移除卡片内编辑入口）=====
+// const editingSessionId = ref<string | null>(null)
+// const editingTitle = ref('')
+//
+// function startEditTitle(session: ChatSession) {
+//   editingSessionId.value = session.sessionId
+//   editingTitle.value = session.sessionTitle || session.lastMessage || '新会话'
+// }
+//
+// async function saveSessionTitle(sessionId: string) {
+//   const newTitle = editingTitle.value.trim()
+//   if (!newTitle) return
+//   try {
+//     const res = await chatApi.updateTitle(sessionId, newTitle)
+//     const found = chatList.value.find(c => c.sessionId === sessionId)
+//     if (found) {
+//       found.sessionTitle = res.session_title
+//     }
+//   } catch { /* ignore */ }
+//   finally {
+//     editingSessionId.value = null
+//   }
+// }
 
-async function saveSessionTitle(sessionId: string) {
-  const newTitle = editingTitle.value.trim()
-  if (!newTitle) return
-  try {
-    const res = await chatApi.updateTitle(sessionId, newTitle)
-    const found = chatList.value.find(c => c.sessionId === sessionId)
-    if (found) {
-      found.sessionTitle = res.session_title
-    }
-  } catch { /* ignore */ }
-  finally {
-    editingSessionId.value = null
-  }
+const viewingTagsSession = ref<ChatSession | null>(null)
+
+function openViewTags(session: ChatSession) {
+  viewingTagsSession.value = session
 }
 
 async function loadHistory() {
@@ -1382,25 +1390,7 @@ function searchMemoryByEnter() {
                   @click="openSession(item.sessionId)"
                 >
                   <div class="flex items-start justify-between gap-1">
-                    <div v-if="editingSessionId === item.sessionId" class="flex items-center gap-1 min-w-0 flex-1" @click.stop>
-                      <input
-                        v-model="editingTitle"
-                        class="px-1.5 py-0.5 text-xs rounded bg-white dark:bg-apple-gray-800 border border-brian-blue focus:outline-none focus:ring-1 focus:ring-brian-blue w-full min-w-0"
-                        @keyup.enter="saveSessionTitle(item.sessionId)"
-                      />
-                      <button class="p-0.5 rounded text-brian-blue hover:bg-brian-blue/10 flex-shrink-0" title="保存" @click="saveSessionTitle(item.sessionId)">
-                        <Check :size="12" />
-                      </button>
-                      <button class="p-0.5 rounded text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 flex-shrink-0" title="取消" @click="editingSessionId = null">
-                        <X :size="12" />
-                      </button>
-                    </div>
-                    <div v-else class="flex items-center gap-1 min-w-0 flex-1 group">
-                      <p class="text-sm font-semibold truncate">{{ item.sessionTitle || '新会话' }}</p>
-                      <button class="p-0.5 rounded text-apple-gray-400 opacity-80 hover:opacity-100 hover:text-brian-blue hover:bg-brian-blue/10 transition-all flex-shrink-0" title="修改会话名称" @click.stop="startEditTitle(item)">
-                        <Edit3 :size="12" />
-                      </button>
-                    </div>
+                    <p class="text-sm font-semibold truncate min-w-0 flex-1">{{ item.sessionTitle || '新会话' }}</p>
                     <div class="flex items-center gap-0.5 flex-shrink-0">
                       <button class="text-apple-gray-300 hover:text-brian-blue" title="选择" @click.stop="toggleHistorySelect(item.sessionId)">
                         <component :is="selectedSessions.has(item.sessionId) ? CheckSquare : Square" :size="14" />
@@ -1425,9 +1415,13 @@ function searchMemoryByEnter() {
                       <p class="font-medium text-apple-gray-700 dark:text-apple-gray-200 truncate">{{ formatTokens(item.questionChars) }} / {{ formatTokens(item.answerChars) }}</p>
                     </div>
                   </div>
-                  <div class="flex flex-wrap gap-1 overflow-hidden flex-1 min-h-0">
-                    <span v-if="!item.tags || item.tags.length === 0" class="text-xs text-apple-gray-300">无标签</span>
-                    <span v-for="tag in item.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue whitespace-nowrap">#{{ tag }}</span>
+                  <div class="flex flex-wrap gap-1 overflow-hidden flex-1 min-h-0 items-end">
+                    <button
+                      class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-brian-blue bg-brian-blue/5 hover:bg-brian-blue/10 transition-colors"
+                      @click.stop="openViewTags(item)"
+                    >
+                      <Tag :size="12" /> 查看标签
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1470,6 +1464,21 @@ function searchMemoryByEnter() {
             <div class="flex justify-end gap-2 mt-6">
               <button class="btn-secondary" @click="deleteConfirm = null">取消</button>
               <button class="px-3 py-2 text-xs font-medium bg-error-red text-white rounded-lg hover:bg-error-red/90 transition-colors" @click="confirmDelete">确认删除</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 查看标签弹窗 -->
+        <div v-if="viewingTagsSession" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="viewingTagsSession = null">
+          <div class="block-card w-full max-w-md mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">会话标签</h3>
+              <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="viewingTagsSession = null"><X :size="18" /></button>
+            </div>
+            <p class="text-sm text-apple-gray-500 mb-3 truncate">{{ viewingTagsSession.sessionTitle || '新会话' }}</p>
+            <div v-if="!viewingTagsSession.tags || viewingTagsSession.tags.length === 0" class="text-sm text-apple-gray-400 py-4 text-center">无标签</div>
+            <div v-else class="flex flex-wrap gap-2 max-h-64 overflow-y-auto">
+              <span v-for="tag in viewingTagsSession.tags" :key="tag" class="px-2.5 py-1 rounded-full text-sm bg-brian-blue/10 text-brian-blue">#{{ tag }}</span>
             </div>
           </div>
         </div>

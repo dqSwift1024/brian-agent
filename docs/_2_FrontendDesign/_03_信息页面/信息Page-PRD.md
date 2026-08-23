@@ -136,7 +136,7 @@
 ### 7.1 展示
 
 - 数据来源：`GET /api/chat/list?userId=...&keyword=...&start_time=...&end_time=...`（后端 `ChatService.searchSession`），按 `lastTime`（最后一条消息时间戳）倒序渲染。
-- 每条会话以**卡片**形式展示：会话名称（`sessionTitle`）、会话日期（`lastTime`）、输入/输出 Token 消耗（`inputTokens` / `outputTokens`）、问答次数（`qaCount`）、问题/回答字符数（`questionChars` / `answerChars`）、标签列表（`tags`）。
+- 每条会话以**卡片**形式展示：会话名称（`sessionTitle`）、会话日期（`lastTime`）、输入/输出 Token 消耗（`inputTokens` / `outputTokens`）、问答次数（`qaCount`）、问题/回答字符数（`questionChars` / `answerChars`）、「查看标签」按钮（点击弹窗展示该会话全部标签）。卡片内不再直接展示标签。
 - 后端返回字段为 camelCase（`sessionId / sessionTitle / lastTime / messageCount / qaCount / questionChars / answerChars / inputTokens / outputTokens / tags`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
 - 「历史」页签以**会话（session）**为单位展示，会话内容来自 `info_raw` 表中的消息记录（`info_type` 含 REQUEST / RESPONSE / THINK / SKILL / MCP / ACT / REFLECT，其中用户问答即 REQUEST + RESPONSE）；「记忆」页签则以**单条 info** 为单位展示。
 - **布局**：与「记忆」页签一致 —— 左侧日期导航栏 + 右侧内容区（顶部 sticky 搜索工具栏 + 按日期分组的卡片网格）+ 左下角日期热力图。卡片按日期组织，同一天会话排列在同一网格内，不同日期卡片分布在不同分组；所有卡片等宽等高（固定高度）。
@@ -146,8 +146,14 @@
 
 - **自动生成**：用户在某会话发送第一条消息时，若该会话名称为默认占位名（空或「新会话」），后端自动将第一条消息截断前 50 个字符作为会话名称。
 - **锁名规则**：会话已存在特定名称（自动生成或用户手动设置）时，后续消息不会自动覆盖或重新生成名称。
-- **手动修改**：历史 Tab 每条会话卡片提供编辑按钮（Edit3 图标），点击进入内联编辑输入框，回车或点击确认（Check）调用 `PUT /api/chat/session/:sessionId/title` 保存；提供取消（X）退出编辑。
+- **手动修改**：会话名称的手动修改入口位于「对话」页的会话管理侧边栏（编辑按钮 Edit3 图标），点击进入内联编辑输入框，回车或点击确认（Check）调用 `PUT /api/chat/session/:sessionId/title` 保存；提供取消（X）退出编辑。历史 Tab 卡片已移除编辑入口。
 - **展示优先级**：名称优先显示 `sessionTitle`，为空时回退显示「新会话」。
+
+### 7.1.2 标签查看
+
+- 历史 Tab 每条会话卡片提供「查看标签」按钮（Tag 图标 + 文案），点击弹出弹窗（标题「会话标签」+ 会话名称 + 标签 chips）展示该会话的全部标签（`tags`）。
+- 标签为空时弹窗展示「无标签」。
+- 卡片内不再直接展示标签（原 `#tag` chips 内联展示已移除）。
 
 ### 7.2 搜索
 
@@ -167,6 +173,21 @@
 ---
 
 ## 8. 变更记录
+
+### [2026-08-23] 历史会话 Tab：移除卡片编辑按钮、改为「查看标签」弹窗
+
+**变更原因**：历史 Tab 会话卡片的信息框内不需要编辑按钮（会话重命名入口统一收敛到「对话」页侧边栏）；标签此前直接以 chips 内联展示在卡片内，改为通过「查看标签」按钮点击弹窗集中展示，避免卡片内容拥挤。
+
+**修改的方法**：
+- 前端 `InfoView.vue` — 历史 Tab 会话卡片移除会话标题的内联编辑按钮（Edit3 图标）及 `editingSessionId` / `editingTitle` / `startEditTitle` / `saveSessionTitle` 相关逻辑（原逻辑注释保留参考）；标题改为纯文本展示。
+- 前端 `InfoView.vue` — 卡片移除标签内联展示（原 `#tag` chips 区域），改为「查看标签」按钮（Tag 图标），点击打开弹窗展示该会话全部标签（`tags`），无标签时显示「无标签」。
+- 前端 `InfoView.vue` — 引入 `Tag` 图标，移除不再使用的 `Edit3` / `Check` 图标导入。
+
+**影响的端点**：
+- 无（纯前端改动，后端 `/api/chat/list` 返回的 `tags` 字段不变）。
+
+**可能存在的问题**：
+- 「查看标签」弹窗直接使用 `/api/chat/list` 已返回的 `tags` 字段，不额外请求；若后续标签数量增多需分页，可改为单独接口。
 
 ### [2026-08-23] 历史会话 Tab：卡片化展示、统计聚合与布局对齐记忆页
 
