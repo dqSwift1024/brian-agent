@@ -816,6 +816,7 @@ InfoCore 的业务方法通过 `dev-server.ts` 手写路由分发暴露给前端
 | GET | `/api/memory/tag-graph` | `info_tag` | Tag 共现图：节点为去重标签（weight=频次），边为同一 info 上标签的共现对 |
 | GET | `/api/memory/keyword-graph` | `info_keyword` | 关键词共现图：节点为去重关键词（weight=频次），边为同一 info 上关键词的共现对 |
 | GET | `/api/memory/stats/:userId` | `info_raw` | 统计信息总数及按 `info_type` 分布 |
+| DELETE | `/api/memory` | `info_raw` + 派生表 | 按 `info_ids` 批量删除记忆，级联清理 `info_tag` / `info_summary` / `info_keyword` / `info_vector` / `info_graph` |
 
 ### 4.1 info_type → 前端展示类型映射
 
@@ -860,3 +861,27 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - 若当前输入尚未保存至 `info_raw`，时间线最新一条可能为历史 RESPONSE（被误拆为 CURRENT）；标准编排流程由 `SAVE_USER_INPUT` 节点先落库，正常不受影响。
+
+### [2026-08-23] MemoryItem.confidence 由硬编码改为按规则计算
+
+**变更原因**：`mapInfoToMemory` 此前对所有记忆固定返回 `confidence: 1`（前端「置信度」恒为 100%），属占位假数据。改为基于记忆自身属性的规则计算，使置信度真实反映记忆的可信程度。
+
+**置信度定义**：`confidence = 来源可信度（info_type 基础分） + 语义加工增益`，四舍五入保留 2 位小数，收敛到 `[0.05, 0.95]`。
+
+- 来源可信度（info_type → 基础分）：
+  - `SELF_LEARNING` 0.6、`REQUEST` 0.55、`RESPONSE` 0.5、`SKILL`/`MCP`/`AGENT` 0.45、`ACT` 0.4、`REFLECT` 0.35、`THINK` 0.3、其他 0.5。
+- 语义加工增益：
+  - 标签数：`min(标签数, 5) × 0.04`（最多 +0.2）；
+  - 内容长度 ≥ 100 字符：+0.05；
+  - `pin = 1`（用户钉住）：+0.1。
+
+**修改的方法**：
+- `dev-server.ts#mapInfoToMemory` — 恢复 `confidence` 字段，改为调用 `computeMemoryConfidence`；
+- `dev-server.ts#computeMemoryConfidence` — 新增置信度计算函数；
+- `dev-server.ts` 记忆 list/search/tag 三条 SQL — `info_raw` 查询新增 `pin` 列。
+
+**影响的端点**：
+- `GET /api/memory/list`、`GET /api/memory/search`、`GET /api/memory/tag/:userId/:tag` 返回的 `MemoryItem.confidence` 由恒为 1 变为 0.05~0.95 的真实置信度。
+
+**可能存在的问题**：
+- 置信度为规则估算而非 LLM 评分，语义加工增益仅覆盖标签/长度/钉住维度，未纳入向量相似度与引用关系；后续可扩展。

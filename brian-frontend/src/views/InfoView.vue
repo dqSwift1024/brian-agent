@@ -5,13 +5,13 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Clock, Brain, Database, Network, GitBranch,
-  Search, Trash2, Plus, ChevronRight, ArrowLeft,
+  Search, Trash2, Plus, ChevronRight, ChevronLeft, ArrowLeft,
   Folder, X, CheckSquare, Square, FileText,
   UserRound, History, RefreshCw, Sparkles, Loader2,
   Edit3, Check,
 } from '@lucide/vue'
-import { chatApi, memoryApi, libraryApi, userProfileApi, visualizationApi } from '@/api'
-import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData, MessageGraphNode, MessageGraphEdge } from '@/api/types'
+import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
+import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
@@ -34,8 +34,8 @@ const router = useRouter()
 
 // Tabs
 const i18nStore = useI18nStore()
-type InfoTabKey = 'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile' | 'messageGraph'
-const infoTabKeys: InfoTabKey[] = ['history', 'memory', 'library', 'tagGraph', 'keywordGraph', 'profile', 'messageGraph']
+type InfoTabKey = 'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile'
+const infoTabKeys: InfoTabKey[] = ['history', 'memory', 'library', 'tagGraph', 'keywordGraph', 'profile']
 const storedInfoTab = localStorage.getItem('brian-info-active-tab')
 const activeTab = ref<InfoTabKey>(infoTabKeys.includes(storedInfoTab as InfoTabKey) ? (storedInfoTab as InfoTabKey) : 'history')
 const tabs = computed(() => [
@@ -45,8 +45,12 @@ const tabs = computed(() => [
   { key: 'tagGraph' as const, label: i18nStore.t('info.tagGraph'), icon: Network },
   { key: 'keywordGraph' as const, label: i18nStore.t('info.keywordGraph'), icon: GitBranch },
   { key: 'profile' as const, label: i18nStore.t('info.profile'), icon: UserRound },
-  { key: 'messageGraph' as const, label: i18nStore.t('info.messageGraph'), icon: GitBranch },
 ])
+
+const pagePath = computed(() => {
+  const active = tabs.value.find(t => t.key === activeTab.value)
+  return [i18nStore.t('nav.info'), ...(active ? [active.label] : [])]
+})
 
 // History tab
 const historySearch = ref('')
@@ -165,6 +169,35 @@ const memoryTag = ref('')
 const memoryStartTime = ref('')
 const memoryEndTime = ref('')
 const expandedMemory = ref<string | null>(null)
+const selectedMemories = ref<Set<string>>(new Set())
+const memoryDeleteConfirm = ref<null | { type: 'single' | 'batch'; id?: string }>(null)
+
+function toggleMemorySelect(id: string) {
+  const next = new Set(selectedMemories.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedMemories.value = next
+}
+
+async function deleteMemoryByIds(ids: string[]) {
+  if (ids.length === 0) return
+  await memoryApi.delete(ids)
+  const removed = new Set(ids)
+  memories.value = memories.value.filter(m => !removed.has(m.id))
+  selectedMemories.value = new Set([...selectedMemories.value].filter(id => !removed.has(id)))
+}
+
+function requestMemoryDelete(id?: string) {
+  memoryDeleteConfirm.value = id ? { type: 'single', id } : { type: 'batch' }
+}
+
+async function confirmMemoryDelete() {
+  if (!memoryDeleteConfirm.value) return
+  const { type, id } = memoryDeleteConfirm.value
+  memoryDeleteConfirm.value = null
+  if (type === 'single' && id) await deleteMemoryByIds([id])
+  else await deleteMemoryByIds([...selectedMemories.value])
+}
 
 function buildMemorySearchOpts() {
   return {
@@ -250,6 +283,14 @@ const typeColors: Record<string, string> = {
   working: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
 }
 
+// 记忆类型中文映射（语义/情景/程序性/工作记忆）
+const typeLabels: Record<string, string> = {
+  semantic: '语义记忆',
+  episodic: '情景记忆',
+  procedural: '程序性记忆',
+  working: '工作记忆',
+}
+
 const activeMemoryDate = ref<string | null>(null)
 
 function scrollMemoryNavToActive(dateKey: string) {
@@ -265,7 +306,7 @@ function scrollToMemoryDate(dateKey: string) {
 function onMemoryScroll() {
   const groupEls = Array.from(document.querySelectorAll<HTMLElement>('[data-memory-date]'))
   if (groupEls.length === 0) return
-  const topOffset = 140
+  const topOffset = 205
   let current: string | null = null
   for (const el of groupEls) {
     const rect = el.getBoundingClientRect()
@@ -276,6 +317,57 @@ function onMemoryScroll() {
     activeMemoryDate.value = current
     scrollMemoryNavToActive(current)
   }
+}
+
+// Memory heatmap（时间导航底部的月度热力图）
+const heatmapYear = ref(new Date().getFullYear())
+const heatmapMonth = ref(new Date().getMonth() + 1)
+const heatmapDays = ref<Record<string, number>>({})
+
+const heatmapCells = computed(() => {
+  const daysInMonth = new Date(heatmapYear.value, heatmapMonth.value, 0).getDate()
+  const firstDay = new Date(heatmapYear.value, heatmapMonth.value - 1, 1).getDay()
+  const leading = (firstDay + 6) % 7
+  const cells: { day: number | null; count: number }[] = []
+  for (let i = 0; i < leading; i++) cells.push({ day: null, count: 0 })
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, count: heatmapDays.value[String(d)] || 0 })
+  }
+  while (cells.length % 7 !== 0) cells.push({ day: null, count: 0 })
+  return cells
+})
+
+function heatmapColor(count: number): string {
+  if (count <= 0) return 'bg-apple-gray-100 dark:bg-apple-gray-800'
+  if (count === 1) return 'bg-brian-blue/30'
+  if (count <= 3) return 'bg-brian-blue/60'
+  return 'bg-brian-blue'
+}
+
+function isCurrentHeatmapMonth(): boolean {
+  const now = new Date()
+  return heatmapYear.value === now.getFullYear() && heatmapMonth.value === now.getMonth() + 1
+}
+
+async function loadHeatmap() {
+  try {
+    const data = await memoryApi.heatmap(heatmapYear.value, heatmapMonth.value)
+    heatmapDays.value = data.days || {}
+  }
+  catch { heatmapDays.value = {} }
+}
+
+function prevHeatmapMonth() {
+  if (heatmapMonth.value === 1) { heatmapMonth.value = 12; heatmapYear.value -= 1 }
+  else heatmapMonth.value -= 1
+  loadHeatmap()
+}
+
+function nextHeatmapMonth() {
+  if (isCurrentHeatmapMonth()) return
+  if (heatmapMonth.value === 12) { heatmapMonth.value = 1; heatmapYear.value += 1 }
+  else heatmapMonth.value += 1
+  loadHeatmap()
 }
 
 // Library tab
@@ -737,44 +829,6 @@ function formatProfileTime(ts: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// Message graph tab
-const messageGraphSessionId = ref('')
-const messageGraphNodes = ref<MessageGraphNode[]>([])
-const messageGraphEdges = ref<MessageGraphEdge[]>([])
-const loadingMessageGraph = ref(false)
-const selectedMsgNodeId = ref<string | null>(null)
-
-async function loadMessageGraph() {
-  if (!messageGraphSessionId.value) { messageGraphNodes.value = []; messageGraphEdges.value = []; return }
-  loadingMessageGraph.value = true
-  try {
-    const data = await visualizationApi.messageGraph(messageGraphSessionId.value)
-    messageGraphNodes.value = data.graph?.nodes || []
-    messageGraphEdges.value = data.graph?.edges || []
-  } catch { messageGraphNodes.value = []; messageGraphEdges.value = [] }
-  finally { loadingMessageGraph.value = false }
-}
-
-const messageGraphLayout = computed(() => {
-  const n = messageGraphNodes.value.length
-  if (n === 0) return { nodes: [] as Array<MessageGraphNode & { x: number; y: number }>, edges: [] as Array<MessageGraphEdge & { x1: number; y1: number; x2: number; y2: number }> }
-  const cx = 250, cy = 250, radius = 180
-  const nodeMap = new Map(messageGraphNodes.value.map((nd) => [nd.id, nd]))
-  const nodes = messageGraphNodes.value.map((node, i) => {
-    const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-    return { ...node, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
-  })
-  const edges = messageGraphEdges.value.map(e => {
-    const src = nodeMap.get(e.from) || messageGraphNodes.value.find(nd => nd.info_id === e.citing_info_id)
-    const tgt = nodeMap.get(e.to) || messageGraphNodes.value.find(nd => nd.info_id === e.cited_info_id)
-    if (!src || !tgt) return null
-    const s = nodes.find(nd => nd.id === src.id)!
-    const t = nodes.find(nd => nd.id === tgt.id)!
-    return { ...e, x1: s.x, y1: s.y, x2: t.x, y2: t.y }
-  }).filter(Boolean) as Array<MessageGraphEdge & { x1: number; y1: number; x2: number; y2: number }>
-  return { nodes, edges }
-})
-
 // Tag graph tab（Obsidian 风格力导向图）
 interface TagLayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
 
@@ -1095,6 +1149,7 @@ onMounted(() => {
   loadLibraries()
   loadTagGraph()
   loadKeywordGraph()
+  loadHeatmap()
   window.addEventListener('scroll', onMemoryScroll, { passive: true })
   document.addEventListener('click', closeContextMenu)
 })
@@ -1111,7 +1166,6 @@ onBeforeUnmount(() => {
 watch(activeTab, (val) => {
   localStorage.setItem('brian-info-active-tab', val)
   if (val === 'profile') loadProfile()
-  if (val === 'messageGraph' && messageGraphSessionId.value) loadMessageGraph()
 })
 
 let historySearchTimer: ReturnType<typeof setTimeout> | null = null
@@ -1132,29 +1186,30 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
     <NeuralBackground />
     <Header />
     <div class="pt-14 relative z-10">
-      <div class="h-10 flex items-center px-5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
-        <PageBreadcrumb :path="['信息']" />
-      </div>
-    </div>
-    <div class="px-6 pb-6 min-h-screen relative z-10">
-      <!-- Tab navigation -->
-      <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="[
-            'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
-            activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
-          ]"
-          @click="activeTab = tab.key"
-        >
-          <component :is="tab.icon" :size="15" />
-          {{ tab.label }}
-        </button>
+      <div class="sticky top-14 z-30 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
+        <div class="h-10 flex items-center px-5 border-b border-apple-gray-200 dark:border-apple-gray-700">
+          <PageBreadcrumb :path="pagePath" />
+        </div>
+        <div class="px-6">
+          <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
+            <button
+              v-for="tab in tabs"
+              :key="tab.key"
+              :class="[
+                'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
+                activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
+              ]"
+              @click="activeTab = tab.key"
+            >
+              <component :is="tab.icon" :size="15" />
+              {{ tab.label }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- History tab -->
-      <div v-if="activeTab === 'history'" class="space-y-3">
+      <div v-if="activeTab === 'history'" class="px-6 pb-8 space-y-3">
         <div class="flex items-center gap-3 flex-wrap">
           <div class="relative flex-1 max-w-md">
             <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
@@ -1237,12 +1292,12 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
       </div>
 
       <!-- Memory tab -->
-      <div v-if="activeTab === 'memory'" class="space-y-4">
+      <div v-if="activeTab === 'memory'" class="px-6 pb-8 space-y-4">
         <div v-if="loadingMemory" class="text-center py-8 text-apple-gray-400">加载中...</div>
         <div v-else-if="memoryTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
         <div v-else class="flex gap-6">
           <div class="w-40 flex-shrink-0">
-            <div class="sticky top-4 space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+            <div class="sticky top-[160px] space-y-1 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
               <button
                 v-for="group in memoryTimeline"
                 :key="group.dateKey"
@@ -1258,7 +1313,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
             </div>
           </div>
           <div class="flex-1 min-w-0 space-y-4">
-            <div class="flex items-center gap-3 flex-wrap">
+            <div class="sticky top-[160px] z-20 flex items-center gap-3 flex-wrap bg-white dark:bg-apple-dark-bg py-2 -mx-1 px-1 border-b border-apple-gray-200/60 dark:border-apple-gray-700/60">
               <div class="relative flex-1 max-w-md">
                 <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
                 <input v-model="memorySearch" placeholder="搜索记忆内容..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
@@ -1269,10 +1324,17 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
                 <span>至</span>
                 <input v-model="memoryEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
               </div>
+              <button
+                v-if="selectedMemories.size > 0"
+                class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg"
+                @click="requestMemoryDelete()"
+              >
+                <Trash2 :size="14" /> 删除所选({{ selectedMemories.size }})
+              </button>
             </div>
             <div class="space-y-3">
               <template v-for="group in memoryTimeline" :key="group.dateKey">
-                <div :id="`memory-group-${group.dateKey}`" :data-memory-date="group.dateKey" class="flex items-center gap-2 pt-1 scroll-mt-32">
+                <div :id="`memory-group-${group.dateKey}`" :data-memory-date="group.dateKey" class="flex items-center gap-2 pt-1 scroll-mt-[210px]">
                   <span class="text-sm font-semibold">{{ group.label }}</span>
                   <span class="text-xs text-apple-gray-400">({{ group.items.length }})</span>
                 </div>
@@ -1280,23 +1342,34 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
                   v-for="mem in group.items"
                   :key="mem.id"
                   class="block-card rounded-xl overflow-hidden cursor-pointer"
+                  :class="selectedMemories.has(mem.id) ? 'border-brian-blue/40 bg-brian-blue/5' : 'hover:border-brian-blue/30'"
                   @click="expandedMemory = expandedMemory === mem.id ? null : mem.id"
                 >
-                  <div class="p-4">
-                    <div class="flex items-start justify-between mb-2">
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs text-apple-gray-400">{{ new Date(mem.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
-                        <span class="text-xs text-apple-gray-300">#{{ mem.id.slice(-8) }}</span>
+                  <div class="p-4 flex items-start gap-3">
+                    <button class="mt-0.5 text-apple-gray-300 hover:text-brian-blue flex-shrink-0" @click.stop="toggleMemorySelect(mem.id)">
+                      <component :is="selectedMemories.has(mem.id) ? CheckSquare : Square" :size="16" />
+                    </button>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-start justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs text-apple-gray-400">{{ new Date(mem.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
+                          <span class="text-xs text-apple-gray-300">#{{ mem.id.slice(-8) }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                          <span :class="['px-2 py-0.5 rounded text-xs font-medium', typeColors[mem.type] || 'bg-gray-100 text-gray-600']">{{ typeLabels[mem.type] || mem.type }}</span>
+                          <button class="p-1 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" title="删除" @click.stop="requestMemoryDelete(mem.id)">
+                            <Trash2 :size="14" />
+                          </button>
+                        </div>
                       </div>
-                      <span :class="['px-2 py-0.5 rounded text-xs font-medium', typeColors[mem.type] || 'bg-gray-100 text-gray-600']">{{ mem.type }}</span>
-                    </div>
-                    <p class="text-sm" :class="expandedMemory === mem.id ? '' : 'line-clamp-2'">{{ mem.content }}</p>
-                    <div class="flex items-center gap-3 mt-2">
-                      <div v-if="mem.tags?.length" class="flex flex-wrap gap-1">
-                        <span v-for="tag in mem.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue">#{{ tag }}</span>
+                      <p class="text-sm" :class="expandedMemory === mem.id ? '' : 'line-clamp-2'">{{ mem.content }}</p>
+                      <div class="flex items-center gap-3 mt-2">
+                        <div v-if="mem.tags?.length" class="flex flex-wrap gap-1">
+                          <span v-for="tag in mem.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue">#{{ tag }}</span>
+                        </div>
+                        <span class="text-xs text-apple-gray-400 ml-auto">置信度: {{ Math.round((mem.confidence ?? 0) * 100) }}%</span>
+                        <ChevronRight :size="14" class="text-apple-gray-400 transition-transform" :class="expandedMemory === mem.id ? 'rotate-90' : ''" />
                       </div>
-                      <span class="text-xs text-apple-gray-400 ml-auto">置信度: {{ Math.round((mem.confidence || 0) * 100) }}%</span>
-                      <ChevronRight :size="14" class="text-apple-gray-400 transition-transform" :class="expandedMemory === mem.id ? 'rotate-90' : ''" />
                     </div>
                   </div>
                 </div>
@@ -1307,10 +1380,55 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
             </div>
           </div>
         </div>
+        <div v-if="memoryTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-40 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-2 shadow-sm">
+          <div class="grid grid-cols-7 gap-0.5">
+            <div
+              v-for="(cell, i) in heatmapCells"
+              :key="i"
+              :title="cell.day ? `${cell.day}日: ${cell.count} 条记忆` : ''"
+              class="aspect-square rounded-[3px]"
+              :class="cell.day ? heatmapColor(cell.count) : 'bg-transparent'"
+            />
+          </div>
+          <div class="flex items-center justify-between mt-2">
+            <button
+              class="p-0.5 rounded text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10 transition-colors"
+              @click="prevHeatmapMonth"
+            >
+              <ChevronLeft :size="14" />
+            </button>
+            <span class="text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300">{{ heatmapYear }}/{{ String(heatmapMonth).padStart(2, '0') }}</span>
+            <button
+              class="p-0.5 rounded transition-colors"
+              :class="isCurrentHeatmapMonth() ? 'text-apple-gray-300 cursor-not-allowed' : 'text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10'"
+              :disabled="isCurrentHeatmapMonth()"
+              @click="nextHeatmapMonth"
+            >
+              <ChevronRight :size="14" />
+            </button>
+          </div>
+        </div>
+        <!-- 记忆删除确认弹窗 -->
+        <div v-if="memoryDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="memoryDeleteConfirm = null">
+          <div class="block-card w-full max-w-sm mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">确认删除</h3>
+              <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="memoryDeleteConfirm = null"><X :size="18" /></button>
+            </div>
+            <p class="text-sm text-apple-gray-600 dark:text-apple-gray-300">
+              {{ memoryDeleteConfirm.type === 'batch' ? `确定删除选中的 ${selectedMemories.size} 条记忆吗？` : '确定删除该条记忆吗？' }}
+            </p>
+            <p class="text-xs text-apple-gray-400 mt-1">此操作将同时清理关联的标签、摘要、关键词与向量数据，且不可恢复。</p>
+            <div class="flex justify-end gap-2 mt-6">
+              <button class="btn-secondary" @click="memoryDeleteConfirm = null">取消</button>
+              <button class="px-3 py-2 text-xs font-medium bg-error-red text-white rounded-lg hover:bg-error-red/90 transition-colors" @click="confirmMemoryDelete">确认删除</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Library tab -->
-      <div v-if="activeTab === 'library'" class="space-y-4">
+      <div v-if="activeTab === 'library'" class="px-6 pb-8 space-y-4">
         <div v-if="!libraryDetail">
           <h3 class="text-lg font-semibold mb-4">资料库</h3>
           <div v-if="loadingLibs" class="text-center py-8 text-apple-gray-400">加载中...</div>
@@ -1544,7 +1662,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
       </div>
 
       <!-- Tag graph tab -->
-      <div v-if="activeTab === 'tagGraph'" class="flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+      <div v-if="activeTab === 'tagGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
         <div class="flex items-center justify-between flex-shrink-0 mb-2">
           <h3 class="text-lg font-semibold">Tag 关系图</h3>
           <div class="flex items-center gap-4 text-xs text-apple-gray-400">
@@ -1624,7 +1742,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
       </div>
 
       <!-- Keyword graph tab -->
-      <div v-if="activeTab === 'keywordGraph'" class="flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+      <div v-if="activeTab === 'keywordGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
         <div class="flex items-center justify-between flex-shrink-0 mb-2">
           <h3 class="text-lg font-semibold">关键词关联图</h3>
           <div class="flex items-center gap-4 text-xs text-apple-gray-400">
@@ -1706,7 +1824,7 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
       </div>
 
       <!-- Profile tab -->
-      <div v-if="activeTab === 'profile'" class="space-y-4">
+      <div v-if="activeTab === 'profile'" class="px-6 pb-8 space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold flex items-center gap-2">
             <UserRound :size="20" class="text-brian-blue" /> 用户画像
@@ -1816,53 +1934,11 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
                 </div>
               </div>
             </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Message graph tab -->
-      <div v-if="activeTab === 'messageGraph'" class="space-y-4">
-        <div class="flex items-center gap-3">
-          <h3 class="text-lg font-semibold">消息引用关系图</h3>
-          <select
-            v-model="messageGraphSessionId"
-            class="px-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue"
-            @change="loadMessageGraph"
-          >
-            <option value="">选择会话...</option>
-            <option v-for="s in chatList" :key="s.sessionId" :value="s.sessionId">{{ s.lastMessage || s.sessionId }}</option>
-          </select>
-          <span v-if="messageGraphNodes.length" class="text-xs text-apple-gray-400">{{ messageGraphNodes.length }} 节点 · {{ messageGraphEdges.length }} 边</span>
-        </div>
-
-        <div v-if="loadingMessageGraph" class="text-center py-16 text-apple-gray-400">加载中...</div>
-        <div v-else-if="!messageGraphSessionId" class="text-center py-16 text-apple-gray-400 text-sm">请选择会话查看消息引用关系</div>
-        <div v-else-if="messageGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm">该会话暂无消息引用关系</div>
-        <div v-else class="block-card rounded-xl p-4">
-          <svg viewBox="0 0 500 500" class="w-full" style="aspect-ratio: 1; max-height: 600px;">
-            <line
-              v-for="(edge, i) in messageGraphLayout.edges" :key="'mg-e-' + i"
-              :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
-              :stroke="edge.edge_type === 'REPLY' ? '#0071e3' : '#d1d1d6'"
-              :stroke-width="1.5"
-              :stroke-dasharray="edge.edge_type === 'CITATION' ? '4,3' : ''"
-              opacity="0.6"
-            />
-            <g v-for="node in messageGraphLayout.nodes" :key="'mg-n-' + node.id" class="cursor-pointer" @click="selectedMsgNodeId = selectedMsgNodeId === node.id ? null : node.id">
-              <circle :cx="node.x" :cy="node.y" :r="16" :fill="node.info_type === 'REQUEST' ? '#0071e3' : '#8e8e93'" :opacity="selectedMsgNodeId && selectedMsgNodeId !== node.id ? 0.3 : 0.9" />
-              <text :x="node.x" :y="node.y + 4" text-anchor="middle" class="text-xs font-medium pointer-events-none" fill="white">{{ node.info_id.slice(0, 6) }}</text>
-              <text v-if="selectedMsgNodeId === node.id" :x="node.x" :y="node.y - 24" text-anchor="middle" class="text-[10px] pointer-events-none" fill="#0071e3">{{ node.info_summary || node.info_id }}</text>
-            </g>
-          </svg>
-          <div class="flex items-center gap-4 mt-2 text-xs text-apple-gray-400">
-            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-brian-blue inline-block" /> 用户消息</span>
-            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-apple-gray-400 inline-block" /> 回复</span>
-            <span class="flex items-center gap-1"><span class="inline-block w-4 border-t border-brian-blue" /> 问答边</span>
-            <span class="flex items-center gap-1"><span class="inline-block w-4 border-t border-dashed border-apple-gray-400" /> 引用边</span>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 

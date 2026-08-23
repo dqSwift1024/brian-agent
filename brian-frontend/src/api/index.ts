@@ -105,10 +105,17 @@ export const memoryApi = {
     return request<MemoryPage>(`/memory/search?${q.toString()}`)
   },
   tags: () => request<{ tags: string[] }>('/memory/tags').then(r => r.tags),
+  delete: (infoIds: string[]) =>
+    request<{ deleted_count: number }>('/memory', {
+      method: 'DELETE',
+      body: JSON.stringify({ info_ids: infoIds }),
+    }),
   tagGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/tag-graph'),
   keywordGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/keyword-graph'),
   stats: (userId: string) =>
-    request<{ totalMemories: number; byType: Record<string, number> }>(`/memory/stats/${encodeURIComponent(userId)}`)
+    request<{ totalMemories: number; byType: Record<string, number> }>(`/memory/stats/${encodeURIComponent(userId)}`),
+  heatmap: (year: number, month: number) =>
+    request<{ year: number; month: number; days: Record<string, number> }>(`/memory/heatmap?year=${year}&month=${month}`)
 }
 
 export interface GraphSearchNode { id: string; tag: string; info_ids: string[]; depth: number }

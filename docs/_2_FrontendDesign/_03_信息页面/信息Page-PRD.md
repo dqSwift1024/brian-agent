@@ -317,3 +317,20 @@
 
 **可能存在的问题**：
 - 恢复下划线依赖 `selection_text` 在渲染后 DOM 的文本节点中匹配，跨节点选中无法恢复下划线（卡片仍正常恢复）。
+
+### [2026-08-23] 记忆 Tab：搜索栏固定 + 勾选批量删除 + 类型中文映射 + 真实置信度
+
+**变更原因**：记忆 Tab 的搜索栏随内容滚动易丢失操作入口；缺少单条/批量删除能力；记忆类型标签显示英文（working/semantic 等）不易理解；「置信度」此前为后端硬编码的占位值（恒 100%）。
+
+**修改的方法**：
+- 前端 `InfoView.vue` — 记忆 Tab 搜索栏（关键词 / 标签 / 日期范围）改为 `sticky top-[160px]` 固定，不随内容滚动，并同步调整时间分组锚点 `scroll-mt` 与 scroll-spy `topOffset`；消息框新增复选框、右上角单条删除按钮与「删除所选(N)」批量删除按钮，删除前二次确认，删除后从列表移除并清空勾选。
+- 前端 `InfoView.vue` — 新增 `typeLabels` 中文映射（`semantic` 语义记忆 / `episodic` 情景记忆 / `procedural` 程序性记忆 / `working` 工作记忆），消息框类型标签按中文展示。
+- 后端 `dev-server.ts` — 新增 `DELETE /api/memory` 路由，按 `info_ids` 批量删除并级联清理派生表；`mapInfoToMemory` 恢复 `confidence` 字段，新增 `computeMemoryConfidence` 按「来源可信度 + 语义加工增益」计算真实置信度（见 INFOCore-PRD）。
+- 前端 `api/index.ts` / `types.ts` — `memoryApi.delete(infoIds)` 新增；`MemoryItem.confidence` 类型恢复。
+
+**影响的端点**：
+- 新增 `DELETE /api/memory`（body: `{ info_ids: string[] }` → `{ deleted_count }`）。
+- `GET /api/memory/list`、`GET /api/memory/search`、`GET /api/memory/tag/:userId/:tag` — 返回的 `MemoryItem` 恢复 `confidence` 字段（0.05~0.95 真实值）。
+
+**可能存在的问题**：
+- 批量删除为逐表 `DELETE ... IN` 级联，未清理全局标签向量 `info_tag_vector`（由 `orphan_tag_check` 定时任务处理）；删除后左侧日期导航与热力图需下次加载才会刷新。

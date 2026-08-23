@@ -280,7 +280,7 @@ export interface ChatMessage {
   content: string
   timestamp: number
   blocks?: Block[]
-  agentDag?: any
+  agentDag?: AgentDagData
   sessionId?: string
   workId?: string
   interactId?: string

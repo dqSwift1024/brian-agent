@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess, HttpAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource } from './Base';
+import { IdGenerator, ToolAccess, HttpAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource, Operator } from './Base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -275,15 +275,45 @@ function mapInfoToMemory(row: any, tags: string[] = []): any {
     [InfoType.AGENT]: 'procedural',
   };
   const type = typeMap[row.info_type] || (row.info_creator_role === 'USER' ? 'episodic' : 'semantic');
+  const info = row.info || '';
   return {
     id: row.info_id || row.id,
     type,
-    content: row.info || '',
+    content: info,
     tags,
-    confidence: 1,
+    confidence: computeMemoryConfidence(row.info_type, tags, info.length, Number(row.pin) || 0),
     createdAt: Number(row.created) || 0,
     updatedAt: Number(row.updated) || 0,
   };
+}
+
+/**
+ * 计算单条记忆的置信度（0-1）。
+ *
+ * 置信度 = 来源可信度（info_type 基础分） + 语义加工增益，取值收敛到 [0.05, 0.95]。
+ * - 来源可信度：越接近「用户原话 / 自我学习沉淀」可信度越高，内部思考（THINK/REFLECT）
+ *   等中间产物可信度较低。
+ * - 语义加工增益：标签越丰富、内容越完整、被用户钉住，说明该记忆经过更多加工/被认可，
+ *   可信度相应提升。
+ */
+function computeMemoryConfidence(infoType: string, tags: string[], infoLength: number, pin: number): number {
+  const baseReliability: Record<string, number> = {
+    [InfoType.SELF_LEARNING]: 0.6,
+    [InfoType.REQUEST]: 0.55,
+    [InfoType.RESPONSE]: 0.5,
+    [InfoType.SKILL]: 0.45,
+    [InfoType.MCP]: 0.45,
+    [InfoType.AGENT]: 0.45,
+    [InfoType.ACT]: 0.4,
+    [InfoType.REFLECT]: 0.35,
+    [InfoType.THINK]: 0.3,
+  };
+  const base = baseReliability[infoType] ?? 0.5;
+  const tagBoost = Math.min(tags.length, 5) * 0.04;
+  const lengthBoost = infoLength >= 100 ? 0.05 : 0;
+  const pinBoost = pin === 1 ? 0.1 : 0;
+  const raw = base + tagBoost + lengthBoost + pinBoost;
+  return Math.round(Math.min(0.95, Math.max(0.05, raw)) * 100) / 100;
 }
 
 /** 批量查询 info_tag，返回 info_id → tag[] 映射 */
@@ -2819,7 +2849,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
         const where = conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : '';
         const rows = ctx.relationDb.queryRaw<any>(
-          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
+          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "pin", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
           args,
         );
         const hasMore = rows.length > limit;
@@ -2836,7 +2866,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const parts = pathname.split('/');
         const tag = decodeURIComponent(parts[parts.length - 1] || '');
         const rows = ctx.relationDb.queryRaw<any>(
-          'SELECT r."id", r."info_id", r."info_type", r."info_creator_role", r."info", r."created", r."updated" FROM "info_raw" r INNER JOIN "info_tag" t ON t."info_id" = r."info_id" WHERE t."tag" = ? ORDER BY r."created" DESC LIMIT 200',
+          'SELECT r."id", r."info_id", r."info_type", r."info_creator_role", r."info", r."pin", r."created", r."updated" FROM "info_raw" r INNER JOIN "info_tag" t ON t."info_id" = r."info_id" WHERE t."tag" = ? ORDER BY r."created" DESC LIMIT 200',
           [tag],
         );
         const tagMap = queryInfoTagsByInfoIds(ctx.relationDb, rows.map((r: any) => r.info_id));
@@ -2892,7 +2922,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
         const where = conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : '';
         const rows = ctx.relationDb.queryRaw<any>(
-          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
+          `SELECT "id", "info_id", "info_type", "info_creator_role", "info", "pin", "created", "updated" FROM "info_raw"${where} ORDER BY "created" DESC, "id" DESC LIMIT ${limit + 1}`,
           args,
         );
         const hasMore = rows.length > limit;
@@ -2904,6 +2934,26 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           has_more: hasMore,
           next_cursor: hasMore && last ? `${last.created}:${last.id}` : null,
         });
+
+      } else if (method === 'DELETE' && pathname === '/api/memory') {
+        const rawIds = (body as Record<string, unknown>).info_ids;
+        const infoIds = Array.isArray(rawIds)
+          ? (rawIds as unknown[]).map((x) => String(x)).filter(Boolean)
+          : [];
+        if (infoIds.length === 0) {
+          sendJson(res, 400, { error: 'info_ids 必须为非空数组' });
+          return;
+        }
+        // 级联删除派生表（info_tag_vector 为全局标签向量，交由 orphan_tag_check 定时任务清理）
+        await ctx.relationDb.delete('info_tag', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_summary', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_keyword', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_vector', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_graph', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_graph', [{ field: 'citing_info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.relationDb.delete('info_graph', [{ field: 'cited_info_id', operator: Operator.IN, value: infoIds }]);
+        const affected = await ctx.relationDb.delete('info_raw', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+        sendJson(res, 200, { deleted_count: affected });
 
       } else if (method === 'GET' && pathname === '/api/memory/tags') {
         const tagRows = ctx.relationDb.queryRaw<{ tag: string; cnt: number }>(
@@ -3120,6 +3170,27 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const byType: Record<string, number> = {};
         for (const r of typeRows) { byType[r.info_type || 'unknown'] = r.cnt; }
         sendJson(res, 200, { totalMemories: totalRows[0]?.cnt || 0, byType });
+
+      } else if (method === 'GET' && pathname === '/api/memory/heatmap') {
+        // 按月返回每日记忆条数（热力图数据）
+        const year = parseInt(params.get('year') || '', 10);
+        const month = parseInt(params.get('month') || '', 10);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+          sendJson(res, 400, { error: '无效的年份或月份' });
+          return;
+        }
+        const start = new Date(year, month - 1, 1).getTime();
+        const end = new Date(year, month, 1).getTime();
+        const rows = ctx.relationDb.queryRaw<{ created: number }>(
+          'SELECT "created" FROM "info_raw" WHERE "created" >= ? AND "created" < ?',
+          [start, end],
+        );
+        const days: Record<string, number> = {};
+        for (const r of rows) {
+          const d = new Date(Number(r.created)).getDate();
+          days[String(d)] = (days[String(d)] || 0) + 1;
+        }
+        sendJson(res, 200, { year, month, days });
 
       // ===== Learning Routes =====
       } else if (method === 'POST' && pathname === '/api/learning/start') {
