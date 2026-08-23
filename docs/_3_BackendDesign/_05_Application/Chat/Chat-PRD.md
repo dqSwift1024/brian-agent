@@ -66,7 +66,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 | `agent_reflection` | `{ agent_id, reflection, passed }` | Agent 执行 Reflect 阶段自我反思结论 | AgentExecution |
 | `agent_output` | `{ agent_id, output_content }` | Agent 执行 Answer 阶段产生输出 | AgentExecution |
 | `text` | `{ work_id, chunk }` | WriterAgent 生成最终回复的文本片段 | WriterAgent |
-| `done` | `{ work_id, interact_id, trace_id, final_response, elapsed_ms, token_usage }` | work 执行完成 | OrchestrationEntry |
+| `done` | `{ work_id, interact_id, trace_id, final_response, elapsed_ms, token_usage, paused }` | work 执行完成；`paused=true` 表示需求理解暂停等待确认（无最终回复，不流式输出文本） | OrchestrationEntry |
 | `error` | `{ work_id, trace_id, error_message, error_code }` | work 执行失败（含节点级失败的真实错误信息） | OrchestrationEntry |
 
 **处理流程**：
@@ -457,6 +457,20 @@ Chat 模块的配置通过 Config Application 统一管理（`/api/config/update
 | 取消工作 | cancelWork | 中断正在执行的 work |
 
 ## 7. 变更记录
+
+### [2026-08-23] 需求理解暂停确认：done 事件 paused 标记、历史接口思考过程重建修复
+**变更原因**：① IntentAgent 匹配得分低于阈值时 work 暂停，但 `openChatStream` 仍把暂停的 JSON 串当最终回复流式输出；② `/api/chat/history` 调用 `buildThinkingBlocksAndDag` 时参数错位（少传 infoCore），导致历史消息的思考 Blocks 恒为空，暂停/完成的工作思考过程均无法在刷新后恢复。
+
+**修改的方法**：
+  - `ChatService.openChatStream` — 识别 `ReceiveWorkOutput.paused`，暂停时跳过文本流式输出，`done` 事件携带 `paused` 标记（emit 与 streamAccess.pushEvent 双通道）；
+  - `dev-server.ts` `/api/chat/history` — `buildThinkingBlocksAndDag` 修复为三参调用（补传 `ctx.infoCore`），并收集全部 work_id（含暂停无 RESPONSE 的 work）；REQUEST 消息在其 work 尚无 RESPONSE 时也挂载 IntentAgent 思考块。
+
+**影响的端点**：
+  - `POST /api/chat/stream` — 暂停时不再输出错误文本，`done` 事件 `paused=true`；
+  - `GET /api/chat/history/:session_id` — 历史消息正确携带思考 Blocks（含暂停 work 的 IntentAgent 思考过程）。
+
+**可能存在的问题**：
+  - 依赖 `orchestration_work.metadata.intent_agent` 落库（暂停分支已保留）；历史旧数据（暂停分支修复前）无该结构时无法重建 IntentAgent 思考块。
 
 ### [2026-08-23] trace_id 统一由后端 ToolProvider(IdGenerator) 生成 UUID
 **变更原因**：此前 `trace_id` 由前端 `crypto.randomUUID()` 生成，并在非安全上下文（如 `http://<局域网IP>`）下回退为 `trace-${Date.now()}-${Math.random()}` 非 UUID 格式；后端透传不重生成，导致「复制 TraceId」复制到非 UUID 值。生成职责分散于前端、后端 AOP、后端透传三处，反复出错。

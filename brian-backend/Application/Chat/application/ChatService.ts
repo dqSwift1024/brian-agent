@@ -397,32 +397,37 @@ export class ChatService {
 
     const elapsedMs = Date.now() - startedAt;
     const finalResponse = rwOutput.final_response || '';
+    const paused = rwOutput.paused === true;
 
-    // 通过 StreamAccess 进行 2-5 字符随机 chunk 打字机流式推送（无延迟，实时推送）
-    if (this.streamAccess && typeof this.streamAccess.pushText === 'function') {
-      await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
-        work_id: workId,
-        interact_id: interactId,
-        chunk_delay_ms: 0,
-      });
+    // 需求理解暂停等待确认时，不流式输出任何文本（由 intent_confirmation_required 事件驱动前端弹窗）
+    if (!paused && finalResponse) {
+      // 通过 StreamAccess 进行 2-5 字符随机 chunk 打字机流式推送（无延迟，实时推送）
+      if (this.streamAccess && typeof this.streamAccess.pushText === 'function') {
+        await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
+          work_id: workId,
+          interact_id: interactId,
+          chunk_delay_ms: 0,
+        });
+      }
+
+      // 兼容回调
+      for (let i = 0; i < finalResponse.length; ) {
+        const chunkSize = Math.floor(Math.random() * 4) + 2;
+        emit('text', { work_id: workId, chunk: finalResponse.substring(i, i + chunkSize) });
+        i += chunkSize;
+      }
     }
 
-    // 兼容回调
-    for (let i = 0; i < finalResponse.length; ) {
-      const chunkSize = Math.floor(Math.random() * 4) + 2;
-      emit('text', { work_id: workId, chunk: finalResponse.substring(i, i + chunkSize) });
-      i += chunkSize;
-    }
-
-    emit('done', { work_id: workId, interact_id: interactId, trace_id: traceId, final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
+    emit('done', { work_id: workId, interact_id: interactId, trace_id: traceId, final_response: paused ? '' : finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage, paused });
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
       await this.streamAccess.pushEvent(input.session_id, 'done', 'CONTROL', {
         work_id: workId,
         interact_id: interactId,
         trace_id: traceId,
-        final_response: finalResponse,
+        final_response: paused ? '' : finalResponse,
         elapsed_ms: elapsedMs,
         token_usage: tokenUsage,
+        paused,
       }, { work_id: workId, interact_id: interactId });
     }
 

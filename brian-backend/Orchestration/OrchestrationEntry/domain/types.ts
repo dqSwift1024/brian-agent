@@ -24,6 +24,8 @@ export class ReceiveWorkOutput extends Output {
   interact_id = '';
   orchestration_strategy = '';
   final_response = '';
+  /** 是否因需求理解得分低于阈值而暂停，等待用户确认（此时 final_response 为空，不应流式输出文本） */
+  paused = false;
 }
 
 export class SelectOrchestrationStrategyInput extends Input {

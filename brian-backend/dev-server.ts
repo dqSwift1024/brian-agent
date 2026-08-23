@@ -2452,18 +2452,24 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           (m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE
         );
 
-        const responseWorkIds = Array.from(
-          new Set(rawMessages.filter((m) => m.info_type === InfoType.RESPONSE && m.work_id).map((m) => String(m.work_id)))
+        // 收集全部 work_id（含暂停等待确认、尚无 RESPONSE 的 work），保证其 IntentAgent 思考过程也能被重建
+        const allWorkIds = Array.from(
+          new Set(rawMessages.filter((m) => m.work_id).map((m) => String(m.work_id)))
+        );
+        const respondedWorkIds = new Set(
+          rawMessages.filter((m) => m.info_type === InfoType.RESPONSE && m.work_id).map((m) => String(m.work_id))
         );
 
         // ===== 原始内联实现（保留参考）：思考过程重建逻辑已抽取为顶层函数 buildThinkingBlocksAndDag，
         //      该函数完整保留原有从数据表采集重建 ThinkingChain Blocks 的逻辑，供 history 与 thinking 接口复用 =====
-        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, responseWorkIds);
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, allWorkIds);
 
         const messages = rawMessages.map((m) => {
           const isResponse = m.info_type === InfoType.RESPONSE;
           const wid = m.work_id ? String(m.work_id) : '';
-          const blocks = (isResponse && wid && workBlocksMap.has(wid))
+          // RESPONSE 消息挂载完整思考链；REQUEST 仅在对应 work 尚无 RESPONSE（暂停等待确认）时挂载 IntentAgent 思考过程
+          const attachBlocks = wid && workBlocksMap.has(wid) && (isResponse || !respondedWorkIds.has(wid));
+          const blocks = attachBlocks
             ? workBlocksMap.get(wid)!.map((b) => ({ ...b, msgId: m.info_id }))
             : undefined;
           const agentDag = (isResponse && wid && workDagMap.has(wid))

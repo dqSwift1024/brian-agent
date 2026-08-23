@@ -81,7 +81,13 @@ export class OrchestrationEntryService {
       table: 'orchestration_work',
       data: workData,
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    // 幂等：确认流程（confirmIntent）以相同 work_id 重入时，跳过重复插入（work_id 唯一约束），复用已有记录
+    const existingWork = await this.relationDb.selectOne('orchestration_work', [
+      { field: 'work_id', operator: Operator.EQ, value: workId },
+    ]);
+    if (!existingWork) {
+      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    }
 
     // --- 需求理解 Agent (IntentAgent) 前置执行 ---
     if (this.intentAgent && !input.skip_intent_check) {
@@ -156,6 +162,27 @@ export class OrchestrationEntryService {
               reasoning: intentOut.reasoning,
             });
           }
+          // 暂停等待确认时，仍补写用户 REQUEST 到 info_raw，保证对话区与 ChatMap 能展示本次提问
+          try {
+            const citingIds = Array.from(new Set([
+              ...(input.citing_msg_ids ?? []),
+              ...(input.selected_msg_ids ?? []),
+            ]));
+            const saveIn = Object.assign(new SaveInfoInput(), {
+              session_id: input.session_id,
+              work_id: workId,
+              interact_id: interactId,
+              info_type: input.info_type ?? InfoType.REQUEST,
+              info_creator_role: input.info_creator_role ?? 'USER',
+              info_creator_id: input.info_creator_id ?? '',
+              info: input.user_query,
+              parent_info_ids: citingIds,
+              trace_id: input.trace_id ?? '',
+            });
+            await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+          } catch (err) {
+            this.logger?.error?.('receiveWork: saveInfo (paused) failed', { work_id: workId, error: String(err) });
+          }
           const pauseData: DataObject[] = [
             { field: 'status', value: 'PAUSED_WAITING_CONFIRMATION' },
             { field: 'updated', value: IdGenerator.now() },
@@ -164,6 +191,16 @@ export class OrchestrationEntryService {
               understood_requirement: intentOut.understood_requirement,
               match_score: intentOut.match_score,
               threshold_score: intentOut.threshold_score,
+              intent_agent: {
+                understood_requirement: intentOut.understood_requirement,
+                match_score: intentOut.match_score,
+                threshold_score: intentOut.threshold_score,
+                reasoning: intentOut.reasoning,
+                should_modify_query: intentOut.should_modify_query,
+                prompt: intentOut.prompt,
+                input_tokens: intentOut.input_tokens,
+                output_tokens: intentOut.output_tokens,
+              },
             })},
           ];
           await this.relationDb.updateDB(
@@ -177,12 +214,8 @@ export class OrchestrationEntryService {
           );
           output.work_id = workId;
           output.interact_id = interactId;
-          output.final_response = JSON.stringify({
-            status: 'PAUSED_WAITING_CONFIRMATION',
-            message: '需求理解得分低于配置阈值，已推送确认弹窗',
-            understood_requirement: intentOut.understood_requirement,
-            match_score: intentOut.match_score,
-          });
+          output.final_response = '';
+          output.paused = true;
           return true;
         }
       } catch (err) {

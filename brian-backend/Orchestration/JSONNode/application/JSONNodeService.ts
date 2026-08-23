@@ -628,6 +628,27 @@ export class JSONNodeService {
       ...((sharedData.selected_msg_ids as string[]) ?? []),
     ]));
 
+    // 幂等：确认流程（confirmIntent）重新执行时 work_id 相同，若已存在该 work 的 REQUEST 则复用，避免重复落库
+    let existingInfoId = '';
+    try {
+      const existingRows = await this.relationDb.select('info_raw', {
+        fields: ['info_id'],
+        conditions: [
+          { field: 'work_id', operator: Operator.EQ, value: workId },
+          { field: 'info_type', operator: Operator.EQ, value: InfoType.REQUEST },
+        ],
+        page: { current: 1, size: 1 },
+      });
+      if (existingRows.length > 0 && existingRows[0].info_id) {
+        existingInfoId = String(existingRows[0].info_id);
+      }
+    } catch { /* best-effort */ }
+
+    if (existingInfoId) {
+      sharedData.user_input_info_id = existingInfoId;
+      return;
+    }
+
     const saveInput = Object.assign(new SaveInfoInput(), {
       session_id: sessionId,
       work_id: workId,

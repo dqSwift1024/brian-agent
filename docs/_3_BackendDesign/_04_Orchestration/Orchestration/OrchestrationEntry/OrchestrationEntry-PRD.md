@@ -27,18 +27,23 @@
   - interact_id：交互 ID
   - orchestration_strategy：使用的编排策略（SIMPLE / PLANNING）
   - final_response：最终回复内容（同步模式下返回）
+  - paused：是否因需求理解得分低于阈值而暂停等待用户确认（true 时 final_response 为空，调用方不应流式输出文本）
 
 **处理流程**：
 
 1. **生成标识**
    a. 生成 `work_id`（UUID）和 `interact_id`（UUID）；
-   b. 调用 RelationDBProvider.insertDB 向 `orchestration_work` 表插入工作记录：`{ work_id, interact_id, session_id, user_query, status: "CREATED" }`；
+   b. 调用 RelationDBProvider.selectOne 检查 `orchestration_work` 表是否已存在该 work_id（幂等，确认流程 confirmIntent 以相同 work_id 重入时复用已有记录）；不存在则调用 RelationDBProvider.insertDB 插入工作记录：`{ work_id, interact_id, session_id, user_query, status: "CREATED" }`；
 
 2. **需求理解 Agent (IntentAgent) 前置执行**
    a. 若 `skip_intent_check` 为 false，调用 IntentAgent.understandRequirement 分析用户真实需求；
    b. 推送 `intent_agent_result` SSE 事件（含 understood_requirement、match_score、reasoning、prompt、input_tokens、output_tokens），供前端"思考过程"弹窗展示；
    c. 将 IntentAgent 结果持久化到 `orchestration_work.metadata` 的 `intent_agent` 字段，供历史查询；
-   d. 若 match_score 低于阈值（should_modify_query=true），推送 `intent_confirmation_required` 事件暂停工作等待用户确认；
+   d. 若 match_score 低于阈值（should_modify_query=true），推送 `intent_confirmation_required` 事件暂停工作等待用户确认，具体行为：
+      - 先调用 InfoCore.saveInfo 补写用户 REQUEST（info_type=REQUEST、info_creator_role=USER）到 `info_raw`，保证对话区与 ChatMap 能立即展示本次提问（暂停分支不进入编排节点，需在此处单独落库）；
+      - 将 `orchestration_work.metadata` 更新为 `{ trace_id, understood_requirement, match_score, threshold_score, intent_agent: {...} }`（保留完整 intent_agent 结构供思考过程重建）；
+      - 调用 RelationDBProvider.updateDB 将 status 置为 "PAUSED_WAITING_CONFIRMATION"；
+      - output.paused = true、output.final_response = ''，直接 return（不进入编排）；
    e. IntentAgent 失败时降级继续原始流程（不阻塞）；
 
 3. **选择编排策略**
@@ -231,6 +236,33 @@
 3. 调用 RelationDBProvider.updateDB 写入配置；
 4. 返回更新后的配置写入 output；
 
+### 2.8. 确认需求理解（confirmIntent）
+
+**功能**：用户对 IntentAgent 暂停的工作进行确认，选择按理解需求 / 按原文 / 取消，继续或终止编排
+
+**入参**：
+- input：ConfirmIntentInput（继承 Input），包含以下字段：
+  - session_id：会话 ID
+  - work_id：工作 ID
+  - action：确认动作（"APPROVE" 按理解需求执行 / "KEEP" 按原文执行 / "CANCEL" 取消）
+  - understood_requirement：确认的需求内容（APPROVE 时作为最终 query）
+- context：ConfirmIntentContext（继承 Context），会话上下文（session_id 等）
+- output：ConfirmIntentOutput（继承 Output），承载返回内容：
+  - success：是否成功
+  - action_applied：已应用的动作
+  - next_status：下一步状态
+
+**处理流程**：
+
+1. 校验 work_id 与 action 非空；调用 RelationDBProvider.selectOneDB 根据 work_id 查询 `orchestration_work` 确认存在；
+2. 若 action = "CANCEL"：
+   a. 调用 RelationDBProvider.updateDB 将 status 置为 "CANCELLED"，记录 cancel_reason；
+   b. 推送 `cancelled` SSE 事件；返回 success=true；
+3. 若 action = "APPROVE"：finalQuery = understood_requirement（为空则回退 metadata.understood_requirement / user_query）；
+   若 action = "KEEP"：finalQuery = 原始 user_query；
+4. 以相同 work_id / interact_id 重新调用 `receiveWork`（`skip_intent_check = true`），复用已有 work 记录（幂等插入跳过），继续后续编排流程；
+5. 将 success / action_applied / next_status 写入 output 返回。
+
 ## 重要内容
 
 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
@@ -295,3 +327,20 @@
 4. **日志**：所有日志通过 LogProvider 记录，禁止 console.log。
 5. **外部资源**：所有 LLM/Prompt 调用经 LLMProvider/PromptsProvider，禁止直接访问。
 6. **AOP**：所有方法经 AopProxy.wrap 生成代理，默认记录耗时日志。
+
+## 代码变更记录
+
+### [2026-08-23] 需求理解暂停分支补写 REQUEST、paused 标志与 confirmIntent 重入幂等
+**变更原因**：IntentAgent 匹配得分低于阈值（should_modify_query=true）时，receiveWork 在保存用户消息之前提前 return，导致用户提问既未落库 `info_raw`（对话区与 ChatMap 均不展示），前端也无 confirm-intent 确认入口，work 永久卡在 `PAUSED_WAITING_CONFIRMATION`。
+
+**修改的方法**：
+  - `OrchestrationEntryService.receiveWork` — `should_modify_query` 分支：先调用 `infoCore.saveInfo` 补写 REQUEST 到 `info_raw`；`pauseData.metadata` 合并保留 `intent_agent` 结构；`output.paused = true`、`final_response = ''`；
+  - `OrchestrationEntryService.receiveWork` — `orchestration_work` 插入改为幂等（selectOne 检查 work_id 已存在则跳过 insertDB，规避 work_id 唯一约束冲突）；
+  - `ReceiveWorkOutput` — 新增 `paused` 字段。
+
+**影响的端点**：
+  - `POST /api/chat/stream` — 暂停时不再将 JSON 串当文本流式输出，`done` 事件携带 `paused` 标记；
+  - `POST /api/chat/confirm-intent` — 确认后重入 receiveWork 继续编排（APPROVE / KEEP / CANCEL）。
+
+**可能存在的问题**：
+  - 确认重入后编排同步执行，客户端需在 confirm-intent 响应后刷新历史与 ChatMap 才能看到最终结果（无 SSE 流式进度）；`orchestration_work.final_response` 列在成功路径不写回（历史以 `info_raw` 的 RESPONSE 为准，属既有行为）。

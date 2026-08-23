@@ -120,13 +120,15 @@
 | `agent_dag_created` | Update(PlanningData.agent_dag) | 任务级拆解映射为 Agent DAG（agent_nodes / agent_edges），弹窗内复用 AgentDagFlow 渲染工作节点网络 |
 | `dag_node_start` | Update(PlanningData.execution_steps) | JSONNode 编排节点开始执行，追加 RUNNING 步骤 |
 | `dag_node_end` | Update(PlanningData.execution_steps) | JSONNode 编排节点执行结束，更新步骤状态与耗时 |
+| `intent_agent_result` | Insert/Update(ThinkingChainBlock, Intent) | 需求理解 Agent 结果：创建「需求理解 Agent (Intent)」思考块，写入 understood_requirement / match_score / threshold_score / reasoning 与 Token 用量 |
+| `intent_confirmation_required` | Update(IntentConfirmationState) | 需求理解得分低于阈值：弹出「确认需求理解」弹窗，由用户选择按理解执行 / 按原文执行 / 取消 |
 | `agent_building` | Update(AgentSpec) | 提示 Agent 正在分析与装配 |
 | `agent_built` | Update(ThinkingChainBlock, meta.agent_info) | 更新思维链块的 Agent 名称与类型元数据 |
 | `agent_thinking` | Append(ThinkingChainBlock, content) | 向思维链块追加思考内容（以 2-5 字符打字机 chunk 渲染） |
 | `agent_action` / `agent_status` | Insert/Update(ToolInvocationBlock) | 插入或更新工具调用块的执行状态与参数结果 |
 | `text_chunk` / `text` | Append(TextParagraphBlock, delta) | 向文本块追加增量内容，以打字机 chunk 进行流畅渲染 |
 | `citation` | Update(TextParagraphBlock, meta.citing_ids) | 更新文本块的引用关系元数据，触发引用标签条重渲染 |
-| `done` | Finalize(BlockGroup) | 标记当前消息组所有 Block 为完成态，移除光标，加载官方 MessageCard 并清理临时文本块 |
+| `done` | Finalize(BlockGroup) | 标记当前消息组所有 Block 为完成态，移除光标，加载官方 MessageCard 并清理临时文本块；`paused=true` 时仅标记完成、不关闭思考弹窗、不追加 Feedback 块（等待用户确认） |
 
 #### 4.3.6 块级交互与反馈
 -   **思考过程弹窗**：对话区与 ChatMap 区每条消息框底部提供「思考过程」按钮（紫色胶囊 + 大脑图标）。点击后：
@@ -189,6 +191,18 @@
 -   **移动端适配**：针对触摸操作、横向溢出、工具栏触发方式做专项适配。
 
 ## 7. 变更记录
+
+### [2026-08-23] 需求理解确认弹窗：intent_confirmation_required 事件处理与 confirm-intent 调用
+- **变更原因**：IntentAgent 匹配得分低于阈值时后端暂停 work 并推送 `intent_confirmation_required` 事件，但前端既无该事件处理、也无 `POST /api/chat/confirm-intent` 调用，导致确认弹窗永不弹出、work 永久卡在 `PAUSED_WAITING_CONFIRMATION`；同时暂停分支此前不落库 REQUEST，历史刷新后用户提问被清空。
+- **功能变更**：
+  1. **确认弹窗**：`ChatArea.vue` 的 `handleStreamEvent` 新增 `intent_confirmation_required` 分支，将事件 payload 与 `currentSessionId` 写入 `sessionStore.setIntentConfirmation`；新增「确认需求理解」弹窗，展示原始输入 / 理解后的需求 / 匹配度（分数 vs 阈值）/ 判断依据，并提供「按理解执行（APPROVE）/ 按原文执行（KEEP）/ 取消（CANCEL）」三个动作。
+  2. **确认 API**：`api/index.ts` 新增 `chatApi.confirmIntent({ session_id, work_id, action, understood_requirement })`，调用 `POST /api/chat/confirm-intent`；`handleIntentConfirm` 执行后刷新 `loadDag` 与 `loadChatHistory` 展示最终结果，失败时渲染 ErrorBlock。
+  3. **状态管理**：`session.ts` 新增 `intentConfirmation` 状态与 `setIntentConfirmation` / `clearIntentConfirmation`。
+  4. **done 事件 paused 处理**：`handleStreamEvent` 的 `done` 分支识别 `paused=true` 时仅标记完成态，不关闭思考弹窗、不追加 Feedback 块，等待用户确认。
+- **行为差异**：
+  - 修改前：发送低匹配度问题时对话区 / ChatMap 无消息、无思考过程、无确认入口，work 卡死。
+  - 修改后：提问立即落库并在对话区 / ChatMap 展示；低匹配度时弹出确认弹窗，确认后继续编排并刷新结果。
+- **新增边界条件**：`done(paused=true)` 后思考弹窗保持打开（展示 Intent 需求理解思考块）；确认（APPROVE/KEEP）由后端同步完成编排，前端在 confirm-intent 响应后刷新历史与 ChatMap 才看到最终结果（无流式进度）。
 
 ### [2026-08-22] trace_id 全链路透传并落库 info_raw、消息框新增「评估结果」按钮
 - **变更原因**：

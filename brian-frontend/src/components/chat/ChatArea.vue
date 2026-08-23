@@ -122,6 +122,43 @@ async function showThinking(id: string) {
   await Promise.allSettled([dagPromise, blocksPromise])
 }
 
+const confirmingIntent = ref(false)
+
+async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
+  const conf = sessionStore.intentConfirmation
+  if (!conf) return
+  confirmingIntent.value = true
+  try {
+    await chatApi.confirmIntent({
+      session_id: conf.session_id,
+      work_id: conf.work_id,
+      action,
+      understood_requirement: action === 'APPROVE' ? conf.understood_requirement : undefined,
+    })
+  } catch (err) {
+    const errBlock: Block = {
+      id: `block-err-${Date.now()}`,
+      msgId: `msg-${Date.now()}`,
+      role: 'system',
+      type: 'ErrorFallback',
+      message: err instanceof Error ? err.message : '确认需求失败',
+      errorCode: 'CONFIRM_INTENT_FAILED',
+      retryAvailable: false,
+      meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+    } as Block
+    sessionStore.addBlock(errBlock)
+  } finally {
+    confirmingIntent.value = false
+    sessionStore.clearIntentConfirmation()
+    // 确认后刷新历史与 ChatMap，展示本轮最终结果
+    const sid = sessionStore.currentSessionId
+    if (sid) {
+      await sessionStore.loadDag(sid, 'default-user')
+      await sessionStore.loadChatHistory(sid, 'default-user')
+    }
+  }
+}
+
 type TimelineEntry =
   | { kind: 'message'; key: string; sort: number; message: ChatMessage }
   | { kind: 'block'; key: string; sort: number; block: Block }
@@ -604,6 +641,15 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       break
     }
 
+    case 'intent_confirmation_required': {
+      // 需求理解得分低于阈值：弹出「需求确认」弹窗，由用户确认按理解执行 / 按原文执行 / 取消
+      sessionStore.setIntentConfirmation({
+        ...payload,
+        session_id: sessionStore.currentSessionId,
+      })
+      break
+    }
+
     // ===== Planning 策略拆解事件 =====
     case 'plan_created': {
       // PlannerAgent 完成任务级拆解：记录 Task DAG 并更新弹窗
@@ -937,6 +983,11 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       sessionStore.finalizeBlocks(botMsgId)
       // Planning 拆解完成标记
       sessionStore.updatePlanning({ status: 'done' })
+      // 需求理解暂停等待确认：不关闭思考弹窗、不追加 Feedback 块，等待用户确认后重新发起
+      if (payload.paused) {
+        textBlockId = null
+        break
+      }
       // 系统最终回复流式输出完成（done 事件）→ 自动关闭思考弹窗
       sessionStore.closeThinkingModal()
       const feedbackBlock: Block = {
@@ -1103,5 +1154,63 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     <!-- 评估结果弹窗 -->
     <EvalResultModal />
+
+    <!-- 需求理解确认弹窗 -->
+    <div
+      v-if="sessionStore.intentConfirmation"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      @click.self="handleIntentConfirm('CANCEL')"
+    >
+      <div class="w-full max-w-lg mx-4 rounded-2xl bg-white dark:bg-apple-gray-900 shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-between">
+          <h3 class="text-base font-semibold text-apple-gray-900 dark:text-apple-gray-100">确认需求理解</h3>
+          <button
+            class="text-apple-gray-400 hover:text-apple-gray-600 dark:hover:text-apple-gray-200"
+            @click="handleIntentConfirm('CANCEL')"
+          >✕</button>
+        </div>
+        <div class="px-6 py-4 space-y-3 text-sm">
+          <div>
+            <p class="text-xs text-apple-gray-400 mb-1">原始输入</p>
+            <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.original_query }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-apple-gray-400 mb-1">理解后的需求</p>
+            <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.understood_requirement }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-apple-gray-400 mb-1">匹配度</p>
+            <p class="text-apple-gray-600 dark:text-apple-gray-300">
+              {{ sessionStore.intentConfirmation.match_score }} / 阈值 {{ sessionStore.intentConfirmation.threshold_score }}
+              <span class="ml-2 text-amber-500">（低于阈值，需确认）</span>
+            </p>
+          </div>
+          <div v-if="sessionStore.intentConfirmation.reasoning">
+            <p class="text-xs text-apple-gray-400 mb-1">判断依据</p>
+            <p class="text-apple-gray-600 dark:text-apple-gray-300">{{ sessionStore.intentConfirmation.reasoning }}</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-end gap-2">
+          <button
+            class="px-4 py-2 rounded-lg text-sm text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 disabled:opacity-50"
+            :disabled="confirmingIntent"
+            @click="handleIntentConfirm('CANCEL')"
+          >取消</button>
+          <button
+            class="px-4 py-2 rounded-lg text-sm text-apple-gray-600 bg-apple-gray-100 hover:bg-apple-gray-200 dark:bg-apple-gray-800 dark:text-apple-gray-200 dark:hover:bg-apple-gray-700 disabled:opacity-50"
+            :disabled="confirmingIntent"
+            @click="handleIntentConfirm('KEEP')"
+          >按原文执行</button>
+          <button
+            class="px-4 py-2 rounded-lg text-sm text-white bg-brian-blue hover:bg-brian-blue/90 disabled:opacity-50 flex items-center gap-1"
+            :disabled="confirmingIntent"
+            @click="handleIntentConfirm('APPROVE')"
+          >
+            <Loader2 v-if="confirmingIntent" :size="14" class="animate-spin" />
+            按理解执行
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

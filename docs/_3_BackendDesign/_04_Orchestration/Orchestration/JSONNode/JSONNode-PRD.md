@@ -88,8 +88,9 @@
 
 **处理逻辑**：
 1. 调用 InfoCore.saveInfo 将输入内容（来自执行上下文的 user_query）保存为 info_type=REQUEST、info_creator_role=USER；`info_type` / `info_creator_role` / `info_creator_id` 优先取自 shared_data（由 OrchestrationEntry 透传），`citing_msg_ids` 透传为 parent_info_ids 建立引用关系；
-2. saveInfo 失败时降级记录日志，不中断编排；
-3. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status；
+2. 幂等：先按 work_id + info_type=REQUEST 查询 `info_raw`，若已存在（确认流程 confirmIntent 重入场景）则复用已有 info_id 并直接返回，不再重复落库；
+3. saveInfo 失败时降级记录日志，不中断编排；
+4. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status；
 
 ### 3.2. BUILD_WORK_CONTEXT — 构建工作上下文
 
@@ -668,6 +669,18 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 7. **AOP**：所有方法经 AopProxy.wrap 生成代理。
 
 ## 代码变更记录
+
+### [2026-08-23] SAVE_USER_INPUT 幂等（confirmIntent 重入不重复落库）
+**变更原因**：需求理解暂停后用户确认（confirmIntent）会以相同 work_id 重入编排，`SAVE_USER_INPUT` 节点再次执行会重复写入 REQUEST 消息，导致对话区 / ChatMap 出现重复提问节点。
+
+**修改的方法**：
+  - `JSONNodeService.handleSaveUserInput` — 保存前先按 `work_id + info_type=REQUEST` 查询 `info_raw`，已存在则复用 `info_id` 并提前返回，跳过重复落库与状态更新。
+
+**影响的端点**：
+  - `POST /api/chat/confirm-intent` — 确认重入编排时不再产生重复 REQUEST 记录。
+
+**可能存在的问题**：
+  - 依赖暂停分支已提前落库 REQUEST（`OrchestrationEntryService.receiveWork`）；非暂停流程首次执行仍正常落库，行为不变。
 
 ### [2026-08-22] SAVE_USER_INPUT / SAVE_RESPONSE / HANDLE_ERROR 节点携带 trace_id 落库
 **变更原因**：trace_id 需贯穿整条处理链路并随消息落库 `info_raw`，供历史查询与日志检索。

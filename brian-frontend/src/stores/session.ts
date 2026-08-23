@@ -39,6 +39,40 @@ export const useSessionStore = defineStore('session', () => {
   const evalResultError = ref('')
   const evalTraceId = ref('')
 
+  // 需求理解确认弹窗：IntentAgent 匹配得分低于阈值时，由 intent_confirmation_required 事件驱动
+  interface IntentConfirmation {
+    session_id: string
+    work_id: string
+    interact_id: string
+    original_query: string
+    understood_requirement: string
+    match_score: number
+    threshold_score: number
+    reasoning: string
+  }
+  const intentConfirmation = ref<IntentConfirmation | null>(null)
+
+  function setIntentConfirmation(data: Record<string, unknown> | null) {
+    if (!data) {
+      intentConfirmation.value = null
+      return
+    }
+    intentConfirmation.value = {
+      session_id: String(data.session_id ?? ''),
+      work_id: String(data.work_id ?? ''),
+      interact_id: String(data.interact_id ?? ''),
+      original_query: String(data.original_query ?? ''),
+      understood_requirement: String(data.understood_requirement ?? ''),
+      match_score: Number(data.match_score ?? 0),
+      threshold_score: Number(data.threshold_score ?? 0),
+      reasoning: String(data.reasoning ?? ''),
+    }
+  }
+
+  function clearIntentConfirmation() {
+    intentConfirmation.value = null
+  }
+
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
     localStorage.setItem('chat-split-ratio', String(splitRatio.value))
@@ -607,6 +641,7 @@ export const useSessionStore = defineStore('session', () => {
     openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning,
     setAgentStatus, resetAgentStatus,
     evalResultVisible, evalResultLoading, evalResult, evalResultError, evalTraceId,
-    openEvalResult, closeEvalResult
+    openEvalResult, closeEvalResult,
+    intentConfirmation, setIntentConfirmation, clearIntentConfirmation
   }
 })

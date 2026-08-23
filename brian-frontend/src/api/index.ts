@@ -78,7 +78,12 @@ export const chatApi = {
   agentChain: (exchangeId: string) =>
     request<{ nodes: AgentChainNode[] }>(`/chat/agent-chain/${encodeURIComponent(exchangeId)}`).then(r => r.nodes),
   cancelTask: (exchangeId: string) =>
-    request<void>(`/chat/cancel/${encodeURIComponent(exchangeId)}`, { method: 'POST' })
+    request<void>(`/chat/cancel/${encodeURIComponent(exchangeId)}`, { method: 'POST' }),
+  confirmIntent: (payload: { session_id: string; work_id: string; action: 'APPROVE' | 'KEEP' | 'CANCEL'; understood_requirement?: string }) =>
+    request<{ success: boolean; action_applied: string; next_status: string }>('/chat/confirm-intent', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
 }
 
 export interface MemoryPage {
