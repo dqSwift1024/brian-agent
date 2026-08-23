@@ -42,13 +42,6 @@ const worldHeight = computed(() => {
   return maxY + NODE_H + 160
 })
 
-function formatTime(ts: number) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const pad = (x: number) => String(x).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 function nodeStyle(n: ChatMapNode) {
   return { left: `${n.x}px`, top: `${n.y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }
 }

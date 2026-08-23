@@ -20,7 +20,7 @@ import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import CronConfigModal from '@/components/CronConfigModal.vue'
 import { configApi, agentApi, skillApi, mcpApi, fetchApi, cdtApi, bookmarkApi, vectorDbApi, graphDbApi, mqApi } from '@/api'
 import type { VectorSearchInfo } from '@/api'
-import type { ConfigTreeLayer, ConfigTreeCategory, ConfigTreeItem, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
+import type { ConfigTreeLayer, MQMessage, MQStats, McpUsageRecord } from '@/api/types'
 
 // ============================================================
 // 导航定义（PRD §11）
@@ -600,7 +600,7 @@ async function loadMqQueues() {
 async function loadMqStats() {
   mqStatsLoading.value = true
   try {
-    const stats = await mqApi.stats()
+    await mqApi.stats()
     // Update cache for each queue from "all queues" perspective—best effort
     // We'll reload individual queue stats when user clicks
   } catch { /* ignore */ }
@@ -820,7 +820,7 @@ function startEditName(snap: Snapshot) {
   editingSnapName.value = snap.name
 }
 
-async function saveSnapName(snap: Snapshot) {
+async function saveSnapName(_snap: Snapshot) {
   if (editingSnapName.value.trim()) {
     // Snapshot name is stored in DB, we need an update endpoint or we can just recreate
     // For now, display name is controlled locally
@@ -929,18 +929,6 @@ async function loadPrompts() {
 }
 
 const promptPlaceholder = '请将以下内容翻译为{{target_lang}}：\n\n原文：{{source}}\n\n要求：{{requirement}}'
-
-const toolsSchemaPlaceholder = `{
-  "name": "get_weather",
-  "description": "获取指定城市的天气信息",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "city": { "type": "string", "description": "城市名称" }
-    },
-    "required": ["city"]
-  }
-}`
 
 const promptModalVisible = ref(false)
 const editingPrompt = ref<{ id: string; title: string; brief: string; enabled: boolean } | null>(null)
@@ -1836,15 +1824,6 @@ async function handleToggleModel(modelId: string) {
   }
 }
 
-async function handleTestModel(modelId: string) {
-  try {
-    const res = await configApi.model.test(modelId)
-    showToast(res.success ? `连接成功 · ${res.latency}ms` : res.message, res.success ? 'success' : 'error')
-  } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : '测试失败')
-  }
-}
-
 // ============================================================
 // Soul 数据
 // ============================================================
@@ -2352,16 +2331,6 @@ async function handleRefreshMcp() {
   }
 }
 
-async function handleDeleteMcp(mcpId: string) {
-  try {
-    await fetchApi(`/mcp/${mcpId}`, { method: 'DELETE' })
-    mcps.value = mcps.value.filter(m => m.id !== mcpId)
-    showToast('已卸载', 'success')
-  } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : '卸载失败')
-  }
-}
-
 async function handleToggleMcp(mcpId: string) {
   try {
     await fetchApi(`/mcp/${mcpId}/toggle`, { method: 'POST' })
@@ -2643,23 +2612,6 @@ async function handleTestMcpProvider(providerId: string) {
     } else {
       showToast(`✗ ${msg || '测试失败'}`)
     }
-  }
-}
-
-async function handleToggleMcpProvider(providerId: string) {
-  const p = mcpProviders.value.find(pr => (pr.provider_code || pr.id) === providerId)
-  if (!p) return
-  const newEnabled = !p.enable
-  try {
-    await fetchApi(`/config/mcp/provider/${providerId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ data: { enable: newEnabled }, id: providerId }),
-    })
-    p.enable = newEnabled
-    showToast(newEnabled ? '已启用' : '已停用', 'success')
-  } catch {
-    p.enable = newEnabled
-    showToast(newEnabled ? '已启用（仅本地）' : '已停用（仅本地）', 'success')
   }
 }
 
@@ -3508,15 +3460,9 @@ interface FlatFolder { id: string; name: string; parent_id: string; sort_order: 
 const bookmarkTree = ref<BookmarkFolder[]>([])
 const bookmarkFlatFolders = ref<FlatFolder[]>([])
 const bookmarkLoading = ref(false)
-const bookmarkNewFolderName = ref('')
-const bookmarkNewFolderParent = ref('')
 const bookmarkNewItemUrl = ref('')
 const bookmarkNewItemTitle = ref('')
 const bookmarkNewItemFolder = ref('')
-const bookmarkEditingFolder = ref<{ id: string; name: string } | null>(null)
-const bookmarkEditingItem = ref<{ id: string; title: string; url: string } | null>(null)
-const bookmarkMoveItemId = ref('')
-const bookmarkMoveTargetFolder = ref('')
 const expandedFolders = ref<Set<string>>(new Set())
 
 async function loadBookmarks() {
@@ -3542,13 +3488,6 @@ function toggleFolder(id: string) {
   expandedFolders.value = next
 }
 
-async function addBookmarkFolder() {
-  const name = bookmarkNewFolderName.value.trim()
-  if (!name) { showToast('请输入文件夹名称'); return }
-  try { await bookmarkApi.createFolder(name, bookmarkNewFolderParent.value); bookmarkNewFolderName.value = ''; await loadBookmarks(); showToast('文件夹已创建', 'success') }
-  catch (e: unknown) { showToast(`创建失败: ${e instanceof Error ? e.message : '未知错误'}`) }
-}
-
 async function addBookmarkItem(url?: string, title?: string) {
   const finalUrl = (url || bookmarkNewItemUrl.value).trim()
   const finalTitle = (title || bookmarkNewItemTitle.value).trim() || finalUrl
@@ -3562,20 +3501,6 @@ async function addBookmarkItem(url?: string, title?: string) {
   catch (e: unknown) { showToast(`添加失败: ${e instanceof Error ? e.message : '未知错误'}`) }
 }
 
-async function renameFolder() {
-  const f = bookmarkEditingFolder.value
-  if (!f || !f.name.trim()) return
-  try { await bookmarkApi.updateFolder(f.id, f.name.trim()); bookmarkEditingFolder.value = null; await loadBookmarks() }
-  catch (e: unknown) { showToast(`重命名失败: ${e instanceof Error ? e.message : '未知错误'}`) }
-}
-
-async function renameItem() {
-  const item = bookmarkEditingItem.value
-  if (!item || !item.title.trim()) return
-  try { await bookmarkApi.updateItem(item.id, item.title.trim(), item.url.trim()); bookmarkEditingItem.value = null; await loadBookmarks() }
-  catch (e: unknown) { showToast(`更新失败: ${e instanceof Error ? e.message : '未知错误'}`) }
-}
-
 async function removeFolder(id: string) {
   if (!confirm('删除文件夹将同时删除其中的所有书签和子文件夹，确认？')) return
   try { await bookmarkApi.deleteFolder(id); await loadBookmarks() }
@@ -3585,20 +3510,6 @@ async function removeFolder(id: string) {
 async function removeBookmarkItem(id: string) {
   try { await bookmarkApi.deleteItem(id); await loadBookmarks() }
   catch (e: unknown) { showToast(`删除失败: ${e instanceof Error ? e.message : '未知错误'}`) }
-}
-
-async function moveBookmarkItem() {
-  if (!bookmarkMoveItemId.value || !bookmarkMoveTargetFolder.value) return
-  try { await bookmarkApi.moveItem(bookmarkMoveItemId.value, bookmarkMoveTargetFolder.value); bookmarkMoveItemId.value = ''; bookmarkMoveTargetFolder.value = ''; await loadBookmarks(); showToast('已移动', 'success') }
-  catch (e: unknown) { showToast(`移动失败: ${e instanceof Error ? e.message : '未知错误'}`) }
-}
-
-async function addBookmarkFromCDT() {
-  const url = cdtPageUrl.value.trim()
-  if (!url) { showToast('请先在"网页访问"中输入 URL'); return }
-  bookmarkNewItemUrl.value = url
-  bookmarkNewItemFolder.value = bookmarkTree.value[0]?.id || ''
-  await addBookmarkItem()
 }
 
 // ============================================================
@@ -3740,7 +3651,7 @@ watch(activeSubSection, async (val) => {
 
       <!-- ═══════════════ 右侧内容区 ═══════════════ -->
       <main class="flex-1 bg-apple-gray-50 dark:bg-apple-gray-900" :class="mcpMarketSelectedProvider ? 'overflow-hidden' : 'overflow-y-auto'">
-        <div class="flex items-center gap-1.5 px-5 py-2.5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
+        <div class="sticky top-0 z-10 flex items-center gap-1.5 px-5 py-2.5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
           <Layers :size="15" class="text-brian-blue flex-shrink-0" />
           <PageBreadcrumb :path="pagePath" />
         </div>

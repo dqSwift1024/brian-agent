@@ -21,7 +21,6 @@ import {
   Layers,
   Sparkles,
   Database,
-  Code,
   Zap,
   Clock,
   Copy,

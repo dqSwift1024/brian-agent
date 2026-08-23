@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startTestServer, stopTestServer, cleanupE2ETempDirs, type E2ETestContext } from './e2e-server';
+import { startTestServer, stopTestServer, cleanupE2ETempDirs } from './e2e-server';
 import type * as http from 'node:http';
 
 let apiBase: string;
 let server: http.Server;
-let ctx: E2ETestContext;
 
 beforeAll(async () => {
   const setup = await startTestServer();
   server = setup.server;
-  ctx = setup.ctx;
   apiBase = `http://127.0.0.1:${setup.port}`;
 }, 60000);
 

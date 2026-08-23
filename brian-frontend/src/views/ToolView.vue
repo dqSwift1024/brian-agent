@@ -132,24 +132,26 @@ async function runRegex() {
     <NeuralBackground />
     <Header />
     <div class="pt-14 relative z-10">
-      <div class="h-10 flex items-center px-5 border-b border-apple-gray-200 dark:border-apple-gray-700 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
-        <PageBreadcrumb :path="['工具']" />
-      </div>
-    </div>
-    <div class="px-6 pb-6 min-h-screen relative z-10">
-      <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="[
-            'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
-            activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
-          ]"
-          @click="activeTab = tab.key"
-        >
-          <component :is="tab.icon" :size="15" />
-          {{ tab.label }}
-        </button>
+      <div class="sticky top-14 z-30 bg-white/80 dark:bg-apple-gray-800/80 backdrop-blur-md">
+        <div class="h-10 flex items-center px-5 border-b border-apple-gray-200 dark:border-apple-gray-700">
+          <PageBreadcrumb :path="['工具']" />
+        </div>
+        <div class="px-6">
+          <div class="flex items-center gap-1 mt-3 mb-4 border-b border-apple-gray-200 dark:border-apple-gray-700 pb-2">
+            <button
+              v-for="tab in tabs"
+              :key="tab.key"
+              :class="[
+                'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors',
+                activeTab === tab.key ? 'bg-brian-blue text-white' : 'text-apple-gray-600 dark:text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'
+              ]"
+              @click="activeTab = tab.key"
+            >
+              <component :is="tab.icon" :size="15" />
+              {{ tab.label }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- ID 生成 -->

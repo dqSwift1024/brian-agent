@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Brain, Lightbulb, TrendingUp, Calendar, Loader2, RefreshCw, FileText, MessageCircle, Network, Zap } from '@lucide/vue'
+import { Brain, Loader2, FileText, MessageCircle, Network, Zap } from '@lucide/vue'
 import { learningApi } from '@/api'
 import type { LearningStats, LearningProgress } from '@/api/types'
 

@@ -537,8 +537,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const thinkBlock = getOrCreateThinkBlock(agentId)
       const userProfile = (payload.user_profile as Record<string, unknown>) || undefined
       const recentWorks = (payload.recent_works as unknown[]) || undefined
-      const categories = (payload.context_categories as any) || {}
-      const categoryIds = (payload.context_category_ids as any) || undefined
+      const categories = (payload.context_categories as Record<string, unknown[]>) || {}
+      const categoryIds = (payload.context_category_ids as Record<string, string[]>) || undefined
       const citingMessages = categories.citing || (Array.isArray(payload.session_context) ? payload.session_context : ((payload.citations as unknown[]) || undefined))
 
       thinkBlock.context = {

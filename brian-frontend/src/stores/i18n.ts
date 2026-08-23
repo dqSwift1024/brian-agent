@@ -24,7 +24,6 @@ const i18nMap: Record<string, Record<Locale, string>> = {
   'info.tagGraph': { 'zh-CN': 'Tag图', 'en-US': 'Tag Graph' },
   'info.keywordGraph': { 'zh-CN': '关键词图', 'en-US': 'Keyword Graph' },
   'info.profile': { 'zh-CN': '画像', 'en-US': 'Profile' },
-  'info.messageGraph': { 'zh-CN': '消息图', 'en-US': 'Message Graph' },
   'learning.start': { 'zh-CN': '开始学习', 'en-US': 'Start Learning' },
   'learning.stop': { 'zh-CN': '暂停学习', 'en-US': 'Stop Learning' },
   'learning.running': { 'zh-CN': '学习中...', 'en-US': 'Learning...' },
