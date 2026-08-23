@@ -6,12 +6,13 @@ import {
   Operator, DataObject, DBContext, IdGenerator,
   ValidationError, NotFoundError,
   InfoType,
+  HandleResultType,
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
 import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput } from '@brian-agent/core';
-import type { WriterAgentAccess, SummaryAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
-import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, GenerateSummaryInput, GenerateSummaryOutput, SummaryAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
+import type { WriterAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
+import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
 import type { StartOrchestrationInput, StartOrchestrationOutput } from '../../OrchestrationStrategy/domain/types';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
@@ -44,7 +45,6 @@ export class OrchestrationEntryService {
     private readonly mqAccess?: any,
     private readonly mqCore?: any,
     private readonly logger?: Logger,
-    private readonly summaryAgent?: SummaryAgentAccess,
     private readonly intentAgent?: IntentAgentAccess,
     private readonly streamAccess?: any,
   ) {}
@@ -271,7 +271,7 @@ export class OrchestrationEntryService {
           info_creator_id: workId,
           info: errResponse,
           parent_info_ids: parentInfoIds,
-          summary: await this.generateResponseSummary(InfoType.RESPONSE, errResponse, input.session_id, workId, interactId),
+          handle_result_type: HandleResultType.INTERNAL_ERROR,
           trace_id: input.trace_id ?? '',
         });
         await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
@@ -897,27 +897,6 @@ export class OrchestrationEntryService {
       return (row?.[field] as number) ?? defaultValue;
     } catch {
       return defaultValue;
-    }
-  }
-
-  private async generateResponseSummary(
-    infoType: string,
-    info: string,
-    sessionId: string,
-    workId: string,
-    interactId: string,
-  ): Promise<string | undefined> {
-    if (!this.summaryAgent) return undefined;
-    try {
-      const out = new GenerateSummaryOutput();
-      await this.summaryAgent.generateSummary(
-        Object.assign(new GenerateSummaryInput(), { info_type: infoType, info }),
-        Object.assign(new SummaryAgentContext(), { session_id: sessionId, work_id: workId, interact_id: interactId }),
-        out,
-      );
-      return out.summary || undefined;
-    } catch {
-      return undefined;
     }
   }
 }

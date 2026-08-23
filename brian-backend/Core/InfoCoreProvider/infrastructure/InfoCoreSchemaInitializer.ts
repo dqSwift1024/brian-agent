@@ -55,11 +55,17 @@ export class InfoCoreSchemaInitializer {
         "info"              TEXT    NOT NULL,
         "info_length"       INTEGER NOT NULL DEFAULT 0,
         "pin"               INTEGER NOT NULL DEFAULT 0,
-        "trace_id"          TEXT    NOT NULL DEFAULT ''
+        "trace_id"          TEXT    NOT NULL DEFAULT '',
+        "handle_result_type" TEXT   NOT NULL DEFAULT 'correct'
       )
     `);
     try {
       this.relationDb.executeRaw(`ALTER TABLE "${INFO_RAW_TABLE}" ADD COLUMN "trace_id" TEXT NOT NULL DEFAULT ''`);
+    } catch {
+      // 字段已存在
+    }
+    try {
+      this.relationDb.executeRaw(`ALTER TABLE "${INFO_RAW_TABLE}" ADD COLUMN "handle_result_type" TEXT NOT NULL DEFAULT 'correct'`);
     } catch {
       // 字段已存在
     }
@@ -80,6 +86,9 @@ export class InfoCoreSchemaInitializer {
     );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_created" ON "${INFO_RAW_TABLE}" ("created")`,
+    );
+    this.relationDb.executeRaw(
+      `CREATE INDEX IF NOT EXISTS "idx_${INFO_RAW_TABLE}_handle_result_type" ON "${INFO_RAW_TABLE}" ("handle_result_type")`,
     );
 
     // info_context_source — 每次问答（work_id）的上下文采集来源 → info_id 关系

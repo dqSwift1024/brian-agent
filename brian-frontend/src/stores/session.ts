@@ -184,6 +184,7 @@ export const useSessionStore = defineStore('session', () => {
         workId: n.work_id ? String(n.work_id) : undefined,
         interactId: n.interact_id ? String(n.interact_id) : undefined,
         traceId: n.trace_id ? String(n.trace_id) : undefined,
+        handleResultType: n.handle_result_type ? String(n.handle_result_type) : undefined,
         x: 0,
         y: 0,
       }))

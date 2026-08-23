@@ -5,6 +5,7 @@ import {
   ExecPromptInput, ExecPromptOutput, PromptContext,
   SoPromptInput, SoPromptOutput,
   SendMQInput, SendMQOutput, MQContext,
+  HandleResultType,
   PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject, type Direction,
 } from '@brian-agent/base';
@@ -83,6 +84,10 @@ export class EvolutorAgentService {
     ctx: EvolutorAgentContext,
     output: EvalWorkAgentOutput,
   ): Promise<boolean> {
+    // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
+    if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
+      return true;
+    }
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,
@@ -224,6 +229,10 @@ export class EvolutorAgentService {
     ctx: EvolutorAgentContext,
     output: EvalWriterAgentOutput,
   ): Promise<boolean> {
+    // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
+    if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
+      return true;
+    }
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,

@@ -11,6 +11,7 @@ import {
   Operator,
   IdGenerator,
   CollectionSource,
+  HandleResultType,
 } from '@brian-agent/base';
 import {
   InfoCoreAccess,
@@ -106,6 +107,7 @@ describe('InfoCoreProvider', () => {
     input.info = overrides?.info ?? '这是一条测试信息 This is a test information message for testing purposes';
     input.parent_info_ids = overrides?.parent_info_ids;
     input.summary = overrides?.summary;
+    input.handle_result_type = overrides?.handle_result_type;
     return input;
   }
 
@@ -364,6 +366,99 @@ describe('InfoCoreProvider', () => {
       await expect(
         infoCore.keywordInfo(input, new InfoCoreContext(), new KeywordInfoOutput()),
       ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('handle_result_type（错误信息隔离）', () => {
+    it('saveInfo 错误信息落库 handle_result_type，且摘要为原文', async () => {
+      const input = makeSaveInput({
+        info: 'Skill 执行失败：参数非法',
+        handle_result_type: HandleResultType.CALL_ERROR,
+        summary: '不应被采用的人工摘要',
+      });
+      const output = new SaveInfoOutput();
+      await infoCore.saveInfo(input, new InfoCoreContext(), output);
+
+      const rows = await relationDb.select('info_raw', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: output.info_id }],
+      });
+      expect(rows.length).toBe(1);
+      expect(rows[0].handle_result_type).toBe(HandleResultType.CALL_ERROR);
+
+      // 错误信息摘要直接用原文，忽略传入的人工摘要
+      const summaryRows = await relationDb.select('info_summary', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: output.info_id }],
+      });
+      expect(summaryRows.length).toBe(1);
+      expect(summaryRows[0].summary).toBe('Skill 执行失败：参数非法');
+    });
+
+    it('错误信息不参与自学习：vectorInfo/tagInfo/keywordInfo 均不落库', async () => {
+      const saveOut = new SaveInfoOutput();
+      await infoCore.saveInfo(
+        makeSaveInput({ info: '网络连接超时 ECONNREFUSED', handle_result_type: HandleResultType.INTERNAL_ERROR }),
+        new InfoCoreContext(),
+        saveOut,
+      );
+
+      const input = new ProcessInfoInput();
+      input.info_id = saveOut.info_id;
+
+      await infoCore.vectorInfo(input, new InfoCoreContext(), new VectorInfoOutput());
+      await infoCore.tagInfo(input, new InfoCoreContext(), new TagInfoOutput());
+      await infoCore.keywordInfo(input, new InfoCoreContext(), new KeywordInfoOutput());
+
+      const vectorRows = await relationDb.select('info_vector', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: saveOut.info_id }],
+      });
+      const tagRows = await relationDb.select('info_tag', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: saveOut.info_id }],
+      });
+      const keywordRows = await relationDb.select('info_keyword', {
+        conditions: [{ field: 'info_id', operator: Operator.EQ, value: saveOut.info_id }],
+      });
+
+      expect(vectorRows.length).toBe(0);
+      expect(tagRows.length).toBe(0);
+      expect(keywordRows.length).toBe(0);
+    });
+
+    it('lastNInfo 支持按 handle_result_type 过滤', async () => {
+      const a = new SaveInfoOutput();
+      await infoCore.saveInfo(makeSaveInput({ session_id: 's-hr', info: '正常信息' }), new InfoCoreContext(), a);
+      const b = new SaveInfoOutput();
+      await infoCore.saveInfo(
+        makeSaveInput({ session_id: 's-hr', info: '错误信息', handle_result_type: HandleResultType.INTERNAL_ERROR }),
+        new InfoCoreContext(),
+        b,
+      );
+
+      const errInput = new LastNInfoInput();
+      errInput.session_id = 's-hr';
+      errInput.lastN = 10;
+      errInput.handle_result_type = HandleResultType.INTERNAL_ERROR;
+      const errOut = new LastNInfoOutput();
+      await infoCore.lastNInfo(errInput, new InfoCoreContext(), errOut);
+      expect(errOut.list.length).toBe(1);
+      expect(errOut.list[0].info_id).toBe(b.info_id);
+    });
+
+    it('graphInfo 节点携带 handle_result_type', async () => {
+      const saveOut = new SaveInfoOutput();
+      await infoCore.saveInfo(
+        makeSaveInput({ session_id: 's-graph', info: '错误信息', handle_result_type: HandleResultType.CALL_ERROR }),
+        new InfoCoreContext(),
+        saveOut,
+      );
+
+      const gInput = new GraphInfoInput();
+      gInput.session_id = 's-graph';
+      const gOut = new GraphInfoOutput();
+      await infoCore.graphInfo(gInput, new InfoCoreContext(), gOut);
+
+      const node = gOut.graph.nodes.find((n) => n.info_id === saveOut.info_id);
+      expect(node).toBeTruthy();
+      expect(node?.handle_result_type).toBe(HandleResultType.CALL_ERROR);
     });
   });
 

@@ -161,6 +161,7 @@ export class VisualizationService {
       info: String(row.info ?? ''),
       info_length: Number(row.info_length ?? 0),
       pin: Number(row.pin ?? 0),
+      handle_result_type: String(row.handle_result_type ?? ''),
     }));
 
     const total = allMessages.length;
@@ -232,7 +233,7 @@ export class VisualizationService {
     }
 
     const rawGraph = graphOut.graph;
-    const rawNodes = (rawGraph.nodes ?? []) as Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string }>;
+    const rawNodes = (rawGraph.nodes ?? []) as Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string; handle_result_type?: string }>;
     const rawEdges = (rawGraph.edges ?? []) as Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string; edge_type?: string }>;
 
     // 截断节点（graphInfo 已统一以 info_id 作为节点 id，与边 from/to 同命名空间）
@@ -254,6 +255,7 @@ export class VisualizationService {
         info_id: infoId ?? '',
         info_type: node.info_type ?? '',
         info_creator_role: node.info_creator_role ?? '',
+        handle_result_type: node.handle_result_type ?? '',
         info_summary: this.truncate(summary ?? node.label ?? infoId ?? '', summaryLength),
         citing_count: citeData?.citingCount ?? 0,
         cited_count: citeData?.citedCount ?? 0,
@@ -484,7 +486,7 @@ export class VisualizationService {
           { field: 'session_id', operator: Operator.EQ, value: input.session_id },
         ],
         order_by: [{ field: 'created', direction: 'DESC' as const }],
-        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin', 'trace_id'],
+        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin', 'trace_id', 'handle_result_type'],
       });
     } catch (err) {
       this.logWarn('query info_raw failed', err);
@@ -528,6 +530,7 @@ export class VisualizationService {
         info_type: String(row.info_type ?? ''),
         info_creator_role: String(row.info_creator_role ?? ''),
         trace_id: String(row.trace_id ?? ''),
+        handle_result_type: String(row.handle_result_type ?? ''),
         // ===== 原始代码（保留作为参考） =====
         // info_summary: this.truncate(String(row.info ?? ''), summaryLength),
         // ===== 修改后的代码：使用 info_summary 表的完整摘要 =====

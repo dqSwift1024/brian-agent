@@ -496,7 +496,7 @@ async function buildContext() {
   await jsonNode.initialize();
   const orchestrationStrategy = new OrchestrationStrategyAccess(relationDb, agentBuilder, plannerAgent, writerAgent, evolutorAgent, orchestrationExecution, jsonNode, mqCore, logger);
   await orchestrationStrategy.initialize();
-  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, summaryAgent, intentAgent, streamAccess);
+  const orchestrationEntry = new OrchestrationEntryAccess(relationDb, infoCore, writerAgent, orchestrationStrategy, orchestrationExecution, llmAccess, promptsAccess, mqAccess, mqCore, logger, intentAgent, streamAccess);
   await orchestrationEntry.initialize();
 
   // ---- Application Layer ----

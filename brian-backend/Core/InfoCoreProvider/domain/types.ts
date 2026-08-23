@@ -6,7 +6,16 @@
  * 所有 Input 继承 {@link Input}，所有 Context 继承 {@link Context}，所有 Output 继承 {@link Output}。
  */
 
-import { Input, Context, Output, InfoType, CollectionSource, ContextSource } from '@brian-agent/base';
+import {
+  Input,
+  Context,
+  Output,
+  InfoType,
+  CollectionSource,
+  ContextSource,
+  HandleResultType,
+  DEFAULT_HANDLE_RESULT_TYPE,
+} from '@brian-agent/base';
 import type { Page } from '@brian-agent/base';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +45,7 @@ export interface InfoRawRecord {
   info_length: number;
   pin: number;
   trace_id: string;
+  handle_result_type: string;
 }
 
 /** info_graph 表记录 */
@@ -168,6 +178,8 @@ export class SaveInfoInput extends Input {
   parent_info_ids?: string[];
   /** 预生成的摘要（由上层编排调用 SummaryAgent 生成后传入；为空则不为该 info 生成摘要） */
   summary?: string;
+  /** 处理结果类型：correct / call_error / internal_error（默认 correct） */
+  handle_result_type?: string;
 }
 
 /** saveInfo 出参 */
@@ -243,6 +255,8 @@ export class LastNInfoInput extends Input {
   info_creator_role?: string;
   info_creator_id?: string;
   info_id?: string;
+  /** 按处理结果类型过滤（correct / call_error / internal_error）；缺省返回全部 */
+  handle_result_type?: string;
   lastN!: number;
 }
 
@@ -259,6 +273,8 @@ export class LastNInfoOutput extends Output {
 export class GraphNInfoInput extends Input {
   info_id!: string;
   lastN!: number;
+  /** 按处理结果类型过滤；缺省返回全部 */
+  handle_result_type?: string;
 }
 
 /** graphNInfo 出参 */
@@ -319,12 +335,14 @@ export class RelationKInfoOutput extends Output {
 /** graphInfo 入参 */
 export class GraphInfoInput extends Input {
   session_id!: string;
+  /** 按处理结果类型过滤；缺省返回全部 */
+  handle_result_type?: string;
 }
 
 /** graphInfo 出参 */
 export class GraphInfoOutput extends Output {
   graph: {
-    nodes: Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string }>;
+    nodes: Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string; handle_result_type?: string }>;
     edges: Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string; edge_type?: string }>;
   } = { nodes: [], edges: [] };
 }
@@ -357,6 +375,7 @@ export interface ContextInfoAttribute {
   pin: number;
   created: number;
   updated: number;
+  handle_result_type: string;
 }
 
 /** 对象3：info_id → 消息属性 */
@@ -382,6 +401,7 @@ export interface ContextInfoItem {
   pin: number;
   created: number;
   updated: number;
+  handle_result_type?: string;
 }
 
 /** 上下文分类结构 */

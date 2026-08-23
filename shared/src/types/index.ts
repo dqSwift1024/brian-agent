@@ -44,6 +44,12 @@ export enum CollectionSource {
 export const ContextSource = CollectionSource;
 export type ContextSource = CollectionSource;
 
+export enum HandleResultType {
+  CORRECT = 'correct',
+  CALL_ERROR = 'call_error',
+  INTERNAL_ERROR = 'internal_error',
+}
+
 export interface MemoryNode {
   id: string;
   type: NodeType;

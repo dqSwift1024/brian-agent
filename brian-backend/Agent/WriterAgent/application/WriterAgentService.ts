@@ -6,6 +6,7 @@ import {
   SoPromptInput, SoPromptOutput,
   GetSoulInput, GetSoulOutput, SoulContext,
   InfoType,
+  HandleResultType,
   PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
@@ -282,13 +283,34 @@ export class WriterAgentService {
       } catch { /* best-effort */ }
     }
 
-    const results = (input.agent_results ?? [])
-      .map((r) => {
-        const text = r.answer ?? r.result ?? '';
-        const taskContent = r.task_content ?? '';
-        return `[${r.agent_id}] ${taskContent}: ${text}`;
-      })
-      .join('\n');
+    const agentResults = input.agent_results ?? [];
+    const isErrorResult = (r: { handle_result_type?: string }) =>
+      r.handle_result_type === HandleResultType.CALL_ERROR
+      || r.handle_result_type === HandleResultType.INTERNAL_ERROR;
+    const formatResult = (r: { agent_id: string; task_content?: string; result?: string; answer?: string }) => {
+      const text = r.answer ?? r.result ?? '';
+      const taskContent = r.task_content ?? '';
+      return `[${r.agent_id}] ${taskContent}: ${text}`;
+    };
+    const results = agentResults.filter((r) => !isErrorResult(r)).map(formatResult).join('\n');
+
+    // 错误信息不参与 Writer 汇总：结果全为错误时跳过 LLM，直接透传错误信息
+    const errorResults = agentResults.filter(isErrorResult);
+    if (errorResults.length > 0 && results === '') {
+      const errorText = errorResults.map(formatResult).join('\n');
+      output.blocks = [{
+        id: IdGenerator.generate(),
+        type: 'error_fallback' as const,
+        content: errorText,
+        meta: { streaming_status: 'completed' as const },
+      }];
+      output.agent_id = buildOut.agent_id;
+      output.response = errorText;
+      output.response_format = preferences.format || 'MARKDOWN';
+      output.token_usage = 0;
+      output.handle_result_type = errorResults[0]?.handle_result_type ?? HandleResultType.INTERNAL_ERROR;
+      return true;
+    }
 
     let response = '';
     let tokens = 0;

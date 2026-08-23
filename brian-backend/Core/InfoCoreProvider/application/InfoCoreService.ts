@@ -24,6 +24,8 @@ import {
   InfoType,
   CollectionSource,
   ContextSource,
+  HandleResultType,
+  DEFAULT_HANDLE_RESULT_TYPE,
 } from '@brian-agent/base';
 import type { Condition } from '@brian-agent/base';
 import { Jieba } from '@node-rs/jieba';
@@ -241,8 +243,8 @@ export class InfoCoreService {
    * 流程：
    * 1. 插入 info_raw 表。
    * 2. 若 parent_info_ids 存在，创建 info_graph 边。
-   * 3. 若 input.summary 存在，写入 info_summary 表（摘要由上层编排调用 SummaryAgent 生成后传入）。
-   * 4. 异步触发处理：vectorInfo / tagInfo / keywordInfo（摘要生成不在本方法内触发）。
+   * 3. 摘要落库：错误信息（非 correct）直接用原文作为摘要；正常信息经 input.summary 传入后落库。
+   * 4. 异步触发处理（仅正常信息）：vectorInfo / tagInfo / keywordInfo（摘要生成不在本方法内触发）。
    */
   async saveInfo(
     input: SaveInfoInput,
@@ -255,6 +257,9 @@ export class InfoCoreService {
     if (!input.work_id) {
       throw new ValidationError('saveInfo 需要提供 work_id');
     }
+
+    const handleResultType = input.handle_result_type || DEFAULT_HANDLE_RESULT_TYPE;
+    const isCorrect = handleResultType === HandleResultType.CORRECT;
 
     const now = IdGenerator.now();
     const id = IdGenerator.generate();
@@ -275,6 +280,7 @@ export class InfoCoreService {
       { field: 'info_length', value: input.info.length },
       { field: 'pin', value: 0 },
       { field: 'trace_id', value: input.trace_id || '' },
+      { field: 'handle_result_type', value: handleResultType },
     ]);
 
     // 创建图引用边
@@ -284,33 +290,38 @@ export class InfoCoreService {
 
     output.info_id = infoId;
 
-    // 摘要生成规则由上层编排控制：saveInfo 仅负责保存，摘要经 input.summary 传入后落库
-    if (input.summary) {
+    // 摘要生成规则由上层编排控制：saveInfo 仅负责保存。
+    // 错误信息（非 correct）无意义调用 LLM 生成摘要，直接用原文作为摘要；
+    // 正常信息经 input.summary 传入后落库。
+    const summaryText = isCorrect ? (input.summary ?? '') : input.info;
+    if (summaryText) {
       const summaryId = IdGenerator.generate();
       await this.relationDb.insert(INFO_SUMMARY_TABLE, [
         { field: 'id', value: summaryId },
         { field: 'created', value: now },
         { field: 'updated', value: now },
         { field: 'info_id', value: infoId },
-        { field: 'summary', value: input.summary },
+        { field: 'summary', value: summaryText },
       ]);
     }
 
-    // 异步触发处理（不阻塞保存）
-    const processInput = new ProcessInfoInput();
-    processInput.info_id = infoId;
-    setImmediate(async () => {
-      try {
-        await Promise.all([
-          this.vectorInfo(processInput, _context, new VectorInfoOutput()),
-          this.tagInfo(processInput, _context, new TagInfoOutput()),
-          // this.summaryInfo(processInput, _context, new SummaryInfoOutput()),  // 摘要改由上层 SummaryAgent 生成后经 input.summary 传入
-          this.keywordInfo(processInput, _context, new KeywordInfoOutput()),
-        ]);
-      } catch (err) {
-        // 异步处理错误仅记录，不影响保存
-      }
-    });
+    // 异步触发处理（不阻塞保存）：仅正常信息参与自学习（关键词/标签/向量）
+    if (isCorrect) {
+      const processInput = new ProcessInfoInput();
+      processInput.info_id = infoId;
+      setImmediate(async () => {
+        try {
+          await Promise.all([
+            this.vectorInfo(processInput, _context, new VectorInfoOutput()),
+            this.tagInfo(processInput, _context, new TagInfoOutput()),
+            // this.summaryInfo(processInput, _context, new SummaryInfoOutput()),  // 摘要改由上层 SummaryAgent 生成后经 input.summary 传入
+            this.keywordInfo(processInput, _context, new KeywordInfoOutput()),
+          ]);
+        } catch (err) {
+          // 异步处理错误仅记录，不影响保存
+        }
+      });
+    }
 
     return true;
   }
@@ -375,6 +386,10 @@ export class InfoCoreService {
     if (!infoRow) {
       throw new NotFoundError('信息', input.info_id);
     }
+    // 错误信息（call_error / internal_error）不参与自学习向量化
+    if (infoRow.handle_result_type !== HandleResultType.CORRECT) {
+      return true;
+    }
 
     const vectorConfig = await this.getInfoVectorConfig();
     if (!vectorConfig || vectorConfig.enable !== 1) {
@@ -425,6 +440,10 @@ export class InfoCoreService {
     const infoRow = await this.getInfoByInfoId(input.info_id);
     if (!infoRow) {
       throw new NotFoundError('信息', input.info_id);
+    }
+    // 错误信息不参与自学习标签提取
+    if (infoRow.handle_result_type !== HandleResultType.CORRECT) {
+      return true;
     }
 
     const tags = await this.extractTags(infoRow.info, tagConfig);
@@ -535,6 +554,10 @@ export class InfoCoreService {
     const infoRow = await this.getInfoByInfoId(input.info_id);
     if (!infoRow) {
       throw new NotFoundError('信息', input.info_id);
+    }
+    // 错误信息不参与自学习关键词提取
+    if (infoRow.handle_result_type !== HandleResultType.CORRECT) {
+      return true;
     }
 
     const keywords = this.extractKeywords(infoRow.info);
@@ -684,6 +707,9 @@ export class InfoCoreService {
     if (input.info_id) {
       conditions.push({ field: 'info_id', operator: Operator.EQ, value: input.info_id });
     }
+    if (input.handle_result_type) {
+      conditions.push({ field: 'handle_result_type', operator: Operator.EQ, value: input.handle_result_type });
+    }
 
     const rows = await this.relationDb.select(INFO_RAW_TABLE, {
       conditions,
@@ -750,8 +776,12 @@ export class InfoCoreService {
       return true;
     }
 
+    const graphConditions: Condition[] = [{ field: 'info_id', operator: Operator.IN, value: infoIds }];
+    if (input.handle_result_type) {
+      graphConditions.push({ field: 'handle_result_type', operator: Operator.EQ, value: input.handle_result_type });
+    }
     const rows = await this.relationDb.select(INFO_RAW_TABLE, {
-      conditions: [{ field: 'info_id', operator: Operator.IN, value: infoIds }],
+      conditions: graphConditions,
       order_by: [{ field: 'created', direction: 'DESC' }],
       page: { current: 1, size: input.lastN },
     });
@@ -1028,8 +1058,12 @@ export class InfoCoreService {
       throw new ValidationError('graphInfo 需要提供 session_id');
     }
 
+    const graphInfoConditions: Condition[] = [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }];
+    if (input.handle_result_type) {
+      graphInfoConditions.push({ field: 'handle_result_type', operator: Operator.EQ, value: input.handle_result_type });
+    }
     const infoRows = await this.relationDb.select(INFO_RAW_TABLE, {
-      conditions: [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }],
+      conditions: graphInfoConditions,
     });
 
     const infoIds = new Set(infoRows.map((r) => r['info_id'] as string));
@@ -1045,6 +1079,7 @@ export class InfoCoreService {
       info_id: r['info_id'] as string,
       info_type: r['info_type'] as string,
       info_creator_role: r['info_creator_role'] as string,
+      handle_result_type: (r['handle_result_type'] as string) || DEFAULT_HANDLE_RESULT_TYPE,
     }));
 
     // 引用边（info_graph：用户引用其他消息）
@@ -1645,6 +1680,7 @@ export class InfoCoreService {
         pin: raw.pin ? 1 : 0,
         created: raw.created,
         updated: raw.updated,
+        handle_result_type: raw.handle_result_type || DEFAULT_HANDLE_RESULT_TYPE,
       };
     };
 
@@ -1813,6 +1849,7 @@ export class InfoCoreService {
         const simOutput = new SimilarKInfoOutput();
         await this.similarKInfo(simInput, _context, simOutput);
         for (const item of simOutput.list) {
+          if (!this.isCorrectInfo(item)) continue;
           simCandidates.push(item);
         }
       } catch { /* ignore */ }
@@ -1827,6 +1864,7 @@ export class InfoCoreService {
         const kwOutput = new KeywordKInfoOutput();
         await this.keywordKInfo(kwInput, _context, kwOutput);
         for (const item of kwOutput.list.slice(0, kwLimit)) {
+          if (!this.isCorrectInfo(item)) continue;
           kwCandidates.push(item);
         }
       } catch { /* ignore */ }
@@ -1864,7 +1902,8 @@ export class InfoCoreService {
           });
           const sessionCandidates = sessionAllRows
             .map((r) => this.toInfoRawRecord(r))
-            .filter((c) => !existingIds.has(c.info_id));
+            .filter((c) => !existingIds.has(c.info_id))
+            .filter((c) => this.isCorrectInfo(c));
 
           if (sessionCandidates.length > 0) {
             const shuffled = [...sessionCandidates];
@@ -1880,7 +1919,8 @@ export class InfoCoreService {
             });
             const globalCandidates = globalRows
               .map((r) => this.toInfoRawRecord(r))
-              .filter((c) => !existingIds.has(c.info_id));
+              .filter((c) => !existingIds.has(c.info_id))
+              .filter((c) => this.isCorrectInfo(c));
             if (globalCandidates.length > 0) {
               const shuffled = [...globalCandidates];
               for (let i = shuffled.length - 1; i > 0; i--) {
@@ -2063,6 +2103,7 @@ const rawPriority = priorityOrderStr
           pin: record.pin ?? 0,
           created: record.created,
           updated: record.updated,
+          handle_result_type: record.handle_result_type || DEFAULT_HANDLE_RESULT_TYPE,
         };
       }
     }
@@ -2761,6 +2802,7 @@ const rawPriority = priorityOrderStr
           pin: item.pin ?? 0,
           created: item.created,
           updated: item.updated,
+          handle_result_type: item.handle_result_type || DEFAULT_HANDLE_RESULT_TYPE,
         };
       }
     }
@@ -3012,6 +3054,11 @@ const rawPriority = priorityOrderStr
   // Private: Record conversion helpers
   // =========================================================================
 
+  /** 判断信息是否为正常结果（非错误信息）。 */
+  private isCorrectInfo(record: { handle_result_type?: string }): boolean {
+    return (record.handle_result_type ?? DEFAULT_HANDLE_RESULT_TYPE) === HandleResultType.CORRECT;
+  }
+
   private toInfoRawRecord(raw: Record<string, unknown>): InfoRawRecord {
     return {
       id: raw['id'] as string,
@@ -3028,6 +3075,7 @@ const rawPriority = priorityOrderStr
       info_length: raw['info_length'] as number,
       pin: raw['pin'] as number,
       trace_id: raw['trace_id'] as string,
+      handle_result_type: (raw['handle_result_type'] as string) || DEFAULT_HANDLE_RESULT_TYPE,
     };
   }
 

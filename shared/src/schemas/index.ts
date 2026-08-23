@@ -47,6 +47,8 @@ export const CollectionSourceSchema = z.enum([
 
 export const ContextSourceSchema = CollectionSourceSchema;
 
+export const HandleResultTypeSchema = z.enum(['correct', 'call_error', 'internal_error']);
+
 export const MemoryNodeSchema = z.object({
   id: z.string(),
   type: NodeTypeSchema,

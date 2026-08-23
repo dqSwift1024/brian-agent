@@ -12,6 +12,8 @@ import {
   GetQueueStatsInput, GetQueueStatsOutput,
   SoPromptInput, SoPromptOutput,
   InfoType,
+  HandleResultType,
+  classifyHandleResult,
   PROMPT_IDS, getBuiltinTemplate, renderTemplate,
   type DataObject,
 } from '@brian-agent/base';
@@ -315,8 +317,18 @@ export class AgentExecutionService {
       new RecordAgentUsageOutput(),
     );
 
+    // 空答案视为执行失败：LLM 不可用时 ReACT 循环可能“正常”跑完但产出为空，
+    // 需显式失败，避免上游编排层把空输出当作成功结果继续 Writer / Evolutor 阶段。
+    const producedOutput = Boolean(finalAnswer && finalAnswer.trim());
+    if (!producedOutput) {
+      output.error = 'Work Agent 未产生有效输出（LLM 调用失败或返回为空）';
+    }
+
     if (sessionId) {
       try {
+        const traceHandleResult = producedOutput
+          ? HandleResultType.CORRECT
+          : classifyHandleResult(output.error, 'external');
         await this.infoCore.saveInfo(
           Object.assign(new SaveInfoInput(), {
             session_id: sessionId,
@@ -331,6 +343,7 @@ export class AgentExecutionService {
               iterations: traceIterations,
               answer: finalAnswer,
             }),
+            handle_result_type: traceHandleResult,
           }),
           new InfoCoreContext(),
           new SaveInfoOutput(),
@@ -380,12 +393,6 @@ export class AgentExecutionService {
     output.trace_id = traceId;
     output.elapsed_ms = end - start;
 
-    // 空答案视为执行失败：LLM 不可用时 ReACT 循环可能“正常”跑完但产出为空，
-    // 需显式失败，避免上游编排层把空输出当作成功结果继续 Writer / Evolutor 阶段。
-    const producedOutput = Boolean(finalAnswer && finalAnswer.trim());
-    if (!producedOutput) {
-      output.error = 'Work Agent 未产生有效输出（LLM 调用失败或返回为空）';
-    }
     return producedOutput;
   }
 
@@ -545,36 +552,56 @@ export class AgentExecutionService {
       if (!input.skill_ids.includes(toolId)) {
         throw new ValidationError(`Skill not bound to agent: ${toolId}`);
       }
-      const skillOut = new ExecSkillOutput();
-      const ok = await this.skillAccess.execSkill(
-        Object.assign(new ExecSkillInput(), { id: toolId, params }),
-        new SkillContext(),
-        skillOut,
-      );
-      if (!ok) throw new ValidationError(`execSkill failed: ${toolId}`);
-      output.result = typeof skillOut.result === 'string'
-        ? skillOut.result
-        : JSON.stringify(skillOut.result ?? {});
-      await this.saveStepInfo(ctx, 'SKILL', 'SKILL', toolId, output.result);
-      return true;
+      try {
+        const skillOut = new ExecSkillOutput();
+        const ok = await this.skillAccess.execSkill(
+          Object.assign(new ExecSkillInput(), { id: toolId, params }),
+          new SkillContext(),
+          skillOut,
+        );
+        if (!ok) {
+          throw new ValidationError(skillOut.error ?? `execSkill failed: ${toolId}`);
+        }
+        output.result = typeof skillOut.result === 'string'
+          ? skillOut.result
+          : JSON.stringify(skillOut.result ?? {});
+        await this.saveStepInfo(ctx, 'SKILL', 'SKILL', toolId, output.result);
+        return true;
+      } catch (err) {
+        await this.saveStepInfo(
+          ctx, 'SKILL', 'SKILL', toolId, this.errorText(err),
+          classifyHandleResult(err, 'external'),
+        );
+        throw err;
+      }
     }
 
     if (toolType === 'MCP') {
       if (!input.mcp_ids.includes(toolId)) {
         throw new ValidationError(`MCP not bound to agent: ${toolId}`);
       }
-      const mcpOut = new ExecMcpOutput();
-      const ok = await this.mcpAccess.execMcp(
-        Object.assign(new ExecMcpInput(), { id: toolId, params }),
-        new McpContext(),
-        mcpOut,
-      );
-      if (!ok) throw new ValidationError(`execMcp failed: ${toolId}`);
-      output.result = typeof mcpOut.result === 'string'
-        ? mcpOut.result
-        : JSON.stringify(mcpOut.result ?? {});
-      await this.saveStepInfo(ctx, 'MCP', 'MCP', toolId, output.result);
-      return true;
+      try {
+        const mcpOut = new ExecMcpOutput();
+        const ok = await this.mcpAccess.execMcp(
+          Object.assign(new ExecMcpInput(), { id: toolId, params }),
+          new McpContext(),
+          mcpOut,
+        );
+        if (!ok) {
+          throw new ValidationError(mcpOut.error ?? `execMcp failed: ${toolId}`);
+        }
+        output.result = typeof mcpOut.result === 'string'
+          ? mcpOut.result
+          : JSON.stringify(mcpOut.result ?? {});
+        await this.saveStepInfo(ctx, 'MCP', 'MCP', toolId, output.result);
+        return true;
+      } catch (err) {
+        await this.saveStepInfo(
+          ctx, 'MCP', 'MCP', toolId, this.errorText(err),
+          classifyHandleResult(err, 'external'),
+        );
+        throw err;
+      }
     }
 
     output.result = 'No external tool required';
@@ -1408,6 +1435,7 @@ export class AgentExecutionService {
     creatorRole: string,
     creatorId: string,
     info: string,
+    handleResultType?: string,
   ): Promise<void> {
     if (!ctx.session_id) return;
     try {
@@ -1420,6 +1448,7 @@ export class AgentExecutionService {
           info_creator_role: creatorRole,
           info_creator_id: creatorId,
           info,
+          handle_result_type: handleResultType,
         }),
         new InfoCoreContext(),
         new SaveInfoOutput(),
@@ -1427,6 +1456,10 @@ export class AgentExecutionService {
     } catch {
       /* best-effort */
     }
+  }
+
+  private errorText(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
   }
 
   private async persistTrace(

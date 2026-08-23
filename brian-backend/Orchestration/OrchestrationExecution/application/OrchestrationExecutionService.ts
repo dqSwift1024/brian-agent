@@ -7,6 +7,7 @@ import {
   IdGenerator, ValidationError, Operator,
   OperationType,
   InfoType,
+  HandleResultType,
   type Logger, type Condition, type Operation, type StreamAccess,
 } from '@brian-agent/base';
 import type { AgentBuilderAccess, AgentExecutionAccess, AgentLibraryAccess } from '@brian-agent/agent';
@@ -689,6 +690,7 @@ export class OrchestrationExecutionService {
         iterations: singleOutput.iterations,
         elapsed_ms: singleOutput.elapsed_ms,
         status: 'COMPLETED',
+        handle_result_type: HandleResultType.CORRECT,
       };
     };
 
@@ -998,6 +1000,7 @@ export class OrchestrationExecutionService {
         iterations: singleOutput.iterations,
         elapsed_ms: singleOutput.elapsed_ms,
         status: 'COMPLETED',
+        handle_result_type: HandleResultType.CORRECT,
       };
     };
 

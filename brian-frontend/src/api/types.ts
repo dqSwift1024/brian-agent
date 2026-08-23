@@ -344,6 +344,7 @@ export interface ChatMapNode {
   workId?: string
   interactId?: string
   traceId?: string
+  handleResultType?: string
   x: number
   y: number
 }
@@ -614,6 +615,7 @@ export interface VisualizedMessage {
   cited_info_ids: string[]
   context_source: string | null
   parent_info_ids: string[]
+  handle_result_type?: string
 }
 
 export interface MessageGraphNode {
@@ -622,6 +624,7 @@ export interface MessageGraphNode {
   info_id: string
   info_type?: string
   info_creator_role?: string
+  handle_result_type?: string
   info_summary: string
   citing_count: number
   cited_count: number

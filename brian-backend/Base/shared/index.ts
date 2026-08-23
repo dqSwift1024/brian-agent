@@ -18,6 +18,12 @@ export { Input } from './base/Input';
 export { Context } from './base/Context';
 export { Output } from './base/Output';
 export { InfoType, CollectionSource, ContextSource } from './base/InfoEnums';
+export {
+  HandleResultType,
+  DEFAULT_HANDLE_RESULT_TYPE,
+  classifyHandleResult,
+} from './base/InfoEnums';
+export type { HandleErrorSource } from './base/InfoEnums';
 
 // 查询对象
 export {

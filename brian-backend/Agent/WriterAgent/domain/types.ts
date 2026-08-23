@@ -35,7 +35,7 @@ export class WriteInput extends Input {
   work_id!: string;
   interact_id!: string;
   user_query!: string;
-  agent_results!: Array<{ agent_id: string; task_content?: string; result?: string; answer?: string }>;
+  agent_results!: Array<{ agent_id: string; task_content?: string; result?: string; answer?: string; handle_result_type?: string }>;
   user_preferences?: { language?: string; style?: string; depth?: string; format?: string };
 }
 
@@ -60,6 +60,8 @@ export class WriteOutput extends Output {
   response_format = '';
   token_usage = 0;
   blocks: Block[] = [];
+  // 最终回复的处理结果类型（错误透传时标记 call_error / internal_error，供下游评估跳过）
+  handle_result_type = '';
 }
 
 export class SaveUserProfileInput extends Input {

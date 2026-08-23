@@ -33,7 +33,7 @@ export class ExecuteSimpleStrategyInput extends Input {
 }
 
 export class ExecuteSimpleStrategyOutput extends Output {
-  agent_results: Array<{ agent_id: string; task_content: string; result: string; trace_id: string }> = [];
+  agent_results: Array<{ agent_id: string; task_content: string; result: string; trace_id: string; handle_result_type?: string }> = [];
   plan_id = '';
 }
 
@@ -46,7 +46,7 @@ export class ExecutePlanningStrategyInput extends Input {
 }
 
 export class ExecutePlanningStrategyOutput extends Output {
-  agent_results: Array<{ agent_id: string; task_content: string; result: string; trace_id: string }> = [];
+  agent_results: Array<{ agent_id: string; task_content: string; result: string; trace_id: string; handle_result_type?: string }> = [];
   plan_id = '';
 }
 
@@ -55,7 +55,7 @@ export class ExecutePostProcessingInput extends Input {
   interact_id!: string;
   session_id!: string;
   user_query!: string;
-  agent_results!: Array<{ agent_id: string; task_content: string; result: string; trace_id: string }>;
+  agent_results!: Array<{ agent_id: string; task_content: string; result: string; trace_id: string; handle_result_type?: string }>;
 }
 
 export class ExecutePostProcessingOutput extends Output {

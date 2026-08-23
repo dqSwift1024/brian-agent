@@ -60,6 +60,7 @@ export interface AgentResult {
   iterations: number;
   elapsed_ms: number;
   status: string;
+  handle_result_type: string;
 }
 
 export interface DAGProgress {

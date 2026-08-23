@@ -4,7 +4,9 @@ import {
   SelectOneDBInput, SelectOneDBOutput,
   UpdateDBInput, UpdateDBOutput,
   Operator, DataObject, DBContext, IdGenerator,
-  ValidationError, NotFoundError, type Logger, type Condition,
+  ValidationError, NotFoundError,
+  HandleResultType,
+  type Logger, type Condition,
 } from '@brian-agent/base';
 import type {
   AgentBuilderAccess, PlannerAgentAccess, WriterAgentAccess, EvolutorAgentAccess,
@@ -223,6 +225,7 @@ export class OrchestrationStrategyService {
       task_content: input.user_query,
       result: execSingleOutput.answer,
       trace_id: execSingleOutput.trace_id,
+      handle_result_type: HandleResultType.CORRECT,
     }];
     output.plan_id = '';
     return true;
@@ -459,6 +462,7 @@ export class OrchestrationStrategyService {
       task_content: '',
       result: ar.answer,
       trace_id: ar.trace_id,
+      handle_result_type: ar.handle_result_type,
     }));
     output.plan_id = planId;
     return true;
@@ -556,6 +560,7 @@ export class OrchestrationStrategyService {
           task_content: agentResult.task_content,
           agent_output: agentResult.result,
           trace_id: agentResult.trace_id,
+          handle_result_type: agentResult.handle_result_type,
         });
         const evalWorkOutput = new EvalWorkAgentOutput();
         Promise.resolve(

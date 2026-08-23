@@ -4,6 +4,7 @@ import {
   InsertDBOutput, SelectDBOutput, SelectOneDBOutput,
   UpdateDBOutput, DBContext, IdGenerator, ValidationError,
   InfoType,
+  HandleResultType,
   type Logger, type Condition,
   type StreamAccess,
 } from '@brian-agent/base';
@@ -1107,6 +1108,8 @@ export class JSONNodeService {
     const writeElapsed = Date.now() - writeStartedAt;
 
     sharedData[saveKey] = writeOutput.response;
+    // 记录最终回复的处理结果类型，供评估阶段跳过错误回复
+    sharedData.final_response_handle_result_type = writeOutput.handle_result_type || '';
 
     // 与其他 Agent 采集方式保持一致：Writer 执行结果写入 orchestration_agent_execution，
     // 供 buildThinkingBlocksAndDag 在「思考过程 / 执行过程」中统一采集展示。
@@ -1170,8 +1173,9 @@ export class JSONNodeService {
     user_query: string;
     final_response: string;
     agent_results: Record<string, unknown>[];
+    final_response_handle_result_type?: string;
   }): Promise<void> {
-    const { work_id, interact_id, user_query, final_response, agent_results } = payload;
+    const { work_id, interact_id, user_query, final_response, agent_results, final_response_handle_result_type } = payload;
 
     const evalWriterInput = Object.assign(new EvalWriterAgentInput(), {
       agent_id: '',
@@ -1180,6 +1184,7 @@ export class JSONNodeService {
       user_query,
       final_response,
       agent_results,
+      handle_result_type: final_response_handle_result_type,
     });
     const evalWriterOutput = new EvalWriterAgentOutput();
     const evalWriterStartedAt = Date.now();
@@ -1207,6 +1212,7 @@ export class JSONNodeService {
         task_content: (ar.task_content as string) ?? '',
         agent_output: (ar.answer ?? ar.result) as string,
         trace_id: (ar.trace_id as string) ?? '',
+        handle_result_type: (ar.handle_result_type as string) ?? '',
       });
       await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvolutorAgentContext(), new EvalWorkAgentOutput());
     }
@@ -1228,6 +1234,7 @@ export class JSONNodeService {
     const isAsync = (params.async as boolean) ?? true;
     const agentResults = (sharedData[resultsKey] as Record<string, unknown>[]) ?? [];
     const finalResponse = (sharedData[responseKey] as string) ?? '';
+    const finalResponseType = (sharedData.final_response_handle_result_type as string) ?? '';
 
     const evalFn = async () => {
       try {
@@ -1237,6 +1244,7 @@ export class JSONNodeService {
           user_query: userQuery,
           final_response: finalResponse,
           agent_results: agentResults,
+          final_response_handle_result_type: finalResponseType,
         });
       } catch (err: unknown) {
         this.logger?.error?.('handleEvalResult: evaluation failed', {
@@ -1254,6 +1262,7 @@ export class JSONNodeService {
             user_query: userQuery,
             final_response: finalResponse,
             agent_results: agentResults,
+            final_response_handle_result_type: finalResponseType,
           };
           const sendInput = Object.assign({}, {
             data: {
@@ -1279,6 +1288,7 @@ export class JSONNodeService {
                       user_query: payload.user_query as string ?? '',
                       final_response: payload.final_response as string ?? '',
                       agent_results: (payload.agent_results as Record<string, unknown>[]) ?? [],
+                      final_response_handle_result_type: payload.final_response_handle_result_type as string ?? '',
                     });
                     return true;
                   } catch (err: unknown) {
@@ -1393,7 +1403,7 @@ export class JSONNodeService {
       info_creator_id: workId,
       info: responseText,
       parent_info_ids: parentInfoIds,
-      summary: await this.generateResponseSummary(InfoType.RESPONSE, responseText, sessionId, workId, interactId),
+      handle_result_type: HandleResultType.INTERNAL_ERROR,
       trace_id: (sharedData.trace_id as string) ?? '',
     });
     try {

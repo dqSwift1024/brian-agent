@@ -44,6 +44,8 @@ export class EvalWorkAgentInput extends Input {
   interact_id!: string;
   task_content!: string;
   agent_output!: string;
+  /** 被评估输出的处理结果类型：错误信息（call_error / internal_error）跳过评分 */
+  handle_result_type?: string;
   declare trace_id: string;
 }
 
@@ -74,7 +76,9 @@ export class EvalWriterAgentInput extends Input {
   interact_id!: string;
   user_query!: string;
   final_response!: string;
-  agent_results!: Array<{ agent_id: string; task_content: string; result: string }>;
+  agent_results!: Array<{ agent_id: string; task_content: string; result: string; handle_result_type?: string }>;
+  /** 最终回复的处理结果类型：错误信息跳过评分 */
+  handle_result_type?: string;
 }
 
 export interface WriterEvalScores {
