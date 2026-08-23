@@ -282,8 +282,6 @@ async function handleSend(content: string, citingIds: string[]) {
   sessionStore.resetPlanning()
   // 重置本轮各 Agent 的执行运行时状态
   sessionStore.resetAgentStatus()
-  // 用户发送消息 → 自动弹出思考过程弹窗（流式展示）
-  sessionStore.openThinkingModal(null)
   try {
     const abortCtrl = new AbortController()
     sessionStore.setCancelController(abortCtrl)
@@ -597,6 +595,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
       }
       sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
+      // 上下文构建成功后弹出思考过程弹窗（流式展示），避免过早弹出遮挡后续的「确认需求理解」弹窗
+      sessionStore.openThinkingModal(null)
       break
     }
 
@@ -1158,7 +1158,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     <!-- 需求理解确认弹窗 -->
     <div
       v-if="sessionStore.intentConfirmation"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      class="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 backdrop-blur-sm"
       @click.self="handleIntentConfirm('CANCEL')"
     >
       <div class="w-full max-w-lg mx-4 rounded-2xl bg-white dark:bg-apple-gray-900 shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden">

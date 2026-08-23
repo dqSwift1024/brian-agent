@@ -204,6 +204,16 @@
   - 修改后：提问立即落库并在对话区 / ChatMap 展示；低匹配度时弹出确认弹窗，确认后继续编排并刷新结果。
 - **新增边界条件**：`done(paused=true)` 后思考弹窗保持打开（展示 Intent 需求理解思考块）；确认（APPROVE/KEEP）由后端同步完成编排，前端在 confirm-intent 响应后刷新历史与 ChatMap 才看到最终结果（无流式进度）。
 
+### [2026-08-23] 思考弹窗后置到上下文构建后、确认弹窗 z-index 提升
+- **变更原因**：① 发送消息时立即弹出「思考过程」弹窗（`ThinkingModal`，`z-[120]`），低匹配度场景下会遮挡「确认需求理解」弹窗（原 `z-50`），用户点击确认按钮实际点到思考弹窗遮罩，无响应；② 后端 `confirmIntent` 的 `selectOneDB` 入参结构错误导致 500，进一步导致点击无反馈。
+- **功能变更**：
+  1. **思考弹窗后置**：移除 `handleSend` 中发送即弹 `openThinkingModal(null)`；改为在 `context_built` 事件（上下文构建成功）时再弹出思考过程弹窗。正常流程在上下文构建后弹出；暂停流程（should_modify_query=true）不经过 `context_built`，因此只弹「确认需求理解」弹窗，不再互相遮挡。
+  2. **确认弹窗层级**：确认弹窗 z-index 从 `z-50` 提升为 `z-[150]`，高于 `ThinkingModal`（`z-[120]`）与 `EvalResultModal`（`z-[130]`），作为双保险。
+- **行为差异**：
+  - 修改前：思考弹窗先弹出并遮挡确认弹窗，确认按钮点击无响应。
+  - 修改后：上下文构建前不弹思考弹窗；低匹配度时仅弹确认弹窗，点击可正常触发 `confirm-intent`。
+- **新增边界条件**：暂停流程下思考过程弹窗不自动弹出（无 `context_built`），用户仍可点击消息框「思考过程」按钮查看 Intent 需求理解思考块。
+
 ### [2026-08-22] trace_id 全链路透传并落库 info_raw、消息框新增「评估结果」按钮
 - **变更原因**：
   1. 消息框底部的「复制 TraceId」按钮此前复制的是 `work_id`（后端 `/api/chat/history` 将 `traceId` 字段错误回填为 `work_id || interact_id || info_id`），与真实 trace_id（前端 `crypto.randomUUID()` 生成）语义不符，误导排查与日志检索；

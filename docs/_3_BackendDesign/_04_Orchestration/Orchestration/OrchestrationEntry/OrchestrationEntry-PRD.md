@@ -344,3 +344,12 @@
 
 **可能存在的问题**：
   - 确认重入后编排同步执行，客户端需在 confirm-intent 响应后刷新历史与 ChatMap 才能看到最终结果（无 SSE 流式进度）；`orchestration_work.final_response` 列在成功路径不写回（历史以 `info_raw` 的 RESPONSE 为准，属既有行为）。
+
+### [2026-08-23] 修复 confirmIntent 的 selectOneDB 入参结构错误（query_param）
+**变更原因**：`confirmIntent` 从未被前端调用，其 `selectOneDB` 入参误用 `table` / `conditions` 顶层字段，而 `SelectOneDBInput` 期望 `query_param` 对象，导致运行时 SQL 表名为 `undefined`、`no such table: undefined` 500 错误，确认弹窗「按理解执行 / 按原文执行」点击无响应。
+
+**修改的方法**：
+  - `OrchestrationEntryService.confirmIntent` — `selectIn` 改为 `query_param: { table: 'orchestration_work', conditions: [...] }`。
+
+**影响的端点**：
+  - `POST /api/chat/confirm-intent` — 修复后 APPROVE / KEEP / CANCEL 均正常返回，work 状态正确流转。

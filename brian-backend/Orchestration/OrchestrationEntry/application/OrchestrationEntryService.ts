@@ -839,8 +839,10 @@ export class OrchestrationEntryService {
     if (!input.action) throw new ValidationError('action is required');
 
     const selectIn = Object.assign(new SelectOneDBInput(), {
-      table: 'orchestration_work',
-      conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+      query_param: {
+        table: 'orchestration_work',
+        conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+      },
     });
     const selectOut = new SelectOneDBOutput();
     await this.relationDb.selectOneDB(selectIn, new DBContext(), selectOut);
