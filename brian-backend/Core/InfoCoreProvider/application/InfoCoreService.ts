@@ -92,9 +92,7 @@ import {
   INFO_RAW_TABLE,
   INFO_CONTEXT_SOURCE_TABLE,
   INFO_GRAPH_TABLE,
-  INFO_VECTOR_TABLE,
   INFO_TAG_TABLE,
-  INFO_TAG_VECTOR_TABLE,
   INFO_SUMMARY_TABLE,
   INFO_KEYWORD_TABLE,
   INFO_TAG_CONFIG_TABLE,
@@ -106,9 +104,7 @@ import {
 import type {
   InfoRawRecord,
   InfoGraphRecord,
-  InfoVectorRecord,
   InfoTagRecord,
-  InfoTagVectorRecord,
   InfoSummaryRecord,
   InfoTagConfigRecord,
   InfoSummaryConfigRecord,
@@ -143,6 +139,8 @@ import {
   AddGraphEdgeInput,
   AddGraphEdgeOutput,
   GraphTarget,
+  SelectGraphInput,
+  SelectGraphOutput,
   GetGraphNeighborsInput,
   GetGraphNeighborsOutput,
   GetGraphNodeInput,
@@ -152,10 +150,13 @@ import {
 } from '@brian-agent/base';
 import type {
   VectorObject,
+  VectorRecord,
   VectorQueryParam,
   VectorSearchResult,
   GraphNodeData,
+  GraphNodeRecord,
   GraphEdgeData,
+  GraphEdgeRecord,
 } from '@brian-agent/base';
 import {
   GetLLMInput,
@@ -361,11 +362,7 @@ export class InfoCoreService {
   // =========================================================================
 
   /**
-   * 向量化信息。
-   *
-   * 1. 检查 info_vector 是否已有记录。
-   * 2. 若无：获取 info 内容，调用 LLM 生成 embedding。
-   * 3. 存储到 info_vector 表。
+   * 向量化信息：生成 embedding 后写入 LanceDB（向量唯一存储，不再落 SQLite）。
    */
   async vectorInfo(
     input: ProcessInfoInput,
@@ -375,44 +372,16 @@ export class InfoCoreService {
     if (!input.info_id) {
       throw new ValidationError('vectorInfo 需要提供 info_id');
     }
-
-    const existing = await this.getInfoVectorRow(input.info_id);
-    if (existing) {
-      output.vector_id = existing.id;
+    if (await this.hasVectorForInfo(input.info_id)) {
+      output.vector_id = input.info_id;
       return true;
     }
-
-    const infoRow = await this.getInfoByInfoId(input.info_id);
-    if (!infoRow) {
-      throw new NotFoundError('信息', input.info_id);
-    }
-    // 错误信息（call_error / internal_error）不参与自学习向量化
-    if (infoRow.handle_result_type !== HandleResultType.CORRECT) {
-      return true;
-    }
-
-    const vectorConfig = await this.getInfoVectorConfig();
-    if (!vectorConfig || vectorConfig.enable !== 1) {
-      return true;
-    }
-
-    const embedding = await this.generateEmbedding(infoRow.info, vectorConfig);
+    const embedding = await this.buildInfoEmbedding(input.info_id);
     if (!embedding || embedding.length === 0) {
       return true;
     }
-
-    const now = IdGenerator.now();
-    const id = IdGenerator.generate();
-
-    await this.relationDb.insert(INFO_VECTOR_TABLE, [
-      { field: 'id', value: id },
-      { field: 'created', value: now },
-      { field: 'updated', value: now },
-      { field: 'info_id', value: input.info_id },
-      { field: 'embedding', value: JSON.stringify(embedding) },
-    ]);
-
-    output.vector_id = id;
+    await this.upsertInfoVector(input.info_id, embedding);
+    output.vector_id = input.info_id;
     return true;
   }
 
@@ -456,16 +425,9 @@ export class InfoCoreService {
     for (const tag of tags) {
       const tagId = IdGenerator.generate();
       try {
-        await this.relationDb.insert(INFO_TAG_TABLE, [
-          { field: 'id', value: tagId },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'info_id', value: input.info_id },
-          { field: 'tag', value: tag },
-        ]);
-
-        // 维护 tag vector
+        await this.insertTag(tagId, input.info_id, tag, now);
         await this.maintainTagVector(tag, tagConfig);
+        await this.graphTag(Object.assign(new GraphTagInput(), { tag_id: tagId }), new InfoCoreContext(), new GraphTagOutput());
       } catch {
         // 标签重复跳过
       }
@@ -473,6 +435,17 @@ export class InfoCoreService {
 
     output.tags = tags;
     return true;
+  }
+
+  /** 插入一条 info_tag 记录。 */
+  private async insertTag(tagId: string, infoId: string, tag: string, now: number): Promise<void> {
+    await this.relationDb.insert(INFO_TAG_TABLE, [
+      { field: 'id', value: tagId },
+      { field: 'created', value: now },
+      { field: 'updated', value: now },
+      { field: 'info_id', value: infoId },
+      { field: 'tag', value: tag },
+    ]);
   }
 
   /**
@@ -593,78 +566,30 @@ export class InfoCoreService {
     if (!input.tag_id) {
       throw new ValidationError('graphTag 需要提供 tag_id');
     }
-
-    // 1. 检查标签配置是否启用
     const tagConfig = await this.getInfoTagConfig();
     if (!tagConfig || tagConfig.enable !== 1) {
       return true;
     }
 
-    // 2. 查询标签文本
-    const tagRows = await this.relationDb.select(INFO_TAG_TABLE, {
-      conditions: [{ field: 'id', operator: Operator.EQ, value: input.tag_id }],
-      page: { current: 1, size: 1 },
-    });
-    if (tagRows.length === 0) {
+    const tagText = await this.resolveTagText(input.tag_id);
+    if (!tagText) {
       return true;
     }
 
-    const tagText = tagRows[0]['tag'] as string;
-    const tagId = tagRows[0]['id'] as string;
-
-    // 3. 计算标签向量
-    const vectorConfig = await this.getInfoVectorConfig();
-    if (!vectorConfig || vectorConfig.enable !== 1) {
-      return true;
-    }
-
-    const embedding = await this.generateEmbedding(tagText, vectorConfig);
+    const nodeId = await this.ensureTagNode(tagText);
+    const embedding = await this.getTagEmbedding(tagText, tagConfig);
     if (!embedding || embedding.length === 0) {
+      output.node_id = nodeId;
       return true;
     }
 
-    // 4. 搜索相似标签
-    const soOutput = new SoVectorOutput();
-    await this.vectorDb.soVector(
-      {
-        query_param: {
-          embedding,
-          top_k: tagConfig.tag_top_k || 5,
-        } as VectorQueryParam,
-      } as SoVectorInput,
-      new VectorContext(),
-      soOutput,
-    );
-
-    // 5. 对每个相似 tag 建立/更新 similarTo 边
-    for (const hit of soOutput.list) {
-      const similarTagId = hit.metadata?.['tag_id'] as string | undefined;
-      if (!similarTagId || similarTagId === tagId) continue;
-
-      try {
-        const addEdgeOutput = new AddGraphEdgeOutput();
-        await this.graphDb.addGraphEdge(
-          {
-            data: {
-              from_node_id: tagId,
-              to_node_id: similarTagId,
-              edge_type: 'similarTo',
-              weight: hit.score ?? 0,
-              properties: {
-                similarity: hit.score ?? 0,
-                actMap: {},
-              },
-            } as GraphEdgeData,
-          } as AddGraphEdgeInput,
-          new GraphContext(),
-          addEdgeOutput,
-        );
-      } catch {
-        // 忽略边已存在等异常（upsert）
-      }
+    const similarTags = await this.searchSimilarTags(embedding, tagText, tagConfig.tag_top_k || 5);
+    for (const similar of similarTags) {
+      const similarNodeId = await this.ensureTagNode(similar.tag);
+      await this.connectSimilarTags(nodeId, similarNodeId, similar.score);
     }
 
-    output.node_id = tagId;
+    output.node_id = nodeId;
     return true;
   }
 
@@ -791,10 +716,10 @@ export class InfoCoreService {
   }
 
   /**
-   * 语义相似度搜索：生成 embedding 后，对 SQLite info_vector 表中全部信息向量计算余弦相似度。
+   * 语义相似度搜索：生成 embedding 后，由 LanceDB 执行向量相似度检索。
    *
-   * 返回语义最相似的 topK 条信息记录（含 info_id、info_type、info_length、created、info 等字段
-   * 及归一化相似度分数 score）。阈值 similarity_threshold 为归一化值 0-100。
+   * 返回语义最相似的 topK 条信息记录（含归一化相似度分数 score）。
+   * 阈值 similarity_threshold 为归一化值 0-100。
    */
   async similarKInfo(
     input: SimilarKInfoInput,
@@ -817,53 +742,9 @@ export class InfoCoreService {
       return true;
     }
 
-    const topK = Math.max(1, Math.floor(input.topK));
-    const threshold = input.similarity_threshold ?? 0;
-
-    // 从 SQLite info_vector 表加载全部信息向量，逐条计算余弦相似度
-    const vectorRows = await this.relationDb.queryRaw<{ info_id: string; embedding: string }>(
-      `SELECT "info_id", "embedding" FROM "${INFO_VECTOR_TABLE}"`, [],
-    );
-
-    const scored: Array<{ infoId: string; score: number }> = [];
-    for (const row of vectorRows || []) {
-      const emb = this.parseJSONArray(row.embedding);
-      if (!emb || emb.length !== embedding.length) continue;
-      const raw = this.cosineSimilarity(embedding, emb);
-      // 归一化到 0-100（与向量库余弦相似度口径一致）
-      const score = Math.max(0, Math.min(100, Math.round((raw + 1) * 50)));
-      if (score < threshold) continue;
-      scored.push({ infoId: row.info_id, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, topK);
-
-    const results: Array<InfoRawRecord & { score?: number }> = [];
-    for (const s of top) {
-      const infoRow = await this.getInfoByInfoId(s.infoId);
-      if (infoRow) {
-        results.push({ ...infoRow, score: s.score });
-      }
-    }
-
-    output.list = results;
+    const hits = await this.searchInfoVectors(embedding, input.topK, input.similarity_threshold ?? 0);
+    output.list = await this.toScoredInfoList(hits);
     return true;
-  }
-
-  /** 计算两个等长向量之间的余弦相似度（[-1, 1]） */
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length || a.length === 0) return 0;
-    let dot = 0;
-    let magA = 0;
-    let magB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      magA += a[i] * a[i];
-      magB += b[i] * b[i];
-    }
-    const denom = Math.sqrt(magA) * Math.sqrt(magB);
-    return denom === 0 ? 0 : dot / denom;
   }
 
   /**
@@ -929,121 +810,98 @@ export class InfoCoreService {
       throw new ValidationError('relationKInfo 需要提供 info_id 和 topN');
     }
 
-    // 1. 获取目标信息的标签
-    let selfTags = await this.relationDb.select(INFO_TAG_TABLE, {
-      conditions: [{ field: 'info_id', operator: Operator.EQ, value: input.info_id }],
-      fields: ['id', 'tag'],
-    });
-
-    if (selfTags.length === 0) {
-      // 若无标签，尝试即时抽取
-      const tagConfig = await this.getInfoTagConfig();
-      if (tagConfig?.enable === 1) {
-        const infoRow = await this.getInfoByInfoId(input.info_id);
-        if (infoRow) {
-          const tags = await this.extractTags(infoRow.info, tagConfig);
-          if (tags.length > 0) {
-            const now = IdGenerator.now();
-            for (const tag of tags) {
-              const tagId = IdGenerator.generate();
-              try {
-                await this.relationDb.insert(INFO_TAG_TABLE, [
-                  { field: 'id', value: tagId },
-                  { field: 'created', value: now },
-                  { field: 'updated', value: now },
-                  { field: 'info_id', value: input.info_id },
-                  { field: 'tag', value: tag },
-                ]);
-              } catch {
-                // 标签重复跳过
-              }
-            }
-            selfTags = tags.map((tag) => ({ id: '', tag }));
-          }
-        }
-      }
-      if (selfTags.length === 0) {
-        output.list = [];
-        return true;
-      }
-    }
-
-    // 2. 通过 GraphDB 的 similarTo 边查找关联标签
-    const relatedTagIds = new Set<string>();
-    const activatedEdges: string[] = [];
-
-    for (const selfTag of selfTags) {
-      const tagId = selfTag['id'] as string;
-      try {
-        const neighOutput = new GetGraphNeighborsOutput();
-        await this.graphDb.getGraphNeighbors(
-          {
-            node_id: tagId,
-            depth: 1,
-            direction: GraphDirection.BOTH,
-          } as GetGraphNeighborsInput,
-          new GraphContext(),
-          neighOutput,
-        );
-
-        for (const edge of (neighOutput as { edges?: Array<{ id: string; from_node_id: string; to_node_id: string; edge_type: string }> }).edges ?? []) {
-          if (edge.edge_type === 'similarTo') {
-            if (edge.from_node_id !== tagId) relatedTagIds.add(edge.from_node_id);
-            if (edge.to_node_id !== tagId) relatedTagIds.add(edge.to_node_id);
-            activatedEdges.push(edge.id);
-          }
-        }
-      } catch {
-        // 忽略图查询异常
-      }
-    }
-
-    if (relatedTagIds.size === 0) {
-      output.list = [];
-      return true;
-    }
-
-    // 3. 反向查询 info_tag 表找到使用这些标签的 info_id
-    const relatedTagRows = await this.relationDb.select(INFO_TAG_TABLE, {
-      conditions: [{ field: 'id', operator: Operator.IN, value: [...relatedTagIds] }],
-    });
-
-    const relatedInfoIds = new Set(relatedTagRows.map((r) => r['info_id'] as string));
+    const selfTags = await this.ensureSelfTagNames(input.info_id);
+    const relatedTags = await this.collectRelatedTagNames(selfTags);
+    const relatedInfoIds = await this.findInfoIdsByTags(relatedTags);
     relatedInfoIds.delete(input.info_id);
 
-    if (relatedInfoIds.size === 0) {
-      output.list = [];
-      return true;
-    }
+    output.list = await this.loadRelatedInfo([...relatedInfoIds], input.topN);
+    return true;
+  }
 
-    // 4. 获取相关信息的完整内容
-    const lastNInput = new LastNInfoInput();
-    lastNInput.lastN = input.topN;
-    const lastNOutput = new LastNInfoOutput();
-    await this.lastNInfo(lastNInput, _context, lastNOutput);
+  /** 获取目标信息的标签名；无标签时即时抽取兜底。 */
+  private async ensureSelfTagNames(infoId: string): Promise<string[]> {
+    const rows = await this.relationDb.select(INFO_TAG_TABLE, {
+      conditions: [{ field: 'info_id', operator: Operator.EQ, value: infoId }],
+      fields: ['tag'],
+    });
+    if (rows.length > 0) return rows.map((r) => r['tag'] as string);
+    const tagConfig = await this.getInfoTagConfig();
+    if (tagConfig?.enable !== 1) return [];
+    const infoRow = await this.getInfoByInfoId(infoId);
+    if (!infoRow) return [];
+    return this.extractTags(infoRow.info, tagConfig);
+  }
 
-    const filteredList = lastNOutput.list.filter((r) => relatedInfoIds.has(r.info_id));
-
-    const results: Array<InfoRawRecord & { relevance_score?: number }> = filteredList.map((r) => ({
-      ...r,
-      relevance_score: 1 / (relatedInfoIds.size),
-    }));
-
-    // 5. 对使用的 similarTo 边触发激活事件
-    for (const edgeId of activatedEdges) {
-      try {
-        await this.graphDb.activateGraphEdge(
-          { edge_id: edgeId } as ActivateGraphEdgeInput,
-          new GraphContext(),
-          new ActivateGraphEdgeOutput(),
-        );
-      } catch {
-        // 忽略激活失败
+  /** 汇总各标签经 similarTo 边关联的其它标签名。 */
+  private async collectRelatedTagNames(selfTagNames: string[]): Promise<string[]> {
+    const related = new Set<string>();
+    for (const tagName of selfTagNames) {
+      for (const similar of await this.findSimilarTagTexts(tagName)) {
+        related.add(similar);
       }
     }
+    return [...related];
+  }
 
-    output.list = results;
-    return true;
+  /** 查找与标签节点相连的 similarTo 边对应的其它标签文本。 */
+  private async findSimilarTagTexts(tagName: string): Promise<string[]> {
+    const nodeId = await this.findGraphNodeId('Tag', 'tag', tagName);
+    if (!nodeId) return [];
+    const out = new SelectGraphOutput();
+    await this.graphDb.selectGraph(
+      {
+        target: GraphTarget.EDGE,
+        edge_type: 'similarTo',
+        conditions: [
+          { field: 'from_node_id', operator: Operator.EQ, value: nodeId },
+          { field: 'to_node_id', operator: Operator.EQ, value: nodeId, logic: 'OR' },
+        ],
+      } as SelectGraphInput,
+      new GraphContext(),
+      out,
+    );
+    const result: string[] = [];
+    for (const edge of out.list as GraphEdgeRecord[]) {
+      const other = edge.from_node_id === nodeId ? edge.to_node_id : edge.from_node_id;
+      const tag = await this.getGraphNodeTag(other);
+      if (tag) result.push(tag);
+    }
+    return result;
+  }
+
+  /** 读取 GraphDB 节点内容中的 tag 文本。 */
+  private async getGraphNodeTag(nodeId: string): Promise<string> {
+    const out = new GetGraphNodeOutput();
+    await this.graphDb.getGraphNode({ id: nodeId } as GetGraphNodeInput, new GraphContext(), out);
+    return String(out.node?.content['tag'] ?? '');
+  }
+
+  /** 按标签名反向查询关联的 info_id 集合。 */
+  private async findInfoIdsByTags(tagNames: string[]): Promise<Set<string>> {
+    if (tagNames.length === 0) return new Set();
+    const rows = await this.relationDb.select(INFO_TAG_TABLE, {
+      conditions: [{ field: 'tag', operator: Operator.IN, value: tagNames }],
+      fields: ['info_id'],
+    });
+    return new Set(rows.map((r) => r['info_id'] as string));
+  }
+
+  /** 按 info_id 加载关联信息记录（含 relevance_score）。 */
+  private async loadRelatedInfo(
+    infoIds: string[],
+    topN: number,
+  ): Promise<Array<InfoRawRecord & { relevance_score?: number }>> {
+    if (infoIds.length === 0) return [];
+    const rows = await this.relationDb.select(INFO_RAW_TABLE, {
+      conditions: [{ field: 'info_id', operator: Operator.IN, value: infoIds }],
+      order_by: [{ field: 'created', direction: 'DESC' }],
+      page: { current: 1, size: topN },
+    });
+    return rows.map((r) => ({
+      ...this.toInfoRawRecord(r),
+      relevance_score: 1 / infoIds.length,
+    }));
   }
 
   /**
@@ -2258,7 +2116,7 @@ const rawPriority = priorityOrderStr
     output: UpdateInfoVectorConfigOutput,
   ): Promise<boolean> {
     if (input.dimension !== undefined) {
-      const vectorCount = await this.relationDb.count(INFO_VECTOR_TABLE);
+      const vectorCount = await this.vectorDb.getVectorCount();
       if (vectorCount > 0) {
         throw new ValidationError('dimension 只允许在没有计算过向量数据的情况下修改');
       }
@@ -2471,10 +2329,11 @@ const rawPriority = priorityOrderStr
   // =========================================================================
 
   private async hasVectorForInfo(infoId: string): Promise<boolean> {
-    const count = await this.relationDb.count(INFO_VECTOR_TABLE, [
-      { field: 'info_id', operator: Operator.EQ, value: infoId },
-    ]);
-    return count > 0;
+    try {
+      return (await this.getVectorRecord(infoId)) !== null;
+    } catch {
+      return false;
+    }
   }
 
   private async hasTagForInfo(infoId: string): Promise<boolean> {
@@ -2505,15 +2364,6 @@ const rawPriority = priorityOrderStr
       page: { current: 1, size: 1 },
     });
     return rows.length > 0 ? this.toInfoRawRecord(rows[0]) : null;
-  }
-
-  private async getInfoVectorRow(infoId: string): Promise<InfoVectorRecord | null> {
-    const rows = await this.relationDb.select(INFO_VECTOR_TABLE, {
-      conditions: [{ field: 'info_id', operator: Operator.EQ, value: infoId }],
-      page: { current: 1, size: 1 },
-    });
-    if (rows.length === 0) return null;
-    return this.toInfoVectorRecord(rows[0]);
   }
 
   private async getInfoSummaryRow(infoId: string): Promise<InfoSummaryRecord | null> {
@@ -2581,6 +2431,177 @@ const rawPriority = priorityOrderStr
       return embedOutput.embedding;
     } catch {
       return [];
+    }
+  }
+
+  // =========================================================================
+  // Private: Vector helpers（LanceDB 为向量唯一存储与相似度计算）
+  // =========================================================================
+
+  /** 标签向量 ID（按标签文本确定性生成，幂等）。 */
+  private tagVectorId(tag: string): string {
+    return `tag:${tag}`;
+  }
+
+  private async getVectorRecord(id: string): Promise<VectorRecord | null> {
+    const out = new GetVectorOutput();
+    await this.vectorDb.getVector({ id } as GetVectorInput, new VectorContext(), out);
+    return out.vector;
+  }
+
+  /** 生成信息向量：校验信息存在且为正确结果、向量配置启用后调用 LLM。 */
+  private async buildInfoEmbedding(infoId: string): Promise<number[]> {
+    const infoRow = await this.getInfoByInfoId(infoId);
+    if (!infoRow) throw new NotFoundError('信息', infoId);
+    if (infoRow.handle_result_type !== HandleResultType.CORRECT) return [];
+    const vectorConfig = await this.getInfoVectorConfig();
+    if (!vectorConfig || vectorConfig.enable !== 1) return [];
+    return this.generateEmbedding(infoRow.info, vectorConfig);
+  }
+
+  private async upsertInfoVector(infoId: string, embedding: number[]): Promise<void> {
+    await this.upsertVector(infoId, infoId, embedding, { kind: 'info', info_id: infoId });
+  }
+
+  private async upsertTagVector(tag: string, embedding: number[]): Promise<void> {
+    await this.upsertVector(this.tagVectorId(tag), tag, embedding, { kind: 'tag', tag });
+  }
+
+  private async upsertVector(
+    id: string,
+    content: string,
+    embedding: number[],
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    const out = new AddVectorOutput();
+    await this.vectorDb.addVector(
+      { vectors: [{ id, content, embedding, metadata }] as VectorObject[] } as AddVectorInput,
+      new VectorContext(),
+      out,
+    );
+  }
+
+  /** 获取标签向量：优先复用 LanceDB 中已有向量，否则即时生成。 */
+  private async getTagEmbedding(tag: string, tagConfig: InfoTagConfigRecord): Promise<number[]> {
+    const existing = await this.getVectorRecord(this.tagVectorId(tag));
+    if (existing && existing.embedding.length > 0) return existing.embedding;
+    const vectorConfig = await this.getInfoVectorConfig();
+    if (!vectorConfig || vectorConfig.enable !== 1) return [];
+    return this.generateEmbedding(tag, vectorConfig);
+  }
+
+  private async searchInfoVectors(
+    embedding: number[],
+    topK: number,
+    threshold: number,
+  ): Promise<VectorSearchResult[]> {
+    const out = new SoVectorOutput();
+    await this.vectorDb.soVector(
+      { query_param: this.infoVectorQuery(embedding, topK, threshold) } as SoVectorInput,
+      new VectorContext(),
+      out,
+    );
+    return out.list;
+  }
+
+  private infoVectorQuery(embedding: number[], topK: number, threshold: number): VectorQueryParam {
+    return {
+      embedding,
+      top_k: Math.max(1, Math.floor(topK)),
+      similarity_threshold: threshold,
+      filters: [{ field: 'kind', operator: Operator.EQ, value: 'info' }],
+    };
+  }
+
+  private async toScoredInfoList(
+    hits: VectorSearchResult[],
+  ): Promise<Array<InfoRawRecord & { score?: number }>> {
+    const results: Array<InfoRawRecord & { score?: number }> = [];
+    for (const hit of hits) {
+      const infoId = String(hit.metadata?.['info_id'] ?? hit.id);
+      const infoRow = await this.getInfoByInfoId(infoId);
+      if (infoRow) results.push({ ...infoRow, score: hit.score });
+    }
+    return results;
+  }
+
+  /** 搜索语义相似的标签（排除自身），返回标签文本与相似度分数。 */
+  private async searchSimilarTags(
+    embedding: number[],
+    excludeTag: string,
+    topK: number,
+  ): Promise<Array<{ tag: string; score: number }>> {
+    const out = new SoVectorOutput();
+    await this.vectorDb.soVector(
+      { query_param: this.tagVectorQuery(embedding, topK) } as SoVectorInput,
+      new VectorContext(),
+      out,
+    );
+    const result: Array<{ tag: string; score: number }> = [];
+    for (const hit of out.list) {
+      const tag = String(hit.metadata?.['tag'] ?? '');
+      if (!tag || tag === excludeTag) continue;
+      result.push({ tag, score: hit.score });
+    }
+    return result;
+  }
+
+  private tagVectorQuery(embedding: number[], topK: number): VectorQueryParam {
+    return {
+      embedding,
+      top_k: Math.max(1, Math.floor(topK)),
+      similarity_threshold: 0,
+      filters: [{ field: 'kind', operator: Operator.EQ, value: 'tag' }],
+    };
+  }
+
+  // =========================================================================
+  // Private: Graph helpers
+  // =========================================================================
+
+  /** 解析 tag 文本：tag_id 可能是 info_tag.id，也可能是 GraphDB 节点 ID。 */
+  private async resolveTagText(tagId: string): Promise<string> {
+    const tagRows = await this.relationDb.select(INFO_TAG_TABLE, {
+      conditions: [{ field: 'id', operator: Operator.EQ, value: tagId }],
+      page: { current: 1, size: 1 },
+    });
+    if (tagRows.length > 0) return tagRows[0]['tag'] as string;
+    const nodeOut = new GetGraphNodeOutput();
+    await this.graphDb.getGraphNode({ id: tagId } as GetGraphNodeInput, new GraphContext(), nodeOut);
+    return String(nodeOut.node?.content['tag'] ?? '');
+  }
+
+  /** 确保标签节点存在（按文本去重），返回节点 ID。 */
+  private async ensureTagNode(tag: string): Promise<string> {
+    const existing = await this.findGraphNodeId('Tag', 'tag', tag);
+    if (existing) return existing;
+    const out = new AddGraphNodeOutput();
+    await this.graphDb.addGraphNode(
+      { data: { node_type: 'Tag', content: { tag } } as GraphNodeData } as AddGraphNodeInput,
+      new GraphContext(),
+      out,
+    );
+    return out.id;
+  }
+
+  /** 建立/更新 similarTo 边（异常静默忽略，避免重复边阻断）。 */
+  private async connectSimilarTags(fromId: string, toId: string, score: number): Promise<void> {
+    try {
+      await this.graphDb.addGraphEdge(
+        {
+          data: {
+            from_node_id: fromId,
+            to_node_id: toId,
+            edge_type: 'similarTo',
+            weight: score,
+            properties: { similarity: score, actMap: {} },
+          } as GraphEdgeData,
+        } as AddGraphEdgeInput,
+        new GraphContext(),
+        new AddGraphEdgeOutput(),
+      );
+    } catch {
+      // 忽略边已存在等异常
     }
   }
 
@@ -2741,23 +2762,24 @@ const rawPriority = priorityOrderStr
   }
 
   private async findInfoGraphNodeId(infoId: string): Promise<string | null> {
-    try {
-      const rows = await this.relationDb.select('graph_node', {
-        conditions: [
-          { field: 'node_type', operator: Operator.EQ, value: 'info' },
-        ],
-      });
+    return this.findGraphNodeId('info', 'info_id', infoId);
+  }
 
-      for (const row of rows) {
-        const content = typeof row['content'] === 'string'
-          ? JSON.parse(row['content'] as string)
-          : row['content'];
-        if (content && (content as Record<string, unknown>)['info_id'] === infoId) {
-          return row['id'] as string;
-        }
-      }
-    } catch {
-      // ignore
+  /** 在 GraphDB 中按 node_type + content 字段值查找节点 ID。 */
+  private async findGraphNodeId(
+    nodeType: string,
+    field: string,
+    value: unknown,
+  ): Promise<string | null> {
+    const out = new SelectGraphOutput();
+    await this.graphDb.selectGraph(
+      { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
+      new GraphContext(),
+      out,
+    );
+    for (const node of out.list) {
+      const content = (node as GraphNodeRecord).content ?? {};
+      if (content[field] === value) return (node as GraphNodeRecord).id;
     }
     return null;
   }
@@ -2890,29 +2912,10 @@ const rawPriority = priorityOrderStr
     tagConfig: InfoTagConfigRecord,
   ): Promise<void> {
     try {
-      // 检查是否已有
-      const existing = await this.relationDb.select(INFO_TAG_VECTOR_TABLE, {
-        conditions: [{ field: 'tag_id', operator: Operator.EQ, value: tag }],
-        page: { current: 1, size: 1 },
-      });
-      if (existing.length > 0) return;
-
-      const vectorConfig = await this.getInfoVectorConfig();
-      if (!vectorConfig || vectorConfig.enable !== 1) return;
-
-      const embedding = await this.generateEmbedding(tag, vectorConfig);
+      if (await this.getVectorRecord(this.tagVectorId(tag))) return;
+      const embedding = await this.getTagEmbedding(tag, tagConfig);
       if (!embedding || embedding.length === 0) return;
-
-      const now = IdGenerator.now();
-      const id = IdGenerator.generate();
-
-      await this.relationDb.insert(INFO_TAG_VECTOR_TABLE, [
-        { field: 'id', value: id },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'tag_id', value: tag },
-        { field: 'embedding', value: JSON.stringify(embedding) },
-      ]);
+      await this.upsertTagVector(tag, embedding);
     } catch {
       // ignore
     }
@@ -3021,21 +3024,6 @@ const rawPriority = priorityOrderStr
   // Private: Parsing helpers
   // =========================================================================
 
-  private parseJSONArray(raw: string): number[] | null {
-    try {
-      let json = raw.trim();
-      const arrMatch = json.match(/\[[\s\S]*?\]/);
-      if (arrMatch) json = arrMatch[0];
-
-      const parsed = JSON.parse(json);
-      if (!Array.isArray(parsed)) return null;
-
-      return parsed.map((v: unknown) => typeof v === 'number' ? v : parseFloat(String(v))).filter((v: number) => !isNaN(v));
-    } catch {
-      return null;
-    }
-  }
-
   private parseStringArray(raw: string): string[] {
     try {
       let json = raw.trim();
@@ -3076,16 +3064,6 @@ const rawPriority = priorityOrderStr
       pin: raw['pin'] as number,
       trace_id: raw['trace_id'] as string,
       handle_result_type: (raw['handle_result_type'] as string) || DEFAULT_HANDLE_RESULT_TYPE,
-    };
-  }
-
-  private toInfoVectorRecord(raw: Record<string, unknown>): InfoVectorRecord {
-    return {
-      id: raw['id'] as string,
-      created: raw['created'] as number,
-      updated: raw['updated'] as number,
-      info_id: raw['info_id'] as string,
-      embedding: raw['embedding'] as string,
     };
   }
 

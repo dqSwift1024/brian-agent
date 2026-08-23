@@ -87,7 +87,9 @@ describe('InfoCoreProvider', () => {
     promptsAccess = new PromptsAccess(relationDb);
     await promptsAccess.initialize();
     vectorDb = new VectorDBAccess(relationDb, { lancePath: path.join(tempDir, 'vectordb') });
+    await vectorDb.initialize(8);
     graphDb = new GraphDBAccess(relationDb, { dbPath: path.join(tempDir, 'graph.db') });
+    await graphDb.initialize();
     infoCore = new InfoCoreAccess(relationDb, llmAccess, promptsAccess, vectorDb, graphDb);
     await infoCore.initialize();
   });
