@@ -515,6 +515,14 @@ async function buildContext() {
     new StartLearningOutput(),
   );
 
+  // 启动期注册常驻 MQ 消费 Worker（orchestration.eval 评估队列），
+  // 避免消息因 Worker 未启动而长期滞留 PENDING。
+  try {
+    await jsonNode.ensureEvalWorker();
+  } catch (e) {
+    logger.warn('[startup] eval worker failed', String(e));
+  }
+
   // ---- CronProvider（定时任务调度中心）----
   const cronAccess = new CronAccess(relationDb, logger);
 

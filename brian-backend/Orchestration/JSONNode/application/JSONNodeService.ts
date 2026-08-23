@@ -1271,37 +1271,7 @@ export class JSONNodeService {
             },
           });
           await this.mqAccess.sendMQ(sendInput, {}, {});
-
-          if (this.mqCore) {
-            const getWorkerInput = Object.assign({}, { identifier: 'orchestration.eval' });
-            const getWorkerOutput = Object.assign({}, { worker: null });
-            await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
-            if (!getWorkerOutput.worker) {
-              const startWorkerInput = Object.assign({}, {
-                queue: 'orchestration.eval',
-                handler: async (msg: Record<string, unknown>) => {
-                  try {
-                    const payload = (msg.payload as Record<string, unknown>) ?? {};
-                    await this.runEval({
-                      work_id: payload.work_id as string ?? '',
-                      interact_id: payload.interact_id as string ?? '',
-                      user_query: payload.user_query as string ?? '',
-                      final_response: payload.final_response as string ?? '',
-                      agent_results: (payload.agent_results as Record<string, unknown>[]) ?? [],
-                      final_response_handle_result_type: payload.final_response_handle_result_type as string ?? '',
-                    });
-                    return true;
-                  } catch (err: unknown) {
-                    this.logger?.error?.('MQ eval worker: evaluation failed', {
-                      error: err instanceof Error ? err.message : String(err),
-                    });
-                    return false;
-                  }
-                },
-              });
-              await this.mqCore.startWorker(startWorkerInput, {}, {});
-            }
-          }
+          await this.ensureEvalWorker();
         } catch (mqErr: unknown) {
           this.logger?.error?.('handleEvalResult: MQ enqueue failed, falling back to setImmediate', {
             error: mqErr instanceof Error ? mqErr.message : String(mqErr),
@@ -1314,6 +1284,36 @@ export class JSONNodeService {
     } else {
       await evalFn();
     }
+  }
+
+  /** 确保 orchestration.eval 队列存在常驻消费 Worker（幂等，供启动期与按需调用）。 */
+  async ensureEvalWorker(): Promise<void> {
+    if (!this.mqAccess || !this.mqCore) return;
+    const soOutput = Object.assign({}, { workers: [] as unknown[] });
+    await this.mqCore.soWorker({ queue: 'orchestration.eval' }, {}, soOutput);
+    if ((soOutput.workers as unknown[]).length > 0) return;
+    await this.mqCore.startWorker({
+      queue: 'orchestration.eval',
+      handler: async (msg: Record<string, unknown>) => {
+        try {
+          const payload = (msg.payload as Record<string, unknown>) ?? {};
+          await this.runEval({
+            work_id: payload.work_id as string ?? '',
+            interact_id: payload.interact_id as string ?? '',
+            user_query: payload.user_query as string ?? '',
+            final_response: payload.final_response as string ?? '',
+            agent_results: (payload.agent_results as Record<string, unknown>[]) ?? [],
+            final_response_handle_result_type: payload.final_response_handle_result_type as string ?? '',
+          });
+          return true;
+        } catch (err: unknown) {
+          this.logger?.error?.('MQ eval worker: evaluation failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return false;
+        }
+      },
+    }, {}, {});
   }
 
   private async handleSaveResponse(

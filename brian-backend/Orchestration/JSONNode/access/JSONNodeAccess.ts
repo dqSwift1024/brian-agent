@@ -88,4 +88,10 @@ export class JSONNodeAccess {
     await this.initPromise;
     return this.service.configJSONNode(i, c, o);
   }
+
+  /** 确保 orchestration.eval 队列存在常驻消费 Worker（启动期调用）。 */
+  async ensureEvalWorker(): Promise<void> {
+    await this.initPromise;
+    await this.service.ensureEvalWorker();
+  }
 }
