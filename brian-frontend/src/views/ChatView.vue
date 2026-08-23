@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare, Edit3, Check } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
@@ -10,6 +11,7 @@ import { chatApi } from '@/api'
 import type { ChatSession } from '@/api/types'
 
 const sessionStore = useSessionStore()
+const route = useRoute()
 const showSidebar = ref(false)
 const showSearch = ref(false)
 const searchQuery = ref('')
@@ -39,16 +41,13 @@ async function saveSessionTitle(sessionId: string) {
 }
 
 onMounted(async () => {
-  const sid = sessionStore.currentSessionId
+  // 从「信息 > 历史」卡片跳转进入时，优先使用 URL 中的 session 参数打开对应会话
+  const querySid = route.query.session
+  const sid = (typeof querySid === 'string' && querySid) ? querySid : sessionStore.currentSessionId
   if (!sid) return
   try {
     await sessionStore.loadChatHistory(sid, 'default-user')
   } catch { /* ignore */ }
-  // ===== 原始代码（保留参考）：加载 exchanges 请求冗余且结果被丢弃，已移除 =====
-  // await Promise.all([
-  //   sessionStore.loadDag(sid, 'default-user'),
-  //   sessionStore.loadExchanges(sid, 'default-user'),
-  // ])
   await sessionStore.loadDag(sid, 'default-user')
 })
 

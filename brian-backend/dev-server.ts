@@ -2397,6 +2397,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             lastMessage: s.last_message || s.session_title || '',
             lastTime: s.last_message_time,
             messageCount: s.message_count,
+            qaCount: s.qa_count ?? 0,
+            questionChars: s.question_chars ?? 0,
+            answerChars: s.answer_chars ?? 0,
+            inputTokens: s.input_tokens ?? 0,
+            outputTokens: s.output_tokens ?? 0,
+            tags: s.tags ?? [],
           })),
           total: output.total,
         });

@@ -55,6 +55,12 @@ export class SearchSessionOutput extends Output {
     last_message: string;
     created: number;
     updated: number;
+    qa_count: number;
+    question_chars: number;
+    answer_chars: number;
+    input_tokens: number;
+    output_tokens: number;
+    tags: string[];
   }> = [];
   total = 0;
 }

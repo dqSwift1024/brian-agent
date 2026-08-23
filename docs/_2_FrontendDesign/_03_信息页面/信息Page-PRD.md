@@ -136,16 +136,18 @@
 ### 7.1 展示
 
 - 数据来源：`GET /api/chat/list?userId=...&keyword=...&start_time=...&end_time=...`（后端 `ChatService.searchSession`），按 `lastTime`（最后一条消息时间戳）倒序渲染。
-- 每条会话展示：最后消息时间（`lastTime`）、会话名称（`sessionTitle`）、最后一条消息内容预览（`lastMessage`）、消息数（`messageCount`）。
-- 后端返回字段为 camelCase（`sessionId / sessionTitle / lastMessage / lastTime / messageCount`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
+- 每条会话以**卡片**形式展示：会话名称（`sessionTitle`）、会话日期（`lastTime`）、输入/输出 Token 消耗（`inputTokens` / `outputTokens`）、问答次数（`qaCount`）、问题/回答字符数（`questionChars` / `answerChars`）、标签列表（`tags`）。
+- 后端返回字段为 camelCase（`sessionId / sessionTitle / lastTime / messageCount / qaCount / questionChars / answerChars / inputTokens / outputTokens / tags`），由 `/api/chat/list` 路由统一转换（后端 `searchSession` 内部仍为 snake_case）。
 - 「历史」页签以**会话（session）**为单位展示，会话内容来自 `info_raw` 表中的消息记录（`info_type` 含 REQUEST / RESPONSE / THINK / SKILL / MCP / ACT / REFLECT，其中用户问答即 REQUEST + RESPONSE）；「记忆」页签则以**单条 info** 为单位展示。
+- **布局**：与「记忆」页签一致 —— 左侧日期导航栏 + 右侧内容区（顶部 sticky 搜索工具栏 + 按日期分组的卡片网格）+ 左下角日期热力图。卡片按日期组织，同一天会话排列在同一网格内，不同日期卡片分布在不同分组；所有卡片等宽等高（固定高度）。
+- **跳转**：点击卡片跳转至「对话」页并打开对应会话（URL 携带 `?session=<sessionId>`）。
 
 ### 7.1.1 会话名称（自动生成 + 手动修改）
 
 - **自动生成**：用户在某会话发送第一条消息时，若该会话名称为默认占位名（空或「新会话」），后端自动将第一条消息截断前 50 个字符作为会话名称。
 - **锁名规则**：会话已存在特定名称（自动生成或用户手动设置）时，后续消息不会自动覆盖或重新生成名称。
 - **手动修改**：历史 Tab 每条会话卡片提供编辑按钮（Edit3 图标），点击进入内联编辑输入框，回车或点击确认（Check）调用 `PUT /api/chat/session/:sessionId/title` 保存；提供取消（X）退出编辑。
-- **展示优先级**：名称优先显示 `sessionTitle`，为空时回退显示 `lastMessage` 或「新会话」；会话名称下另行展示最后一条消息内容摘要。
+- **展示优先级**：名称优先显示 `sessionTitle`，为空时回退显示「新会话」。
 
 ### 7.2 搜索
 
@@ -165,6 +167,26 @@
 ---
 
 ## 8. 变更记录
+
+### [2026-08-23] 历史会话 Tab：卡片化展示、统计聚合与布局对齐记忆页
+
+**变更原因**：历史 Tab 原为列表式展示且仅含名称/时间/消息预览，缺少会话级统计（Token 消耗、问答次数、字符数、标签）；布局与「记忆」页签不一致（缺日期导航、日期热力图、常驻删除按钮）；点击会话无法正确跳转打开对应会话。
+
+**修改的方法**：
+- `ChatService.searchSession` — 新增批量聚合（避免逐会话 N+1）：从 `info_raw` 聚合问答次数（REQUEST 计数）与问题/回答字符数（`info_length`），从 `info_tag` 聚合会话标签，经 `orchestration_work` → `orchestration_agent_execution` → `agent_execution_trace` 关联链解析 `iterations_json` 得到输入/输出 Token。原 Token 统计误用 `info_raw.trace_id`（work 级）直连 `agent_execution_trace.trace_id`（agent 级），已修正为上述三表关联。
+- `SearchSessionOutput`（`Chat/domain/types.ts`）— sessions 项新增 `qa_count / question_chars / answer_chars / input_tokens / output_tokens / tags` 字段。
+- `dev-server.ts` `GET /api/chat/list` — 透传新增统计字段（`qaCount / questionChars / answerChars / inputTokens / outputTokens / tags`）。
+- 前端 `api/types.ts` — `ChatSession` 新增上述可选字段。
+- 前端 `InfoView.vue` — 历史 Tab 由列表改为卡片：移除 `lastMessage` 展示，卡片按日期分组（左侧日期导航 + 右侧 sticky 搜索工具栏 + 分组卡片网格 + 左下角日期热力图），删除按钮常驻（未选中时禁用）；卡片等宽等高（固定高度），列数由 3 列增至 4 列以收窄卡片宽度。
+- 前端 `ChatView.vue` — `onMounted` 优先读取 `route.query.session` 加载对应会话，支持从历史卡片跳转打开指定会话。
+
+**影响的端点**：
+- `GET /api/chat/list` — 返回新增统计字段。
+- `/?session=<sessionId>` — 对话页支持按 URL 参数打开指定会话。
+
+**可能存在的问题**：
+- Token 统计依赖 `agent_execution_trace.iterations_json` 中 think/reflect/answer 的 `input_tokens / output_tokens`；老数据（无 trace 记录）Token 显示为 0。Intent Agent 的 Token（存于 `orchestration_work.metadata`）未纳入统计。
+- 会话列表受 `searchSession` 默认 `page_size=20` 限制，历史页当前最多展示 20 个会话，日期热力图仅覆盖已加载会话。
 
 ### [2026-08-19] 历史会话 Tab：会话名称自动生成（50 字截断）与手动修改
 

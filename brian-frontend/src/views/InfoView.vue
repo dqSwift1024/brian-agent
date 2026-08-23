@@ -100,6 +100,89 @@ const filteredHistory = computed(() => {
   return [...chatList.value].sort((a, b) => b.lastTime - a.lastTime)
 })
 
+const historyTimeline = computed(() => {
+  const groups: { dateKey: string; label: string; items: ChatSession[] }[] = []
+  for (const session of filteredHistory.value) {
+    const d = new Date(session.lastTime)
+    const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    let group = groups.find(g => g.dateKey === dateKey)
+    if (!group) {
+      const today = new Date()
+      const yesterday = new Date(today.getTime() - 86400000)
+      let label: string
+      if (d.toDateString() === today.toDateString()) label = '今天'
+      else if (d.toDateString() === yesterday.toDateString()) label = '昨天'
+      else label = `${d.getMonth() + 1}月${d.getDate()}日`
+      group = { dateKey, label, items: [] }
+      groups.push(group)
+    }
+    group.items.push(session)
+  }
+  return groups
+})
+
+const activeHistoryDate = ref<string | null>(null)
+
+function scrollToHistoryDate(dateKey: string) {
+  activeHistoryDate.value = dateKey
+  document.getElementById(`history-nav-${dateKey}`)?.scrollIntoView({ block: 'nearest' })
+  document.getElementById(`history-group-${dateKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function formatTokens(n?: number): string {
+  if (!n) return '0'
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
+// 历史页热力图：基于 chatList 按最后消息时间聚合当月每天的会话数量
+const historyHeatmapYear = ref(new Date().getFullYear())
+const historyHeatmapMonth = ref(new Date().getMonth() + 1)
+
+const historyHeatmapDays = computed(() => {
+  const days: Record<string, number> = {}
+  for (const s of chatList.value) {
+    const d = new Date(s.lastTime)
+    if (d.getFullYear() === historyHeatmapYear.value && d.getMonth() + 1 === historyHeatmapMonth.value) {
+      const key = String(d.getDate())
+      days[key] = (days[key] || 0) + 1
+    }
+  }
+  return days
+})
+
+const historyHeatmapCells = computed(() => {
+  const daysInMonth = new Date(historyHeatmapYear.value, historyHeatmapMonth.value, 0).getDate()
+  const firstDay = new Date(historyHeatmapYear.value, historyHeatmapMonth.value - 1, 1).getDay()
+  const leading = (firstDay + 6) % 7
+  const cells: { day: number | null; count: number }[] = []
+  for (let i = 0; i < leading; i++) cells.push({ day: null, count: 0 })
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, count: historyHeatmapDays.value[String(d)] || 0 })
+  while (cells.length % 7 !== 0) cells.push({ day: null, count: 0 })
+  return cells
+})
+
+function historyHeatmapColor(count: number): string {
+  if (count <= 0) return 'bg-apple-gray-100 dark:bg-apple-gray-800'
+  if (count === 1) return 'bg-brian-blue/30'
+  if (count <= 3) return 'bg-brian-blue/60'
+  return 'bg-brian-blue'
+}
+
+function historyHeatmapDateKey(day: number): string {
+  return `${historyHeatmapYear.value}-${historyHeatmapMonth.value - 1}-${day}`
+}
+
+function isHistoryHeatmapCellActive(day: number): boolean {
+  return activeHistoryDate.value === historyHeatmapDateKey(day)
+}
+
+function clickHistoryHeatmapDay(day: number | null) {
+  if (!day) return
+  scrollToHistoryDate(historyHeatmapDateKey(day))
+}
+
 const allHistorySelected = computed(() =>
   filteredHistory.value.length > 0 && filteredHistory.value.every(c => selectedSessions.value.has(c.sessionId))
 )
@@ -1237,66 +1320,139 @@ function searchMemoryByEnter() {
       </div>
 
       <!-- History tab -->
-      <div v-if="activeTab === 'history'" class="px-6 pb-8 space-y-3">
-        <div class="flex items-center gap-3 flex-wrap">
-          <div class="relative flex-1 max-w-md">
-            <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-            <input v-model="historySearch" placeholder="搜索会话内容或标题..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
-          </div>
-          <div class="flex items-center gap-2 text-xs text-apple-gray-500">
-            <input v-model="historyStartTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
-            <span>至</span>
-            <input v-model="historyEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
-          </div>
-          <button v-if="filteredHistory.length > 0" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-apple-gray-500 hover:text-brian-blue" @click="toggleHistorySelectAll">
-            <component :is="allHistorySelected ? CheckSquare : Square" :size="14" />
-            {{ allHistorySelected ? '取消全选' : '全选' }}
-          </button>
-          <button v-if="selectedSessions.size > 0" class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg" @click="requestBatchDelete">
-            <Trash2 :size="12" /> 批量删除({{ selectedSessions.size }})
-          </button>
-        </div>
+      <div v-if="activeTab === 'history'" class="px-6 pb-8 space-y-4">
         <div v-if="loadingHistory" class="text-center py-8 text-apple-gray-400">加载中...</div>
-        <div v-else-if="filteredHistory.length === 0" class="text-center py-8 text-apple-gray-400">暂无历史会话</div>
-        <div v-else class="grid gap-3 max-w-3xl">
-          <div
-            v-for="item in filteredHistory"
-            :key="item.sessionId"
-            class="flex items-start justify-between p-4 block-card rounded-xl cursor-pointer"
-            :class="selectedSessions.has(item.sessionId) ? 'border-brian-blue/40 bg-brian-blue/5' : 'hover:border-brian-blue/30'"
-            @click="openSession(item.sessionId)"
-          >
-            <div class="flex items-start gap-3 flex-1 min-w-0">
-              <button class="mt-1 text-apple-gray-300 hover:text-brian-blue flex-shrink-0" @click.stop="toggleHistorySelect(item.sessionId)">
-                <component :is="selectedSessions.has(item.sessionId) ? CheckSquare : Square" :size="16" />
+        <div v-else-if="historyTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无历史会话</div>
+        <div v-else class="flex gap-6">
+          <div class="w-40 flex-shrink-0">
+            <div class="sticky top-[160px] space-y-1 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
+              <button
+                v-for="group in historyTimeline"
+                :key="group.dateKey"
+                :id="`history-nav-${group.dateKey}`"
+                class="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                :class="activeHistoryDate === group.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
+                @click="scrollToHistoryDate(group.dateKey)"
+              >
+                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeHistoryDate === group.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
+                <span>{{ group.label }}</span>
+                <span class="ml-auto text-apple-gray-300">{{ group.items.length }}</span>
               </button>
-              <div class="flex-1 min-w-0">
-                <span class="text-xs text-apple-gray-400">{{ formatTime(item.lastTime) }}</span>
-                <div v-if="editingSessionId === item.sessionId" class="flex items-center gap-2 mt-1" @click.stop>
-                  <input
-                    v-model="editingTitle"
-                    class="px-2 py-1 text-sm rounded bg-white dark:bg-apple-gray-800 border border-brian-blue focus:outline-none focus:ring-1 focus:ring-brian-blue"
-                    @keyup.enter="saveSessionTitle(item.sessionId)"
-                  />
-                  <button class="p-1 rounded text-brian-blue hover:bg-brian-blue/10" title="保存" @click="saveSessionTitle(item.sessionId)">
-                    <Check :size="14" />
-                  </button>
-                  <button class="p-1 rounded text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" title="取消" @click="editingSessionId = null">
-                    <X :size="14" />
-                  </button>
-                </div>
-                <div v-else class="flex items-center gap-2 mt-1 group">
-                  <p class="text-sm font-medium truncate flex-1">{{ item.sessionTitle || item.lastMessage || '新会话' }}</p>
-                  <button class="p-1 rounded text-apple-gray-400 opacity-80 hover:opacity-100 hover:text-brian-blue hover:bg-brian-blue/10 transition-all" title="修改会话名称" @click.stop="startEditTitle(item)">
-                    <Edit3 :size="14" />
-                  </button>
-                </div>
-                <p v-if="item.lastMessage && item.lastMessage !== item.sessionTitle" class="text-xs text-apple-gray-400 mt-1 truncate">{{ item.lastMessage }}</p>
-              </div>
             </div>
-            <button class="ml-3 p-1.5 rounded-lg text-apple-gray-400 hover:text-error-red hover:bg-error-red/10 flex-shrink-0" @click.stop="requestDeleteSession(item.sessionId)">
-              <Trash2 :size="16" />
-            </button>
+          </div>
+          <div class="flex-1 min-w-0 space-y-4">
+            <div class="sticky top-[160px] z-20 flex items-center gap-3 flex-wrap bg-white dark:bg-apple-dark-bg py-2 -mx-1 px-1 border-b border-apple-gray-200/60 dark:border-apple-gray-700/60">
+              <div class="relative flex-1 max-w-md">
+                <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+                <input v-model="historySearch" placeholder="搜索会话内容或标题..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              </div>
+              <div class="flex items-center gap-2 text-xs text-apple-gray-500">
+                <input v-model="historyStartTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+                <span>至</span>
+                <input v-model="historyEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              </div>
+              <button
+                v-if="filteredHistory.length > 0"
+                class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-brian-blue hover:bg-brian-blue/10 rounded-lg"
+                @click="toggleHistorySelectAll"
+              >
+                <component :is="allHistorySelected ? CheckSquare : Square" :size="14" /> {{ allHistorySelected ? '取消全选' : '全选' }}
+              </button>
+              <button
+                class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg"
+                :class="selectedSessions.size > 0 ? '' : 'opacity-40 cursor-not-allowed'"
+                :disabled="selectedSessions.size === 0"
+                @click="requestBatchDelete()"
+              >
+                <Trash2 :size="14" /> 删除所选{{ selectedSessions.size > 0 ? `(${selectedSessions.size})` : '' }}
+              </button>
+            </div>
+            <div class="space-y-3">
+              <template v-for="group in historyTimeline" :key="group.dateKey">
+              <div :id="`history-group-${group.dateKey}`" class="flex items-center gap-2 pt-1 scroll-mt-[210px]">
+                <span class="text-sm font-semibold">{{ group.label }}</span>
+                <span class="text-xs text-apple-gray-400">({{ group.items.length }})</span>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div
+                  v-for="item in group.items"
+                  :key="item.sessionId"
+                  class="block-card rounded-xl p-3 cursor-pointer flex flex-col gap-1.5 h-44"
+                  :class="selectedSessions.has(item.sessionId) ? 'border-brian-blue/40 bg-brian-blue/5' : 'hover:border-brian-blue/30'"
+                  @click="openSession(item.sessionId)"
+                >
+                  <div class="flex items-start justify-between gap-1">
+                    <div v-if="editingSessionId === item.sessionId" class="flex items-center gap-1 min-w-0 flex-1" @click.stop>
+                      <input
+                        v-model="editingTitle"
+                        class="px-1.5 py-0.5 text-xs rounded bg-white dark:bg-apple-gray-800 border border-brian-blue focus:outline-none focus:ring-1 focus:ring-brian-blue w-full min-w-0"
+                        @keyup.enter="saveSessionTitle(item.sessionId)"
+                      />
+                      <button class="p-0.5 rounded text-brian-blue hover:bg-brian-blue/10 flex-shrink-0" title="保存" @click="saveSessionTitle(item.sessionId)">
+                        <Check :size="12" />
+                      </button>
+                      <button class="p-0.5 rounded text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700 flex-shrink-0" title="取消" @click="editingSessionId = null">
+                        <X :size="12" />
+                      </button>
+                    </div>
+                    <div v-else class="flex items-center gap-1 min-w-0 flex-1 group">
+                      <p class="text-sm font-semibold truncate">{{ item.sessionTitle || '新会话' }}</p>
+                      <button class="p-0.5 rounded text-apple-gray-400 opacity-80 hover:opacity-100 hover:text-brian-blue hover:bg-brian-blue/10 transition-all flex-shrink-0" title="修改会话名称" @click.stop="startEditTitle(item)">
+                        <Edit3 :size="12" />
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                      <button class="text-apple-gray-300 hover:text-brian-blue" title="选择" @click.stop="toggleHistorySelect(item.sessionId)">
+                        <component :is="selectedSessions.has(item.sessionId) ? CheckSquare : Square" :size="14" />
+                      </button>
+                      <button class="text-apple-gray-400 hover:text-error-red" title="删除" @click.stop="requestDeleteSession(item.sessionId)">
+                        <Trash2 :size="14" />
+                      </button>
+                    </div>
+                  </div>
+                  <span class="text-xs text-apple-gray-400">{{ formatTime(item.lastTime) }}</span>
+                  <div class="grid grid-cols-3 gap-1.5 text-[11px]">
+                    <div class="rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800 px-1.5 py-1" title="输入 / 输出 Token">
+                      <p class="text-apple-gray-400">Tokens</p>
+                      <p class="font-medium text-apple-gray-700 dark:text-apple-gray-200 truncate">{{ formatTokens(item.inputTokens) }} / {{ formatTokens(item.outputTokens) }}</p>
+                    </div>
+                    <div class="rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800 px-1.5 py-1" title="问答次数">
+                      <p class="text-apple-gray-400">问答</p>
+                      <p class="font-medium text-apple-gray-700 dark:text-apple-gray-200">{{ item.qaCount ?? 0 }}</p>
+                    </div>
+                    <div class="rounded-lg bg-apple-gray-50 dark:bg-apple-gray-800 px-1.5 py-1" title="问题 / 回答字符数">
+                      <p class="text-apple-gray-400">字数</p>
+                      <p class="font-medium text-apple-gray-700 dark:text-apple-gray-200 truncate">{{ formatTokens(item.questionChars) }} / {{ formatTokens(item.answerChars) }}</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-1 overflow-hidden flex-1 min-h-0">
+                    <span v-if="!item.tags || item.tags.length === 0" class="text-xs text-apple-gray-300">无标签</span>
+                    <span v-for="tag in item.tags" :key="tag" class="px-1.5 py-0.5 rounded text-xs bg-brian-blue/10 text-brian-blue whitespace-nowrap">#{{ tag }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="historyTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-40 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-2 shadow-sm">
+          <div class="grid grid-cols-7 gap-0.5">
+            <div
+              v-for="(cell, i) in historyHeatmapCells"
+              :key="i"
+              :title="cell.day ? `${cell.day}日: ${cell.count} 个会话` : ''"
+              class="aspect-square rounded-[3px]"
+              :class="[
+                cell.day ? historyHeatmapColor(cell.count) : 'bg-transparent',
+                cell.day ? 'cursor-pointer hover:ring-2 hover:ring-brian-blue/60' : '',
+                cell.day && isHistoryHeatmapCellActive(cell.day) ? 'ring-2 ring-brian-blue' : '',
+              ]"
+              @click="clickHistoryHeatmapDay(cell.day)"
+            />
+          </div>
+          <div class="flex items-center justify-center mt-2">
+            <span class="text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300">{{ historyHeatmapYear }}/{{ String(historyHeatmapMonth).padStart(2, '0') }}</span>
           </div>
         </div>
 
@@ -1704,20 +1860,34 @@ function searchMemoryByEnter() {
 
       <!-- Tag graph tab -->
       <div v-if="activeTab === 'tagGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
-        <div class="flex items-center justify-between flex-shrink-0 mb-2">
-          <h3 class="text-lg font-semibold">Tag 关系图</h3>
-          <div class="flex items-center gap-4 text-xs text-apple-gray-400">
-            <span>拖拽平移 · 滚轮缩放 · 悬停高亮关联</span>
-            <span class="flex items-center gap-1.5">
-              <span class="text-[10px]">低频</span>
-              <span class="w-24 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(150,75%,52%), hsl(60,75%,52%), hsl(0,75%,52%));"></span>
-              <span class="text-[10px]">高频</span>
-            </span>
-            <span class="text-[10px]">面积 = 连接度</span>
-          </div>
-        </div>
         <div class="flex gap-4 flex-1 min-h-0">
-          <div class="flex-1 overflow-hidden" :class="panning || draggingTagId ? 'cursor-grabbing' : 'cursor-grab'">
+          <div class="flex-1 overflow-hidden relative" :class="panning || draggingTagId ? 'cursor-grabbing' : 'cursor-grab'">
+            <div class="absolute top-3 right-3 z-10 w-60 rounded-xl border border-apple-gray-200/70 dark:border-apple-gray-700 bg-white/90 dark:bg-apple-gray-900/90 backdrop-blur-sm shadow-sm p-3 text-xs text-apple-gray-600 dark:text-apple-gray-300 pointer-events-none">
+              <ul class="space-y-2.5">
+                <li class="flex items-center gap-2.5">
+                  <span class="flex items-end gap-1 shrink-0 w-9">
+                    <span class="inline-block rounded-full bg-apple-gray-400" style="width:7px;height:7px"></span>
+                    <span class="inline-block rounded-full bg-apple-gray-400" style="width:13px;height:13px"></span>
+                  </span>
+                  <span>节点大小：越大连接度越高</span>
+                </li>
+                <li class="flex items-center gap-2.5">
+                  <span class="shrink-0 w-9 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(0,75%,52%));"></span>
+                  <span>节点颜色：蓝=低频 → 红=高频</span>
+                </li>
+                <li class="flex items-center gap-2.5">
+                  <svg class="shrink-0" width="36" height="12" viewBox="0 0 36 12">
+                    <line x1="0" y1="6" x2="8" y2="6" stroke="#8e8e93" stroke-width="1.5" />
+                    <line x1="28" y1="6" x2="36" y2="6" stroke="#8e8e93" stroke-width="1.5" />
+                    <circle cx="0" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="8" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="28" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="36" cy="6" r="2" fill="#8e8e93" />
+                  </svg>
+                  <span>连线长度：越短关联越强</span>
+                </li>
+              </ul>
+            </div>
             <svg
               ref="tagSvgRef"
               viewBox="0 0 700 700"
@@ -1784,22 +1954,36 @@ function searchMemoryByEnter() {
 
       <!-- Keyword graph tab -->
       <div v-if="activeTab === 'keywordGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
-        <div class="flex items-center justify-between flex-shrink-0 mb-2">
-          <h3 class="text-lg font-semibold">关键词关联图</h3>
-          <div class="flex items-center gap-4 text-xs text-apple-gray-400">
-            <span>拖拽平移 · 滚轮缩放 · 悬停高亮关联</span>
-            <span class="flex items-center gap-1.5">
-              <span class="text-[10px]">低频</span>
-              <span class="w-24 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(150,75%,52%), hsl(60,75%,52%), hsl(0,75%,52%));"></span>
-              <span class="text-[10px]">高频</span>
-            </span>
-            <span class="text-[10px]">面积 = 连接度</span>
-          </div>
-        </div>
         <div v-if="loadingKeywordGraph" class="text-center py-16 text-apple-gray-400 flex-1">加载中...</div>
         <div v-else-if="keywordGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm flex-1">暂无关键词数据</div>
         <div v-else class="flex gap-4 flex-1 min-h-0">
-          <div class="flex-1 overflow-hidden" :class="keywordPanning || keywordDraggingId ? 'cursor-grabbing' : 'cursor-grab'">
+          <div class="flex-1 overflow-hidden relative" :class="keywordPanning || keywordDraggingId ? 'cursor-grabbing' : 'cursor-grab'">
+            <div class="absolute top-3 right-3 z-10 w-60 rounded-xl border border-apple-gray-200/70 dark:border-apple-gray-700 bg-white/90 dark:bg-apple-gray-900/90 backdrop-blur-sm shadow-sm p-3 text-xs text-apple-gray-600 dark:text-apple-gray-300 pointer-events-none">
+              <ul class="space-y-2.5">
+                <li class="flex items-center gap-2.5">
+                  <span class="flex items-end gap-1 shrink-0 w-9">
+                    <span class="inline-block rounded-full bg-apple-gray-400" style="width:7px;height:7px"></span>
+                    <span class="inline-block rounded-full bg-apple-gray-400" style="width:13px;height:13px"></span>
+                  </span>
+                  <span>节点大小：越大连接度越高</span>
+                </li>
+                <li class="flex items-center gap-2.5">
+                  <span class="shrink-0 w-9 h-2 rounded-full" style="background: linear-gradient(to right, hsl(210,75%,52%), hsl(0,75%,52%));"></span>
+                  <span>节点颜色：蓝=低频 → 红=高频</span>
+                </li>
+                <li class="flex items-center gap-2.5">
+                  <svg class="shrink-0" width="36" height="12" viewBox="0 0 36 12">
+                    <line x1="0" y1="6" x2="8" y2="6" stroke="#8e8e93" stroke-width="1.5" />
+                    <line x1="28" y1="6" x2="36" y2="6" stroke="#8e8e93" stroke-width="1.5" />
+                    <circle cx="0" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="8" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="28" cy="6" r="2" fill="#8e8e93" />
+                    <circle cx="36" cy="6" r="2" fill="#8e8e93" />
+                  </svg>
+                  <span>连线长度：越短关联越强</span>
+                </li>
+              </ul>
+            </div>
             <svg
               ref="keywordSvgRef"
               viewBox="0 0 700 700"

@@ -299,6 +299,12 @@ export interface ChatSession {
   lastMessage: string
   lastTime: number
   messageCount: number
+  qaCount?: number
+  questionChars?: number
+  answerChars?: number
+  inputTokens?: number
+  outputTokens?: number
+  tags?: string[]
 }
 
 export interface AgentChainNode {

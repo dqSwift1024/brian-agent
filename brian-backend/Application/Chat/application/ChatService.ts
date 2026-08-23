@@ -604,6 +604,103 @@ export class ChatService {
     const selOutput = Object.assign(new SelectDBOutput(), {});
     await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
 
+    // ===== 新增：批量聚合会话统计（问答次数 / 字符数 / 标签 / token），避免逐会话 N+1 =====
+    const sessionIds = selOutput.rows.map((r) => String(r.session_id ?? '')).filter(Boolean);
+    const statMap = new Map<string, { qa_count: number; question_chars: number; answer_chars: number }>();
+    const tagsMap = new Map<string, string[]>();
+    const tokenMap = new Map<string, { input_tokens: number; output_tokens: number }>();
+
+    if (sessionIds.length > 0) {
+      const placeholders = sessionIds.map(() => '?').join(',');
+
+      try {
+        const statRows = this.relationDb.queryRaw<{ session_id: string; qa_count: number; question_chars: number; answer_chars: number }>(
+          `SELECT "session_id",
+             SUM(CASE WHEN "info_type" = 'REQUEST' THEN 1 ELSE 0 END) AS qa_count,
+             SUM(CASE WHEN "info_type" = 'REQUEST' THEN "info_length" ELSE 0 END) AS question_chars,
+             SUM(CASE WHEN "info_type" = 'RESPONSE' THEN "info_length" ELSE 0 END) AS answer_chars
+           FROM "info_raw" WHERE "session_id" IN (${placeholders}) GROUP BY "session_id"`,
+          sessionIds,
+        );
+        for (const r of statRows) {
+          statMap.set(String(r.session_id), {
+            qa_count: Number(r.qa_count ?? 0) || 0,
+            question_chars: Number(r.question_chars ?? 0) || 0,
+            answer_chars: Number(r.answer_chars ?? 0) || 0,
+          });
+        }
+      } catch {
+        /* degrade gracefully */
+      }
+
+      try {
+        const tagRows = this.relationDb.queryRaw<{ session_id: string; tag: string }>(
+          `SELECT ir."session_id", t."tag"
+           FROM "info_tag" t
+           INNER JOIN "info_raw" ir ON t."info_id" = ir."info_id"
+           WHERE ir."session_id" IN (${placeholders})
+           GROUP BY ir."session_id", t."tag"`,
+          sessionIds,
+        );
+        for (const r of tagRows) {
+          const sid = String(r.session_id ?? '');
+          const tag = String(r.tag ?? '').trim();
+          if (!sid || !tag) continue;
+          const list = tagsMap.get(sid) ?? [];
+          if (!list.includes(tag)) list.push(tag);
+          tagsMap.set(sid, list);
+        }
+      } catch {
+        /* degrade gracefully */
+      }
+
+      try {
+        const traceRows = this.relationDb.queryRaw<{ session_id: string; trace_id: string; iterations_json: string; total_token_usage: number }>(
+          `SELECT ow."session_id", t."trace_id", t."iterations_json", t."total_token_usage"
+           FROM "orchestration_work" ow
+           INNER JOIN "orchestration_agent_execution" e ON ow."work_id" = e."work_id"
+           INNER JOIN "agent_execution_trace" t ON e."trace_id" = t."trace_id" AND e."trace_id" IS NOT NULL AND e."trace_id" != ''
+           WHERE ow."session_id" IN (${placeholders})
+           GROUP BY ow."session_id", t."trace_id"`,
+          sessionIds,
+        );
+        const seen = new Set<string>();
+        for (const r of traceRows) {
+          const sid = String(r.session_id ?? '');
+          const traceId = String(r.trace_id ?? '');
+          if (!sid || !traceId || seen.has(`${sid}:${traceId}`)) continue;
+          seen.add(`${sid}:${traceId}`);
+          let inputTokens = 0;
+          let outputTokens = 0;
+          try {
+            const iterations = JSON.parse(r.iterations_json || '[]');
+            if (Array.isArray(iterations)) {
+              for (const it of iterations) {
+                for (const key of ['think', 'reflect', 'answer']) {
+                  const piece = it?.[key];
+                  if (piece && typeof piece === 'object') {
+                    inputTokens += Number(piece.input_tokens ?? 0) || 0;
+                    outputTokens += Number(piece.output_tokens ?? 0) || 0;
+                  }
+                }
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+          if (inputTokens === 0 && outputTokens === 0) {
+            outputTokens = Number(r.total_token_usage ?? 0) || 0;
+          }
+          const cur = tokenMap.get(sid) ?? { input_tokens: 0, output_tokens: 0 };
+          cur.input_tokens += inputTokens;
+          cur.output_tokens += outputTokens;
+          tokenMap.set(sid, cur);
+        }
+      } catch {
+        /* degrade gracefully */
+      }
+    }
+
     const sessions: SearchSessionOutput['sessions'] = [];
 
     for (const row of selOutput.rows) {
@@ -648,6 +745,9 @@ export class ChatService {
         /* degrade gracefully */
       }
 
+      const stat = statMap.get(sessionId) ?? { qa_count: 0, question_chars: 0, answer_chars: 0 };
+      const token = tokenMap.get(sessionId) ?? { input_tokens: 0, output_tokens: 0 };
+
       sessions.push({
         session_id: sessionId,
         session_title: (row.session_title as string) ?? '',
@@ -656,6 +756,12 @@ export class ChatService {
         last_message: lastMessage || (row.session_title as string) || '',
         created: (row.created as number) ?? 0,
         updated: (row.updated as number) ?? 0,
+        qa_count: stat.qa_count,
+        question_chars: stat.question_chars,
+        answer_chars: stat.answer_chars,
+        input_tokens: token.input_tokens,
+        output_tokens: token.output_tokens,
+        tags: tagsMap.get(sessionId) ?? [],
       });
     }
 
