@@ -54,6 +54,7 @@ import {
   BuildSystemAgentInput, BuildSystemAgentOutput,
 } from './Agent/AgentBuilder';
 import { AgentExecutionAccess } from './Agent/AgentExecution';
+import { PromptRebuilder } from './Agent/AgentExecution/application/trace/PromptRebuilder';
 import { AgentContextAccess } from './Agent/AgentContext';
 import { PlannerAgentAccess } from './Agent/PlannerAgent';
 import { WriterAgentAccess } from './Agent/WriterAgent';
@@ -762,13 +763,36 @@ function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
 // ===== 从数据表采集思考过程：根据 work_id 列表重建各 Agent 的 ThinkingChain Blocks =====
 // 数据来源：orchestration_agent_dag_record / agent_plan / orchestration_agent_execution /
 //          agent / agent_execution_trace 五张表；由 /api/chat/history 原始内联逻辑抽取而来。
+async function rebuildPromptFromRef(
+  rebuilder: PromptRebuilder,
+  ref: any,
+  refIndex: number,
+  iters: any[],
+  triples: any,
+): Promise<string> {
+  try {
+    const sourceIdsMap = (triples?.source_ids_map ?? {}) as Record<string, string[]>;
+    const contentMap = (triples?.content_map ?? {}) as Record<string, string>;
+    const contextText = rebuilder.formatContextText(sourceIdsMap, contentMap);
+    const history = rebuilder.rebuildHistory(iters, refIndex);
+    return await rebuilder.rebuildPrompt(ref, contextText, history);
+  } catch {
+    return '';
+  }
+}
+
 async function buildThinkingBlocksAndDag(
   relationDb: any,
   infoCore: any,
   workIds: string[],
+  promptsAccess?: any,
+  soulAccess?: any,
 ): Promise<{ workBlocksMap: Map<string, any[]>; workDagMap: Map<string, any> }> {
   const workBlocksMap = new Map<string, any[]>();
   const workDagMap = new Map<string, any>();
+  const rebuilder = promptsAccess && soulAccess
+    ? new PromptRebuilder(promptsAccess, soulAccess)
+    : null;
 
   if (!workIds || workIds.length === 0) return { workBlocksMap, workDagMap };
 
@@ -1144,6 +1168,8 @@ async function buildThinkingBlocksAndDag(
       let sumInputTokens = 0;
       let sumOutputTokens = 0;
       let hasActTools = false;
+      let firstPromptRef: any = null;
+      let firstRefIndex = -1;
 
       if (iterJson) {
         try {
@@ -1151,7 +1177,11 @@ async function buildThinkingBlocksAndDag(
           if (Array.isArray(iters)) {
             for (const iter of iters) {
               if (iter.think) {
-                if (iter.think.prompt && !fullPrompt) fullPrompt = String(iter.think.prompt);
+                if (!fullPrompt && iter.think.prompt) fullPrompt = String(iter.think.prompt);
+                if (!fullPrompt && iter.think.prompt_ref && !firstPromptRef) {
+                  firstPromptRef = iter.think.prompt_ref;
+                  firstRefIndex = Number(iter.iteration_index ?? 0);
+                }
                 if (iter.think.raw_response && !fullRawResponse) fullRawResponse = String(iter.think.raw_response);
                 if (iter.think.input_tokens) sumInputTokens += Number(iter.think.input_tokens);
                 if (iter.think.output_tokens) sumOutputTokens += Number(iter.think.output_tokens);
@@ -1186,7 +1216,11 @@ async function buildThinkingBlocksAndDag(
                 }
               }
               if (iter.reflect) {
-                if (iter.reflect.prompt && !fullPrompt) fullPrompt = String(iter.reflect.prompt);
+                if (!fullPrompt && iter.reflect.prompt) fullPrompt = String(iter.reflect.prompt);
+                if (!fullPrompt && iter.reflect.prompt_ref && !firstPromptRef) {
+                  firstPromptRef = iter.reflect.prompt_ref;
+                  firstRefIndex = Number(iter.iteration_index ?? 0);
+                }
                 if (iter.reflect.raw_response && !fullRawResponse) fullRawResponse = String(iter.reflect.raw_response);
                 if (iter.reflect.input_tokens) sumInputTokens += Number(iter.reflect.input_tokens);
                 if (iter.reflect.output_tokens) sumOutputTokens += Number(iter.reflect.output_tokens);
@@ -1200,7 +1234,11 @@ async function buildThinkingBlocksAndDag(
                 });
               }
               if (iter.answer) {
-                if (iter.answer.prompt && !fullPrompt) fullPrompt = String(iter.answer.prompt);
+                if (!fullPrompt && iter.answer.prompt) fullPrompt = String(iter.answer.prompt);
+                if (!fullPrompt && iter.answer.prompt_ref && !firstPromptRef) {
+                  firstPromptRef = iter.answer.prompt_ref;
+                  firstRefIndex = Number(iter.iteration_index ?? 0);
+                }
                 if (iter.answer.raw_response) fullRawResponse = String(iter.answer.raw_response);
                 if (iter.answer.input_tokens) sumInputTokens += Number(iter.answer.input_tokens);
                 if (iter.answer.output_tokens) sumOutputTokens += Number(iter.answer.output_tokens);
@@ -1215,6 +1253,10 @@ async function buildThinkingBlocksAndDag(
 
       if (!content && inputQuery) {
         content = inputQuery;
+      }
+      // 新格式：无完整 prompt，按 prompt_ref 经 PromptProvider 重建（补 context 与 history）
+      if (!fullPrompt && firstPromptRef && rebuilder) {
+        fullPrompt = await rebuildPromptFromRef(rebuilder, firstPromptRef, firstRefIndex, iters, triples);
       }
       if (!fullPrompt && inputQuery) {
         fullPrompt = inputQuery;
@@ -2462,7 +2504,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
         // ===== 原始内联实现（保留参考）：思考过程重建逻辑已抽取为顶层函数 buildThinkingBlocksAndDag，
         //      该函数完整保留原有从数据表采集重建 ThinkingChain Blocks 的逻辑，供 history 与 thinking 接口复用 =====
-        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, allWorkIds);
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, allWorkIds, ctx.promptsAccess, ctx.soulAccess);
 
         const messages = rawMessages.map((m) => {
           const isResponse = m.info_type === InfoType.RESPONSE;
@@ -2539,7 +2581,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
         // ===== 修改后：支持模块化独立查询（module=dag / module=blocks / module=all），实现各模块独立加载与渐进式展示 =====
         const reqModule = String(params.get('module') ?? 'all').toLowerCase();
-        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, workId ? [workId] : []);
+        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, workId ? [workId] : [], ctx.promptsAccess, ctx.soulAccess);
         const blocks = (reqModule === 'dag') ? [] : (workBlocksMap.get(workId) ?? []);
         const dag = (reqModule === 'blocks') ? null : (workDagMap.get(workId) ?? null);
         sendJson(res, 200, {

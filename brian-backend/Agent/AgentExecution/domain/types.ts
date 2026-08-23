@@ -1,4 +1,5 @@
 import { Input, Context, Output } from '@brian-agent/base';
+import type { TraceIterationRecord } from './trace';
 
 export class AgentExecutionContext extends Context {
   session_id?: string;
@@ -160,14 +161,7 @@ export class GetTraceInput extends Input {
   declare trace_id: string;
 }
 
-export interface TraceIteration {
-  iteration_index: number;
-  think?: Record<string, unknown>;
-  act?: Record<string, unknown>;
-  reflect?: Record<string, unknown>;
-  answer?: Record<string, unknown>;
-  iteration_elapsed_ms: number;
-}
+export type TraceIteration = TraceIterationRecord;
 
 export class GetTraceOutput extends Output {
   trace: {

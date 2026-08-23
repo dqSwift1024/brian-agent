@@ -39,6 +39,11 @@ import {
   ConfigAgentExecutionInput, ConfigAgentExecutionOutput,
   type TraceIteration,
 } from '../domain/types';
+import type { TraceIterations, TraceIterationRecord } from '../domain/trace';
+import {
+  buildPromptRef, buildThinkStep, buildActStep, buildReflectStep, buildAnswerStep, buildLightTraceRef,
+} from './trace/TraceCodec';
+import { TraceStore } from './trace/TraceStore';
 import {
   GetAgentInput, GetAgentOutput, RecordAgentUsageInput, RecordAgentUsageOutput,
   AgentLibraryContext,
@@ -85,6 +90,26 @@ interface StepResult {
   jumpTarget?: string | null;
   conditionValue?: boolean;
   subSteps?: string[];
+  token_usage?: number;
+  tracePiece: Partial<TraceIterationRecord>;
+}
+
+/** Agent 执行环境：聚合执行阶段所需的全部上下文，供各 step 处理函数消费。 */
+interface AgentExecutionEnv {
+  input: ExecAgentInput;
+  ctx: AgentExecutionContext;
+  agent: { agent_id: string; soul_id: string };
+  skillIds: string[];
+  mcpIds: string[];
+  skills: { id: string; brief: string; work: string }[];
+  mcps: { id: string; title: string; brief: string }[];
+  toolsJson: string;
+  agentName: string;
+  domain: string;
+  contextData: string;
+  llmId: string;
+  maxFromRule: number;
+  config: AgentExecutionConfigRecord | null;
 }
 
 export class AgentExecutionService {
@@ -92,7 +117,7 @@ export class AgentExecutionService {
     agent_id: string;
     start_time: number;
     end_time: number;
-    iterations: TraceIteration[];
+    iterations: TraceIterations;
     total_token_usage: number;
     answer: string;
   }>();
@@ -114,7 +139,11 @@ export class AgentExecutionService {
     private readonly llmCore: LLMCoreAccess,
     private readonly logger?: Logger,
     private readonly streamAccess?: StreamAccess,
-  ) {}
+  ) {
+    this.traceStore = new TraceStore(relationDb);
+  }
+
+  private readonly traceStore: TraceStore;
 
   async execAgent(
     input: ExecAgentInput,
@@ -212,7 +241,7 @@ export class AgentExecutionService {
     let history = '';
     let iteration = 0;
     let finalAnswer = '';
-    const traceIterations: TraceIteration[] = [];
+    const traceIterations: TraceIterations = [];
     let totalTokens = 0;
 
     let rule: ExecutionRule | null = null;
@@ -248,17 +277,10 @@ export class AgentExecutionService {
       //   iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
       // });
 
-      // ===== 修改后的代码：补全 Prompt、raw_response 与 input/output tokens 记录 =====
+      // ===== 修改后的代码：补全 raw_response 与 input/output tokens 记录（prompt 以引用存储，展示时重建） =====
       traceIterations.push({
         iteration_index: 0,
-        answer: {
-          answer: answerOut.answer,
-          prompt: answerOut.prompt,
-          raw_response: answerOut.raw_response,
-          input_tokens: answerOut.input_tokens,
-          output_tokens: answerOut.output_tokens,
-          token_usage: answerOut.token_usage,
-        },
+        answer: buildAnswerStep(answerOut, this.answerPromptRef(env)),
         iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
       });
     } else if (rule.phases?.length) {
@@ -290,14 +312,7 @@ export class AgentExecutionService {
       totalTokens += answerOut.token_usage;
       traceIterations.push({
         iteration_index: traceIterations.length,
-        answer: {
-          answer: answerOut.answer,
-          prompt: answerOut.prompt,
-          raw_response: answerOut.raw_response,
-          input_tokens: answerOut.input_tokens,
-          output_tokens: answerOut.output_tokens,
-          token_usage: answerOut.token_usage,
-        },
+        answer: buildAnswerStep(answerOut, this.answerPromptRef(env)),
         iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
       });
     }
@@ -337,12 +352,7 @@ export class AgentExecutionService {
             info_type: InfoType.ACT,
             info_creator_role: 'AGENT',
             info_creator_id: input.agent_id,
-            info: JSON.stringify({
-              type: 'trace',
-              trace_id: traceId,
-              iterations: traceIterations,
-              answer: finalAnswer,
-            }),
+            info: JSON.stringify(buildLightTraceRef(traceId, finalAnswer, totalTokens)),
             handle_result_type: traceHandleResult,
           }),
           new InfoCoreContext(),
@@ -362,7 +372,10 @@ export class AgentExecutionService {
       total_token_usage: totalTokens,
       answer: finalAnswer,
     });
-    await this.persistTrace(traceId, input.agent_id, start, end, traceIterations, totalTokens, finalAnswer);
+    await this.traceStore.save({
+      trace_id: traceId, agent_id: input.agent_id, start_time: start, end_time: end,
+      iterations: traceIterations, total_token_usage: totalTokens, answer: finalAnswer,
+    });
 
     // ===== 原始代码（保留参考）：WorkAgent 评估由 Orchestration 编排层 EVAL_RESULT 节点统一侧载触发，避免双重评估 =====
     // try {
@@ -868,25 +881,10 @@ export class AgentExecutionService {
 
   private async runSteps(
     steps: RuleStep[],
-    env: {
-      input: ExecAgentInput;
-      ctx: AgentExecutionContext;
-      agent: { agent_id: string; soul_id: string };
-      skillIds: string[];
-      mcpIds: string[];
-      skills: { id: string; brief: string; work: string }[];
-      mcps: { id: string; title: string; brief: string }[];
-      toolsJson: string;
-      agentName: string;
-      domain: string;
-      contextData: string;
-      llmId: string;
-      maxFromRule: number;
-      config: AgentExecutionConfigRecord | null;
-    },
+    env: AgentExecutionEnv,
     history: string,
     maxIter: number,
-    traceIterations: TraceIteration[],
+    traceIterations: TraceIterations,
   ): Promise<{ history: string; finalAnswer: string; totalTokens: number; iteration: number }> {
     let current: RuleStep | null = steps[0] ?? null;
     let iteration = 0;
@@ -938,25 +936,10 @@ export class AgentExecutionService {
    */
   private async runPhases(
     rule: ExecutionRule,
-    env: {
-      input: ExecAgentInput;
-      ctx: AgentExecutionContext;
-      agent: { agent_id: string; soul_id: string };
-      skillIds: string[];
-      mcpIds: string[];
-      skills: { id: string; brief: string; work: string }[];
-      mcps: { id: string; title: string; brief: string }[];
-      toolsJson: string;
-      agentName: string;
-      domain: string;
-      contextData: string;
-      llmId: string;
-      maxFromRule: number;
-      config: AgentExecutionConfigRecord | null;
-    },
+    env: AgentExecutionEnv,
     history: string,
     maxIter: number,
-    traceIterations: TraceIteration[],
+    traceIterations: TraceIterations,
   ): Promise<{ history: string; finalAnswer: string; totalTokens: number; iteration: number }> {
     const phases = rule.phases ?? [];
     // 全局 step 索引：phase.step 与 裸 step 名
@@ -1074,227 +1057,205 @@ export class AgentExecutionService {
 
   private async executeAtomic(
     step: RuleStep,
-    env: {
-      input: ExecAgentInput;
-      ctx: AgentExecutionContext;
-      agent: { agent_id: string; soul_id: string };
-      skillIds: string[];
-      mcpIds: string[];
-      skills: { id: string; brief: string; work: string }[];
-      mcps: { id: string; title: string; brief: string }[];
-      toolsJson: string;
-      agentName: string;
-      domain: string;
-      contextData: string;
-      llmId: string;
-    },
+    env: AgentExecutionEnv,
     history: string,
     iteration: number,
     maxIter: number,
-  ): Promise<StepResult & { token_usage?: number; tracePiece: Partial<TraceIteration> }> {
-    const { input, ctx, agent, skillIds, mcpIds, contextData, toolsJson, agentName, domain, llmId } = env;
-
+  ): Promise<StepResult> {
     try {
-      const sessionId = ctx.session_id || '';
-      const workId = input.work_id || ctx.work_id || '';
-      const interactId = input.interact_id || ctx.interact_id || '';
-
-      if (step.step === 'Think') {
-        const thinkOut = new ThinkOutput();
-        await this.think(
-          Object.assign(new ThinkInput(), {
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            llm_id: llmId,
-            soul_id: agent.soul_id,
-            task_content: input.task_content,
-            context_data: contextData,
-            history,
-            iteration,
-            tools_json: toolsJson,
-            domain,
-          }),
-          ctx,
-          thinkOut,
-        );
-
-        if (this.streamAccess && typeof this.streamAccess.pushText === 'function' && sessionId && thinkOut.reasoning) {
-          await this.streamAccess.pushText(sessionId, 'agent_thinking', thinkOut.reasoning, {
-            work_id: workId,
-            interact_id: interactId,
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            agent_type: (agent as any)?.agent_type || 'WORKER',
-            node_id: step.step,
-            prompt: thinkOut.prompt,
-            raw_response: thinkOut.raw_response,
-          } as any);
-        }
-
-        const nextAction = parseJsonObject(thinkOut.next_action) ?? {};
-        const subSteps = Array.isArray(nextAction.sub_steps)
-          ? (nextAction.sub_steps as unknown[]).map(String)
-          : undefined;
-        return {
-          history: `${history}\nThink: ${thinkOut.reasoning}\nNext: ${thinkOut.next_action}`,
-          jumpTarget: step.next ?? null,
-          subSteps,
-          token_usage: thinkOut.token_usage,
-          tracePiece: {
-            think: {
-              reasoning: thinkOut.reasoning,
-              next_action: thinkOut.next_action,
-              prompt: thinkOut.prompt,
-              raw_response: thinkOut.raw_response,
-              input_tokens: thinkOut.input_tokens,
-              output_tokens: thinkOut.output_tokens,
-              token_usage: thinkOut.token_usage,
-            },
-          },
-        };
-      }
-
-      if (step.step === 'Act') {
-        const actOut = new ActOutput();
-        await this.act(
-          Object.assign(new ActInput(), {
-            agent_id: input.agent_id,
-            skill_ids: skillIds,
-            mcp_ids: mcpIds,
-            next_action: this.extractLastNextAction(history),
-            context_data: contextData,
-          }),
-          ctx,
-          actOut,
-        );
-
-        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
-          await this.streamAccess.pushEvent(sessionId, 'agent_action', 'TRACE', {
-            tool_type: actOut.tool_type,
-            tool_id: actOut.tool_id,
-            result: actOut.result,
-          }, {
-            work_id: workId,
-            interact_id: interactId,
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            agent_type: (agent as any)?.agent_type || 'WORKER',
-            node_id: step.step,
-          } as any);
-        }
-
-        return {
-          history: `${history}\nAct: ${actOut.result}`,
-          jumpTarget: step.next ?? null,
-          tracePiece: {
-            act: { result: actOut.result, tool_type: actOut.tool_type, tool_id: actOut.tool_id },
-          },
-        };
-      }
-
-      if (step.step === 'Reflect') {
-        const reflectOut = new ReflectOutput();
-        await this.reflect(
-          Object.assign(new ReflectInput(), {
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            llm_id: llmId,
-            soul_id: agent.soul_id,
-            task_content: input.task_content,
-            context_data: contextData,
-            history,
-            iteration,
-            max_iterations: maxIter,
-            tools_json: toolsJson,
-            domain,
-          }),
-          ctx,
-          reflectOut,
-        );
-
-        if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
-          await this.streamAccess.pushEvent(sessionId, 'agent_reflection', 'TRACE', {
-            passed: !reflectOut.should_continue,
-            reflection: reflectOut.reflection,
-            prompt: reflectOut.prompt,
-            raw_response: reflectOut.raw_response,
-          }, {
-            work_id: workId,
-            interact_id: interactId,
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            agent_type: (agent as any)?.agent_type || 'WORKER',
-            node_id: step.step,
-          } as any);
-        }
-
-        return {
-          history: `${history}\nReflect: ${reflectOut.reflection}`,
-          conditionValue: reflectOut.should_continue,
-          jumpTarget: reflectOut.should_continue
-            ? (step.true_next ?? null)
-            : (step.false_next ?? null),
-          token_usage: reflectOut.token_usage,
-          tracePiece: {
-            reflect: {
-              should_continue: reflectOut.should_continue,
-              reflection: reflectOut.reflection,
-              prompt: reflectOut.prompt,
-              raw_response: reflectOut.raw_response,
-              input_tokens: reflectOut.input_tokens,
-              output_tokens: reflectOut.output_tokens,
-              token_usage: reflectOut.token_usage,
-            },
-          },
-        };
-      }
-
-      if (step.step === 'Answer') {
-        const answerOut = new AnswerOutput();
-        await this.answer(
-          Object.assign(new AnswerInput(), {
-            agent_id: input.agent_id,
-            agent_name: agentName,
-            llm_id: llmId,
-            soul_id: agent.soul_id,
-            history,
-            context_data: contextData,
-            task_content: input.task_content,
-            tools_json: toolsJson,
-            domain,
-          }),
-          ctx,
-          answerOut,
-        );
-        return {
-          history,
-          finalAnswer: answerOut.answer,
-          stopRunning: true,
-          token_usage: answerOut.token_usage,
-          tracePiece: {
-            answer: {
-              answer: answerOut.answer,
-              prompt: answerOut.prompt,
-              raw_response: answerOut.raw_response,
-              input_tokens: answerOut.input_tokens,
-              output_tokens: answerOut.output_tokens,
-              token_usage: answerOut.token_usage,
-            },
-          },
-        };
-      }
+      return await this.dispatchStep(step, env, history, iteration, maxIter);
     } catch (err) {
-      if (step.on_error) {
-        return {
-          history: `${history}\nError: ${String(err)}`,
-          jumpTarget: step.on_error,
-          tracePiece: {},
-        };
-      }
-      throw err;
+      return this.handleStepError(step, history, err);
     }
+  }
 
-    return { history, jumpTarget: step.next ?? null, tracePiece: {} };
+  private async dispatchStep(
+    step: RuleStep,
+    env: AgentExecutionEnv,
+    history: string,
+    iteration: number,
+    maxIter: number,
+  ): Promise<StepResult> {
+    switch (step.step) {
+      case 'Think': return this.runThinkStep(step, env, history, iteration);
+      case 'Act': return this.runActStep(step, env, history);
+      case 'Reflect': return this.runReflectStep(step, env, history, iteration, maxIter);
+      case 'Answer': return this.runAnswerStep(step, env, history);
+      default: return { history, jumpTarget: step.next ?? null, tracePiece: {} };
+    }
+  }
+
+  private handleStepError(step: RuleStep, history: string, err: unknown): StepResult {
+    if (step.on_error) {
+      return { history: `${history}\nError: ${String(err)}`, jumpTarget: step.on_error, tracePiece: {} };
+    }
+    throw err;
+  }
+
+  private async runThinkStep(
+    step: RuleStep,
+    env: AgentExecutionEnv,
+    history: string,
+    iteration: number,
+  ): Promise<StepResult> {
+    const thinkOut = new ThinkOutput();
+    await this.think(this.buildThinkInput(env, history, iteration), env.ctx, thinkOut);
+    this.pushThink(env, step.step, thinkOut);
+    const subSteps = this.extractSubSteps(parseJsonObject(thinkOut.next_action));
+    return {
+      history: `${history}\nThink: ${thinkOut.reasoning}\nNext: ${thinkOut.next_action}`,
+      jumpTarget: step.next ?? null,
+      subSteps,
+      token_usage: thinkOut.token_usage,
+      tracePiece: { think: buildThinkStep(thinkOut, this.thinkPromptRef(env, iteration)) },
+    };
+  }
+
+  private async runActStep(step: RuleStep, env: AgentExecutionEnv, history: string): Promise<StepResult> {
+    const actOut = new ActOutput();
+    await this.act(this.buildActInput(env, history), env.ctx, actOut);
+    this.pushAct(env, step.step, actOut);
+    return {
+      history: `${history}\nAct: ${actOut.result}`,
+      jumpTarget: step.next ?? null,
+      tracePiece: { act: buildActStep(actOut) },
+    };
+  }
+
+  private async runReflectStep(
+    step: RuleStep,
+    env: AgentExecutionEnv,
+    history: string,
+    iteration: number,
+    maxIter: number,
+  ): Promise<StepResult> {
+    const reflectOut = new ReflectOutput();
+    await this.reflect(this.buildReflectInput(env, history, iteration, maxIter), env.ctx, reflectOut);
+    this.pushReflect(env, step.step, reflectOut);
+    return {
+      history: `${history}\nReflect: ${reflectOut.reflection}`,
+      conditionValue: reflectOut.should_continue,
+      jumpTarget: reflectOut.should_continue ? (step.true_next ?? null) : (step.false_next ?? null),
+      token_usage: reflectOut.token_usage,
+      tracePiece: { reflect: buildReflectStep(reflectOut, this.reflectPromptRef(env, iteration, maxIter)) },
+    };
+  }
+
+  private async runAnswerStep(step: RuleStep, env: AgentExecutionEnv, history: string): Promise<StepResult> {
+    const answerOut = new AnswerOutput();
+    await this.answer(this.buildAnswerInput(env, history), env.ctx, answerOut);
+    return {
+      history,
+      finalAnswer: answerOut.answer,
+      stopRunning: true,
+      token_usage: answerOut.token_usage,
+      tracePiece: { answer: buildAnswerStep(answerOut, this.answerPromptRef(env)) },
+    };
+  }
+
+  private buildThinkInput(env: AgentExecutionEnv, history: string, iteration: number): ThinkInput {
+    const { input, agent, contextData, toolsJson, agentName, domain, llmId } = env;
+    return Object.assign(new ThinkInput(), {
+      agent_id: input.agent_id, agent_name: agentName, llm_id: llmId, soul_id: agent.soul_id,
+      task_content: input.task_content, context_data: contextData, history, iteration,
+      tools_json: toolsJson, domain,
+    });
+  }
+
+  private buildActInput(env: AgentExecutionEnv, history: string): ActInput {
+    const { input, skillIds, mcpIds, contextData } = env;
+    return Object.assign(new ActInput(), {
+      agent_id: input.agent_id, skill_ids: skillIds, mcp_ids: mcpIds,
+      next_action: this.extractLastNextAction(history), context_data: contextData,
+    });
+  }
+
+  private buildReflectInput(
+    env: AgentExecutionEnv,
+    history: string,
+    iteration: number,
+    maxIter: number,
+  ): ReflectInput {
+    const { input, agent, contextData, toolsJson, agentName, domain, llmId } = env;
+    return Object.assign(new ReflectInput(), {
+      agent_id: input.agent_id, agent_name: agentName, llm_id: llmId, soul_id: agent.soul_id,
+      task_content: input.task_content, context_data: contextData, history, iteration,
+      max_iterations: maxIter, tools_json: toolsJson, domain,
+    });
+  }
+
+  private buildAnswerInput(env: AgentExecutionEnv, history: string): AnswerInput {
+    const { input, agent, contextData, toolsJson, agentName, domain, llmId } = env;
+    return Object.assign(new AnswerInput(), {
+      agent_id: input.agent_id, agent_name: agentName, llm_id: llmId, soul_id: agent.soul_id,
+      history, context_data: contextData, task_content: input.task_content, tools_json: toolsJson, domain,
+    });
+  }
+
+  private thinkPromptRef(env: AgentExecutionEnv, iteration: number) {
+    return buildPromptRef(env.config?.think_prompt_template_id, PROMPT_IDS.think, {
+      task_content: env.input.task_content, agent_name: env.agentName, domain: env.domain,
+      iteration, tools_json: env.toolsJson, soul_id: env.agent.soul_id,
+    });
+  }
+
+  private reflectPromptRef(env: AgentExecutionEnv, iteration: number, maxIter: number) {
+    return buildPromptRef(env.config?.reflect_prompt_template_id, PROMPT_IDS.reflect, {
+      task_content: env.input.task_content, agent_name: env.agentName, domain: env.domain,
+      iteration, max_iterations: maxIter, tools_json: env.toolsJson, soul_id: env.agent.soul_id,
+    });
+  }
+
+  private answerPromptRef(env: AgentExecutionEnv) {
+    return buildPromptRef(env.config?.answer_prompt_template_id, PROMPT_IDS.answer, {
+      task_content: env.input.task_content, agent_name: env.agentName, domain: env.domain,
+      tools_json: env.toolsJson, soul_id: env.agent.soul_id,
+    });
+  }
+
+  private extractSubSteps(nextAction: Record<string, unknown> | null): string[] | undefined {
+    if (!nextAction) return undefined;
+    const subSteps = nextAction.sub_steps;
+    return Array.isArray(subSteps) ? (subSteps as unknown[]).map(String) : undefined;
+  }
+
+  private pushThink(env: AgentExecutionEnv, nodeId: string, thinkOut: ThinkOutput): void {
+    const { ctx, input, agent, agentName } = env;
+    const sessionId = ctx.session_id || '';
+    if (!this.streamAccess || typeof this.streamAccess.pushText !== 'function' || !sessionId || !thinkOut.reasoning) return;
+    this.streamAccess.pushText(sessionId, 'agent_thinking', thinkOut.reasoning, {
+      work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
+      agent_id: input.agent_id, agent_name: agentName,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
+      prompt: thinkOut.prompt, raw_response: thinkOut.raw_response,
+    } as any).catch(() => {});
+  }
+
+  private pushAct(env: AgentExecutionEnv, nodeId: string, actOut: ActOutput): void {
+    const { ctx, input, agent, agentName } = env;
+    const sessionId = ctx.session_id || '';
+    if (!this.streamAccess || typeof this.streamAccess.pushEvent !== 'function' || !sessionId) return;
+    this.streamAccess.pushEvent(sessionId, 'agent_action', 'TRACE', {
+      tool_type: actOut.tool_type, tool_id: actOut.tool_id, result: actOut.result,
+    }, {
+      work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
+      agent_id: input.agent_id, agent_name: agentName,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
+    } as any).catch(() => {});
+  }
+
+  private pushReflect(env: AgentExecutionEnv, nodeId: string, reflectOut: ReflectOutput): void {
+    const { ctx, input, agent, agentName } = env;
+    const sessionId = ctx.session_id || '';
+    if (!this.streamAccess || typeof this.streamAccess.pushEvent !== 'function' || !sessionId) return;
+    this.streamAccess.pushEvent(sessionId, 'agent_reflection', 'TRACE', {
+      passed: !reflectOut.should_continue, reflection: reflectOut.reflection,
+      prompt: reflectOut.prompt, raw_response: reflectOut.raw_response,
+    }, {
+      work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
+      agent_id: input.agent_id, agent_name: agentName,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
+    } as any).catch(() => {});
   }
 
   // ---------------------------------------------------------------------------
@@ -1460,36 +1421,6 @@ export class AgentExecutionService {
 
   private errorText(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
-  }
-
-  private async persistTrace(
-    traceId: string,
-    agentId: string,
-    start: number,
-    end: number,
-    iterations: TraceIteration[],
-    totalTokens: number,
-    answer: string,
-  ): Promise<void> {
-    // agent_execution_trace 表由 AgentExecutionSchemaInitializer 在初始化阶段通过 RelationDBProvider 创建，
-    // 此处仅通过 RelationDBProvider 写入轨迹数据，不再内联建表。
-    try {
-      const now = IdGenerator.now();
-      await this.relationDb.insert(AGENT_EXECUTION_TRACE_TABLE, [
-        { field: 'id', value: IdGenerator.generate() },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'trace_id', value: traceId },
-        { field: 'agent_id', value: agentId },
-        { field: 'start_time', value: start },
-        { field: 'end_time', value: end },
-        { field: 'iterations_json', value: JSON.stringify(iterations) },
-        { field: 'total_token_usage', value: totalTokens },
-        { field: 'answer', value: answer },
-      ]);
-    } catch {
-      /* best-effort */
-    }
   }
 
   private async getConfig(): Promise<AgentExecutionConfigRecord | null> {
