@@ -179,6 +179,16 @@ function toggleMemorySelect(id: string) {
   selectedMemories.value = next
 }
 
+const allMemoriesSelected = computed(() => memories.value.length > 0 && memories.value.every(m => selectedMemories.value.has(m.id)))
+
+function toggleSelectAllMemory() {
+  if (allMemoriesSelected.value) {
+    selectedMemories.value = new Set()
+  } else {
+    selectedMemories.value = new Set(memories.value.map(m => m.id))
+  }
+}
+
 async function deleteMemoryByIds(ids: string[]) {
   if (ids.length === 0) return
   await memoryApi.delete(ids)
@@ -368,6 +378,19 @@ function nextHeatmapMonth() {
   if (heatmapMonth.value === 12) { heatmapMonth.value = 1; heatmapYear.value += 1 }
   else heatmapMonth.value += 1
   loadHeatmap()
+}
+
+function heatmapDateKey(day: number): string {
+  return `${heatmapYear.value}-${heatmapMonth.value - 1}-${day}`
+}
+
+function isHeatmapCellActive(day: number): boolean {
+  return activeMemoryDate.value === heatmapDateKey(day)
+}
+
+function clickHeatmapDay(day: number | null) {
+  if (!day) return
+  scrollToMemoryDate(heatmapDateKey(day))
 }
 
 // Library tab
@@ -1175,10 +1198,15 @@ watch([historySearch, historyStartTime, historyEndTime], () => {
 })
 
 let memorySearchTimer: ReturnType<typeof setTimeout> | null = null
-watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
+watch([memoryStartTime, memoryEndTime], () => {
   if (memorySearchTimer) clearTimeout(memorySearchTimer)
   memorySearchTimer = setTimeout(() => { loadMemory() }, 300)
 })
+
+function searchMemoryByEnter() {
+  if (memorySearchTimer) clearTimeout(memorySearchTimer)
+  loadMemory()
+}
 </script>
 
 <template>
@@ -1316,20 +1344,28 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
             <div class="sticky top-[160px] z-20 flex items-center gap-3 flex-wrap bg-white dark:bg-apple-dark-bg py-2 -mx-1 px-1 border-b border-apple-gray-200/60 dark:border-apple-gray-700/60">
               <div class="relative flex-1 max-w-md">
                 <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-                <input v-model="memorySearch" placeholder="搜索记忆内容..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+                <input v-model="memorySearch" placeholder="搜索记忆内容..." class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="searchMemoryByEnter" />
               </div>
-              <input v-model="memoryTag" placeholder="按标签搜索..." class="px-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
+              <input v-model="memoryTag" placeholder="按标签搜索..." class="px-3 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="searchMemoryByEnter" />
               <div class="flex items-center gap-2 text-xs text-apple-gray-500">
                 <input v-model="memoryStartTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
                 <span>至</span>
                 <input v-model="memoryEndTime" type="datetime-local" class="px-2 py-2 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" />
               </div>
               <button
-                v-if="selectedMemories.size > 0"
+                v-if="memories.length > 0"
+                class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-brian-blue hover:bg-brian-blue/10 rounded-lg"
+                @click="toggleSelectAllMemory"
+              >
+                <component :is="allMemoriesSelected ? CheckSquare : Square" :size="14" /> {{ allMemoriesSelected ? '取消全选' : '全选' }}
+              </button>
+              <button
                 class="flex items-center gap-1 px-3 py-2 text-xs font-medium text-error-red hover:bg-error-red/10 rounded-lg"
+                :class="selectedMemories.size > 0 ? '' : 'opacity-40 cursor-not-allowed'"
+                :disabled="selectedMemories.size === 0"
                 @click="requestMemoryDelete()"
               >
-                <Trash2 :size="14" /> 删除所选({{ selectedMemories.size }})
+                <Trash2 :size="14" /> 删除所选{{ selectedMemories.size > 0 ? `(${selectedMemories.size})` : '' }}
               </button>
             </div>
             <div class="space-y-3">
@@ -1387,7 +1423,12 @@ watch([memorySearch, memoryTag, memoryStartTime, memoryEndTime], () => {
               :key="i"
               :title="cell.day ? `${cell.day}日: ${cell.count} 条记忆` : ''"
               class="aspect-square rounded-[3px]"
-              :class="cell.day ? heatmapColor(cell.count) : 'bg-transparent'"
+              :class="[
+                cell.day ? heatmapColor(cell.count) : 'bg-transparent',
+                cell.day ? 'cursor-pointer hover:ring-2 hover:ring-brian-blue/60' : '',
+                cell.day && isHeatmapCellActive(cell.day) ? 'ring-2 ring-brian-blue' : '',
+              ]"
+              @click="clickHeatmapDay(cell.day)"
             />
           </div>
           <div class="flex items-center justify-between mt-2">
