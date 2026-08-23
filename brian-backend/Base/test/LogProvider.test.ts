@@ -46,6 +46,7 @@ import {
   LOG_RECORD_TABLE,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_MAX_LOG_COUNT,
+  DEFAULT_MIN_LEVEL,
 } from '../LogProvider';
 import type { LogData, LogRule } from '../LogProvider';
 import type { InterceptContext } from '../shared/aop/Interceptor';
@@ -660,6 +661,77 @@ describe('LogProvider', () => {
       await logAccess.configLog({} as any, new LogContext(), output);
       expect(output.config.retention_days).toBe(DEFAULT_RETENTION_DAYS);
       expect(output.config.max_log_count).toBe(DEFAULT_MAX_LOG_COUNT);
+      expect(output.config.min_level).toBe(DEFAULT_MIN_LEVEL);
+    });
+  });
+
+  // ==========================================================================
+  // min_level 过滤
+  // ==========================================================================
+
+  describe('min_level 过滤', () => {
+    it('默认 min_level 为 DEBUG，不过滤任何级别', async () => {
+      await logAccess.addLog(
+        { data: makeLogData({ level: LogLevel.DEBUG, source: 'MinLevelModule', message: 'debug log' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+      const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
+      expect(ql.total).toBe(1);
+    });
+
+    it('min_level=INFO 时应丢弃 DEBUG 日志', async () => {
+      await logAccess.configLog({ min_level: LogLevel.INFO } as any, new LogContext(), {} as any);
+
+      await logAccess.addLog(
+        { data: makeLogData({ level: LogLevel.DEBUG, source: 'MinLevelModule', message: 'debug log' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+      await logAccess.addLog(
+        { data: makeLogData({ level: LogLevel.INFO, source: 'MinLevelModule', message: 'info log' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
+      expect(ql.total).toBe(1);
+      expect(ql.logs[0].level).toBe(LogLevel.INFO);
+    });
+
+    it('min_level=ERROR 时应丢弃 DEBUG/INFO/WARN，仅保留 ERROR', async () => {
+      await logAccess.configLog({ min_level: LogLevel.ERROR } as any, new LogContext(), {} as any);
+
+      for (const level of [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR]) {
+        await logAccess.addLog(
+          { data: makeLogData({ level, source: 'MinLevelModule', message: `${level} log` }) } as AddLogInput,
+          new LogContext(),
+          new AddLogOutput(),
+        );
+      }
+
+      const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
+      expect(ql.total).toBe(1);
+      expect(ql.logs[0].level).toBe(LogLevel.ERROR);
+    });
+
+    it('未指定 level 时先补 default_level 再按 min_level 过滤', async () => {
+      await logAccess.configLog({ min_level: LogLevel.WARN } as any, new LogContext(), {} as any);
+
+      await logAccess.addLog(
+        { data: makeLogData({ level: '', source: 'MinLevelModule', message: 'no level' }) } as AddLogInput,
+        new LogContext(),
+        new AddLogOutput(),
+      );
+
+      const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
+      expect(ql.total).toBe(0);
+    });
+
+    it('configLog 校验非法 min_level 应抛错', async () => {
+      await expect(
+        logAccess.configLog({ min_level: 'VERBOSE' } as any, new LogContext(), {} as any),
+      ).rejects.toThrow(ValidationError);
     });
   });
 

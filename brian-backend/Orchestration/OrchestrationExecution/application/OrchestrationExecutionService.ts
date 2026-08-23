@@ -74,6 +74,38 @@ export class OrchestrationExecutionService {
     return this.config;
   }
 
+  private configLoaded = false;
+
+  /**
+   * 从 orchestration_config 表加载 max_concurrent / dag_timeout_ms 等运行时配置。
+   *
+   * 配置中心（orchestration_config 表）是并发度的唯一事实来源，加载后缓存，
+   * 避免每次 buildAgentDAG / execDAG 都重复查库。
+   */
+  private async ensureConfigLoaded(): Promise<void> {
+    if (this.configLoaded) return;
+    try {
+      const selOutput = Object.assign(new SelectOneDBOutput(), {});
+      await this.relationDb.selectOneDB(
+        Object.assign(new SelectOneDBInput(), {
+          query_param: { table: ORCHESTRATION_CONFIG_TABLE },
+        }),
+        new DBContext(),
+        selOutput,
+      );
+      const current = (selOutput.row ?? {}) as Record<string, unknown>;
+      if (current.max_concurrent !== undefined && current.max_concurrent !== null) {
+        this.config.max_concurrent = Number(current.max_concurrent);
+      }
+      if (current.dag_timeout_ms !== undefined && current.dag_timeout_ms !== null) {
+        this.config.dag_timeout_ms = Number(current.dag_timeout_ms);
+      }
+      this.configLoaded = true;
+    } catch {
+      /* 表未就绪或查询失败时使用默认配置 */
+    }
+  }
+
   // -------------------------------------------------------------------------
   // buildAgentDAG
   // -------------------------------------------------------------------------
@@ -83,6 +115,7 @@ export class OrchestrationExecutionService {
     context: OrchestrationExecutionContext,
     output: BuildAgentDAGOutput,
   ): Promise<boolean> {
+    await this.ensureConfigLoaded();
     const { plan_id, task_dag, interact_id, force_new } = input;
 
     if (!task_dag.nodes || task_dag.nodes.length === 0) {
@@ -101,10 +134,12 @@ export class OrchestrationExecutionService {
       }
     }
 
-    const agentNodes: AgentNode[] = [];
+    const agentNodes: AgentNode[] = new Array<AgentNode>(task_dag.nodes.length);
     const taskAgentMap: Record<string, string> = {};
+    const sessionId = context.session_id ?? '';
+    const workId = context.work_id ?? '';
 
-    for (const taskNode of task_dag.nodes) {
+    const buildOne = async (taskNode: TaskNode, index: number): Promise<void> => {
       const taskAgentRecordId = IdGenerator.generate();
       const now = IdGenerator.now();
 
@@ -135,7 +170,14 @@ export class OrchestrationExecutionService {
           force_new,
         });
         const buildOutput = new BuildAgentOutput();
-        const buildSuccess = await this.agentBuilder.buildAgent(buildInput, new AgentBuilderContext(), buildOutput);
+        // 透传 session_id / work_id / interact_id，使 AgentBuilder 在构建过程中
+        // 流式推送 agent_building / agent_matched / agent_built 事件，供前端实时展示构建进度。
+        const builderCtx = Object.assign(new AgentBuilderContext(), {
+          session_id: sessionId,
+          work_id: workId,
+          interact_id,
+        });
+        const buildSuccess = await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
         if (!buildSuccess) {
           status = 'BUILD_FAILED';
         } else {
@@ -164,7 +206,7 @@ export class OrchestrationExecutionService {
         await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
       }
 
-      agentNodes.push({
+      agentNodes[index] = {
         agent_id: agentId,
         task_id: taskNode.task_id,
         task_content: taskNode.task_content,
@@ -172,12 +214,29 @@ export class OrchestrationExecutionService {
         task_domain: taskNode.task_domain,
         task_priority: taskNode.priority,
         status,
-      });
+      };
 
       if (agentId) {
         taskAgentMap[taskNode.task_id] = agentId;
       }
+    };
+
+    // ===== 修改后：按配置中心的 max_concurrent 并发构建 Work Agent =====
+    // 原实现串行构建，9 个 Agent 逐个触发 LLM 匹配导致总耗时近 2 分钟；
+    // 现改为受 max_concurrent 限制的并发池，显著缩短多 Agent 构建时间。
+    const concurrency = Math.max(1, this.config.max_concurrent);
+    let cursor = 0;
+    const workerCount = Math.min(concurrency, task_dag.nodes.length);
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) {
+      workers.push((async () => {
+        while (cursor < task_dag.nodes.length) {
+          const idx = cursor++;
+          await buildOne(task_dag.nodes[idx], idx);
+        }
+      })());
     }
+    await Promise.all(workers);
 
     // ===== 原始实现（保留参考）：直接插入所有边，跨 plan 复用同一对 Agent 时可能触发唯一索引冲突 =====
     // const agentEdges: AgentEdge[] = [];

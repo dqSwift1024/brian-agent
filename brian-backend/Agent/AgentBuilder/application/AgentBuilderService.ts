@@ -115,11 +115,13 @@ export class AgentBuilderService {
         output.agent_id = matchOut.agent_id;
 
         if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+          // meta.agent_id 使用本次构建的临时 agentId，与 agent_building 事件对齐，
+          // 前端据此定位「构建中」的占位卡片；matched_agent_id 为命中的既有 Agent。
           await this.streamAccess.pushEvent(sessionId, 'agent_matched', 'AGENT_SPEC', {
-            agent_id: matchOut.agent_id,
+            matched_agent_id: matchOut.agent_id,
             reused: true,
             matched_by: matchOut.matched_by || 'SIMILARITY',
-          }, { work_id: workId, interact_id: interactId, agent_id: matchOut.agent_id });
+          }, { work_id: workId, interact_id: interactId, agent_id: agentId });
         }
         return true;
       }

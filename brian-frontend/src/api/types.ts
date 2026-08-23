@@ -468,7 +468,7 @@ export interface TokenUsage {
   totalTokens: number
   inputTokens: number
   outputTokens: number
-  modelDistribution: { model: string; tokens: number }[]
+  modelDistribution: { model: string; tokens: number; input_tokens: number; output_tokens: number }[]
 }
 
 export interface UserProfile {

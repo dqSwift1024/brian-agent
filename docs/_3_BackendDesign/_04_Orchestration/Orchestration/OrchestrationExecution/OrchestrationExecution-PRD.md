@@ -427,3 +427,18 @@
 
 **可能存在的问题**：
   - `execution_type` 新增 `SYSTEM` 枚举值；`getDAGProgress` 等按 status 统计的逻辑不受影响（SYSTEM 记录 status 为 COMPLETED）。
+
+### [2026-08-23] buildAgentDAG 按配置中心 max_concurrent 并发构建 + 构建进度流式推送
+**变更原因**：PLANNING 策略下 PlannerAgent 拆解出的多个子任务逐个串行 `buildAgent`，每个 Agent 构建需多次 LLM 匹配（Agent 相似度 / LLM 模型），9 个 Agent 累计近 2 分钟且期间无任何进度输出，前端长时间显示「执行中」却看不到进度。
+
+**修改的方法**：
+  - `OrchestrationExecutionService.ensureConfigLoaded()` — 新增方法，从 `orchestration_config` 表加载 `max_concurrent` / `dag_timeout_ms` 并缓存，`buildAgentDAG` 入口调用。
+  - `OrchestrationExecutionService.buildAgentDAG()` — 串行 for 循环重构为受 `max_concurrent` 限制的并发池（`Promise.all` + 游标），构建结果按原 task 顺序回填；并透传 `session_id / work_id / interact_id` 给 `AgentBuilder.buildAgent`，使其在构建过程中流式推送 `agent_building / agent_matched / agent_built` 事件。
+  - `JSONNodeService.handleBuildAgentDAG()` — 向 `buildAgentDAG` 补齐 `work_id / interact_id` 上下文透传（原仅传 session_id）。
+
+**影响的端点**：
+  - `POST /api/chat/stream`（Planning 策略）— BUILD_AGENT_DAG 阶段并发构建，前端思考过程弹窗实时展示「构建中 → 构建完成 / 复用已有 Agent」进度。
+
+**可能存在的问题**：
+  - 并发构建共享单连接 better-sqlite3，写操作由同步语义串行化，无数据竞争；并发收益来自 Agent/LLM 匹配的异步网络调用。
+  - `max_concurrent` 过大时可能放大对上游 LLM 的并发压力，需结合配置中心合理设置（默认 1）。

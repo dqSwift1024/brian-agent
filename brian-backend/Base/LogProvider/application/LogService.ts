@@ -42,6 +42,7 @@ import {
   LOG_RECORD_TABLE,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_MAX_LOG_COUNT,
+  DEFAULT_MIN_LEVEL,
 } from '../domain/types';
 
 /**
@@ -60,11 +61,21 @@ export class LogService {
   private maxLogCount = DEFAULT_MAX_LOG_COUNT;
   /** 默认日志级别（addLog 未指定 level 时使用，从配置读取，缓存） */
   private defaultLevel = 'INFO';
+  /** 最低日志级别（低于此级别的日志不记录，从配置读取，缓存） */
+  private minLevel = DEFAULT_MIN_LEVEL;
 
   /** 老化执行最小间隔（毫秒），避免高频写入时频繁全表扫描 */
   private static readonly AGING_INTERVAL_MS = 60_000;
   /** 上次老化执行时间戳 */
   private lastAgingAt = 0;
+
+  /** 日志级别权重（用于 min_level 过滤比较，数值越大级别越高） */
+  private static readonly LEVEL_WEIGHT: Record<string, number> = {
+    DEBUG: 0,
+    INFO: 1,
+    WARN: 2,
+    ERROR: 3,
+  };
 
   constructor(private readonly relationDb: RelationDBAccess) {
     this.config = new ConfigService(relationDb, LOG_CONFIG_TABLE);
@@ -76,12 +87,14 @@ export class LogService {
     await this.config.initDefaults([
       { config_key: 'enabled', config_value: 'true', value_type: 'BOOLEAN', description: 'LogProvider 是否启用' },
       { config_key: 'default_level', config_value: 'INFO', value_type: 'STRING', description: '默认日志级别' },
+      { config_key: 'min_level', config_value: DEFAULT_MIN_LEVEL, value_type: 'STRING', description: '最低日志级别' },
       { config_key: 'retention_days', config_value: String(DEFAULT_RETENTION_DAYS), value_type: 'INT', description: '日志保留天数' },
       { config_key: 'max_log_count', config_value: String(DEFAULT_MAX_LOG_COUNT), value_type: 'INT', description: '日志最大保留条数' },
     ]);
 
     this.enabled = await this.config.getBoolean('enabled', true);
     this.defaultLevel = await this.config.getString('default_level', 'INFO') ?? 'INFO';
+    this.minLevel = await this.config.getString('min_level', DEFAULT_MIN_LEVEL) ?? DEFAULT_MIN_LEVEL;
     this.retentionDays = await this.config.getInt('retention_days', DEFAULT_RETENTION_DAYS);
     this.maxLogCount = await this.config.getInt('max_log_count', DEFAULT_MAX_LOG_COUNT);
     await this.loadRules();
@@ -189,6 +202,53 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 写入日志到 SQLite（addLog） */
+  // ===== 原始方法（保留作为参考）=====
+  // async addLog(
+  //   input: AddLogInput,
+  //   _context: LogContext,
+  //   output: AddLogOutput,
+  // ): Promise<boolean> {
+  //   this.ensureEnabled();
+  //   const data = input.data;
+  //   if (!data.level) {
+  //     data.level = this.defaultLevel;
+  //   }
+  //   if (!data.source) {
+  //     throw new ValidationError('source 不能为空');
+  //   }
+  //   if (!data.message) {
+  //     throw new ValidationError('message 不能为空');
+  //   }
+  //
+  //   const logId = IdGenerator.generate();
+  //   const now = IdGenerator.now();
+  //
+  //   try {
+  //     await this.relationDb.insert(LOG_RECORD_TABLE, [
+  //       { field: 'id', value: logId },
+  //       { field: 'created', value: now },
+  //       { field: 'updated', value: now },
+  //       { field: 'level', value: data.level },
+  //       { field: 'source', value: data.source },
+  //       { field: 'message', value: data.message },
+  //       { field: 'trace_id', value: data.trace_id ?? null },
+  //       { field: 'caller', value: data.caller ?? null },
+  //       { field: 'work_id', value: data.work_id ?? null },
+  //       { field: 'interact_id', value: data.interact_id ?? null },
+  //       { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
+  //       { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
+  //     ]);
+  //   } catch {
+  //     // SQLite 写入失败不影响业务
+  //   }
+  //
+  //   this.scheduleAging();
+  //
+  //   output.id = logId;
+  //   return true;
+  // }
+
+  // ===== 修改后的方法（增加 min_level 过滤）=====
   async addLog(
     input: AddLogInput,
     _context: LogContext,
@@ -204,6 +264,11 @@ export class LogService {
     }
     if (!data.message) {
       throw new ValidationError('message 不能为空');
+    }
+
+    // 低于 min_level 的日志静默丢弃，不写入
+    if (this.shouldDropByMinLevel(data.level)) {
+      return true;
     }
 
     const logId = IdGenerator.generate();
@@ -232,6 +297,19 @@ export class LogService {
 
     output.id = logId;
     return true;
+  }
+
+  /** 判断某级别日志是否应被 min_level 过滤丢弃 */
+  private shouldDropByMinLevel(level: string): boolean {
+    if (this.minLevel === DEFAULT_MIN_LEVEL) {
+      return false;
+    }
+    const weight = LogService.LEVEL_WEIGHT[level.toUpperCase()];
+    if (weight === undefined) {
+      return false;
+    }
+    const minWeight = LogService.LEVEL_WEIGHT[this.minLevel] ?? 0;
+    return weight < minWeight;
   }
 
   /** 将数据库行转换为 LogRecord */
@@ -546,6 +624,13 @@ export class LogService {
       this.defaultLevel = input.default_level;
       await this.config.set('default_level', input.default_level, 'STRING', '默认日志级别');
     }
+    if (input.min_level !== undefined) {
+      if (!['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(input.min_level)) {
+        throw new ValidationError('min_level must be DEBUG/INFO/WARN/ERROR');
+      }
+      this.minLevel = input.min_level;
+      await this.config.set('min_level', input.min_level, 'STRING', '最低日志级别');
+    }
     if (input.retention_days !== undefined) {
       if (!Number.isInteger(input.retention_days) || input.retention_days < 0) {
         throw new ValidationError('retention_days must be a non-negative integer');
@@ -571,6 +656,7 @@ export class LogService {
     output.config = {
       enabled: this.enabled,
       default_level: this.defaultLevel,
+      min_level: this.minLevel,
       retention_days: this.retentionDays,
       max_log_count: this.maxLogCount,
     };
@@ -669,5 +755,15 @@ export class LogService {
         count: Number(r.count),
       })),
     };
+  }
+
+  /** 从 SQLite 查询所有出现过的日志来源模块（source 去重列表，用于筛选下拉菜单） */
+  async listSources(): Promise<string[]> {
+    this.ensureEnabled();
+    const rows = this.relationDb.queryRaw<{ source: string }>(
+      `SELECT DISTINCT "source" FROM "${LOG_RECORD_TABLE}" WHERE "source" IS NOT NULL AND "source" != '' ORDER BY "source" ASC`,
+      [],
+    );
+    return rows.map((r) => String(r.source));
   }
 }

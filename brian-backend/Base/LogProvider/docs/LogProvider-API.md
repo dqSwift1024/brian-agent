@@ -70,6 +70,7 @@ const soulAccess = new SoulAccess(relationDb, {
 |------------|-------------|------------|
 | enabled | true | BOOLEAN |
 | default_level | INFO | STRING |
+| min_level | DEBUG | STRING |
 | retention_days | 30 | INT |
 | max_log_count | 700000 | INT |
 

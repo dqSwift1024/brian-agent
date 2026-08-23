@@ -2634,9 +2634,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const citingMsgIds = Array.isArray(body.citing_msg_ids) ? body.citing_msg_ids : (Array.isArray(body.citingIds) ? body.citingIds : []);
         const selectedMsgIds = Array.isArray(body.selected_msg_ids) ? body.selected_msg_ids : (Array.isArray(body.selectedMsgIds) ? body.selectedMsgIds : []);
         const allCitingIds = Array.from(new Set([...citingMsgIds, ...selectedMsgIds]));
-        const traceId = typeof body.trace_id === 'string' && body.trace_id
-          ? body.trace_id
-          : (typeof body.traceid === 'string' && body.traceid ? body.traceid : IdGenerator.generate());
 
         if (!sessionId) { sendJson(res, 400, { error: 'session_id is required' }); return; }
         if (!msgContent.trim()) { sendJson(res, 400, { error: 'msg_content cannot be empty' }); return; }
@@ -2700,7 +2697,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           msg_content: msgContent,
           citing_msg_ids: allCitingIds,
           selected_msg_ids: selectedMsgIds,
-          trace_id: traceId,
           force_orchestration_strategy: typeof body.force_orchestration_strategy === 'string' ? body.force_orchestration_strategy : undefined,
         });
         const streamOutput = new OpenChatStreamOutput();
@@ -3768,12 +3764,20 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { points: (rows || []).map(r => ({ date: r.date, tokens: Number(r.tokens) || 0 })) });
 
       } else if (method === 'GET' && pathname === '/api/analytics/model-distribution') {
-        // 按模型聚合 token 用量（关联 llm_available 取模型名与类型，模型已删除时标记 deleted）
-        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number; deleted: number; type: string }>(
-          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", COALESCE(e."llm_type", \'deleted\') AS "type", (e."llm_title" IS NULL) AS "deleted", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
+        // 按模型聚合 token 用量（关联 llm_available 取模型名与类型，模型已删除时标记 deleted），分别统计输入/输出 token
+        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number; input_tokens: number; output_tokens: number; deleted: number; type: string }>(
+          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", COALESCE(e."llm_type", \'deleted\') AS "type", (e."llm_title" IS NULL) AS "deleted", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens", SUM(COALESCE(u."input_tokens",0)) AS "input_tokens", SUM(COALESCE(u."output_tokens",0)) AS "output_tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
           [],
         );
-        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, type: r.type || 'deleted', tokens: Number(r.tokens) || 0, deleted: !!r.deleted })) });
+        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, type: r.type || 'deleted', tokens: Number(r.tokens) || 0, input_tokens: Number(r.input_tokens) || 0, output_tokens: Number(r.output_tokens) || 0, deleted: !!r.deleted })) });
+
+      } else if (method === 'GET' && pathname === '/api/monitor/logs/sources') {
+        try {
+          const sources = await ctx.logAccess.listSources();
+          sendJson(res, 200, { sources: sources || [] });
+        } catch (e: any) {
+          sendJson(res, 500, { error: e?.message || '日志来源查询失败' });
+        }
 
       } else if (method === 'GET' && pathname === '/api/monitor/logs/query') {
         const level = params.get('level') || undefined;

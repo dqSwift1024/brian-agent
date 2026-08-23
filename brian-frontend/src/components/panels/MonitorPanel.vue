@@ -8,13 +8,14 @@ import { copyToClipboard } from '@/utils/clipboard'
 const health = ref<SystemHealth>({ status: 'healthy', components: [], uptime: 0 })
 const resources = ref({ cpu: 0, memory: 0, disk: 0 })
 const tokenTrend = ref<{ date: string; tokens: number }[]>([])
-const modelDist = ref<{ model: string; tokens: number; deleted?: boolean; type?: string }[]>([])
+const modelDist = ref<{ model: string; tokens: number; input_tokens: number; output_tokens: number; deleted?: boolean; type?: string }[]>([])
 const logs = ref<{ id: string; timestamp: number; level: string; source: string; message: string; trace_id?: string; caller?: string }[]>([])
 const logLevel = ref('')
 const logKeyword = ref('')
 const logTraceId = ref('')
 const logSourceFilter = ref('')
 const logSourceType = ref('')
+const logSources = ref<string[]>([])
 const logStartTime = ref('')
 const logEndTime = ref('')
 const selectedLogs = ref<Set<string>>(new Set())
@@ -24,6 +25,9 @@ const _loading = ref(false)
 const calendarBox = ref<HTMLElement | null>(null)
 const calendarBoxWidth = ref(0)
 let resizeObserver: ResizeObserver | null = null
+const healthCard = ref<HTMLElement | null>(null)
+const healthCardHeight = ref(0)
+let healthResizeObserver: ResizeObserver | null = null
 
 const LOG_SOURCE_OPTIONS = [
   { value: '', label: '全部来源' },
@@ -52,6 +56,10 @@ async function fetchAll() {
   try { tokenTrend.value = await monitorApi.tokenTrend() } catch { /* */ }
   try { modelDist.value = await monitorApi.modelDistribution() } catch { /* */ }
   try { logs.value = await monitorApi.logs(buildLogQuery()) } catch { /* */ }
+}
+
+async function loadLogSources() {
+  try { logSources.value = await monitorApi.logSources() } catch { logSources.value = [] }
 }
 
 function resetLogFilters() {
@@ -108,11 +116,13 @@ async function copySelectedLogs() {
 
 onMounted(() => {
   fetchAll()
+  loadLogSources()
   pollTimer.value = setInterval(fetchAll, 10000)
 })
 onUnmounted(() => {
   if (pollTimer.value) clearInterval(pollTimer.value)
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
+  if (healthResizeObserver) { healthResizeObserver.disconnect(); healthResizeObserver = null }
 })
 
 // 步骤1/2/3：当日历容器渲染后（tokenTrend 为空时该容器不渲染），监听其宽度变化，
@@ -124,6 +134,18 @@ watchEffect(() => {
     for (const e of entries) calendarBoxWidth.value = e.contentRect.width
   })
   resizeObserver.observe(el)
+})
+
+// 监听「系统健康」卡片高度，将其作为 Token 趋势 / 模型分布卡片锁定的固定高度
+watchEffect(() => {
+  const el = healthCard.value
+  if (!el || healthResizeObserver) return
+  healthResizeObserver = new ResizeObserver((entries) => {
+    for (const e of entries) {
+      healthCardHeight.value = e.borderBoxSize?.[0]?.blockSize ?? (e.target as HTMLElement).offsetHeight
+    }
+  })
+  healthResizeObserver.observe(el)
 })
 
 const statusColor = (s: string) =>
@@ -215,14 +237,26 @@ const MODEL_TYPE_LABELS: Record<string, string> = {
   text: '文本生成',
   vision: '多模态',
   embedding: '向量化',
-  deleted: '已删除',
 }
-const MODEL_TYPE_ORDER = ['text', 'vision', 'embedding', 'deleted']
+const MODEL_TYPE_ORDER = ['text', 'vision', 'embedding']
 
 const modelTypeTab = ref('text')
 
+const MODEL_SORT_OPTIONS: { value: 'tokens' | 'input' | 'output'; label: string }[] = [
+  { value: 'tokens', label: '总量' },
+  { value: 'input', label: '输入' },
+  { value: 'output', label: '输出' },
+]
+const modelSort = ref<'tokens' | 'input' | 'output'>('tokens')
+
+function modelSortValue(m: { tokens: number; input_tokens: number; output_tokens: number }): number {
+  if (modelSort.value === 'input') return m.input_tokens || 0
+  if (modelSort.value === 'output') return m.output_tokens || 0
+  return m.tokens || 0
+}
+
 const groupedModels = computed(() => {
-  const groups: Record<string, { model: string; tokens: number; deleted?: boolean }[]> = {}
+  const groups: Record<string, { model: string; tokens: number; input_tokens: number; output_tokens: number; deleted?: boolean }[]> = {}
   for (const m of modelDist.value) {
     const t = m.type || 'deleted'
     if (!groups[t]) groups[t] = []
@@ -233,13 +267,26 @@ const groupedModels = computed(() => {
 
 const modelTabs = computed(() => MODEL_TYPE_ORDER.filter(t => (groupedModels.value[t]?.length ?? 0) > 0))
 
-const activeModels = computed(() => groupedModels.value[modelTypeTab.value] || [])
+const activeModels = computed(() => {
+  const list = [...(groupedModels.value[modelTypeTab.value] || [])]
+  list.sort((a, b) => modelSortValue(b) - modelSortValue(a))
+  return list
+})
 
-const activeTotalTokens = computed(() => activeModels.value.reduce((s, m) => s + m.tokens, 0))
+const activeTotalInputTokens = computed(() => activeModels.value.reduce((s, m) => s + (m.input_tokens || 0), 0))
 
-function modelPercent(tokens: number): number {
+const activeTotalOutputTokens = computed(() => activeModels.value.reduce((s, m) => s + (m.output_tokens || 0), 0))
+
+const activeTotalTokens = computed(() => activeTotalInputTokens.value + activeTotalOutputTokens.value)
+
+function modelInputPercent(m: { input_tokens: number }): number {
   const total = activeTotalTokens.value || 1
-  return (tokens / total) * 100
+  return ((m.input_tokens || 0) / total) * 100
+}
+
+function modelOutputPercent(m: { output_tokens: number }): number {
+  const total = activeTotalTokens.value || 1
+  return ((m.output_tokens || 0) / total) * 100
 }
 
 function displayModelName(m: { model: string; deleted?: boolean }): string {
@@ -250,7 +297,7 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
 <template>
   <div class="space-y-6">
     <!-- Health status -->
-    <div class="block-card rounded-2xl p-6">
+    <div ref="healthCard" class="block-card rounded-2xl p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold flex items-center gap-2">
           <Activity :size="20" class="text-brian-blue" /> 系统健康
@@ -295,13 +342,13 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
 
     <!-- Token usage -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="block-card rounded-2xl p-6">
+      <div class="block-card rounded-2xl p-6 flex flex-col" :style="healthCardHeight ? { height: `${healthCardHeight}px` } : undefined">
         <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
           <TrendingUp :size="16" class="text-brian-blue" /> Token 使用趋势
         </h3>
         <div v-if="tokenTrend.length === 0" class="text-center py-6 text-apple-gray-400 text-sm">暂无数据</div>
-        <div v-else ref="calendarBox">
-          <div class="flex gap-[3px] w-full">
+        <div v-else ref="calendarBox" class="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center">
+          <div class="flex gap-[3px]">
             <div class="grid grid-rows-7 gap-[3px] w-3 shrink-0">
               <span v-for="(label, i) in DAY_LABELS" :key="i" class="flex items-center h-2.5 text-[10px] leading-none text-apple-gray-400">{{ label }}</span>
             </div>
@@ -327,12 +374,12 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
         </div>
       </div>
 
-      <div class="block-card rounded-2xl p-6">
+      <div class="block-card rounded-2xl p-6 flex flex-col" :style="healthCardHeight ? { height: `${healthCardHeight}px` } : undefined">
         <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
           <Layers :size="16" class="text-success-green" /> 模型分布
         </h3>
         <div v-if="modelDist.length === 0" class="text-center py-6 text-apple-gray-400 text-sm">暂无数据</div>
-        <div v-else>
+        <div v-else class="flex-1 min-h-0 flex flex-col">
           <div class="flex items-center gap-1 mb-3">
             <button
               v-for="t in modelTabs"
@@ -343,19 +390,44 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
             >
               {{ MODEL_TYPE_LABELS[t] || t }}
             </button>
+            <div class="ml-auto flex items-center gap-0.5 bg-apple-gray-100 dark:bg-apple-gray-800 rounded-lg p-0.5">
+              <button
+                v-for="o in MODEL_SORT_OPTIONS"
+                :key="o.value"
+                class="px-2 py-0.5 text-[11px] rounded-md transition-colors"
+                :class="modelSort === o.value ? 'bg-white dark:bg-apple-gray-600 text-apple-gray-900 dark:text-white shadow-sm' : 'text-apple-gray-500 hover:text-apple-gray-700 dark:hover:text-apple-gray-300'"
+                @click="modelSort = o.value"
+              >
+                {{ o.label }}
+              </button>
+            </div>
           </div>
           <div v-if="activeModels.length === 0" class="text-center py-4 text-apple-gray-400 text-sm">暂无数据</div>
-          <div v-else class="space-y-2.5 max-h-40 overflow-y-auto pr-1">
-            <div v-for="m in activeModels" :key="m.model" class="flex items-center gap-2">
-              <span class="text-xs truncate w-36 flex-shrink-0 text-apple-gray-700 dark:text-apple-gray-300" :title="displayModelName(m)">{{ displayModelName(m) }}</span>
-              <div class="flex-1 h-2 rounded-full bg-apple-gray-100 dark:bg-apple-gray-800 overflow-hidden">
-                <div class="h-full rounded-full bg-brian-blue" :style="{ width: `${modelPercent(m.tokens)}%` }" />
-              </div>
-              <span class="text-xs text-apple-gray-500 w-16 text-right flex-shrink-0">{{ modelPercent(m.tokens).toFixed(1) }}%</span>
+          <div v-else class="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div class="flex items-center justify-between pb-1 text-[11px] border-b border-apple-gray-100 dark:border-apple-gray-700">
+              <span class="text-apple-gray-400">合计</span>
+              <span class="flex items-center gap-3">
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-error-red" />
+                  <span class="text-error-red">输入 {{ activeTotalInputTokens.toLocaleString() }}</span>
+                </span>
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-success-green" />
+                  <span class="text-success-green">输出 {{ activeTotalOutputTokens.toLocaleString() }}</span>
+                </span>
+              </span>
             </div>
-            <div class="flex items-center justify-between pt-1 text-[11px] text-apple-gray-400 border-t border-apple-gray-100 dark:border-apple-gray-700">
-              <span>合计</span>
-              <span>{{ activeTotalTokens.toLocaleString() }} tokens</span>
+            <div v-for="m in activeModels" :key="m.model" class="flex items-center gap-2" :title="`${displayModelName(m)} — 输入 ${modelInputPercent(m).toFixed(1)}% · 输出 ${modelOutputPercent(m).toFixed(1)}%`">
+              <span class="text-xs truncate w-36 flex-shrink-0 text-apple-gray-700 dark:text-apple-gray-300" :title="displayModelName(m)">{{ displayModelName(m) }}</span>
+              <div class="flex-1 h-2 rounded-full bg-apple-gray-100 dark:bg-apple-gray-800 overflow-hidden flex">
+                <div class="h-full bg-error-red" :style="{ width: `${modelInputPercent(m)}%` }" />
+                <div class="h-full bg-success-green" :style="{ width: `${modelOutputPercent(m)}%` }" />
+              </div>
+              <span class="text-xs flex-shrink-0 whitespace-nowrap font-medium">
+                <span class="text-error-red">{{ (m.input_tokens || 0).toLocaleString() }}</span>
+                <span class="text-apple-gray-400 px-1">/</span>
+                <span class="text-success-green">{{ (m.output_tokens || 0).toLocaleString() }}</span>
+              </span>
             </div>
           </div>
         </div>
@@ -379,7 +451,10 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
           <input v-model="logKeyword" class="pl-7 pr-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-40" placeholder="内容搜索" @keyup.enter="fetchAll()" />
         </div>
         <input v-model="logTraceId" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="traceId" @keyup.enter="fetchAll()" />
-        <input v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="模块" @keyup.enter="fetchAll()" />
+        <select v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
+          <option value="">全部模块</option>
+          <option v-for="s in logSources" :key="s" :value="s">{{ s }}</option>
+        </select>
         <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none">
           <option v-for="o in LOG_SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>

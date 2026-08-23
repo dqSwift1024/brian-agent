@@ -458,6 +458,20 @@ Chat 模块的配置通过 Config Application 统一管理（`/api/config/update
 
 ## 7. 变更记录
 
+### [2026-08-23] trace_id 统一由后端 ToolProvider(IdGenerator) 生成 UUID
+**变更原因**：此前 `trace_id` 由前端 `crypto.randomUUID()` 生成，并在非安全上下文（如 `http://<局域网IP>`）下回退为 `trace-${Date.now()}-${Math.random()}` 非 UUID 格式；后端透传不重生成，导致「复制 TraceId」复制到非 UUID 值。生成职责分散于前端、后端 AOP、后端透传三处，反复出错。
+
+**修改的方法**：
+- `ChatService.openChatStream` — 统一 `traceId = context.trace_id || IdGenerator.generate()`，贯穿 connected / error / done 事件与 `receiveWork` 落库；
+- `dev-server.ts` `/api/chat/stream` — 移除 `body.trace_id` 透传，由 AOP 层 / ChatService 统一生成；
+- 前端 `ChatArea.vue` — 移除 `crypto.randomUUID()` + 非 UUID fallback，改为从 `connected` 事件回读后端生成的 trace_id。
+
+**影响的端点**：
+- `POST /api/chat/stream` — `connected` 事件回传后端生成的 UUID 格式 trace_id，前端「复制 TraceId」据此复制真实 UUID。
+
+**可能存在的问题**：
+- 历史旧数据 `info_raw.trace_id` 仍可能为旧格式（非 UUID），历史消息「复制 TraceId」按旧值展示；新问答统一为 UUID。
+
 ### [2026-08-22] getChatHistory 返回真实 trace_id
 **变更原因**：`/api/chat/history` 此前将 `traceId` 字段错误回填为 `work_id || interact_id || info_id`，前端「复制 TraceId」复制到 work_id。
 

@@ -286,7 +286,7 @@ export const monitorApi = {
   health: () => request<SystemHealth>('/monitor/health-all'),
   resources: () => request<{ cpu: number; memory: number; disk: number }>('/monitor/resources'),
   tokenTrend: () => request<{ points: { date: string; tokens: number }[] }>('/analytics/token-trend').then(r => r.points),
-  modelDistribution: () => request<{ models: { model: string; tokens: number; deleted?: boolean; type?: string }[] }>('/analytics/model-distribution').then(r => r.models),
+  modelDistribution: () => request<{ models: { model: string; tokens: number; input_tokens: number; output_tokens: number; deleted?: boolean; type?: string }[] }>('/analytics/model-distribution').then(r => r.models),
   logs: (params?: { level?: string; keyword?: string; trace_id?: string; source?: string; log_source?: string; start_time?: number; end_time?: number; limit?: number }) => {
     const q = new URLSearchParams()
     if (params?.level) q.set('level', params.level)
@@ -301,6 +301,7 @@ export const monitorApi = {
       `/monitor/logs/query?${q.toString()}`
     ).then(r => r.entries)
   },
+  logSources: () => request<{ sources: string[] }>('/monitor/logs/sources').then(r => r.sources),
 }
 
 export const feedbackApi = {

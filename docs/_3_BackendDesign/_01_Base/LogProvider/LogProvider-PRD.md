@@ -146,6 +146,7 @@ await logAccess.enableLog(
 | ------ | ---- | ---- | ---- |
 | enabled | BOOLEAN | 否 | 日志组件是否启用 |
 | default_level | STRING | 否 | 默认日志级别（DEBUG / INFO / WARN / ERROR），`addLog` 未指定 level 时使用 |
+| min_level | STRING | 否 | 最低日志级别（DEBUG / INFO / WARN / ERROR），低于此级别的日志不记录 |
 | retention_days | INT | 否 | 日志保留天数（默认 30 天） |
 | max_log_count | INT | 否 | 日志最大保留条数（默认 70 万条） |
 
@@ -159,7 +160,8 @@ await logAccess.enableLog(
 
 1. 仅更新入参中非 `undefined` 的字段（部分更新）；
 2. 更新 `log_config` 表（upsert），并实时刷新运行时缓存；
-3. `default_level` 校验为 DEBUG / INFO / WARN / ERROR；`retention_days` 与 `max_log_count` 为非负整数。
+3. `default_level` 与 `min_level` 校验为 DEBUG / INFO / WARN / ERROR；`retention_days` 与 `max_log_count` 为非负整数；
+4. `addLog` 写入时，若日志级别低于 `min_level`，则静默丢弃不写入（`min_level = DEBUG` 表示不过滤）。
 
 ### 3.7 查询日志（queryLogs）
 
@@ -235,6 +237,7 @@ await logAccess.enableLog(
 | ------ | ----- | ----- | ----- |
 | enabled | true | BOOLEAN | LogProvider 是否启用 |
 | default_level | INFO | STRING | 默认日志级别 |
+| min_level | DEBUG | STRING | 最低日志级别（低于此级别不记录，DEBUG 表示不过滤） |
 | retention_days | 30 | INT | 日志保留天数（30 天，超过则自动清理） |
 | max_log_count | 700000 | INT | 日志最大保留条数（70 万条，超过自动清理最旧记录） |
 

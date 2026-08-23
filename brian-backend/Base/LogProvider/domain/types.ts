@@ -186,11 +186,14 @@ export class ConfigLogInput extends Input {
   enabled?: boolean;
   /** 默认日志级别（addLog 未指定 level 时使用） */
   default_level?: string;
+  /** 最低日志级别（低于此级别的日志不记录） */
+  min_level?: string;
   /** 日志保留天数（超过自动清理） */
   retention_days?: number;
   /** 日志最大保留条数（超过自动清理最旧记录） */
   max_log_count?: number;
 }
+
 
 export class ConfigLogOutput extends Output {
   config: Record<string, unknown> = {};
@@ -208,3 +211,5 @@ export const LOG_RECORD_TABLE = 'log_record';
 export const DEFAULT_RETENTION_DAYS = 30;
 /** 默认日志最大保留条数（70 万条） */
 export const DEFAULT_MAX_LOG_COUNT = 700000;
+/** 默认最低日志级别（DEBUG，不过滤任何级别） */
+export const DEFAULT_MIN_LEVEL = 'DEBUG';

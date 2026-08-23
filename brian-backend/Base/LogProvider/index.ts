@@ -34,6 +34,7 @@ export {
   LOG_RECORD_TABLE,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_MAX_LOG_COUNT,
+  DEFAULT_MIN_LEVEL,
 } from './domain/types';
 
 export type { LogData, LogRecord, LogRule } from './domain/types';

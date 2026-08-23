@@ -128,6 +128,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- LogProvider ---
   base('log_provider', 'basic', 'enabled', '日志组件启用', 'BOOLEAN', true, '日志组件是否启用'),
   base('log_provider', 'basic', 'default_level', '默认日志级别', 'ENUM', 'INFO', '日志未指定级别时使用的默认级别', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
+  base('log_provider', 'basic', 'min_level', '最低日志级别', 'ENUM', 'DEBUG', '低于此级别的日志不记录（DEBUG 表示不过滤）', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
   base('log_provider', 'aging', 'retention_days', '日志保留天数', 'INT', 30, '超过自动清理'),
   base('log_provider', 'aging', 'max_log_count', '日志最大保留条数', 'INT', 700000, '70 万条，超过自动清理最旧记录'),
 

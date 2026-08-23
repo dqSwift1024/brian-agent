@@ -1001,17 +1001,17 @@ export class JSONNodeService {
       interact_id: interactId,
     });
     const buildOutput = new BuildAgentDAGOutput();
+    const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
+    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
     await this.orchestrationExecution.buildAgentDAG(
       buildInput,
-      { session_id: context.session_id } as OrchestrationExecutionContext,
+      { session_id: sessionId, work_id: workId, interact_id: interactId } as OrchestrationExecutionContext,
       buildOutput,
     );
 
     sharedData[saveKey] = buildOutput.agent_dag;
     sharedData.task_agent_map = buildOutput.task_agent_map;
 
-    const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
-    const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
       const agentDagForSSE = {
         ...buildOutput.agent_dag,

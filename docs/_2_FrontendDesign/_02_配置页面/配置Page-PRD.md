@@ -560,6 +560,7 @@ Orchestration 层负责将用户请求分解为任务、选择执行策略、调
 |------|------|--------|------|
 | 启用日志 | BOOLEAN | true | 日志组件总开关 |
 | 默认日志级别 | ENUM | INFO | DEBUG / INFO / WARN / ERROR，日志未指定级别时使用 |
+| 最低日志级别 | ENUM | DEBUG | DEBUG / INFO / WARN / ERROR，低于此级别的日志不记录（DEBUG 表示不过滤） |
 | 日志文件路径 | STRING | ./data/logs | 存储路径 |
 | 单文件最大大小 | INT | 209715200 | 字节，默认 200MB |
 | 日志保留天数 | INT | 14 | 超期自动清理 |

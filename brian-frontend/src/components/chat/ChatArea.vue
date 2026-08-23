@@ -233,10 +233,9 @@ async function handleSend(content: string, citingIds: string[]) {
   }
   sessionStore.addMessage(userMsg)
 
-  const traceId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `trace-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  currentTraceId = traceId
+  // trace_id 由后端经 ToolProvider 统一生成 UUID，经 connected 事件回传；
+  // 前端不再自行生成（避免非安全上下文 fallback 产生非 UUID 格式）。
+  currentTraceId = ''
 
   const botMsgId = `msg-${Date.now()}-bot`
   textBlockId = null
@@ -260,7 +259,6 @@ async function handleSend(content: string, citingIds: string[]) {
         msg_content: content,
         citing_msg_ids: combinedCitingIds,
         selected_msg_ids: selectedMsgIds,
-        trace_id: traceId,
       }),
       signal: abortCtrl.signal,
     })
@@ -511,7 +509,12 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
   }
 
   switch (event) {
-    case 'connected':
+    case 'connected': {
+      // 后端经 ToolProvider 生成的 trace_id 回传，供「复制 TraceId」按钮复制
+      const tid = typeof payload.trace_id === 'string' && payload.trace_id ? payload.trace_id : ''
+      if (tid) currentTraceId = tid
+      break
+    }
     case 'loading':
       break
 
@@ -712,8 +715,22 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       break
     }
 
-    case 'agent_building':
+    case 'agent_building': {
+      // Agent 构建开始：创建「构建中」占位卡片，按到达顺序展示构建进度
+      const taskContent = typeof payload.task_content === 'string' ? payload.task_content : ''
+      const buildLabel = taskContent
+        ? `构建中: ${taskContent.slice(0, 24)}`
+        : '构建 Agent'
+      sessionStore.setAgentStatus(agentId, 'RUNNING', buildLabel)
+      const thinkBlock = getOrCreateThinkBlock(agentId, buildLabel, 'WORKER')
+      thinkBlock.agentInfo = { id: agentId, name: buildLabel, type: 'WORKER' }
+      if (taskContent) thinkBlock.input = taskContent
+      sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
+      break
+    }
+
     case 'agent_built': {
+      // Agent 构建完成：回填真实 agent 名称与组件绑定
       const agentName = String(payload.agent_name || payload.agent_id || agentId || 'WorkAgent')
       const agentType = String(payload.agent_type || 'WORKER')
       const llmId = typeof payload.llm_id === 'string' ? payload.llm_id : undefined
@@ -721,12 +738,10 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const skills = Array.isArray(payload.skill_ids) ? payload.skill_ids.map(String) : undefined
       const mcps = Array.isArray(payload.mcp_ids) ? payload.mcp_ids.map(String) : undefined
 
-      // 记录该 Agent 进入执行（RUNNING → 黄色），并同步 AgentDAG 节点名称与状态
-      sessionStore.setAgentStatus(agentId || agentName, 'RUNNING', agentName)
-
-      const thinkBlock = getOrCreateThinkBlock(agentId || agentName, agentName, agentType)
+      sessionStore.setAgentStatus(agentId, 'RUNNING', agentName)
+      const thinkBlock = getOrCreateThinkBlock(agentId, agentName, agentType)
       thinkBlock.agentInfo = {
-        id: agentId || agentName,
+        id: agentId,
         name: agentName,
         type: agentType,
         llmId,
@@ -738,6 +753,18 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         thinkBlock.input = payload.task_content as string | Record<string, unknown>
       }
       sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
+      break
+    }
+
+    case 'agent_matched': {
+      // 复用既有 Agent：将「构建中」占位卡片收敛为「复用已有 Agent」
+      const matchedAgentId = String(payload.matched_agent_id || payload.agent_id || '')
+      const key = agentId || matchedAgentId
+      const thinkBlock = getOrCreateThinkBlock(key, '复用已有 Agent', 'WORKER')
+      thinkBlock.agentInfo = { id: matchedAgentId || key, name: '复用已有 Agent', type: 'WORKER' }
+      thinkBlock.output = { reused: true, matched_agent_id: matchedAgentId }
+      sessionStore.setAgentStatus(key, 'SUCCESS', '复用已有 Agent')
+      sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, output: thinkBlock.output })
       break
     }
 

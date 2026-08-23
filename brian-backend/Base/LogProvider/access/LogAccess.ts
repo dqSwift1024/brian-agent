@@ -124,4 +124,7 @@ export class LogAccess {
   async getLogStats(options?: { start_time?: number; end_time?: number }) {
     return this.service.getLogStats(options);
   }
+  async listSources() {
+    return this.service.listSources();
+  }
 }

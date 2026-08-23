@@ -269,6 +269,12 @@ export class ChatService {
       throw new NotFoundError('Session', input.session_id);
     }
 
+    // trace_id 统一由后端经 ToolProvider(IdGenerator) 生成 UUID v4，
+    // 作为本次问答的链路追踪 ID 贯穿整条处理链路与日志，不再依赖前端透传。
+    // 优先复用 AOP 层已生成并回填到 Context 的 trace_id，保证日志与 SSE 事件口径一致。
+    const traceId = context.trace_id || IdGenerator.generate();
+    context.trace_id = traceId;
+
     const overflowInput = Object.assign(new CheckSessionOverflowInput(), {
       session_id: input.session_id,
     });
@@ -293,11 +299,11 @@ export class ChatService {
       onEvent?.(evt);
     };
 
-    emit('connected', { session_id: input.session_id, trace_id: input.trace_id ?? '' });
+    emit('connected', { session_id: input.session_id, trace_id: traceId });
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
       await this.streamAccess.pushEvent(input.session_id, 'connected', 'CONTROL', {
         session_id: input.session_id,
-        trace_id: input.trace_id ?? '',
+        trace_id: traceId,
       });
     }
 
@@ -334,7 +340,7 @@ export class ChatService {
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: input.session_id,
       user_query: input.msg_content,
-      trace_id: input.trace_id,
+      trace_id: traceId,
       force_orchestration_strategy: input.force_orchestration_strategy,
       user_profile: userProfile,
       citing_msg_ids: citingMsgIds,
@@ -357,14 +363,14 @@ export class ChatService {
       this.logger?.error?.('openChatStream: orchestration failed', {
         session_id: input.session_id,
         work_id: workId,
-        trace_id: input.trace_id ?? '',
+        trace_id: traceId,
         error: errorMsg,
       });
-      emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: 'ORCHESTRATION_FAILED' });
+      emit('error', { work_id: workId, trace_id: traceId, error_message: errorMsg, error_code: 'ORCHESTRATION_FAILED' });
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
         await this.streamAccess.pushEvent(input.session_id, 'error', 'CONTROL', {
           work_id: workId,
-          trace_id: input.trace_id ?? '',
+          trace_id: traceId,
           error_message: errorMsg,
           error_code: 'ORCHESTRATION_FAILED',
         }, { work_id: workId, interact_id: interactId });
@@ -376,11 +382,11 @@ export class ChatService {
     if (!workOk || rwOutput.error) {
       const errorMsg = rwOutput.error || '处理失败';
       const errorCode = rwOutput.error_code || 'ORCHESTRATION_FAILED';
-      emit('error', { work_id: workId, trace_id: input.trace_id ?? '', error_message: errorMsg, error_code: errorCode });
+      emit('error', { work_id: workId, trace_id: traceId, error_message: errorMsg, error_code: errorCode });
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
         await this.streamAccess.pushEvent(input.session_id, 'error', 'CONTROL', {
           work_id: workId,
-          trace_id: input.trace_id ?? '',
+          trace_id: traceId,
           error_message: errorMsg,
           error_code: errorCode,
         }, { work_id: workId, interact_id: interactId });
@@ -408,12 +414,12 @@ export class ChatService {
       i += chunkSize;
     }
 
-    emit('done', { work_id: workId, interact_id: interactId, trace_id: input.trace_id ?? '', final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
+    emit('done', { work_id: workId, interact_id: interactId, trace_id: traceId, final_response: finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage });
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
       await this.streamAccess.pushEvent(input.session_id, 'done', 'CONTROL', {
         work_id: workId,
         interact_id: interactId,
-        trace_id: input.trace_id ?? '',
+        trace_id: traceId,
         final_response: finalResponse,
         elapsed_ms: elapsedMs,
         token_usage: tokenUsage,
