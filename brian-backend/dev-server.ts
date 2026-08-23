@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess, HttpAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource, Operator } from './Base';
+import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource, Operator } from './Base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -411,6 +411,8 @@ async function buildContext() {
   // Bookmark
   const bookmarkAccess = new BookmarkAccess(relationDb, logger);
   const toolAccess = new ToolAccess();
+  // 系统资源采集（CPU / 内存 / 磁盘），供监控页「系统健康」展示真实数据
+  const systemMonitorAccess = new SystemMonitorAccess(DATA_DIR);
   // 初始化 tool_config 表并创建 HTTP 请求入口（含可配置超时）
   new ToolSchemaInitializer(relationDb).init();
   const toolConfigService = new ConfigService(relationDb, TOOL_CONFIG_TABLE);
@@ -673,6 +675,7 @@ async function buildContext() {
     cdtAccess, bookmarkAccess,
     toolAccess,
     httpAccess,
+    systemMonitorAccess,
     cronAccess,
     streamAccess,
     infoCore, llmCore, mcpCore, skillCore, soulCore, mqCore,
@@ -3711,11 +3714,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const o = new VisualizedLLMOutput();
           await ctx.llmAccess.visualizedLLM(Object.assign(new VisualizedLLMInput(), { scope: 'health' }), new LLMContext(), o);
           const d = o.data || {};
+          const enabledProviderCount = await ctx.relationDb.count('llm_provider', [
+            { field: 'enable', operator: Operator.EQ, value: 1 },
+          ]);
           components.push({
             name: 'LLM Provider',
             status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
             message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
-            details: { '提供商': Number(d.provider_count) || 0, '启用模型': Number(d.enabled_llm_count) || 0 },
+            details: { '启用提供商': enabledProviderCount, '启用模型': Number(d.enabled_llm_count) || 0 },
           });
         } catch (e: any) {
           components.push({ name: 'LLM Provider', status: 'unhealthy', message: e?.message || '连接失败' });
@@ -3723,9 +3729,18 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
         // MCP
         try {
-          const o = new SoMcpOutput();
-          await ctx.mcpAccess.soMcp(new SoMcpInput(), new McpContext(), o);
-          components.push({ name: 'MCP', status: 'healthy', message: `${o.total ?? 0} 个实例`, details: { '实例': o.total ?? 0 } });
+          const enabledProviderCount = await ctx.relationDb.count('mcp_provider', [
+            { field: 'enable', operator: Operator.EQ, value: 1 },
+          ]);
+          const enabledMcpCount = await ctx.relationDb.count('mcp_install', [
+            { field: 'enable', operator: Operator.EQ, value: 1 },
+          ]);
+          components.push({
+            name: 'MCP',
+            status: 'healthy',
+            message: `${enabledMcpCount} 个启用 MCP`,
+            details: { '启用提供商': enabledProviderCount, '启用 MCP': enabledMcpCount },
+          });
         } catch (e: any) {
           components.push({ name: 'MCP', status: 'unhealthy', message: e?.message || '连接失败' });
         }
@@ -3751,7 +3766,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { status, uptime: Math.round(process.uptime()), components });
 
       } else if (method === 'GET' && pathname === '/api/monitor/resources') {
-        sendJson(res, 200, { cpu: 25.5, memory: 42.3, disk: 58.1 });
+        const metrics = ctx.systemMonitorAccess.collect();
+        sendJson(res, 200, { cpu: metrics.cpu, memory: metrics.memory, disk: metrics.disk });
       } else if (method === 'GET' && pathname === '/api/analytics/token-trend') {
         // 按天聚合 llm_usage 的 token 用量（input_tokens + output_tokens）
         const rows = ctx.relationDb.queryRaw<{ date: string; tokens: number }>(

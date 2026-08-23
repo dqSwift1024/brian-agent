@@ -50,7 +50,7 @@ Monitor Application 是系统可观测性的统一入口，位于 Application �
     },
     {
       "name": "LLM Provider", "status": "healthy", "message": "0ms",
-      "details": { "提供商": 14, "启用模型": 2 }
+      "details": { "启用提供商": 14, "启用模型": 2 }
     },
     { "name": "MCP", "status": "healthy", "message": "1 个实例", "details": { "实例": 1 } },
     {

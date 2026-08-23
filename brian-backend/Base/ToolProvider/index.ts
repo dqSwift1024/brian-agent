@@ -11,7 +11,9 @@
 
 export { ToolAccess } from './access/ToolAccess';
 export { HttpAccess } from './access/HttpAccess';
+export { SystemMonitorAccess } from './access/SystemMonitorAccess';
 export type { HttpRequest, HttpResponse } from './domain/HttpTypes';
+export type { SystemResourceMetrics } from './domain/SystemMonitorTypes';
 export { ToolSchemaInitializer } from './infrastructure/ToolSchemaInitializer';
 export { IdGenerator } from './IdGenerator';
 export { JsonParser } from './JsonParser';
