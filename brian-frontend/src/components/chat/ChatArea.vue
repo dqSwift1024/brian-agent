@@ -186,41 +186,92 @@ const confirmingIntent = ref(false)
 //   }
 // }
 
-// ===== 修改后：点击按钮立即关闭弹窗，confirm-intent 后台异步完成后再刷新历史与回写内容 =====
+// ===== 修改后：点击按钮立即关闭弹窗，confirm-intent 改为 SSE 流式完成后实时展示思考过程与系统回答，最后刷新历史 =====
 async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
   const conf = sessionStore.intentConfirmation
   if (!conf) return
+  // 防重复调用：confirmingIntent 为 true 时说明已有确认请求在进行中
+  if (confirmingIntent.value) return
+  confirmingIntent.value = true
   // 立即关闭确认弹窗，避免后端同步重入编排（APPROVE/KEEP 会重新执行完整编排、耗时较长）期间弹窗长期停留
   sessionStore.clearIntentConfirmation()
-  confirmingIntent.value = true
+
+  const botMsgId = `msg-${Date.now()}-confirm`
+  textBlockId = null
+  sessionStore.setStreaming(true)
+  sessionStore.resetPlanning()
+  sessionStore.resetAgentStatus()
+
   try {
-    await chatApi.confirmIntent({
-      session_id: conf.session_id,
-      work_id: conf.work_id,
-      action,
-      understood_requirement: action === 'APPROVE' ? conf.understood_requirement : undefined,
+    const abortCtrl = new AbortController()
+    sessionStore.setCancelController(abortCtrl)
+
+    const res = await fetch('/api/chat/confirm-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: conf.session_id,
+        work_id: conf.work_id,
+        action,
+        understood_requirement: action === 'APPROVE' ? conf.understood_requirement : undefined,
+      }),
+      signal: abortCtrl.signal,
     })
-  } catch (err) {
-    const errBlock: Block = {
-      id: `block-err-${Date.now()}`,
-      msgId: `msg-${Date.now()}`,
-      role: 'system',
-      type: 'ErrorFallback',
-      message: err instanceof Error ? err.message : '确认需求失败',
-      errorCode: 'CONFIRM_INTENT_FAILED',
-      retryAvailable: false,
-      meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
-    } as Block
-    sessionStore.addBlock(errBlock)
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) { // eslint-disable-line no-constant-condition
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const rawData = JSON.parse(line.slice(6))
+            handleStreamEvent(rawData, botMsgId)
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name !== 'AbortError') {
+      const errBlock: Block = {
+        id: `block-err-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'system',
+        type: 'ErrorFallback',
+        message: err instanceof Error ? err.message : '确认需求失败',
+        errorCode: 'CONFIRM_INTENT_FAILED',
+        retryAvailable: false,
+        meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+      } as Block
+      sessionStore.addBlock(errBlock)
+    }
   } finally {
     confirmingIntent.value = false
-    // 确认后刷新历史与 ChatMap，展示本轮最终结果
+    sessionStore.finalizeBlocks(botMsgId)
+    sessionStore.setStreaming(false)
+    sessionStore.setCancelController(null)
+    // 确认后刷新历史与 ChatMap，展示本轮最终结果。
+    // 后端 confirmIntent（APPROVE）已同步更新 info_raw 的 REQUEST 消息内容，加载回来即为替换后的需求。
     const sid = sessionStore.currentSessionId
     if (sid) {
       await sessionStore.loadDag(sid, 'default-user')
       await sessionStore.loadChatHistory(sid, 'default-user')
     }
-    // 按需求理解：用理解后的需求替换用户原始输入
+    // 清理流式期间生成的临时文本段落 Block，避免与后端加载回来的 ChatMessage 重复展示
+    sessionStore.cleanupTransientTextBlocks(botMsgId)
+    sessionStore.clearSelection()
+    // 兜底：若后端未同步成功，本地用理解后的需求替换用户原始输入，保证界面即时一致
     if (action === 'APPROVE' && conf.understood_requirement) {
       sessionStore.replaceUserMessageContent(conf.original_query, conf.understood_requirement)
     } else if (action === 'CANCEL') {

@@ -1199,6 +1199,30 @@ export class ChatService {
     output.success = confirmOut.success;
     output.action_applied = confirmOut.action_applied;
     output.next_status = confirmOut.next_status;
+    output.final_response = confirmOut.final_response || '';
+    output.interact_id = confirmOut.interact_id || '';
+
+    // 确认重入编排完成（APPROVE/KEEP）后，经 StreamAccess 流式回传最终回复与 done 事件，
+    // 使前端在确认请求内实时展示思考过程与系统回答（此前为同步 JSON 请求，前端无流式进度）。
+    const finalResponse = output.final_response;
+    if (input.action !== 'CANCEL') {
+      if (this.streamAccess && typeof this.streamAccess.pushText === 'function' && finalResponse) {
+        await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
+          work_id: input.work_id,
+          interact_id: output.interact_id,
+          chunk_delay_ms: 0,
+        });
+      }
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+        await this.streamAccess.pushEvent(input.session_id, 'done', 'CONTROL', {
+          work_id: input.work_id,
+          interact_id: output.interact_id,
+          final_response: finalResponse,
+          paused: false,
+        }, { work_id: input.work_id, interact_id: output.interact_id });
+      }
+    }
+
     return ok;
   }
 

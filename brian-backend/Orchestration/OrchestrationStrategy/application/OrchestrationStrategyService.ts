@@ -14,7 +14,7 @@ import type {
 import {
   BuildAgentInput, BuildAgentOutput,
   AgentBuilderContext,
-  PlanInput, PlanOutput,
+  PlanHierarchicalInput, PlanHierarchicalOutput,
   ReplanInput, ReplanOutput,
   PlannerAgentContext,
   WriteInput, WriteOutput,
@@ -272,13 +272,13 @@ export class OrchestrationStrategyService {
     });
     await this.relationDb.updateDB(updPlanInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
 
-    const planInput = Object.assign(new PlanInput(), {
+    const planInput = Object.assign(new PlanHierarchicalInput(), {
       work_id: input.work_id,
       interact_id: input.interact_id,
       task_content: input.user_query,
     });
-    const planOutput = new PlanOutput();
-    const planSuccess = await this.plannerAgent.plan(planInput, context as unknown as PlannerAgentContext, planOutput);
+    const planOutput = new PlanHierarchicalOutput();
+    const planSuccess = await this.plannerAgent.planHierarchical(planInput, context as unknown as PlannerAgentContext, planOutput);
     if (!planSuccess) {
       const updFailData: DataObject[] = [
         { field: 'execution_status', value: 'FAILED' },

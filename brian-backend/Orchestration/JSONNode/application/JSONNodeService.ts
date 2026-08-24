@@ -24,7 +24,7 @@ import {
   AgentBuilderContext,
   WriteInput, WriteOutput,
   WriterAgentContext,
-  PlanInput, PlanOutput,
+  PlanHierarchicalInput, PlanHierarchicalOutput,
   PlannerAgentContext,
   EvalWriterAgentInput, EvalWriterAgentOutput,
   EvalWorkAgentInput, EvalWorkAgentOutput,
@@ -969,13 +969,13 @@ export class JSONNodeService {
     const userQuery = (sharedData.user_query as string) ?? '';
     const savePlanKey = (params.save_plan_key as string) ?? 'plan_result';
 
-    const planInput = Object.assign(new PlanInput(), {
+    const planInput = Object.assign(new PlanHierarchicalInput(), {
       work_id: workId,
       interact_id: interactId,
       task_content: userQuery,
     });
-    const planOutput = new PlanOutput();
-    await this.plannerAgent.plan(planInput, new PlannerAgentContext(), planOutput);
+    const planOutput = new PlanHierarchicalOutput();
+    await this.plannerAgent.planHierarchical(planInput, new PlannerAgentContext(), planOutput);
 
     sharedData[savePlanKey] = {
       plan_id: planOutput.plan_id,

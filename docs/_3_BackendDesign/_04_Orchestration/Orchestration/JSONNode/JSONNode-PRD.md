@@ -186,7 +186,7 @@
 
 ### 3.7. PLAN_WORK — 规划任务（PlannerAgent）
 
-**语义**：调用 PlannerAgent 拆解任务为子任务 DAG。
+**语义**：调用 PlannerAgent 将任务拆解为**层级子任务 DAG**（LLM 单次层级拆解后，对仍复杂的叶子任务递归拆解，直到叶子任务为「小任务」或达到最大深度）。
 
 **参数**：
 ```json
@@ -196,7 +196,7 @@
 ```
 
 **处理逻辑**：
-1. 调用 PlannerAgent.plan，获取 plan_id 和 task_dag；
+1. 调用 PlannerAgent.planHierarchical，获取 plan_id 和层级 task_dag（含 parent_task_id / dependencies）；
 2. 将 plan_id 和 task_dag 写入 shared_data（键由 save_plan_key 指定）；
 3. 更新 orchestration_work 表 status 为 "PLANNING"；
 
@@ -709,3 +709,17 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 **可能存在的问题**：
   - Evolutor 评估为异步（setImmediate / MQ），用户在评估完成前打开弹窗时可能暂时看不到评估结果，稍后刷新历史即可。
   - Writer / Evolutor 仅记录 `answer` 与 `task_content`，未写 `agent_execution_trace`，故「执行过程」中其 Prompt / 思考步骤为描述性文本（后续可选扩展）。
+
+### [2026-08-24] PLAN_WORK 节点改用层级规划 planHierarchical
+
+**变更原因**：`PLAN_WORK` 原调用 `PlannerAgent.plan` 产出扁平串行 DAG，任务间无父子层级，父任务无法汇总子任务结果，且把「确认需求」「汇总报告」当作同级任务执行。
+
+**修改的方法**：
+- `JSONNodeService.handlePlanWork()` — 由 `plannerAgent.plan(PlanInput, ...)` 改为 `plannerAgent.planHierarchical(PlanHierarchicalInput, ...)`，产出层级 TaskDAG（含 parent_task_id / dependencies）。
+- `OrchestrationStrategyService.executePlanningStrategy()` — 同步改用 `planHierarchical`，保持备用路径行为一致。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— PLAN_WORK 节点产出层级 DAG，后续 BUILD_AGENT_DAG / EXEC_DAG 按叶子/父节点执行。
+
+**可能存在的问题**：
+- 依赖 PlannerAgent 新增 `planHierarchical` 接口（已同步实现）。

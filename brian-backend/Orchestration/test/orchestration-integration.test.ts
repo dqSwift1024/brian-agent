@@ -122,7 +122,7 @@ describe('Orchestration Integration', () => {
       const ctx = new OrchestrationEntryContext();
 
       await entry.receiveWork(input, ctx, output);
-      expect(plannerAgent.plan).not.toHaveBeenCalled();
+      expect(plannerAgent.planHierarchical).not.toHaveBeenCalled();
     });
 
     it('TC-INT-003: Simple 策略经过 WriterAgent 和 EvolutorAgent', async () => {

@@ -20,9 +20,11 @@ import {
   type PlannerAgentConfigRecord, type AgentPlanRecord,
   PlannerAgentContext,
   PlanInput, PlanOutput,
+  PlanHierarchicalInput, PlanHierarchicalOutput,
   ReplanInput, ReplanOutput,
   GetPlanInput, GetPlanOutput,
   ConfigPlannerAgentInput, ConfigPlannerAgentOutput,
+  type PlanTaskNode, type PlanTaskEdge, type PlanTaskDAG,
 } from '../domain/types';
 import {
   BuildSystemAgentInput, BuildSystemAgentOutput, AgentBuilderContext,
@@ -32,7 +34,21 @@ import {
 } from '../../AgentLibrary/domain/types';
 import { parseJsonObject, formatContextCategories } from '../../shared/signature';
 
-type TaskDag = PlanOutput['task_dag'];
+type TaskDag = PlanTaskDAG;
+
+/** 递归拆解最大深度（在 LLM 单次层级拆解基础上额外递归，防止无限拆解） */
+const MAX_DECOMPOSE_DEPTH = 2;
+
+/** 单次拆解的完整上下文（LLM 绑定、阈值、上限等），供 plan / planHierarchical 复用 */
+interface PlanDecomposeContext {
+  dag: TaskDag;
+  threshold: number;
+  maxSub: number;
+  llmId: string;
+  soulId: string;
+  promptId: string;
+  contextExtra: string;
+}
 
 function mapPlan(row: Record<string, unknown>): AgentPlanRecord {
   return {
@@ -59,6 +75,45 @@ export class PlannerAgentService {
   ) {}
 
   async plan(input: PlanInput, ctx: PlannerAgentContext, output: PlanOutput): Promise<boolean> {
+    const planCtx = await this.decomposeOnce(input, ctx);
+    output.plan_id = await this.persistPlan(planCtx.dag, input.work_id, input.interact_id, ctx, '');
+    output.task_dag = planCtx.dag;
+    return true;
+  }
+
+  /**
+   * 层级规划：LLM 单次产出层级 DAG 后，对仍复杂（complexity >= threshold）的叶子任务
+   * 递归调用 LLM 继续拆解，直到所有叶子任务为「小任务」或达到最大深度。
+   */
+  async planHierarchical(
+    input: PlanHierarchicalInput,
+    ctx: PlannerAgentContext,
+    output: PlanHierarchicalOutput,
+  ): Promise<boolean> {
+    const planCtx = await this.decomposeOnce(input, ctx);
+    const maxDepth = input.max_depth ?? MAX_DECOMPOSE_DEPTH;
+    const dag = await this.expandComplexLeaves(planCtx.dag, planCtx, maxDepth);
+    this.validateDag(dag, planCtx.maxSub * 4);
+    output.plan_id = await this.persistPlan(dag, input.work_id, input.interact_id, ctx, '');
+    output.task_dag = dag;
+    return true;
+  }
+
+  /** 解析 PlannerAgent、配置、上下文与 LLM 绑定，并执行一次拆解。 */
+  private async decomposeOnce(input: PlanInput, ctx: PlannerAgentContext): Promise<PlanDecomposeContext> {
+    const agent = await this.resolvePlannerAgent(ctx, input);
+    const config = await this.getConfig();
+    const threshold = config?.complexity_decompose_threshold ?? 50;
+    const maxSub = config?.max_subtask_count ?? 10;
+    const contextExtra = await this.buildPlanContext(ctx, input);
+    const llmId = await this.resolvePlanLlmId(agent, config);
+    const params = { llmId, soulId: agent?.soul_id || '', promptId: config?.plan_prompt_template_id || '', maxSub, threshold };
+    const dag = await this.decomposeTask(input.task_content, contextExtra, params);
+    return { dag, threshold, maxSub, llmId: params.llmId, soulId: params.soulId, promptId: params.promptId, contextExtra };
+  }
+
+  /** 构建 PlannerAgent（存在则复用）并返回其完整配置。 */
+  private async resolvePlannerAgent(ctx: PlannerAgentContext, input: PlanInput) {
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,
@@ -76,70 +131,127 @@ export class PlannerAgentService {
     );
     const agent = getOut.agents[0];
     if (!agent) throw new NotFoundError('PlannerAgent', buildOut.agent_id);
+    return agent;
+  }
 
-    const config = await this.getConfig();
-    const threshold = config?.complexity_decompose_threshold ?? 50;
-    const maxSub = config?.max_subtask_count ?? 10;
-
-    let contextExtra = '';
-    if (ctx.session_id) {
-      try {
-        const ctxOut = new ContextInfoOutput();
-        // ===== 原始代码（保留作为参考）=====
-        // await this.infoCore.context(
-        //   Object.assign(new ContextInfoInput(), {
-        //     session_id: ctx.session_id,
-        //     selected_msg_ids: ctx.selected_msg_ids,
-        //   }),
-        //   new InfoCoreContext(),
-        //   ctxOut,
-        // );
-
-        // ===== 修改后的代码：传入 info: input.task_content =====
-        await this.infoCore.context(
-          Object.assign(new ContextInfoInput(), {
-            session_id: ctx.session_id,
-            work_id: ctx.work_id || '',
-            selected_msg_ids: ctx.selected_msg_ids,
-            info: input.task_content,
-            persist_snapshot: false,
-          }),
-          new InfoCoreContext(),
-          ctxOut,
-        );
-        // ===== 原始方法（保留作为参考）=====
-        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
-
-        // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
-        contextExtra = formatContextCategories(ctxOut);
-      } catch { /* best-effort */ }
+  /** 构建规划上下文（结构化分类包裹），失败时返回空串。 */
+  private async buildPlanContext(ctx: PlannerAgentContext, input: PlanInput): Promise<string> {
+    if (!ctx.session_id) return '';
+    try {
+      const ctxOut = new ContextInfoOutput();
+      await this.infoCore.context(
+        Object.assign(new ContextInfoInput(), {
+          session_id: ctx.session_id,
+          work_id: ctx.work_id || '',
+          selected_msg_ids: ctx.selected_msg_ids,
+          info: input.task_content,
+          persist_snapshot: false,
+        }),
+        new InfoCoreContext(),
+        ctxOut,
+      );
+      return formatContextCategories(ctxOut);
+    } catch {
+      return '';
     }
+  }
 
-    let dag: TaskDag | null = null;
-    // LLM 绑定只存在于 LLMProvider 的 agent_llm：配置未指定时经 Core.matchLLM 解析
-    let targetLlmId = config?.llm_id || '';
-    if (!targetLlmId && agent?.agent_id && this.llmCore) {
-      targetLlmId = await this.resolveLlm(agent.agent_id);
-    }
-    dag = await this.llmPlan(targetLlmId, agent?.soul_id || '', config?.plan_prompt_template_id || '', input.task_content, contextExtra, maxSub);
-    if (!dag) {
-      const complexity = this.estimateComplexity(input.task_content);
-      if (complexity < threshold) {
-        dag = this.singleNodeDag(input.task_content, complexity);
+  /** 解析 Planner 绑定的 LLM：配置优先，其次经 Core.matchLLM 解析。 */
+  private async resolvePlanLlmId(agent: { agent_id?: string }, config: PlannerAgentConfigRecord | null): Promise<string> {
+    if (config?.llm_id) return config.llm_id;
+    if (agent?.agent_id && this.llmCore) return await this.resolveLlm(agent.agent_id);
+    return '';
+  }
+
+  /** 执行一次拆解；LLM 失败时降级为单节点 DAG。 */
+  private async decomposeTask(
+    task: string,
+    contextExtra: string,
+    params: { llmId: string; soulId: string; promptId: string; maxSub: number },
+  ): Promise<TaskDag> {
+    const dag = await this.llmPlan(params.llmId, params.soulId, params.promptId, task, contextExtra, params.maxSub);
+    if (dag) return dag;
+    return this.singleNodeDag(task, this.estimateComplexity(task));
+  }
+
+  /** 落库规划并写 InfoCore 记录，返回 plan_id。 */
+  private async persistPlan(
+    dag: TaskDag,
+    workId: string,
+    interactId: string,
+    ctx: PlannerAgentContext,
+    parentPlanId: string,
+  ): Promise<string> {
+    const planId = IdGenerator.generate();
+    await this.insertPlan(planId, workId, interactId, dag, parentPlanId);
+    await this.savePlanInfo(ctx, workId, interactId, planId, dag);
+    return planId;
+  }
+
+  /** 递归拆解：对仍复杂的叶子任务继续调用 LLM 拆解，父任务汇总子任务结果。 */
+  private async expandComplexLeaves(dag: TaskDag, planCtx: PlanDecomposeContext, depth: number): Promise<TaskDag> {
+    if (depth <= 0) return dag;
+    const childMap = this.buildChildMap(dag.nodes);
+    const nodes: PlanTaskNode[] = [];
+    const edges: PlanTaskEdge[] = [...dag.edges];
+    for (const node of dag.nodes) {
+      if (this.hasChildren(node.task_id, childMap) || node.task_complexity < planCtx.threshold) {
+        nodes.push(node);
       } else {
-        // 无 LLM 时保守单节点，避免假拆分
-        dag = this.singleNodeDag(input.task_content, complexity);
+        await this.decomposeLeaf(node, planCtx, depth, nodes, edges);
       }
     }
+    return { nodes, edges };
+  }
 
-    this.validateDag(dag, maxSub);
-    const planId = IdGenerator.generate();
-    await this.insertPlan(planId, input.work_id, input.interact_id, dag, '');
-    await this.savePlanInfo(ctx, input.work_id, input.interact_id, planId, dag);
+  /** 拆解单个复杂叶子：当前节点转为父任务，其子任务挂载为新的叶子节点。 */
+  private async decomposeLeaf(
+    node: PlanTaskNode,
+    planCtx: PlanDecomposeContext,
+    depth: number,
+    nodes: PlanTaskNode[],
+    edges: PlanTaskEdge[],
+  ): Promise<void> {
+    const subDag = await this.llmPlan(planCtx.llmId, planCtx.soulId, planCtx.promptId, node.task_content, planCtx.contextExtra, planCtx.maxSub);
+    if (!subDag || subDag.nodes.length <= 1) {
+      nodes.push(node);
+      return;
+    }
+    const root = this.findRoot(subDag.nodes);
+    const children = this.findChildren(subDag.nodes, root?.task_id);
+    const renamed = children.map((c) => ({ ...c, task_id: IdGenerator.generate(), parent_task_id: node.task_id }));
+    nodes.push({ ...node, task_content: root?.task_content ?? node.task_content, dependencies: renamed.map((c) => c.task_id) });
+    for (const child of renamed) {
+      edges.push({ from_task_id: child.task_id, to_task_id: node.task_id });
+      await this.decomposeLeaf(child, planCtx, depth - 1, nodes, edges);
+    }
+  }
 
-    output.plan_id = planId;
-    output.task_dag = dag;
-    return true;
+  private buildChildMap(nodes: PlanTaskNode[]): Map<string, string[]> {
+    const map = new Map<string, string[]>();
+    for (const n of nodes) {
+      if (!n.parent_task_id) continue;
+      const list = map.get(n.parent_task_id) ?? [];
+      list.push(n.task_id);
+      map.set(n.parent_task_id, list);
+    }
+    return map;
+  }
+
+  private hasChildren(taskId: string, childMap: Map<string, string[]>): boolean {
+    return (childMap.get(taskId)?.length ?? 0) > 0;
+  }
+
+  private findRoot(nodes: PlanTaskNode[]): PlanTaskNode | undefined {
+    return nodes.find((n) => !n.parent_task_id);
+  }
+
+  private findChildren(nodes: PlanTaskNode[], rootId?: string): PlanTaskNode[] {
+    if (rootId) {
+      const direct = nodes.filter((n) => n.parent_task_id === rootId);
+      if (direct.length > 0) return direct;
+    }
+    return nodes.filter((n) => n.parent_task_id);
   }
 
   /**
@@ -317,10 +429,11 @@ export class PlannerAgentService {
       const nodes = (parsed.nodes as TaskDag['nodes']) ?? [];
       const edges = (parsed.edges as TaskDag['edges']) ?? [];
       if (!Array.isArray(nodes) || nodes.length === 0) return null;
-      // 补全 task_id
+      // 补全 task_id / parent_task_id / dependencies，保证后续层级与执行依赖计算稳定
       for (const n of nodes) {
         if (!n.task_id) n.task_id = IdGenerator.generate();
         if (!n.dependencies) n.dependencies = [];
+        if (n.parent_task_id === undefined || n.parent_task_id === null) n.parent_task_id = '';
       }
       return { nodes, edges };
     } catch {

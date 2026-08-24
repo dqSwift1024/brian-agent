@@ -654,14 +654,28 @@ export const useSessionStore = defineStore('session', () => {
     ERROR: 'EXEC_FAILED',
   }
 
-  // 记录某 Agent 的执行状态，并同步到 AgentDAG 节点（供"思考过程"弹窗 AgentDAG 状态着色与执行联动）
+  // ===== 记录某 Agent 的执行状态，并同步到 AgentDAG 节点（供"思考过程"弹窗 AgentDAG 状态着色与执行联动） =====
+  // 状态只能向前推进：PENDING → RUNNING → SUCCESS/ERROR，不允许回退（如 SUCCESS → RUNNING）
+  const STATUS_ORDER: Record<AgentExecutionStatus, number> = {
+    PENDING: 0,
+    RUNNING: 1,
+    SUCCESS: 2,
+    ERROR: 2,
+  }
+
   function setAgentStatus(agentId: string, status: AgentExecutionStatus, agentName?: string) {
     if (!agentId) return
+    const prev = agentExecutions.value[agentId]
+    const prevOrder = prev ? (STATUS_ORDER[prev.status] ?? 0) : -1
+    const newOrder = STATUS_ORDER[status] ?? 0
+    // 仅允许状态向前推进，不允许回退
+    if (prev && newOrder < prevOrder) return
+
     agentExecutions.value = {
       ...agentExecutions.value,
       [agentId]: {
         status,
-        agentName: agentName ?? agentExecutions.value[agentId]?.agentName,
+        agentName: agentName ?? prev?.agentName,
         updatedAt: Date.now(),
       },
     }

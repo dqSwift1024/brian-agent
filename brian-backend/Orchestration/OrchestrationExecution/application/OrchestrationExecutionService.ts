@@ -136,87 +136,16 @@ export class OrchestrationExecutionService {
     const taskAgentMap: Record<string, string> = {};
     const sessionId = context.session_id ?? '';
     const workId = context.work_id ?? '';
+    const childMap = this.buildTaskChildMap(task_dag.nodes);
 
     const buildOne = async (taskNode: TaskNode, index: number): Promise<void> => {
-      const taskAgentRecordId = IdGenerator.generate();
-      const now = IdGenerator.now();
-
-      const insInput = Object.assign(new InsertDBInput(), {
-        table: ORCHESTRATION_TASK_AGENT_TABLE,
-        data: [
-          { field: 'id', value: taskAgentRecordId },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'plan_id', value: plan_id },
-          { field: 'task_id', value: taskNode.task_id },
-          { field: 'agent_id', value: '' },
-          { field: 'task_complexity', value: taskNode.task_complexity ?? null },
-          { field: 'task_domain', value: taskNode.task_domain ?? null },
-        ] as DataObject[],
-      });
-      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
-
-      let agentId = '';
-      let status = 'PENDING';
-
-      try {
-        const buildInput = Object.assign(new BuildAgentInput(), {
-          interact_id,
-          task_content: taskNode.task_content,
-          task_complexity: taskNode.task_complexity,
-          task_domain: taskNode.task_domain,
-          force_new,
-        });
-        const buildOutput = new BuildAgentOutput();
-        // 透传 session_id / work_id / interact_id，使 AgentBuilder 在构建过程中
-        // 流式推送 agent_building / agent_matched / agent_built 事件，供前端实时展示构建进度。
-        const builderCtx = Object.assign(new AgentBuilderContext(), {
-          session_id: sessionId,
-          work_id: workId,
-          interact_id,
-        });
-        const buildSuccess = await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
-        if (!buildSuccess) {
-          status = 'BUILD_FAILED';
-        } else {
-          agentId = buildOutput.agent_id;
-          if (!agentId) status = 'BUILD_FAILED';
-        }
-      } catch (err: unknown) {
-        status = 'BUILD_FAILED';
-        this.logger?.error?.('buildAgentDAG: agent build failed', {
-          task_id: taskNode.task_id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-
+      const taskAgentRecordId = await this.insertTaskAgentRecord(plan_id, taskNode);
+      const { agentId, status } = await this.buildLeafAgent(taskNode, interact_id, sessionId, workId, force_new);
       if (agentId) {
-        const updInput = Object.assign(new UpdateDBInput(), {
-          table: ORCHESTRATION_TASK_AGENT_TABLE,
-          data: [
-            { field: 'agent_id', value: agentId },
-            { field: 'updated', value: IdGenerator.now() },
-          ] as DataObject[],
-          conditions: [
-            { field: 'id', operator: Operator.EQ, value: taskAgentRecordId },
-          ] as Condition[],
-        });
-        await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-      }
-
-      agentNodes[index] = {
-        agent_id: agentId,
-        task_id: taskNode.task_id,
-        task_content: taskNode.task_content,
-        task_complexity: taskNode.task_complexity,
-        task_domain: taskNode.task_domain,
-        task_priority: taskNode.priority,
-        status,
-      };
-
-      if (agentId) {
+        await this.updateTaskAgentRecord(taskAgentRecordId, agentId);
         taskAgentMap[taskNode.task_id] = agentId;
       }
+      agentNodes[index] = this.buildAgentNode(taskNode, agentId, status, childMap);
     };
 
     // ===== 修改后：按配置中心的 max_concurrent 并发构建 Work Agent =====
@@ -343,6 +272,110 @@ export class OrchestrationExecutionService {
     output.agent_dag = agentDag;
     output.task_agent_map = taskAgentMap;
     return true;
+  }
+
+  /** 依据 parent_task_id 构建 task → 子任务数量映射，用于判定叶子 / 父任务。 */
+  private buildTaskChildMap(nodes: TaskNode[]): Map<string, number> {
+    const map = new Map<string, number>();
+    for (const n of nodes) {
+      if (!n.parent_task_id) continue;
+      map.set(n.parent_task_id, (map.get(n.parent_task_id) ?? 0) + 1);
+    }
+    return map;
+  }
+
+  private isParentTask(taskId: string, childMap: Map<string, number>): boolean {
+    return (childMap.get(taskId) ?? 0) > 0;
+  }
+
+  private async insertTaskAgentRecord(planId: string, taskNode: TaskNode): Promise<string> {
+    const taskAgentRecordId = IdGenerator.generate();
+    const now = IdGenerator.now();
+    const insInput = Object.assign(new InsertDBInput(), {
+      table: ORCHESTRATION_TASK_AGENT_TABLE,
+      data: [
+        { field: 'id', value: taskAgentRecordId },
+        { field: 'created', value: now },
+        { field: 'updated', value: now },
+        { field: 'plan_id', value: planId },
+        { field: 'task_id', value: taskNode.task_id },
+        { field: 'agent_id', value: '' },
+        { field: 'task_complexity', value: taskNode.task_complexity ?? null },
+        { field: 'task_domain', value: taskNode.task_domain ?? null },
+      ] as DataObject[],
+    });
+    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    return taskAgentRecordId;
+  }
+
+  /** 为叶子任务构建 / 复用 WorkAgent。 */
+  private async buildLeafAgent(
+    taskNode: TaskNode,
+    interactId: string,
+    sessionId: string,
+    workId: string,
+    forceNew?: boolean,
+  ): Promise<{ agentId: string; status: string }> {
+    try {
+      const buildInput = Object.assign(new BuildAgentInput(), {
+        interact_id: interactId,
+        task_content: taskNode.task_content,
+        task_complexity: taskNode.task_complexity,
+        task_domain: taskNode.task_domain,
+        force_new: forceNew,
+      });
+      const buildOutput = new BuildAgentOutput();
+      const builderCtx = Object.assign(new AgentBuilderContext(), {
+        session_id: sessionId,
+        work_id: workId,
+        interact_id: interactId,
+      });
+      const ok = await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
+      if (!ok || !buildOutput.agent_id) return { agentId: '', status: 'BUILD_FAILED' };
+      return { agentId: buildOutput.agent_id, status: 'PENDING' };
+    } catch (err: unknown) {
+      this.logger?.error?.('buildAgentDAG: agent build failed', {
+        task_id: taskNode.task_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { agentId: '', status: 'BUILD_FAILED' };
+    }
+  }
+
+  private async updateTaskAgentRecord(recordId: string, agentId: string): Promise<void> {
+    const updInput = Object.assign(new UpdateDBInput(), {
+      table: ORCHESTRATION_TASK_AGENT_TABLE,
+      data: [
+        { field: 'agent_id', value: agentId },
+        { field: 'updated', value: IdGenerator.now() },
+      ] as DataObject[],
+      conditions: [{ field: 'id', operator: Operator.EQ, value: recordId }] as Condition[],
+    });
+    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+  }
+
+  private buildAgentNode(taskNode: TaskNode, agentId: string, status: string, childMap: Map<string, number>): AgentNode {
+    const nodeKind = this.isParentTask(taskNode.task_id, childMap) ? 'PARENT' : 'LEAF';
+    return {
+      agent_id: agentId,
+      task_id: taskNode.task_id,
+      parent_task_id: taskNode.parent_task_id,
+      task_content: taskNode.task_content,
+      task_complexity: taskNode.task_complexity,
+      task_domain: taskNode.task_domain,
+      task_priority: taskNode.priority,
+      status,
+      node_kind: nodeKind,
+    };
+  }
+
+  /** 组合任务执行内容：父任务结合子任务结果汇总，叶子任务携带上游工作摘要。 */
+  private buildExecTaskContent(node: AgentNode, upstreamSummaries: string[]): string {
+    if (upstreamSummaries.length === 0) return node.task_content;
+    if (node.node_kind === 'PARENT') {
+      return `子任务已完成的结果：\n${upstreamSummaries.join('\n')}\n---\n请结合上述子任务结果，汇总产出父任务结果：${node.task_content}`;
+    }
+    return `上游Agent完成的工作摘要：\n${upstreamSummaries.join('\n')}\n---\n当前任务：${node.task_content}`;
   }
 
   // -------------------------------------------------------------------------
@@ -933,13 +966,11 @@ export class OrchestrationExecutionService {
     const nodes = agent_dag.agent_nodes;
     const edges = agent_dag.agent_edges;
 
-    // 节点执行器：串行模式下注入上游输出摘要，随后调用 execSingleAgent 执行单个 Work Agent。
+    // 节点执行器：注入上游（子任务）输出摘要，随后调用 execSingleAgent 执行 Work Agent。
+    // 父任务（PARENT）结合子任务结果汇总产出父任务结果；叶子任务（LEAF）执行具体工作。
     // 失败时抛 DagNodeFailureError，由 DagScheduler 统一收敛为权威失败信息并快速失败。
     const executor: DagNodeExecutor = async (node, upstreamSummaries) => {
-      let taskContent = node.task_content;
-      if (upstreamSummaries.length > 0) {
-        taskContent = `上游Agent完成的工作摘要：\n${upstreamSummaries.join('\n')}\n---\n当前任务：${node.task_content}`;
-      }
+      const taskContent = this.buildExecTaskContent(node, upstreamSummaries);
 
       const singleInput = Object.assign(new ExecSingleAgentInput(), {
         work_id,

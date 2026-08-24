@@ -585,6 +585,22 @@ export class DelInfoOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// updateInfo (rewrite info content, e.g. intent confirmation APPROVE)
+// ---------------------------------------------------------------------------
+
+/** updateInfo 入参：按 work_id + info_type 定位并改写 info 内容 */
+export class UpdateInfoInput extends Input {
+  work_id!: string;
+  info_type!: string;
+  info!: string;
+}
+
+/** updateInfo 出参 */
+export class UpdateInfoOutput extends Output {
+  updated_count = 0;
+}
+
+// ---------------------------------------------------------------------------
 // Assist — exist checks
 // ---------------------------------------------------------------------------
 

@@ -34,20 +34,24 @@
     {
       "agent_id": "uuid",
       "task_id": "uuid",
+      "parent_task_id": "",
       "task_content": "子任务1：查询用户数据",
       "task_complexity": 25,
       "task_domain": "data_query",
       "task_priority": 1,
-      "status": "PENDING"
+      "status": "PENDING",
+      "node_kind": "LEAF"
     },
     {
       "agent_id": "uuid",
       "task_id": "uuid",
-      "task_content": "子任务2：分析用户数据并生成报告",
+      "parent_task_id": "task_uuid_1",
+      "task_content": "汇总：整合子任务结果生成报告",
       "task_complexity": 60,
       "task_domain": "data_analysis",
       "task_priority": 2,
-      "status": "PENDING"
+      "status": "PENDING",
+      "node_kind": "PARENT"
     }
   ],
   "agent_edges": [
@@ -56,7 +60,7 @@
       "to_task_id": "task_uuid_2",
       "from_agent_id": "agent_id_1",
       "to_agent_id": "agent_id_2",
-      "data_dependency": "上游输出作为下游输入"
+      "data_dependency": "子任务输出作为父任务汇总输入"
     }
   ]
 }
@@ -66,6 +70,10 @@
 > `from_agent_id` / `to_agent_id` 仅用于可视化展示。当一个 Agent 复用处理多个 task 时，
 > 若仅保留 agent 级边，`task_1(agent A) → task_3(agent B) → task_4(agent A)` 这类链会被错误展开为
 > agent 级环（A → B → A），导致 execDAG 无入度零节点、整图死锁。因此执行层必须以 task 级边计算拓扑。
+
+> **层级语义（2026-08-24 新增）**：`parent_task_id` 表达拆解层级（父任务拆出子任务，根任务为空），
+> `node_kind` 区分 `LEAF`（叶子任务，WorkAgent 直接执行）与 `PARENT`（父任务，等待所有子任务完成后结合子任务结果汇总产出）。
+> AgentDAG 的执行边方向为「子任务 → 父任务」，与 TaskDAG 的拆解方向（`parent_task_id` 父 → 子）相反；叶子节点与父节点均构建 WorkAgent，父节点执行时注入其全部子任务结果摘要。
 
 **处理流程**：
 
@@ -151,9 +159,9 @@
 
 2. **DAG 执行循环（有界并发 worker pool）**
    a. 启动 `min(concurrency, total)` 个 worker，从就绪队列取节点执行（入度归零即入队，节点完成后实时释放下游）：
-      - 串行模式（concurrency === 1）：将上游输出摘要（前 500 字）拼接到当前 task_content 前端：
+      - 将上游（子任务）输出摘要拼接到当前 task_content 前端（父任务汇总子任务结果，叶子任务携带上游工作摘要）：
         ```
-        上游Agent完成的工作摘要：\n{上游输出1}\n{上游输出2}\n---\n当前任务：{原始 task_content}
+        子任务已完成的结果：\n{子任务输出1}\n{子任务输出2}\n---\n请结合上述子任务结果，汇总产出父任务结果：{原始 task_content}
         ```
       - 每个节点经 `execSingleAgent` 执行（内部通过 InfoCore.saveInfo 持久化 ACT 记录）；
       - 每完成一个节点，回调更新 `orchestration_work.completed_task_count`；
@@ -470,3 +478,19 @@
 **可能存在的问题**：
 - 存量 `agent_dag_json` 快照中的旧边不含 from_task_id/to_task_id，execDAG 会回退到 agent_id → task_id 唯一映射（1:1 场景正确）；agent 复用场景的旧快照无法精确还原 task 级拓扑，属历史数据限制，新 work 不受影响。
 - 超时取消的节点不再计入 failed_count（语义从「失败」修正为「取消」），无既有测试依赖该口径。
+
+### [2026-08-24] 层级 DAG：叶子/父节点区分与父任务汇总
+
+**变更原因**：Planner 原产出扁平串行 DAG，所有任务同级执行，「父任务汇总子任务结果」的语义缺失；且并发模式下上游摘要不注入，父任务拿不到子任务结果。
+
+**修改的方法**：
+- `OrchestrationExecution/domain/types.ts` — `TaskNode` 新增 `parent_task_id` / `dependencies`；`AgentNode` 新增 `parent_task_id` / `node_kind`（LEAF/PARENT）。
+- `OrchestrationExecutionService.buildAgentDAG()` — 依据 `parent_task_id` 构建 childMap，区分叶子/父节点（均构建 WorkAgent），抽取 `insertTaskAgentRecord` / `buildLeafAgent` / `updateTaskAgentRecord` / `buildAgentNode` 等小方法。
+- `OrchestrationExecutionService.execDAG()` + 新增 `buildExecTaskContent()` — 父任务注入全部子任务结果摘要（「请结合上述子任务结果，汇总产出父任务结果」），叶子任务携带上游工作摘要。
+- `DagScheduler.run()` — 上游摘要注入由「仅串行模式」改为「始终注入」（拓扑保证父任务入队时子任务已完成，并发安全）。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— EXEC_DAG 阶段父任务等待所有子任务完成后，结合子任务结果汇总产出父任务结果。
+
+**可能存在的问题**：
+- 历史扁平 DAG 无 `parent_task_id`，全部视为叶子任务（向后兼容），不触发父任务汇总。

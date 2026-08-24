@@ -225,7 +225,7 @@ describe('OrchestrationStrategy', () => {
     });
 
     it('TC-EPS-007: PlannerAgent.plan 返回空 task_dag', async () => {
-      plannerAgent.plan.mockImplementationOnce(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, _c: any, o: any) => {
         o.plan_id = 'empty-plan';
         o.task_dag = { nodes: [], edges: [] };
         return true;
@@ -243,7 +243,7 @@ describe('OrchestrationStrategy', () => {
     });
 
     it('TC-EPS-008: PlannerAgent.plan 执行失败', async () => {
-      plannerAgent.plan.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'plan failed'; return false; });
+      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'plan failed'; return false; });
       const input = Object.assign(new ExecutePlanningStrategyInput(), {
         work_id: 'w11', interact_id: 'i11', session_id: 's11',
         user_query: '请帮我分析数据',

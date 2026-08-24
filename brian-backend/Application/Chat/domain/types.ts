@@ -174,6 +174,8 @@ export class ConfirmIntentOutput extends Output {
   success = false;
   action_applied = '';
   next_status = '';
+  final_response = '';
+  interact_id = '';
 }
 
 export class ConfigChatInput extends Input {

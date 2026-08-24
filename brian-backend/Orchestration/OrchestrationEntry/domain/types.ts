@@ -114,6 +114,9 @@ export class ConfirmIntentOutput extends Output {
   success = false;
   action_applied = '';
   next_status = '';
+  /** 确认后重入编排得到的最终回复（CANCEL 或失败时为空），供 SSE 流式回传 */
+  final_response = '';
+  interact_id = '';
 }
 
 export class ConfigOrchestrationEntryInput extends Input {

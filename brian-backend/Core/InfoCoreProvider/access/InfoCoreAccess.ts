@@ -70,6 +70,8 @@ import {
   UpdateInfoContextConfigOutput,
   DelInfoInput,
   DelInfoOutput,
+  UpdateInfoInput,
+  UpdateInfoOutput,
   ExistInfoInput,
   ExistInfoOutput,
 } from '../domain/types';
@@ -383,6 +385,15 @@ export class InfoCoreAccess {
     output: DelInfoOutput,
   ): Promise<boolean> {
     return this.service.delInfo(input, context, output);
+  }
+
+  /** 改写指定 work 下某 info_type 的 info 内容（如需求确认 APPROVE 替换 REQUEST）。 */
+  async updateInfo(
+    input: UpdateInfoInput,
+    context: InfoCoreContext,
+    output: UpdateInfoOutput,
+  ): Promise<boolean> {
+    return this.service.updateInfo(input, context, output);
   }
 
   // -------------------------------------------------------------------------

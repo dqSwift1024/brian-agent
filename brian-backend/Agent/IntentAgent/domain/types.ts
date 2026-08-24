@@ -8,7 +8,7 @@ export class IntentAgentContext extends Context {
 
 export const INTENT_SOUL_BRIEF = '内置需求理解与意图比对专家';
 export const INTENT_SOUL_CONTENT =
-  '你是一个精通需求分析与意图推断的专业 Agent。你的职责是结合用户的最新输入、历史沟通对话、固定钉住的信息以及引用的特定消息，准确归算推断用户真实的意图与核心需求，并对原始输入与理解需求的匹配程度进行 0-100 的打分。';
+  '你是一个精通需求分析与意图推断的专业 Agent。你的职责是结合用户的最新输入、历史沟通对话、固定钉住的信息以及引用的特定消息，将模糊或不完整的用户需求改写为明确、具体、可直接交付执行 Agent 的任务描述，并对原始输入与理解需求的匹配程度进行 0-100 的打分。';
 export const INTENT_SOUL_USAGE = '系统内置 - 需求理解与意图匹配评估';
 
 export class UnderstandRequirementInput extends Input {

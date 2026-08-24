@@ -10,7 +10,7 @@ import {
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput } from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput, UpdateInfoInput, UpdateInfoOutput } from '@brian-agent/core';
 import type { WriterAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
 import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
@@ -890,6 +890,12 @@ export class OrchestrationEntryService {
       finalQuery = input.understood_requirement || String(metadata.understood_requirement || record.user_query);
     }
 
+    // APPROVE 且需求被改写时，同步更新 info_raw 中已保存的 REQUEST 消息内容，
+    // 保证对话历史 / ChatMap 展示的是理解后的需求而非原始模糊输入。
+    if (input.action === 'APPROVE' && finalQuery !== String(record.user_query)) {
+      await this.rewriteRequestInfo(input.work_id, finalQuery);
+    }
+
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: String(record.session_id),
       user_query: finalQuery,
@@ -906,6 +912,8 @@ export class OrchestrationEntryService {
     output.success = ok;
     output.action_applied = input.action;
     output.next_status = 'PROCESSING';
+    output.final_response = rwOutput.final_response || '';
+    output.interact_id = rwOutput.interact_id || String(record.interact_id || '');
     return ok;
   }
 
@@ -923,6 +931,27 @@ export class OrchestrationEntryService {
       ] as Condition[],
     });
     await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+  }
+
+  /**
+   * 需求确认 APPROVE 时，将 info_raw 中该 work 已落库的 REQUEST 消息内容改写为
+   * 理解后的需求，保证对话历史 / ChatMap 与前端展示一致（前后端同步替换）。
+   * best-effort：改写失败不影响后续编排。
+   */
+  private async rewriteRequestInfo(workId: string, newContent: string): Promise<void> {
+    try {
+      const updIn = Object.assign(new UpdateInfoInput(), {
+        work_id: workId,
+        info_type: InfoType.REQUEST,
+        info: newContent,
+      });
+      await this.infoCore.updateInfo(updIn, new InfoCoreContext(), new UpdateInfoOutput());
+    } catch (err) {
+      this.logger?.error?.('rewriteRequestInfo: update REQUEST failed', {
+        work_id: workId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private async getConfigValue(field: string, defaultValue: number): Promise<number> {

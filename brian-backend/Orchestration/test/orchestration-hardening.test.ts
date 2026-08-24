@@ -135,7 +135,7 @@ describe('Orchestration Hardening', () => {
       o.agent_id = 'mock-agent-id';
       return true;
     });
-    plannerAgent.plan.mockImplementation(async (_i: any, _c: any, o: any) => {
+    plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
       o.plan_id = 'mock-plan-id';
       const nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }> = [];
       for (let i = 0; i < 3; i++) {
@@ -421,7 +421,7 @@ describe('Orchestration Hardening', () => {
       await seedWork('w-b7', 's-b7', 'i-b7');
       await seedStrategyExecution('w-b7', 'p-b7', 0);
 
-      plannerAgent.plan.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.plan_id = 'p-b7';
         o.task_dag = {
           nodes: [{ task_id: 't-fail', task_content: 'Failing task', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }],
@@ -721,7 +721,7 @@ describe('Orchestration Hardening', () => {
       await seedWork('w-d5', 's-d5', 'i-d5');
       await seedStrategyExecution('w-d5', 'p-d5', 0);
 
-      plannerAgent.plan.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.plan_id = 'p-d5';
         o.task_dag = {
           nodes: [{ task_id: 't-fail', task_content: 'Failing task', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }],

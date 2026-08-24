@@ -13,14 +13,20 @@ export class OrchestrationExecutionConfig {
 
 export interface TaskNode {
   task_id: string;
+  /** 父任务 ID（拆解层级），根任务为 undefined */
+  parent_task_id?: string;
   task_content: string;
   task_complexity?: number;
   task_domain?: string;
   priority?: number;
+  /** 执行依赖：本任务执行前必须先完成的子任务 task_id 列表 */
+  dependencies?: string[];
 }
 
 export interface TaskEdge {
+  /** 子任务（先执行） */
   from_task_id: string;
+  /** 父任务（后执行，汇总子任务结果） */
   to_task_id: string;
 }
 
@@ -29,14 +35,20 @@ export interface TaskDAG {
   edges: TaskEdge[];
 }
 
+/** Agent 节点类型：叶子任务由 WorkAgent 执行，父任务由汇总逻辑结合子任务结果产出。 */
+export type AgentNodeKind = 'LEAF' | 'PARENT';
+
 export interface AgentNode {
   agent_id: string;
   task_id: string;
+  parent_task_id?: string;
   task_content: string;
   task_complexity?: number;
   task_domain?: string;
   task_priority?: number;
   status: string;
+  /** 区分叶子节点（WorkAgent 执行）与父节点（汇总子任务结果） */
+  node_kind: AgentNodeKind;
 }
 
 export interface AgentEdge {

@@ -30,26 +30,34 @@
   "nodes": [
     {
       "task_id": "uuid",
-      "task_content": "子任务1：查询用户数据",
-      "task_complexity": 25,
-      "task_domain": "data_query",
+      "parent_task_id": "",
+      "task_content": "汇总：整合子任务结果输出研究报告",
+      "task_complexity": 30,
+      "task_domain": "report",
       "priority": 1,
-      "dependencies": []
+      "dependencies": ["task_id_2", "task_id_3"]
     },
     {
-      "task_id": "uuid",
-      "task_content": "子任务2：分析用户数据并生成报告",
-      "task_complexity": 60,
-      "task_domain": "data_analysis",
+      "task_id": "task_id_2",
+      "parent_task_id": "task_id_1",
+      "task_content": "子任务：查询用户数据",
+      "task_complexity": 25,
+      "task_domain": "data_query",
       "priority": 2,
-      "dependencies": ["task_id_1"]
+      "dependencies": []
     }
   ],
   "edges": [
-    { "from_task_id": "task_id_1", "to_task_id": "task_id_2" }
+    { "from_task_id": "task_id_2", "to_task_id": "task_id_1" }
   ]
 }
 ```
+
+> **层级语义（2026-08-24 新增）**：
+> - `parent_task_id` 表达「拆解方向」（父任务拆出子任务），根任务为空字符串；
+> - `dependencies` 表达「执行依赖」（执行前必须先完成的子任务 task_id），叶子任务为空数组；
+> - `edges` 表达「执行方向」：`from_task_id` 为子任务（先执行），`to_task_id` 为父任务（等所有子任务完成后汇总执行）；
+> - 叶子任务由 WorkAgent 直接执行；父任务等待所有子任务完成后，结合任务目标与子任务结果汇总产出父任务结果。TaskDAG 的层级（`parent_task_id`）与 AgentDAG 的执行边方向相反。
 
 **处理流程**：
 
@@ -79,7 +87,28 @@
 
 6. 将 plan_id 和 task_dag 写入 output 返回；
 
-### 2.2. 重新规划（replan）
+### 2.2. 层级规划（planHierarchical）
+
+**功能**：在单次拆解的基础上，对仍复杂（`task_complexity >= complexity_decompose_threshold`）的叶子任务递归调用 LLM 继续拆解，直到所有叶子任务为「小任务」或达到最大深度，产出层级 TaskDAG。
+
+**入参**：
+- input：PlanHierarchicalInput（继承 Input），包含以下字段：
+  - work_id：工作 ID
+  - interact_id：交互 ID
+  - task_content：任务内容
+  - max_depth：递归拆解最大深度（可选，默认 2）
+- context：PlanContext（继承 Context），会话上下文
+- output：PlanHierarchicalOutput（继承 Output），承载返回内容：
+  - plan_id：规划 ID
+  - task_dag：层级任务 DAG
+
+**处理流程**：
+
+1. 复用 `plan` 的拆解上下文（PlannerAgent 实例、配置、上下文、LLM 绑定）执行一次拆解，得到初始 DAG；
+2. 递归遍历 DAG 节点：对无子任务且 `task_complexity >= threshold` 的叶子节点，调用 LLM 继续拆解（`llmPlan`，不落库）；当前节点转为父任务，其子任务挂载为新的叶子节点（task_id 重新生成避免冲突）；
+3. 深度受 `max_depth` 限制，防止无限拆解；拆解结果落库（`agent_plan`）并返回。
+
+### 2.3. 重新规划（replan）
 
 **功能**：某个子任务执行失败后，对受影响的下游任务进行重新规划
 **入参**：
@@ -102,7 +131,7 @@
 5. 生成 `new_plan_id`（UUID），保存到 `agent_plan` 表（`parent_plan_id = plan_id`）；
 6. 返回新的 plan_id 和调整后的 DAG 写入 output；
 
-### 2.3. 获取规划（getPlan）
+### 2.4. 获取规划（getPlan）
 
 **功能**：查询规划的详细内容
 **入参**：
@@ -119,7 +148,7 @@
 2. 若 `work_id` 非空：调用 RelationDBProvider.selectDB 按 work_id 查询所有规划；
 3. 将规划列表写入 output 返回；
 
-### 2.4. 配置（configPlannerAgent）
+### 2.5. 配置（configPlannerAgent）
 
 **功能**：配置 PlannerAgent 的参数
 **入参**：
@@ -179,3 +208,24 @@
 | complexity_decompose_threshold | 拆解复杂度阈值 | INT | N | | 0-100，默认 50 |
 | plan_prompt_template_id | 规划 prompt 模板 ID | UUID | N | | |
 | max_subtask_count | 最大子任务数 | INT | N | | 默认 10 |
+
+## 4. 变更记录
+
+### [2026-08-24] 层级拆解与父任务汇总
+
+**变更原因**：Planner 原产出扁平串行 DAG（如「研究 Agent」被拆为 7 个含「确认需求」「汇总报告」的串行任务），任务间无父子层级，父任务无法结合子任务结果汇总，且把「确认需求」类元任务当作同级任务执行。
+
+**修改的方法**：
+- `PlannerAgentService.plan()` — 重构抽取 `decomposeOnce` / `resolvePlannerAgent` / `buildPlanContext` / `resolvePlanLlmId` / `decomposeTask` / `persistPlan` 等私有方法，保持行为不变。
+- 新增 `PlannerAgentService.planHierarchical()` — LLM 单次层级拆解后，对仍复杂的叶子任务递归调用 `llmPlan` 继续拆解（深度受限）。
+- `PromptCatalog builtin.planner` — 要求输出层级 DAG（`parent_task_id` + `dependencies` + 执行方向 edges），禁止生成「确认需求」类元任务。
+- `TaskNode/PlanTaskNode` — 新增 `parent_task_id` 字段；`AgentNode` 新增 `node_kind`（LEAF/PARENT）。
+- `OrchestrationExecutionService.buildAgentDAG()` — 区分叶子/父节点（均构建 WorkAgent），`node_kind` 标记层级。
+- `OrchestrationExecutionService.execDAG()` + `DagScheduler` — 父任务注入全部子任务结果摘要，父任务 Agent 结合任务目标与子任务结果汇总产出。
+
+**影响的端点**：
+- `POST /api/chat/stream`（PLANNING 策略 PLAN_WORK → 层级拆解 → BUILD_AGENT_DAG → EXEC_DAG）。
+
+**可能存在的问题**：
+- 递归拆解依赖 LLM 多次调用，耗时随层级增加；深度默认限制为 2。
+- 历史扁平 DAG 数据无 `parent_task_id`，视为全部叶子任务（向后兼容）。

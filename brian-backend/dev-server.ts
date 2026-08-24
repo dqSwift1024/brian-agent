@@ -2857,20 +2857,73 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { cancelled: true });
 
       } else if (method === 'POST' && pathname === '/api/chat/confirm-intent') {
+        const sessionId = typeof body.session_id === 'string' ? body.session_id : (params.get('sessionId') || '');
+        const workId = typeof body.work_id === 'string' ? body.work_id : '';
+        const action = typeof body.action === 'string' ? body.action : 'KEEP';
+        const understoodRequirement = typeof body.understood_requirement === 'string' ? body.understood_requirement : '';
+
+        if (!workId) { sendJson(res, 400, { error: 'work_id is required' }); return; }
+
+        // 确认重入编排耗时较长（重新跑所有 Agent 与 LLM），改为 SSE 流式回传：
+        // 编排执行过程中 streamAccess 会推送 context_built / agent_thinking / agent_output 等事件，
+        // 编排完成后 ChatService.confirmIntent 再推送 text_chunk 与 done，前端实时展示思考过程与系统回答。
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+
+        let clientClosed = false;
+        req.on('close', () => {
+          clientClosed = true;
+          ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          ).catch(() => {});
+        });
+
+        await ctx.streamAccess.registerStream(
+          Object.assign(new RegisterStreamInput(), {
+            session_id: sessionId,
+            writer: (chunk: string) => {
+              if (clientClosed) return false;
+              try { res.write(chunk); return true; } catch { return false; }
+            },
+            onClose: () => {
+              if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+            },
+          }),
+          new StreamContext(),
+          new RegisterStreamOutput(),
+        );
+
         const input = Object.assign(new ConfirmIntentInput(), {
-          session_id: body.session_id || params.get('sessionId') || '',
-          work_id: body.work_id || '',
-          action: body.action || 'KEEP',
-          understood_requirement: body.understood_requirement || '',
+          session_id: sessionId,
+          work_id: workId,
+          action,
+          understood_requirement: understoodRequirement,
         });
         const output = new ConfirmIntentOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.confirmIntent(input, context, output);
-        sendJson(res, 200, {
-          success: output.success,
-          action_applied: output.action_applied,
-          next_status: output.next_status,
-        });
+
+        try {
+          await ctx.chatAccess.confirmIntent(input, context, output);
+        } catch (err: any) {
+          await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
+            error_message: err?.message || 'Confirm intent failed',
+            error_code: 'CONFIRM_INTENT_FAILED',
+          });
+        } finally {
+          await ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          );
+          if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+        }
+        return;
 
       } else if (method === 'POST' && pathname === '/api/chat/create-session') {
         const input = Object.assign(new CreateSessionInput(), { session_title: body.title || body.session_title || '' });

@@ -60,6 +60,8 @@ export {
   UpdateInfoContextConfigOutput,
   DelInfoInput,
   DelInfoOutput,
+  UpdateInfoInput,
+  UpdateInfoOutput,
   ExistInfoInput,
   ExistInfoOutput,
   INFO_RAW_TABLE,

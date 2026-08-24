@@ -259,9 +259,10 @@
    a. 调用 RelationDBProvider.updateDB 将 status 置为 "CANCELLED"，记录 cancel_reason；
    b. 推送 `cancelled` SSE 事件；返回 success=true；
 3. 若 action = "APPROVE"：finalQuery = understood_requirement（为空则回退 metadata.understood_requirement / user_query）；
-   若 action = "KEEP"：finalQuery = 原始 user_query；
-4. 以相同 work_id / interact_id 重新调用 `receiveWork`（`skip_intent_check = true`），复用已有 work 记录（幂等插入跳过），继续后续编排流程；
-5. 将 success / action_applied / next_status 写入 output 返回。
+    若 action = "KEEP"：finalQuery = 原始 user_query；
+4. **APPROVE 且需求被改写时**：调用 `InfoCore.updateInfo` 将 `info_raw` 中该 work 已落库的 REQUEST 消息内容改写为理解后的需求（同步替换，保证对话历史 / ChatMap 与前端展示一致）；
+5. 以相同 work_id / interact_id 重新调用 `receiveWork`（`skip_intent_check = true`），复用已有 work 记录（幂等插入跳过），继续后续编排流程；
+6. 将 success / action_applied / next_status 写入 output 返回。
 
 ## 重要内容
 
@@ -345,6 +346,21 @@
 **可能存在的问题**：
   - 确认重入后编排同步执行，客户端需在 confirm-intent 响应后刷新历史与 ChatMap 才能看到最终结果（无 SSE 流式进度）；`orchestration_work.final_response` 列在成功路径不写回（历史以 `info_raw` 的 RESPONSE 为准，属既有行为）。
 
+### [2026-08-24] confirm-intent 改为 SSE 流式回传最终回复与 done 事件
+**变更原因**：需求理解确认（APPROVE / KEEP）后，`confirm-intent` 为同步 JSON 请求，重入编排耗时数分钟且前端无任何流式进度，导致用户「点击确认后既看不到『思考过程』弹窗自动展示、也看不到系统回答」；确认完成后才依赖前端刷新历史，体验断裂。
+
+**修改的方法**：
+  - `ConfirmIntentOutput`（OrchestrationEntry 与 Application/Chat 两层 domain/types）— 新增 `final_response` / `interact_id` 字段，承载确认重入编排得到的最终回复；
+  - `OrchestrationEntryService.confirmIntent` — 重入 `receiveWork` 后回填 `output.final_response = rwOutput.final_response`、`output.interact_id`；
+  - `ChatService.confirmIntent` — 编排完成后经 `streamAccess.pushText('text_chunk', ...)` 与 `pushEvent('done', ...)` 流式回传最终回复与完成事件（CANCEL 不推送文本，仅关闭流）；
+  - `dev-server.ts` `/api/chat/confirm-intent` — 由 `sendJson` 同步响应改为 `registerStream` + SSE 头流式端点，编排过程中 streamAccess 推送的 `context_built` / `agent_thinking` / `agent_output` 等事件经注册的 stream 实时到达前端，结束后 `closeStream`。
+
+**影响的端点**：
+  - `POST /api/chat/confirm-intent` — 由一次性 JSON 响应改为 SSE 流式响应；前端在确认请求内实时展示思考过程弹窗与打字机系统回答，流结束后再刷新历史与 ChatMap 兜底一致。
+
+**可能存在的问题**：
+  - 前端 `handleIntentConfirm` 现走 `fetch` 流式读取（`/api/chat/confirm-intent` 不再经 `chatApi.confirmIntent`），与 `handleSend` 的流式解析逻辑存在少量重复；`done` 事件沿用 `paused:false` 语义触发自动关闭思考弹窗与 Feedback 块。
+
 ### [2026-08-23] 修复 confirmIntent 的 selectOneDB 入参结构错误（query_param）
 **变更原因**：`confirmIntent` 从未被前端调用，其 `selectOneDB` 入参误用 `table` / `conditions` 顶层字段，而 `SelectOneDBInput` 期望 `query_param` 对象，导致运行时 SQL 表名为 `undefined`、`no such table: undefined` 500 错误，确认弹窗「按理解执行 / 按原文执行」点击无响应。
 
@@ -353,3 +369,18 @@
 
 **影响的端点**：
   - `POST /api/chat/confirm-intent` — 修复后 APPROVE / KEEP / CANCEL 均正常返回，work 状态正确流转。
+
+### [2026-08-24] APPROVE 同步改写 info_raw REQUEST + InfoCore 新增 updateInfo
+
+**变更原因**：需求确认 APPROVE 后仅前端本地替换用户消息，后端 info_raw 已保存的 REQUEST 仍为原始模糊输入，刷新页面后替换失效；且后端直接操作 info_raw 表违反分层规范。
+
+**修改的方法**：
+- `InfoCoreService.updateInfo()`（新增）— 按 work_id + info_type 定位并改写 info 内容与 info_length。
+- `InfoCoreAccess.updateInfo` / `InfoCoreProvider index.ts` — 暴露并导出新接口。
+- `OrchestrationEntryService.rewriteRequestInfo()` — 由直接 `relationDb.updateDB('info_raw', ...)` 改为经 `infoCore.updateInfo` 调用（符合分层规范）。
+
+**影响的端点**：
+- `POST /api/chat/confirm-intent` — APPROVE 且需求被改写时同步更新 info_raw REQUEST，历史 / ChatMap 展示理解后的需求。
+
+**可能存在的问题**：
+- updateInfo 仅改写 info 正文，不更新摘要 / 关键词 / 向量等派生数据（需求确认场景 REQUEST 尚未触发派生处理，影响可控）。

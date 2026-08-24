@@ -193,7 +193,9 @@ export function initOrchestrationSchema(db: RelationDBAccess): void {
       "id" TEXT NOT NULL PRIMARY KEY, "created" INTEGER NOT NULL, "updated" INTEGER NOT NULL,
       "session_id" TEXT NOT NULL, "work_id" TEXT NOT NULL, "interact_id" TEXT NOT NULL,
       "info_id" TEXT NOT NULL, "info_creator_id" TEXT NOT NULL, "info_creator_role" TEXT NOT NULL,
-      "info" TEXT NOT NULL, "info_length" INTEGER NOT NULL DEFAULT 0, "pin" INTEGER NOT NULL DEFAULT 0
+      "info" TEXT NOT NULL, "info_length" INTEGER NOT NULL DEFAULT 0, "pin" INTEGER NOT NULL DEFAULT 0,
+      "info_type" TEXT NOT NULL DEFAULT '', "trace_id" TEXT NOT NULL DEFAULT '',
+      "handle_result_type" TEXT NOT NULL DEFAULT 'correct'
     )`,
   ];
   for (const sql of tables) db.executeRaw(sql);
@@ -316,23 +318,25 @@ export function createMockAgentLibrary(opts?: { hasAgent?: boolean }) {
 export function createMockPlannerAgent(opts?: { failPlan?: boolean; taskCount?: number; planId?: string }) {
   const taskCount = opts?.taskCount ?? 3;
   const planId = opts?.planId ?? 'mock-plan-id';
+  const mockPlanImpl = async (_i: any, _c: any, o: any): Promise<boolean> => {
+    if (opts?.failPlan) { o.error = 'plan failed'; return false; }
+    o.plan_id = planId;
+    const nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }> = [];
+    for (let i = 0; i < taskCount; i++) {
+      nodes.push({ task_id: `task-${i + 1}`, task_content: `Task ${i + 1} content`, task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] });
+    }
+    const edges: Array<{ from_task_id: string; to_task_id: string }> = [];
+    if (taskCount > 1) {
+      for (let i = 0; i < taskCount - 1; i++) {
+        edges.push({ from_task_id: `task-${i + 1}`, to_task_id: `task-${i + 2}` });
+      }
+    }
+    o.task_dag = { nodes, edges };
+    return true;
+  };
   return {
-    plan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
-      if (opts?.failPlan) { o.error = 'plan failed'; return false; }
-      o.plan_id = planId;
-      const nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }> = [];
-      for (let i = 0; i < taskCount; i++) {
-        nodes.push({ task_id: `task-${i + 1}`, task_content: `Task ${i + 1} content`, task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] });
-      }
-      const edges: Array<{ from_task_id: string; to_task_id: string }> = [];
-      if (taskCount > 1) {
-        for (let i = 0; i < taskCount - 1; i++) {
-          edges.push({ from_task_id: `task-${i + 1}`, to_task_id: `task-${i + 2}` });
-        }
-      }
-      o.task_dag = { nodes, edges };
-      return true;
-    }),
+    plan: vi.fn().mockImplementation(mockPlanImpl),
+    planHierarchical: vi.fn().mockImplementation(mockPlanImpl),
     replan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.new_plan_id = 'mock-replan-id';
       o.task_dag = { nodes: [{ task_id: 'task-retry-1', task_content: 'Retry task content', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }], edges: [] };
@@ -416,6 +420,7 @@ export function createMockInfoCore() {
     relationKInfo: vi.fn().mockResolvedValue(true),
     graphInfo: vi.fn().mockResolvedValue(true),
     delInfo: vi.fn().mockResolvedValue(true),
+    updateInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.updated_count = 1; return true; }),
     soInfoTagConfig: vi.fn().mockResolvedValue(true),
     updateInfoTagConfig: vi.fn().mockResolvedValue(true),
     soInfoSummaryConfig: vi.fn().mockResolvedValue(true),

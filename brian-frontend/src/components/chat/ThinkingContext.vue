@@ -34,6 +34,9 @@ const props = defineProps<{
 // 上下文环境整体折叠状态（默认展开）
 const isContextCollapsed = ref(false)
 
+// 引用消息与上下文背景折叠状态（默认展开）
+const isContextMessagesCollapsed = ref(false)
+
 // 引用消息与上下文背景的标签切换（默认「全部」）
 const activeCategoryTab = ref<string>('all')
 
@@ -211,65 +214,72 @@ function msgContent(val: unknown): string {
 
       <!-- 2. 引用的消息（根据消息采集方式进行分类，并统计数量） -->
       <div class="p-2.5 rounded-lg bg-white/80 dark:bg-apple-gray-900/80 border border-purple-200/80 dark:border-purple-800/60 space-y-2">
-        <div class="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200 text-[11px] pb-1 border-b border-purple-100 dark:border-purple-900/30">
+        <button
+          type="button"
+          class="flex items-center justify-between w-full text-left font-bold text-purple-900 dark:text-purple-200 text-[11px] pb-1 border-b border-purple-100 dark:border-purple-900/30 cursor-pointer"
+          @click="isContextMessagesCollapsed = !isContextMessagesCollapsed"
+        >
           <div class="flex items-center gap-1.5">
+            <ChevronRight :size="12" class="text-purple-500 flex-shrink-0 transition-transform duration-200" :class="{ 'rotate-90': !isContextMessagesCollapsed }" />
             <MessagesSquare :size="13" class="text-purple-600 dark:text-purple-400" />
             <span>引用的消息与上下文背景 (Context Messages)</span>
           </div>
           <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-medium">
             引用与关联消息总计: {{ totalCitedMessagesCount }} 条
           </span>
-        </div>
+        </button>
 
-        <!-- 采集方式标签页 (Category Tabs)：按标签切换对应的引用消息内容 -->
-        <div class="flex flex-wrap gap-1.5 text-[10px] pt-0.5">
-          <button
-            type="button"
-            class="px-2 py-1 rounded-lg border font-medium transition-colors"
-            :class="activeCategoryTab === 'all'
-              ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
-              : 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300'"
-            @click="activeCategoryTab = 'all'"
-          >
-            全部 ({{ totalCitedMessagesCount }})
-          </button>
-          <button
-            v-for="stat in collectionCategoryStats"
-            :key="'tab-' + stat.key"
-            type="button"
-            class="px-2 py-1 rounded-lg border font-medium transition-colors flex items-center gap-1"
-            :class="activeCategoryTab === stat.key
-              ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
-              : (stat.count > 0 ? 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300' : 'bg-apple-gray-50/50 dark:bg-apple-gray-800/30 text-apple-gray-400 border-apple-gray-100 dark:border-apple-gray-800 opacity-60')"
-            @click="activeCategoryTab = stat.key"
-          >
-            <component :is="stat.icon" :size="11" class="flex-shrink-0" />
-            <span class="truncate">{{ stat.name.split('消息')[0] }}</span>
-            <span class="px-1 rounded font-mono font-bold flex-shrink-0" :class="stat.badgeCls">{{ stat.count }}</span>
-          </button>
-        </div>
+        <div v-if="!isContextMessagesCollapsed">
+          <!-- 采集方式标签页 (Category Tabs)：按标签切换对应的引用消息内容 -->
+          <div class="flex flex-wrap gap-1.5 text-[10px] pt-0.5">
+            <button
+              type="button"
+              class="px-2 py-1 rounded-lg border font-medium transition-colors"
+              :class="activeCategoryTab === 'all'
+                ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
+                : 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300'"
+              @click="activeCategoryTab = 'all'"
+            >
+              全部 ({{ totalCitedMessagesCount }})
+            </button>
+            <button
+              v-for="stat in collectionCategoryStats"
+              :key="'tab-' + stat.key"
+              type="button"
+              class="px-2 py-1 rounded-lg border font-medium transition-colors flex items-center gap-1"
+              :class="activeCategoryTab === stat.key
+                ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-300/60 dark:border-purple-700/60'
+                : (stat.count > 0 ? 'bg-white/70 dark:bg-apple-gray-900/70 text-apple-gray-600 dark:text-apple-gray-400 border-apple-gray-200/60 dark:border-apple-gray-700/60 hover:text-purple-700 dark:hover:text-purple-300' : 'bg-apple-gray-50/50 dark:bg-apple-gray-800/30 text-apple-gray-400 border-apple-gray-100 dark:border-apple-gray-800 opacity-60')"
+              @click="activeCategoryTab = stat.key"
+            >
+              <component :is="stat.icon" :size="11" class="flex-shrink-0" />
+              <span class="truncate">{{ stat.name.split('消息')[0] }}</span>
+              <span class="px-1 rounded font-mono font-bold flex-shrink-0" :class="stat.badgeCls">{{ stat.count }}</span>
+            </button>
+          </div>
 
-        <!-- 对应标签下的引用消息列表 -->
-        <div v-if="totalCitedMessagesCount > 0" class="space-y-2 pt-1">
-          <template v-if="displayedCategoryStats.length > 0">
-            <div v-for="stat in displayedCategoryStats" :key="'list-' + stat.key" class="p-2 rounded-lg border space-y-1" :class="[stat.bgCls, stat.borderCls]">
-              <div class="flex items-center justify-between font-semibold text-[11px]" :class="stat.textCls">
-                <div class="flex items-center gap-1.5">
-                  <component :is="stat.icon" :size="12" />
-                  <span>{{ stat.name }} ({{ stat.sourceKey }})</span>
+          <!-- 对应标签下的引用消息列表 -->
+          <div v-if="totalCitedMessagesCount > 0" class="space-y-2 pt-1">
+            <template v-if="displayedCategoryStats.length > 0">
+              <div v-for="stat in displayedCategoryStats" :key="'list-' + stat.key" class="p-2 rounded-lg border space-y-1" :class="[stat.bgCls, stat.borderCls]">
+                <div class="flex items-center justify-between font-semibold text-[11px]" :class="stat.textCls">
+                  <div class="flex items-center gap-1.5">
+                    <component :is="stat.icon" :size="12" />
+                    <span>{{ stat.name }} ({{ stat.sourceKey }})</span>
+                  </div>
+                  <span class="text-[10px] font-normal opacity-80">{{ stat.msgs.length }} 条消息</span>
                 </div>
-                <span class="text-[10px] font-normal opacity-80">{{ stat.msgs.length }} 条消息</span>
+                <ul class="space-y-1 mt-1">
+                  <li v-for="(msg, mIdx) in stat.msgs" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 bg-white/70 dark:bg-apple-gray-900/70 p-1.5 rounded border border-apple-gray-100 dark:border-apple-gray-800">
+                    • {{ msgContent(msg) }}
+                  </li>
+                </ul>
               </div>
-              <ul class="space-y-1 mt-1">
-                <li v-for="(msg, mIdx) in stat.msgs" :key="mIdx" class="text-[11px] text-apple-gray-700 dark:text-apple-gray-300 bg-white/70 dark:bg-apple-gray-900/70 p-1.5 rounded border border-apple-gray-100 dark:border-apple-gray-800">
-                  • {{ msgContent(msg) }}
-                </li>
-              </ul>
-            </div>
-          </template>
-          <div v-else class="text-[10px] text-apple-gray-400 italic p-1">该标签下暂无引用的消息</div>
+            </template>
+            <div v-else class="text-[10px] text-apple-gray-400 italic p-1">该标签下暂无引用的消息</div>
+          </div>
+          <div v-else class="text-[10px] text-apple-gray-400 italic p-1">会话内未采集到任何关联或引用的消息</div>
         </div>
-        <div v-else class="text-[10px] text-apple-gray-400 italic p-1">会话内未采集到任何关联或引用的消息</div>
       </div>
 
       <!-- 3. 保存的分类上下文 ID 列表 -->

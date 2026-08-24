@@ -192,6 +192,27 @@
 
 ## 7. 变更记录
 
+### [2026-08-24] 确认需求理解：前端防重复调用 + 前后端同步替换 REQUEST
+- **变更原因**：① 后端日志显示 `confirmIntent` 被连续调用两次（前端快速重复点击「按理解执行 / 按原文执行」时重复提交）；② APPROVE 仅前端本地 `replaceUserMessageContent` 替换用户消息，后端 `info_raw` 已保存的 REQUEST 仍为原始模糊输入，刷新页面后替换失效。
+- **功能变更**（前端 + 后端）：
+  1. **前端防重复调用**：`ChatArea.vue` 的 `handleIntentConfirm` 在 `if (!conf) return` 之后、`clearIntentConfirmation()` 之前增加 `if (confirmingIntent.value) return` 防重入锁，并将 `confirmingIntent.value = true` 提前到弹窗关闭之前，杜绝同一确认请求被并发提交。
+  2. **后端同步替换**：`OrchestrationEntryService.confirmIntent` 在 APPROVE 且需求被改写时调用新增的 `InfoCore.updateInfo` 将 `info_raw` 中该 work 的 REQUEST 消息改写为理解后的需求。
+  3. **前端兜底替换**：`handleIntentConfirm` 的 `finally` 中 `replaceUserMessageContent` 保留为兜底（后端未同步成功时本地替换保证界面即时一致）。
+- **行为差异**：
+  - 修改前：确认请求可被重复提交；APPROVE 替换仅前端生效，刷新后回退为原始输入。
+  - 修改后：确认请求单次提交；后端持久化同步替换，刷新后仍展示理解后的需求。
+- **新增边界条件**：`confirmingIntent` 为 `true` 时直接 return，不触发第二次 `confirm-intent`；后端 `updateInfo` best-effort，失败时前端本地替换兜底。
+
+### [2026-08-24] 确认需求理解：confirm-intent 改为 SSE 流式，实时展示思考过程与系统回答
+- **变更原因**：确认（APPROVE / KEEP）后 `confirm-intent` 为同步 JSON 请求，重入编排耗时数分钟且前端无流式进度，导致「确认后既无『思考过程』弹窗自动展示、也看不到系统回答」，用户以为请求卡死；确认完成依赖刷新历史才看到结果。
+- **功能变更**（前端 + 后端）：
+  1. **前端流式确认**：`ChatArea.vue` 的 `handleIntentConfirm` 不再经 `chatApi.confirmIntent`，改为 `fetch('/api/chat/confirm-intent')` 流式读取 SSE（复用 `handleStreamEvent` 解析），确认前重置 `textBlockId` / `resetPlanning` / `resetAgentStatus` 并 `setStreaming(true)`，流结束后统一 `finalizeBlocks` / 刷新历史 / 回写用户消息（APPROVE 替换、CANCEL 丢弃）。
+  2. **后端流式确认**：`POST /api/chat/confirm-intent` 由 JSON 改为 SSE 端点（`registerStream` + SSE 头），编排过程中 `context_built` / `agent_thinking` / `agent_output` 等事件实时到达前端，编排完成后 `ChatService.confirmIntent` 推送 `text_chunk` 与 `done`。
+- **行为差异**：
+  - 修改前：确认后弹窗关闭，但无思考过程弹窗、无系统回答，需等同步请求返回并刷新历史才显示最终结果。
+  - 修改后：确认后「思考过程」弹窗随 `context_built` 自动展示、`text_chunk` 打字机输出系统回答，`done` 后自动关闭弹窗并展示 Feedback，流结束后刷新历史兜底一致。
+- **新增边界条件**：CANCEL 不推送文本（仅关闭流），前端流结束后 `removeUserMessageByContent` 丢弃原始提问；`done` 事件沿用 `paused:false` 语义触发自动关闭思考弹窗。
+
 ### [2026-08-24] 修复确认需求理解弹窗：点击按钮立即关闭
 - **变更原因**：`handleIntentConfirm` 的弹窗关闭逻辑位于 `finally` 块，需等 `await chatApi.confirmIntent(...)` 返回后才执行；而 APPROVE/KEEP 会让后端同步重入 `receiveWork` 重新执行完整编排（重新跑所有 Agent 与 LLM 调用，耗时较长），HTTP 响应迟迟不回，导致「按理解执行 / 按原文执行」点击后弹窗长期停留、看似"没有关闭"。
 - **功能变更**（前端）：

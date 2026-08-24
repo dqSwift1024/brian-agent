@@ -238,8 +238,9 @@ export class DagScheduler {
         return;
       }
 
-      // 串行模式下，将上游输出摘要注入下游任务内容
-      const upstreamSummaries = concurrency === 1 ? this.collectUpstream(node, topo, outputs) : [];
+      // 将上游（子任务）输出摘要注入下游（父任务）内容，供父任务结合子任务结果汇总。
+      // 拓扑保证父任务入队时其所有子任务已完成，并发模式同样安全。
+      const upstreamSummaries = this.collectUpstream(node, topo, outputs);
 
       let result: DagNodeResult;
       try {

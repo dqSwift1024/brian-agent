@@ -87,6 +87,8 @@ import {
   UpdateInfoContextConfigOutput,
   DelInfoInput,
   DelInfoOutput,
+  UpdateInfoInput,
+  UpdateInfoOutput,
   ExistInfoInput,
   ExistInfoOutput,
   INFO_RAW_TABLE,
@@ -2279,6 +2281,33 @@ const rawPriority = priorityOrderStr
     }
 
     output.deleted_count = dbIds.length;
+    return true;
+  }
+
+  /**
+   * 改写指定 work 下某 info_type 的 info 内容（如需求确认 APPROVE 时用理解后的需求替换原始 REQUEST）。
+   */
+  async updateInfo(
+    input: UpdateInfoInput,
+    _context: InfoCoreContext,
+    output: UpdateInfoOutput,
+  ): Promise<boolean> {
+    if (!input.work_id || !input.info) {
+      throw new ValidationError('updateInfo 需要提供 work_id 和 info');
+    }
+    const affected = await this.relationDb.update(
+      INFO_RAW_TABLE,
+      [
+        { field: 'info', value: input.info },
+        { field: 'info_length', value: input.info.length },
+        { field: 'updated', value: IdGenerator.now() },
+      ],
+      [
+        { field: 'work_id', operator: Operator.EQ, value: input.work_id },
+        { field: 'info_type', operator: Operator.EQ, value: input.info_type },
+      ],
+    );
+    output.updated_count = affected;
     return true;
   }
 

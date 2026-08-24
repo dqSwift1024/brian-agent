@@ -8,6 +8,7 @@ import { PlannerAgentService } from '../application/PlannerAgentService';
 import {
   PlannerAgentContext,
   PlanInput, PlanOutput,
+  PlanHierarchicalInput, PlanHierarchicalOutput,
   ReplanInput, ReplanOutput,
   GetPlanInput, GetPlanOutput,
   ConfigPlannerAgentInput, ConfigPlannerAgentOutput,
@@ -37,6 +38,11 @@ export class PlannerAgentAccess {
   async plan(i: PlanInput, c: PlannerAgentContext, o: PlanOutput): Promise<boolean> {
     await this.initPromise;
     return this.service.plan(i, c, o);
+  }
+
+  async planHierarchical(i: PlanHierarchicalInput, c: PlannerAgentContext, o: PlanHierarchicalOutput): Promise<boolean> {
+    await this.initPromise;
+    return this.service.planHierarchical(i, c, o);
   }
 
   async replan(i: ReplanInput, c: PlannerAgentContext, o: ReplanOutput): Promise<boolean> {

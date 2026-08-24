@@ -32,6 +32,38 @@ export interface PlannerAgentConfigRecord {
 // plan
 // ---------------------------------------------------------------------------
 
+/**
+ * Planner 拆解出的单个任务节点。
+ *
+ * 层级语义：
+ * - `parent_task_id` 表达「拆解方向」（父任务拆出子任务），根任务为空；
+ * - `dependencies` 表达「执行依赖」（执行前必须先完成的子任务 task_id）；
+ * - 叶子任务（无子任务）dependencies 为空，由 WorkAgent 直接执行；
+ * - 父任务依赖所有子任务完成后再执行，由其汇总 Agent 结合任务目标与子任务结果产出结果。
+ */
+export interface PlanTaskNode {
+  task_id: string;
+  /** 父任务 ID（拆解层级），根任务为 undefined */
+  parent_task_id?: string;
+  task_content: string;
+  task_complexity: number;
+  task_domain: string;
+  priority: number;
+  /** 执行依赖：本任务执行前必须先完成的子任务 task_id 列表 */
+  dependencies: string[];
+}
+
+/** 执行依赖边：from 为子任务（先执行），to 为父任务（后执行汇总）。 */
+export interface PlanTaskEdge {
+  from_task_id: string;
+  to_task_id: string;
+}
+
+export interface PlanTaskDAG {
+  nodes: PlanTaskNode[];
+  edges: PlanTaskEdge[];
+}
+
 export class PlanInput extends Input {
   work_id!: string;
   interact_id!: string;
@@ -40,7 +72,24 @@ export class PlanInput extends Input {
 
 export class PlanOutput extends Output {
   plan_id = '';
-  task_dag: { nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }>; edges: Array<{ from_task_id: string; to_task_id: string }> } = { nodes: [], edges: [] };
+  task_dag: PlanTaskDAG = { nodes: [], edges: [] };
+}
+
+// ---------------------------------------------------------------------------
+// planHierarchical
+// ---------------------------------------------------------------------------
+
+export class PlanHierarchicalInput extends Input {
+  work_id!: string;
+  interact_id!: string;
+  task_content!: string;
+  /** 递归拆解最大深度（在 LLM 单次层级拆解基础上额外递归），默认 2 */
+  max_depth?: number;
+}
+
+export class PlanHierarchicalOutput extends Output {
+  plan_id = '';
+  task_dag: PlanTaskDAG = { nodes: [], edges: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +105,7 @@ export class ReplanInput extends Input {
 
 export class ReplanOutput extends Output {
   new_plan_id = '';
-  task_dag: PlanOutput['task_dag'] = { nodes: [], edges: [] };
+  task_dag: PlanTaskDAG = { nodes: [], edges: [] };
 }
 
 // ---------------------------------------------------------------------------
