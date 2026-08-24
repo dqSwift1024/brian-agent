@@ -896,10 +896,13 @@ export class OrchestrationEntryService {
       await this.rewriteRequestInfo(input.work_id, finalQuery);
     }
 
+    // ===== 修改：透传原 work 的 trace_id，保证确认流程（APPROVE/KEEP）重入编排时
+    //      写出的 RESPONSE 消息 trace_id 与首次提交一致（否则刷新后复制 TraceId 按钮无值）。 =====
     const rwInput = Object.assign(new ReceiveWorkInput(), {
       session_id: String(record.session_id),
       user_query: finalQuery,
       skip_intent_check: true,
+      trace_id: String(metadata.trace_id ?? ''),
     });
     const rwOutput = new ReceiveWorkOutput();
     const rwCtx = Object.assign(new OrchestrationEntryContext(), {

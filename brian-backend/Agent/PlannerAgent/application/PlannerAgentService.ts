@@ -92,8 +92,20 @@ export class PlannerAgentService {
   ): Promise<boolean> {
     const planCtx = await this.decomposeOnce(input, ctx);
     const maxDepth = input.max_depth ?? MAX_DECOMPOSE_DEPTH;
-    const dag = await this.expandComplexLeaves(planCtx.dag, planCtx, maxDepth);
-    this.validateDag(dag, planCtx.maxSub * 4);
+    // ===== 修改：全局粒度控制 =====
+    // 原始实现：expandComplexLeaves 后仅 validateDag(dag, maxSub * 4)，且 decomposeLeaf 的
+    //   depth 只递减从不校验，导致层级拆解无限递归、子任务爆炸与大量重复任务。
+    // 修改后：1) 初始拆解已达 max_subtask_count 上限时不再递归展开；
+    //         2) 展开后按语义相似度去重；3) 超上限时硬性收敛到 maxSub；4) 按 maxSub 校验。
+    let dag = planCtx.dag;
+    if (dag.nodes.length < planCtx.maxSub) {
+      dag = await this.expandComplexLeaves(dag, planCtx, maxDepth);
+    }
+    dag = this.dedupeDag(dag);
+    if (dag.nodes.length > planCtx.maxSub) {
+      dag = this.limitDagSize(dag, planCtx.maxSub);
+    }
+    this.validateDag(dag, planCtx.maxSub);
     output.plan_id = await this.persistPlan(dag, input.work_id, input.interact_id, ctx, '');
     output.task_dag = dag;
     return true;
@@ -212,6 +224,13 @@ export class PlannerAgentService {
     nodes: PlanTaskNode[],
     edges: PlanTaskEdge[],
   ): Promise<void> {
+    // ===== 修改：新增深度与全局子任务数双重守卫 =====
+    // 原始实现：depth 仅用于向下传递，从不校验，且无节点数预算，导致层级拆解无限递归 /
+    // 子任务爆炸（大量重复任务），是「任务拆得过细、执行耗时极长」的直接根因。
+    if (depth <= 0 || nodes.length >= planCtx.maxSub) {
+      nodes.push(node);
+      return;
+    }
     const subDag = await this.llmPlan(planCtx.llmId, planCtx.soulId, planCtx.promptId, node.task_content, planCtx.contextExtra, planCtx.maxSub);
     if (!subDag || subDag.nodes.length <= 1) {
       nodes.push(node);
@@ -252,6 +271,74 @@ export class PlannerAgentService {
       if (direct.length > 0) return direct;
     }
     return nodes.filter((n) => n.parent_task_id);
+  }
+
+  /** 分词（Unicode 字母/数字），用于子任务内容相似度比较。 */
+  private tokenize(text: string): Set<string> {
+    return new Set(
+      text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 1),
+    );
+  }
+
+  /** 基于分词重叠的 containment 相似度：一个任务内容为另一个的子集时相似度接近 1。 */
+  private contentSimilarity(a: string, b: string): number {
+    const ta = this.tokenize(a);
+    const tb = this.tokenize(b);
+    if (ta.size === 0 || tb.size === 0) return 0;
+    let inter = 0;
+    for (const t of ta) if (tb.has(t)) inter++;
+    return inter / Math.min(ta.size, tb.size);
+  }
+
+  /**
+   * 子任务去重：层级拆解会反复产出语义重叠的子任务（如多个「明确目标/范围/框架」类
+   * meta-task），按分词相似度（默认 0.7）合并，边与依赖引用重定向到保留节点。
+   */
+  private dedupeDag(dag: TaskDag): TaskDag {
+    if (dag.nodes.length <= 1) return dag;
+    const kept: PlanTaskNode[] = [];
+    const remap = new Map<string, string>();
+    for (const node of dag.nodes) {
+      const dup = kept.find((k) => this.contentSimilarity(k.task_content, node.task_content) >= 0.7);
+      if (dup) remap.set(node.task_id, dup.task_id);
+      else kept.push(node);
+    }
+    const keptIds = new Set(kept.map((n) => n.task_id));
+    const nodes = kept.map((n) => ({
+      ...n,
+      parent_task_id: n.parent_task_id ? (remap.get(n.parent_task_id) ?? n.parent_task_id) : n.parent_task_id,
+      dependencies: n.dependencies.map((d) => remap.get(d) ?? d).filter((d) => d !== n.task_id && keptIds.has(d)),
+    }));
+    const seen = new Set<string>();
+    const edges: PlanTaskEdge[] = [];
+    for (const e of dag.edges) {
+      const from = remap.get(e.from_task_id) ?? e.from_task_id;
+      const to = remap.get(e.to_task_id) ?? e.to_task_id;
+      if (from === to || !keptIds.has(from) || !keptIds.has(to)) continue;
+      const key = `${from}->${to}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from_task_id: from, to_task_id: to });
+    }
+    return { nodes, edges };
+  }
+
+  /**
+   * 全局子任务数上限兜底：超过 maxSub 时按「任务越具体（复杂度越低）越优先保留」裁剪，
+   * 丢弃冗余的父/汇总任务及相关边；最终回复仍由 WriterAgent 汇总全部叶子结果，裁剪父任务不影响交付。
+   */
+  private limitDagSize(dag: TaskDag, maxSub: number): TaskDag {
+    if (dag.nodes.length <= maxSub) return dag;
+    const sorted = [...dag.nodes].sort((a, b) => {
+      if (a.task_complexity !== b.task_complexity) return a.task_complexity - b.task_complexity;
+      return (a.priority ?? 1) - (b.priority ?? 1);
+    });
+    const kept = sorted.slice(0, maxSub);
+    const keptIds = new Set(kept.map((n) => n.task_id));
+    const edges = dag.edges.filter(
+      (e) => e.from_task_id !== e.to_task_id && keptIds.has(e.from_task_id) && keptIds.has(e.to_task_id),
+    );
+    return { nodes: kept, edges };
   }
 
   /**

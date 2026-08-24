@@ -229,3 +229,20 @@
 **可能存在的问题**：
 - 递归拆解依赖 LLM 多次调用，耗时随层级增加；深度默认限制为 2。
 - 历史扁平 DAG 数据无 `parent_task_id`，视为全部叶子任务（向后兼容）。
+
+### [2026-08-24] 层级拆解粒度控制：深度守卫 + 全局子任务上限 + 去重
+
+**变更原因**：`planHierarchical` 递归拆解存在两处缺陷——`decomposeLeaf` 的 `depth` 只递减从未校验（深度上限形同虚设），且无全局子任务数预算；叠加 LLM 反复产出语义重叠的「明确目标/范围/框架」类元任务，导致「研究 Agent」等模糊查询被拆得过细、产生大量重复子任务，单次问答耗时 7~12 分钟甚至卡死（EXECUTING 不收敛）。
+
+**修改的方法**：
+- `PlannerAgentService.planHierarchical()` — 初始拆解已达 `max_subtask_count` 上限时不再递归展开；展开后经 `dedupeDag` 去重、`limitDagSize` 收敛到 `maxSub`，最后按 `maxSub`（原 `maxSub*4`）校验。
+- `PlannerAgentService.decomposeLeaf()` — 新增 `depth <= 0 || nodes.length >= maxSub` 双重守卫，终止无限递归与子任务爆炸。
+- `PlannerAgentService.dedupeDag()`（新增）— 按分词 containment 相似度（阈值 0.7）合并重叠子任务，边与依赖引用重定向。
+- `PlannerAgentService.limitDagSize()`（新增）— 超上限时按「复杂度越低越优先保留」裁剪，丢弃冗余父/汇总任务。
+- `PromptCatalog builtin.planner` — 增加规则：子任务总数不得超 Max subtasks、子任务必须互斥且禁止重复/重叠。
+
+**影响的端点**：
+- `POST /api/chat/stream`（PLANNING 策略 PLAN_WORK → 层级拆解 → BUILD_AGENT_DAG → EXEC_DAG）— 子任务数硬性收敛到 `max_subtask_count`（默认 10），去除重复子任务，显著缩短执行耗时。
+
+**可能存在的问题**：
+- 去重为分词相似度启发式，极端语义相近但实为不同任务（如「调研A的定义」vs「调研A的评估」）依赖阈值取舍；阈值过紧可能误合并，可后续接入语义向量召回优化。
