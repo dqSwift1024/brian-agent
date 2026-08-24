@@ -192,6 +192,17 @@
 
 ## 7. 变更记录
 
+### [2026-08-24] 修复思考过程弹窗：系统回复展示后仍显示「思考中...」
+- **变更原因**：思考块（`ThinkingChain`）的 `meta.status` 仅在 `done` 事件才被 `finalizeBlocks` 收敛为 `done`，而最终回复（`text_chunk`）在 `done` 之前就开始流式输出，导致「思考过程」弹窗顶部 `overallStreaming` 在系统回复已展示后仍因残留 streaming 思考块而显示「思考中...」；同理，Work Agent 的中间产出（`agent_output`）也会先于最终回复展示，加剧该错位。
+- **功能变更**（前端）：
+  1. **新增 `finalizeThinkingBlocks`**：`session.ts` 新增 `finalizeThinkingBlocks(msgId)`，仅将 `msgId` 匹配且 `type === 'ThinkingChain'`、`status === 'streaming'` 的思考块收敛为 `done`（不影响文本块等其它块），并随 store 导出。
+  2. **回复开始时收敛**：`ChatArea.vue` 的 `handleStreamEvent` 在 `text_chunk` / `text` 分支（最终回复开始流式输出，即全部 Agent 已执行完成）调用 `finalizeThinkingBlocks(botMsgId)`，使 `overallStreaming` 即时归 false。
+  3. **Agent 完成即收敛**：`intent_agent_result` / `agent_matched` / `agent_output` / `agent_error` 各分支在 `updateBlock` 时补充 `meta.status = 'done'`，单个 Agent 完成后其思考块立即脱离 streaming，不再依赖整轮 `done`。
+- **行为差异**：
+  - 修改前：思考块直到 `done` 才置为 `done`，系统回复流式展示期间弹窗仍显示「思考中...」。
+  - 修改后：最终回复开始输出（或单个 Agent 完成）即收敛思考块，弹窗「思考中...」即时结束；`done` 后自动关闭逻辑不变。
+- **新增边界条件**：`finalizeThinkingBlocks` 只作用于 `ThinkingChain` 块，不影响 `TextParagraph` 打字机块的 streaming 光标；空回复（无 `text_chunk`）时仍由 `done` 的 `finalizeBlocks` 兜底收敛。
+
 ### [2026-08-24] 确认需求理解：前端防重复调用 + 前后端同步替换 REQUEST
 - **变更原因**：① 后端日志显示 `confirmIntent` 被连续调用两次（前端快速重复点击「按理解执行 / 按原文执行」时重复提交）；② APPROVE 仅前端本地 `replaceUserMessageContent` 替换用户消息，后端 `info_raw` 已保存的 REQUEST 仍为原始模糊输入，刷新页面后替换失效。
 - **功能变更**（前端 + 后端）：

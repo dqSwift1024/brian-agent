@@ -446,6 +446,22 @@ export const useSessionStore = defineStore('session', () => {
     triggerRef(blocks)
   }
 
+  // ===== 最终回复开始流式输出时，将仍处于 streaming 的思考块收敛为 done =====
+  // 思考块（ThinkingChain）此前仅在 done 事件才被 finalizeBlocks 置为 done，
+  // 但最终回复（text_chunk）在 done 之前就开始流式输出，导致「思考过程」弹窗
+  // 在系统回复已展示时仍因残留 streaming 状态而显示「思考中...」。
+  function finalizeThinkingBlocks(msgId: string) {
+    let changed = false
+    for (let i = 0; i < blocks.value.length; i++) {
+      const b = blocks.value[i]
+      if (b.msgId === msgId && b.type === 'ThinkingChain' && b.meta?.status === 'streaming') {
+        blocks.value[i] = { ...b, meta: { ...b.meta, status: 'done' as const } } as Block
+        changed = true
+      }
+    }
+    if (changed) triggerRef(blocks)
+  }
+
   function cleanupTransientTextBlocks(msgId: string) {
     const filtered = blocks.value.filter(b => !(b.msgId === msgId && b.type === 'TextParagraph'))
     if (filtered.length !== blocks.value.length) {
@@ -713,7 +729,7 @@ export const useSessionStore = defineStore('session', () => {
     setThinkingOrigin, clearThinkingOrigin,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, replaceUserMessageContent, removeUserMessageByContent, addBlock,
-    updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
+    updateBlock, appendBlockContent, finalizeBlocks, finalizeThinkingBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask,
     startThinkingLoading, setThinkingDag, setThinkingBlocks,

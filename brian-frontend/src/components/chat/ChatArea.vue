@@ -759,6 +759,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         inputTokens: intentBlock.inputTokens,
         outputTokens: intentBlock.outputTokens,
         durationMs: intentBlock.durationMs,
+        meta: { ...intentBlock.meta, status: 'done' },
       })
       sessionStore.setAgentStatus(intentAgentId, 'SUCCESS', '需求理解 Agent (Intent)')
       break
@@ -936,7 +937,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       thinkBlock.agentInfo = { id: matchedAgentId || key, name: '复用已有 Agent', type: 'WORKER' }
       thinkBlock.output = { reused: true, matched_agent_id: matchedAgentId }
       sessionStore.setAgentStatus(key, 'SUCCESS', '复用已有 Agent')
-      sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, output: thinkBlock.output })
+      sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, output: thinkBlock.output, meta: { ...thinkBlock.meta, status: 'done' } })
       break
     }
 
@@ -1053,6 +1054,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
           inputTokens: thinkBlock.inputTokens,
           outputTokens: thinkBlock.outputTokens,
           durationMs: thinkBlock.durationMs,
+          meta: { ...thinkBlock.meta, status: 'done' },
         })
       }
       
@@ -1080,6 +1082,9 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     case 'text_chunk':
     case 'text': {
       const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
+      // 最终回复开始流式输出，说明全部 Agent 已完成执行：立即收敛思考块为 done，
+      // 避免「思考过程」弹窗在系统回复已展示后仍显示「思考中...」
+      sessionStore.finalizeThinkingBlocks(botMsgId)
       if (!textBlockId) {
         textBlockId = `block-text-${botMsgId}`
         const textBlock: Block = {
@@ -1140,6 +1145,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       sessionStore.updateBlock(thinkBlock.id, {
         output: thinkBlock.output,
         durationMs: thinkBlock.durationMs,
+        meta: { ...thinkBlock.meta, status: 'done' },
       })
       break
     }
