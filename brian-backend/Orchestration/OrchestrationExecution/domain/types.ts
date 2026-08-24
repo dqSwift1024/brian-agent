@@ -40,6 +40,16 @@ export interface AgentNode {
 }
 
 export interface AgentEdge {
+  /**
+   * 任务级依赖（执行拓扑的权威来源）。
+   *
+   * 一个 Agent 可能复用处理多个 task，若仅保留 agent 级边（from_agent_id → to_agent_id），
+   * 当 task 链在 agent 间形成回环（如 task_1(agent A) → task_3(agent B) → task_4(agent A)）
+   * 时，会被错误地展开为 agent 级环，导致 execDAG 无入度零节点、整图死锁。
+   * 因此执行层必须以 task 级边计算拓扑；agent 级边仅用于可视化展示。
+   */
+  from_task_id?: string;
+  to_task_id?: string;
   from_agent_id: string;
   to_agent_id: string;
   data_dependency: string;

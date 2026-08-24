@@ -51,10 +51,21 @@
     }
   ],
   "agent_edges": [
-    { "from_agent_id": "agent_id_1", "to_agent_id": "agent_id_2", "data_dependency": "上游输出作为下游输入" }
+    {
+      "from_task_id": "task_uuid_1",
+      "to_task_id": "task_uuid_2",
+      "from_agent_id": "agent_id_1",
+      "to_agent_id": "agent_id_2",
+      "data_dependency": "上游输出作为下游输入"
+    }
   ]
 }
 ```
+
+> **说明**：`agent_edges` 中的 `from_task_id` / `to_task_id` 是**执行拓扑的权威来源**（任务级依赖）。
+> `from_agent_id` / `to_agent_id` 仅用于可视化展示。当一个 Agent 复用处理多个 task 时，
+> 若仅保留 agent 级边，`task_1(agent A) → task_3(agent B) → task_4(agent A)` 这类链会被错误展开为
+> agent 级环（A → B → A），导致 execDAG 无入度零节点、整图死锁。因此执行层必须以 task 级边计算拓扑。
 
 **处理流程**：
 
@@ -73,15 +84,14 @@
       - 记录映射 `task_agent_map[task_node.task_id] = agent_id`；
    c. 若任一 Agent 构建失败，将当前 task_node 的 status 标记为 "BUILD_FAILED"，记录错误原因，继续构建下一个（不中断整个 DAG 构建）；
 
-3. **转换依赖关系**
+3. **转换依赖关系（task 级边与 agent 级边分离）**
    a. 初始化 `agent_edges = []`；
-   b. 先查询当前 `plan_id` 已存在的 `orchestration_agent_dag` 边，构建去重集合，防止同一 plan 重复落边；
+   b. 先查询当前 `plan_id` 已存在的 `orchestration_agent_dag` 边，构建 agent 级去重集合，防止同一 plan 重复落边；
    c. 遍历 task_dag.edges 中的每条边：
-      - 根据 task_agent_map 查找 from_task_id 和 to_task_id 对应的 from_agent_id、to_agent_id；
-      - 若映射存在且 `(from_agent_id, to_agent_id)` 不在去重集合中，生成 agent_edge：
-        `{ from_agent_id, to_agent_id, data_dependency: "task_{from_task_id} → task_{to_task_id}" }`；
-      - 将 agent_edge 加入 agent_edges，并把 `(from_agent_id, to_agent_id)` 加入去重集合（跳过重复边）；
-   d. 对每条 agent_edge 调用 RelationDBProvider.insertDB 写入 `orchestration_agent_dag` 表 `{ plan_id, from_agent_id, to_agent_id }`；
+      - **执行层（task 级边，权威）**：忽略自环 task，按 `(from_task_id, to_task_id)` 去重后生成
+        `{ from_task_id, to_task_id, from_agent_id, to_agent_id, data_dependency: "task_{from} → task_{to}" }` 加入 agent_edges；
+      - **可视化层（agent 级边）**：根据 task_agent_map 映射 from/to agent_id，跳过无映射或自环
+        `(from_agent_id === to_agent_id)` 或重复边，写入 `orchestration_agent_dag` 表 `{ plan_id, from_agent_id, to_agent_id }`；
 
 4. **保存 Agent DAG**
    a. 将完整的 agent_dag JSON 调用 RelationDBProvider.insertDB 写入 `orchestration_agent_dag_record` 表：`{ plan_id, total_agent_count, agent_dag_json }`；
@@ -132,42 +142,38 @@
 
 **处理流程**：
 
-1. **拓扑排序与依赖解析**
-   a. 根据 agent_edges 构建邻接表：`{ from_agent_id → [to_agent_id] }` 和入度表 `{ agent_id → indegree }`；
-   b. 对 agent_nodes 执行 Kahn 算法拓扑排序：
-      - 初始化队列 `ready_queue = [所有 indegree == 0 的 agent_node]`；
-      - 初始化结果列表 `results = []`；
-      - 初始化 `agent_outputs = {}`（agent_id → output answer 缓存，用于传递给下游 Agent）；
+1. **拓扑排序与依赖解析（委托 DagScheduler）**
+   a. 节点以 task_id（缺失时回退 agent_id）作为唯一 key，边优先使用 from_task_id/to_task_id，
+      缺失时按 agent_id → task_id 唯一映射回退（兼容手工构造的 legacy DAG）；
+   b. 对节点执行 Kahn 算法拓扑排序，构建邻接表 / 入度表 / 上游映射表；
+   c. 就绪队列 `ready = [所有 indegree == 0 的节点]`，按 (priority, task_id) 确定性排序；
+   d. `agent_outputs`（key → answer）用于串行模式下传递给下游 Agent；
 
-2. **DAG 执行循环**
-   a. 若 `max_concurrent > 1`（并发执行模式）：
-        - 从 ready_queue 弹出最多 max_concurrent 个 Agent，并行调用 execSingleAgent 执行（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_type=ACT、info_creator_role=AGENT 持久化）；
-      - 每个 Agent 执行完成后：
-        - 将其 output 存入 agent_outputs；
-        - 遍历其下游邻接 Agent，将入度减 1；
-        - 若下游 Agent 入度变为 0，将其加入 ready_queue；
-   b. 若 `max_concurrent == 1`（串行执行模式，默认）：
-      - 从 ready_queue 弹出 1 个 Agent；
-      - **构建下游上下文**：对于当前 Agent，收集其所有上游 Agent 的输出（从 agent_outputs 聚合），将上游输出作为上下文拼接到当前 Agent 的 task_content 前端：
+2. **DAG 执行循环（有界并发 worker pool）**
+   a. 启动 `min(concurrency, total)` 个 worker，从就绪队列取节点执行（入度归零即入队，节点完成后实时释放下游）：
+      - 串行模式（concurrency === 1）：将上游输出摘要（前 500 字）拼接到当前 task_content 前端：
         ```
-        增强的 task_content = "上游Agent完成的工作摘要：\n{上游输出1}\n{上游输出2}\n---\n当前任务：{原始 task_content}"
+        上游Agent完成的工作摘要：\n{上游输出1}\n{上游输出2}\n---\n当前任务：{原始 task_content}
         ```
-       - 调用 execSingleAgent 执行该 Agent，将 `task_content` 替换为增强后的内容；（execSingleAgent 内部通过 InfoCore.saveInfo 将每个节点的 task_content 和 answer 以 info_type=ACT、info_creator_role=AGENT 持久化）
-      - 将其 output 存入 agent_outputs；
-      - 遍历其下游邻接 Agent，将入度减 1；
-      - 若下游 Agent 入度变为 0，将其加入 ready_queue；
+      - 每个节点经 `execSingleAgent` 执行（内部通过 InfoCore.saveInfo 持久化 ACT 记录）；
+      - 每完成一个节点，回调更新 `orchestration_work.completed_task_count`；
+   b. **快速失败**：节点执行失败抛 `DagNodeFailureError`（携带 agent_id / task_id / reason / completed_results），
+      停止派发新节点，收敛进行中的节点后向上抛出，由上游层（handleDAGFailure）处理；
+   c. **超时控制**：总耗时超过 `dag_timeout_ms` 时停止派发，剩余未执行节点经 onCancelled 标记 CANCELLED；
+   d. **环兜底（高可用）**：若存在 task 级环导致就绪队列耗尽但仍有未执行节点，按确定性顺序打破环继续执行，
+      绝不因数据异常而永久挂起；
 
 3. **失败处理**
-   a. 若任一 Agent 执行失败（execSingleAgent 返回 false 或 throw exception）：
-      - 将该 Agent 的状态标记为 "EXEC_FAILED"；
+   a. 若任一 Agent 执行失败（execSingleAgent 返回 false 或抛错）：
+      - 抛 DagNodeFailureError 快速失败；
       - 调用 OrchestrationStrategy.handleDAGFailure 处理失败；
-      - 若 handleDAGFailure 返回 action="REPLAN" 和新 agent_dag：用新 agent_dag 替换当前 agent_dag，重新执行 execDAG（递归调用）；
+      - 若 handleDAGFailure 返回 action="REPLAN" 和新 agent_dag：用新 agent_dag 替换当前 agent_dag，重新执行 execDAG；
       - 若 handleDAGFailure 返回 action="FAIL"：终止 DAG 执行，将 failed_count 和已完成的结果写入 output 返回；
 
 4. **完成**
-   a. 所有 Ready Queue 为空时 DAG 执行完成；
+   a. 所有节点执行完成（或环被打破 / 超时取消）时 DAG 执行完成；
    b. 统计 total_elapsed_ms、failed_count；
-   c. 将 agent_results（按拓扑顺序排列）、total_elapsed_ms、failed_count 写入 output 返回；
+   c. 将 agent_results（按完成顺序排列）、total_elapsed_ms、failed_count 写入 output 返回；
 
 ### 2.4. 异步执行 DAG（execDAGAsync）
 
@@ -375,7 +381,7 @@
 
 ## 实现约定（与代码同步）
 
-1. **拓扑排序**：使用 Kahn 算法，依赖 agent_edges 构建邻接表和入度表。
+1. **拓扑排序**：使用 Kahn 算法，依赖 task 级边（from_task_id/to_task_id）构建邻接表和入度表；拓扑与调度逻辑统一收口在 `DagScheduler`，`execDAG` 仅注入节点执行器与回调。
 2. **上游输出传递**：下游 Agent 的 task_content 前缀拼接上游 Agent 的输出摘要（取上游 answer 的前 500 字作为上下文），避免 token 溢出。
 3. **并发执行**：并发模式下，入度零的 Agent 可并行执行（通过 Promise.all），但需确保 AgentExecution 内部无共享状态冲突。
 4. **中断机制**：AgentExecution.execAgent 需支持 `AbortSignal` 参数用于取消正在执行的任务；若当前 Agent 层实现不支持，则通过标记 status=CANCELLED + 忽略该 Agent 后续输出实现软中断。
@@ -440,5 +446,27 @@
   - `POST /api/chat/stream`（Planning 策略）— BUILD_AGENT_DAG 阶段并发构建，前端思考过程弹窗实时展示「构建中 → 构建完成 / 复用已有 Agent」进度。
 
 **可能存在的问题**：
-  - 并发构建共享单连接 better-sqlite3，写操作由同步语义串行化，无数据竞争；并发收益来自 Agent/LLM 匹配的异步网络调用。
-  - `max_concurrent` 过大时可能放大对上游 LLM 的并发压力，需结合配置中心合理设置（默认 1）。
+   - 并发构建共享单连接 better-sqlite3，写操作由同步语义串行化，无数据竞争；并发收益来自 Agent/LLM 匹配的异步网络调用。
+   - `max_concurrent` 过大时可能放大对上游 LLM 的并发压力，需结合配置中心合理设置（默认 1）。
+
+### [2026-08-24] 修复 execDAG 死锁：任务级边 + DagScheduler 调度器重构
+**变更原因**：`buildAgentDAG` 将 task 级 DAG 边降维为 agent 级边（from_agent_id → to_agent_id）。当多个 task 复用同一 Agent 时（如 "研究 Agent" 拆 8 个 task 只命中 3 个 Agent），`task_1(agent A) → task_3(agent B) → task_4(agent A)` 这类链被展开为 agent 级环（A → B → A），`execDAG` 按 agent 边展开后 8 个节点入度全部 > 0，就绪队列为空，DAG 一个节点都不执行，最终短路为「Work Agent 未产生有效输出」。原始「死锁兜底」逻辑位于 while 循环内部，就绪队列初始为空时根本触发不到。
+
+**修改的方法**：
+- `OrchestrationExecution/domain/types.ts` — `AgentEdge` 新增 `from_task_id` / `to_task_id`（可选，执行拓扑的权威来源），保留 `from_agent_id` / `to_agent_id` 用于可视化。
+- 新增 `OrchestrationExecution/application/DagScheduler.ts` — 抽取纯逻辑的任务级 DAG 调度器（参考 LangChain/LangGraph 的 Pregel 执行模型）：task 级拓扑键、Kahn 拓扑排序、有界并发 worker pool、确定性就绪排序、快速失败（`DagNodeFailureError`）、超时控制、环兜底（确定性打破环，绝不挂起）。不触碰 DB/LLM，便于单元测试。
+- `OrchestrationExecutionService.buildAgentDAG()` — 边转换阶段拆分为「执行层 task 级边（agent_edges，随快照持久化）」与「可视化层 agent 级边（orchestration_agent_dag 表，去重落库）」两级。
+- `OrchestrationExecutionService.execDAG()` — 重构为基于 DagScheduler：注入节点执行器（execSingleAgent + 串行上游摘要注入）、completed_task_count 回调、超时取消回调；`DagNodeFailureError` 保留 agent_id/task_id/reason/completed_results 字段，与 OrchestrationStrategy.handleDAGFailure 读取契约兼容。
+
+**新增测试用例**：
+- `TC-BAD-014`：多 task 复用同一 Agent 时产出 task 级边（from_task_id/to_task_id）。
+- `TC-ED-022`：agent 级存在回环（task 级无环）时仍应执行全部任务（回归死锁）。
+- `TC-ED-023`：task 级环依赖时确定性打破环并执行全部任务（高可用兜底）。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— EXEC_DAG 节点不再因 agent 级环死锁，Work Agent 按 task 级拓扑正确执行。
+- `orchestration_agent_dag` 表仍存 agent 级边（仅可视化），`agent_dag_json` 快照中的边改为携带 task 级字段。
+
+**可能存在的问题**：
+- 存量 `agent_dag_json` 快照中的旧边不含 from_task_id/to_task_id，execDAG 会回退到 agent_id → task_id 唯一映射（1:1 场景正确）；agent 复用场景的旧快照无法精确还原 task 级拓扑，属历史数据限制，新 work 不受影响。
+- 超时取消的节点不再计入 failed_count（语义从「失败」修正为「取消」），无既有测试依赖该口径。

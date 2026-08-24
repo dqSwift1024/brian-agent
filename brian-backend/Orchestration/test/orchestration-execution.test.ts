@@ -276,6 +276,44 @@ describe('OrchestrationExecution', () => {
       );
       expect(count[0].c).toBe(1);
     });
+
+    it('TC-BAD-014: 多 task 复用同一 Agent 时产出 task 级边（from_task_id/to_task_id）', async () => {
+      // 模拟复用：task A / C 命中同一 Agent（shared），task B 命中另一个（mid）
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+        const content = (_i as { task_content?: string }).task_content ?? '';
+        o.agent_id = content === 'B' ? 'agent-mid' : 'agent-shared';
+        return true;
+      });
+      const taskDag: TaskDAG = {
+        nodes: [
+          { task_id: 't1', task_content: 'A', task_complexity: 30, task_domain: 'general', priority: 1 },
+          { task_id: 't2', task_content: 'B', task_complexity: 40, task_domain: 'general', priority: 1 },
+          { task_id: 't3', task_content: 'C', task_complexity: 50, task_domain: 'general', priority: 1 },
+        ],
+        edges: [
+          { from_task_id: 't1', to_task_id: 't2' },
+          { from_task_id: 't2', to_task_id: 't3' },
+        ],
+      };
+      const out = new BuildAgentDAGOutput();
+      const ok = await exec.buildAgentDAG(
+        Object.assign(new BuildAgentDAGInput(), { plan_id: 'p-shared', task_dag: taskDag, interact_id: 'i-shared' }),
+        new OrchestrationExecutionContext(), out,
+      );
+      expect(ok).toBe(true);
+      // 即使 agent 级存在 shared → mid → shared 的回环，task 级边仍完整保留 2 条
+      expect(out.agent_dag.agent_edges).toHaveLength(2);
+      const e1 = out.agent_dag.agent_edges[0];
+      expect(e1.from_task_id).toBe('t1');
+      expect(e1.to_task_id).toBe('t2');
+      expect(e1.from_agent_id).toBe('agent-shared');
+      expect(e1.to_agent_id).toBe('agent-mid');
+      const e2 = out.agent_dag.agent_edges[1];
+      expect(e2.from_task_id).toBe('t2');
+      expect(e2.to_task_id).toBe('t3');
+      expect(e2.from_agent_id).toBe('agent-mid');
+      expect(e2.to_agent_id).toBe('agent-shared');
+    });
   });
 
   // =========================================================================
@@ -519,6 +557,65 @@ describe('OrchestrationExecution', () => {
       expect(output.agent_results.length).toBe(2);
       expect(output.agent_results[0].status).toBe('COMPLETED');
       expect(output.agent_results[1].status).toBe('COMPLETED');
+    });
+
+    it('TC-ED-022: agent 级存在回环（task 级无环）时仍应执行全部任务（回归死锁）', async () => {
+      await seedOrchestrationWork('w-deadlock', 's-deadlock', 'i-deadlock', 'PROCESSING');
+      // shared → mid → shared 在 agent 级构成回环；但 task 级为 task_1 → task_3 → task_2 → task_4 无环
+      const agentDag: AgentDAG = {
+        plan_id: 'p-deadlock',
+        total_agent_count: 4,
+        agent_nodes: [
+          { agent_id: 'shared', task_id: 'task_1', task_content: 'T1', task_complexity: 30, task_domain: 'general', task_priority: 1, status: 'PENDING' },
+          { agent_id: 'shared', task_id: 'task_2', task_content: 'T2', task_complexity: 30, task_domain: 'general', task_priority: 2, status: 'PENDING' },
+          { agent_id: 'mid', task_id: 'task_3', task_content: 'T3', task_complexity: 30, task_domain: 'general', task_priority: 3, status: 'PENDING' },
+          { agent_id: 'end', task_id: 'task_4', task_content: 'T4', task_complexity: 30, task_domain: 'general', task_priority: 4, status: 'PENDING' },
+        ],
+        agent_edges: [
+          { from_task_id: 'task_1', to_task_id: 'task_3', from_agent_id: 'shared', to_agent_id: 'mid', data_dependency: 'task_1 → task_3' },
+          { from_task_id: 'task_3', to_task_id: 'task_2', from_agent_id: 'mid', to_agent_id: 'shared', data_dependency: 'task_3 → task_2' },
+          { from_task_id: 'task_2', to_task_id: 'task_4', from_agent_id: 'shared', to_agent_id: 'end', data_dependency: 'task_2 → task_4' },
+        ],
+      };
+      const input = Object.assign(new ExecDAGInput(), { work_id: 'w-deadlock', agent_dag: agentDag, max_concurrent: 1 });
+      const output = new ExecDAGOutput();
+      const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-deadlock' });
+
+      const result = await exec.execDAG(input, ctx, output);
+      expect(result).toBe(true);
+      expect(output.agent_results.length).toBe(4);
+      for (const r of output.agent_results) {
+        expect(r.status).toBe('COMPLETED');
+      }
+    });
+
+    it('TC-ED-023: task 级环依赖时确定性打破环并执行全部任务（高可用兜底）', async () => {
+      await seedOrchestrationWork('w-cycle', 's-cycle', 'i-cycle', 'PROCESSING');
+      // task_1 → task_2 → task_3 → task_1 构成真正的环，调度器应打破环而不挂起
+      const agentDag: AgentDAG = {
+        plan_id: 'p-cycle',
+        total_agent_count: 3,
+        agent_nodes: [
+          { agent_id: 'a', task_id: 't1', task_content: 'T1', task_complexity: 30, task_domain: 'general', task_priority: 1, status: 'PENDING' },
+          { agent_id: 'b', task_id: 't2', task_content: 'T2', task_complexity: 30, task_domain: 'general', task_priority: 2, status: 'PENDING' },
+          { agent_id: 'c', task_id: 't3', task_content: 'T3', task_complexity: 30, task_domain: 'general', task_priority: 3, status: 'PENDING' },
+        ],
+        agent_edges: [
+          { from_task_id: 't1', to_task_id: 't2', from_agent_id: 'a', to_agent_id: 'b', data_dependency: '' },
+          { from_task_id: 't2', to_task_id: 't3', from_agent_id: 'b', to_agent_id: 'c', data_dependency: '' },
+          { from_task_id: 't3', to_task_id: 't1', from_agent_id: 'c', to_agent_id: 'a', data_dependency: '' },
+        ],
+      };
+      const input = Object.assign(new ExecDAGInput(), { work_id: 'w-cycle', agent_dag: agentDag, max_concurrent: 2 });
+      const output = new ExecDAGOutput();
+      const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-cycle' });
+
+      const result = await exec.execDAG(input, ctx, output);
+      expect(result).toBe(true);
+      expect(output.agent_results.length).toBe(3);
+      for (const r of output.agent_results) {
+        expect(r.status).toBe('COMPLETED');
+      }
     });
   });
 
