@@ -122,6 +122,28 @@ async function showThinking(id: string) {
   await Promise.allSettled([dagPromise, blocksPromise])
 }
 
+// 自动弹出时定位动画原点：取"要展示思考过程的问题"（最近一条用户消息）对应的"思考过程"按钮
+function resolveAutoThinkingOrigin() {
+  const msgs = sessionStore.messages
+  let lastUser: ChatMessage | undefined
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role === 'user') {
+      lastUser = m
+      break
+    }
+  }
+  if (lastUser) {
+    const btn = document.querySelector(`[data-thinking-id="${lastUser.id}"]`) as HTMLElement | null
+    if (btn) {
+      const r = btn.getBoundingClientRect()
+      sessionStore.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
+      return
+    }
+  }
+  sessionStore.setThinkingOrigin(null)
+}
+
 const confirmingIntent = ref(false)
 
 async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
@@ -155,6 +177,13 @@ async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
     if (sid) {
       await sessionStore.loadDag(sid, 'default-user')
       await sessionStore.loadChatHistory(sid, 'default-user')
+    }
+    // 按需求理解：用理解后的需求替换用户原始输入
+    if (action === 'APPROVE' && conf.understood_requirement) {
+      sessionStore.replaceUserMessageContent(conf.original_query, conf.understood_requirement)
+    } else if (action === 'CANCEL') {
+      // 取消：丢掉用户原始输入
+      sessionStore.removeUserMessageByContent(conf.original_query)
     }
   }
 }
@@ -336,7 +365,7 @@ async function handleSend(content: string, citingIds: string[]) {
       } as Block
       sessionStore.addBlock(errBlock)
     }
-    sessionStore.closeThinkingModal()
+    sessionStore.requestAutoCloseThinkingModal()
   } finally {
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
@@ -596,6 +625,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       }
       sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
       // 上下文构建成功后弹出思考过程弹窗（流式展示），避免过早弹出遮挡后续的「确认需求理解」弹窗
+      resolveAutoThinkingOrigin()
       sessionStore.openThinkingModal(null)
       break
     }
@@ -988,8 +1018,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         textBlockId = null
         break
       }
-      // 系统最终回复流式输出完成（done 事件）→ 自动关闭思考弹窗
-      sessionStore.closeThinkingModal()
+      // 系统最终回复流式输出完成（done 事件）→ 自动关闭思考弹窗（满足最短展示 5 秒后关闭）
+      sessionStore.requestAutoCloseThinkingModal()
       const feedbackBlock: Block = {
         id: `block-fb-${Date.now()}`,
         msgId: botMsgId,
@@ -1041,7 +1071,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         meta: { status: 'error', createdAt: serverTime, updatedAt: serverTime },
       } as Block
       sessionStore.addBlock(errBlock)
-      sessionStore.closeThinkingModal()
+      sessionStore.requestAutoCloseThinkingModal()
       break
     }
   }

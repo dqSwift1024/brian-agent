@@ -30,6 +30,11 @@ export const useSessionStore = defineStore('session', () => {
   // Planning 策略拆解：planning 为流式期间的实时拆解数据，thinkingDag 为指定消息接口采集的拆解数据
   const planning = ref<PlanningData>({ status: 'idle' })
   const thinkingDag = ref<AgentDagData | null>(null)
+  // 思考过程弹窗动画原点（"思考过程"按钮的视口矩形），供入场/退场 FLIP 动画使用
+  const thinkingOrigin = ref<{ left: number; top: number; width: number; height: number } | null>(null)
+  // 弹窗打开时刻（用于自动关闭的 5 秒最小展示时长判定）
+  const thinkingOpenedAt = ref(0)
+  let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
   // 每个 Agent 独立的执行运行时状态（思考中/成功/失败），key = agent_id
   const agentExecutions = ref<Record<string, AgentRuntimeInfo>>({})
   // 评估结果弹窗：展示某消息对应 work 的 Evolutor 评估评分 JSON
@@ -379,6 +384,30 @@ export const useSessionStore = defineStore('session', () => {
     messages.value = [...messages.value, msg]
   }
 
+  // 按内容（从后往前）定位最近一条用户消息，用理解后的需求替换其原始输入
+  function replaceUserMessageContent(originalContent: string, newContent: string) {
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const m = messages.value[i]
+      if (m.role === 'user' && m.content === originalContent) {
+        const next = [...messages.value]
+        next[i] = { ...next[i], content: newContent }
+        messages.value = next
+        return
+      }
+    }
+  }
+
+  // 按内容（从后往前）定位最近一条用户消息并移除（取消需求理解时丢弃用户原始输入）
+  function removeUserMessageByContent(originalContent: string) {
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const m = messages.value[i]
+      if (m.role === 'user' && m.content === originalContent) {
+        messages.value = [...messages.value.slice(0, i), ...messages.value.slice(i + 1)]
+        return
+      }
+    }
+  }
+
   function addBlock(block: Block) {
     const existing = blocks.value.findIndex(b => b.id === block.id)
     if (existing >= 0) {
@@ -498,6 +527,14 @@ export const useSessionStore = defineStore('session', () => {
   */
 
   // ===== 修改后的 openThinkingModal 与独立模块加载状态管理 =====
+  function setThinkingOrigin(rect: { left: number; top: number; width: number; height: number } | null) {
+    thinkingOrigin.value = rect
+  }
+
+  function clearThinkingOrigin() {
+    thinkingOrigin.value = null
+  }
+
   function startThinkingLoading(msgId: string | null = null) {
     thinkingTargetMsgId.value = msgId
     thinkingBlocks.value = []
@@ -505,6 +542,7 @@ export const useSessionStore = defineStore('session', () => {
     thinkingLoading.value = true
     dagLoading.value = true
     blocksLoading.value = true
+    thinkingOpenedAt.value = Date.now()
     thinkingModalVisible.value = true
   }
 
@@ -531,10 +569,15 @@ export const useSessionStore = defineStore('session', () => {
     thinkingLoading.value = false
     dagLoading.value = false
     blocksLoading.value = false
+    thinkingOpenedAt.value = Date.now()
     thinkingModalVisible.value = true
   }
 
   function closeThinkingModal() {
+    if (autoCloseTimer) {
+      clearTimeout(autoCloseTimer)
+      autoCloseTimer = null
+    }
     thinkingModalVisible.value = false
     thinkingTargetMsgId.value = null
     thinkingBlocks.value = []
@@ -544,6 +587,24 @@ export const useSessionStore = defineStore('session', () => {
     blocksLoading.value = false
     resetPlanning()
     resetAgentStatus()
+    // thinkingOrigin 保留至退场动画结束后由 ThinkingModal 调用 clearThinkingOrigin 清除
+  }
+
+  // ===== 自动关闭：收到关闭事件且弹窗已展示超过 5 秒才关闭；不足 5 秒则延迟到满 5 秒后关闭 =====
+  function requestAutoCloseThinkingModal() {
+    if (!thinkingModalVisible.value) return
+    const MIN_OPEN_MS = 5000
+    const elapsed = Date.now() - thinkingOpenedAt.value
+    const remaining = MIN_OPEN_MS - elapsed
+    if (remaining <= 0) {
+      closeThinkingModal()
+      return
+    }
+    if (autoCloseTimer) clearTimeout(autoCloseTimer)
+    autoCloseTimer = setTimeout(() => {
+      autoCloseTimer = null
+      closeThinkingModal()
+    }, remaining)
   }
 
   // ===== 评估结果弹窗：打开时按 info_id 拉取 Evolutor 评估结果并展示 =====
@@ -631,14 +692,15 @@ export const useSessionStore = defineStore('session', () => {
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
     thinkingLoading, dagLoading, blocksLoading,
-    planning, thinkingDag, agentExecutions,
+    planning, thinkingDag, agentExecutions, thinkingOrigin,
+    setThinkingOrigin, clearThinkingOrigin,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadDag,
-    loadAgentChain, deleteSession, clearMessages, addMessage, addBlock,
+    loadAgentChain, deleteSession, clearMessages, addMessage, replaceUserMessageContent, removeUserMessageByContent, addBlock,
     updateBlock, appendBlockContent, finalizeBlocks, cleanupTransientTextBlocks, toggleMsgSelection,
     toggleCitingMode, clearSelection, togglePin, triggerFocus, triggerCenter,
     setStreaming, setCancelController, cancelCurrentTask,
     startThinkingLoading, setThinkingDag, setThinkingBlocks,
-    openThinkingModal, closeThinkingModal, resetPlanning, updatePlanning,
+    openThinkingModal, closeThinkingModal, requestAutoCloseThinkingModal, resetPlanning, updatePlanning,
     setAgentStatus, resetAgentStatus,
     evalResultVisible, evalResultLoading, evalResult, evalResultError, evalTraceId,
     openEvalResult, closeEvalResult,

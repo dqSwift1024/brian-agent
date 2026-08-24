@@ -4,6 +4,7 @@ import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check, Brai
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { copyToClipboard } from '@/utils/clipboard'
+import { useSessionStore } from '@/stores/session'
 
 const props = withDefaults(
   defineProps<{
@@ -51,6 +52,8 @@ const emit = defineEmits<{
   (e: 'showThinking', id: string): void
   (e: 'showEval', id: string): void
 }>()
+
+const sessionStore = useSessionStore()
 
 const expandedCiting = ref(false)
 const expandedCited = ref(false)
@@ -137,7 +140,12 @@ function handleJump(cid: string) {
   emit('jumpTo', cid)
 }
 
-function handleShowThinking() {
+function handleShowThinking(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement | null
+  if (el) {
+    const r = el.getBoundingClientRect()
+    sessionStore.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
+  }
   emit('showThinking', targetId.value)
 }
 
@@ -269,6 +277,7 @@ async function copyTraceId() {
       <button
         class="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-colors bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-800/60"
         title="查看思考过程"
+        :data-thinking-id="targetId"
         @click.stop="handleShowThinking"
       >
         <Brain :size="10" />

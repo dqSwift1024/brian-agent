@@ -192,6 +192,18 @@
 
 ## 7. 变更记录
 
+### [2026-08-24] 确认需求理解弹窗：按理解执行替换原始输入、取消丢弃原始输入
+- **变更原因**：确认弹窗三个动作此前仅触发 `confirm-intent` 并刷新历史，未按要求回写用户原始输入——「按理解执行」后对话区仍展示原始提问而非理解后的需求；「取消」后原始提问仍残留在对话区，与"按理解执行替换、按原文执行保留、取消丢弃"的交互预期不符。
+- **功能变更**（前端）：
+  1. **按理解执行（APPROVE）**：`ChatArea.vue` 的 `handleIntentConfirm` 在刷新历史后调用 `sessionStore.replaceUserMessageContent(original_query, understood_requirement)`，将最近一条内容等于 `original_query` 的用户消息替换为理解后的需求，随后关闭弹窗。
+  2. **取消（CANCEL）**：刷新历史后调用 `sessionStore.removeUserMessageByContent(original_query)`，丢弃用户原始输入消息，随后关闭弹窗。
+  3. **按原文执行（KEEP）**：仅刷新历史并关闭弹窗，保留原始输入不变。
+  4. **状态管理**：`session.ts` 新增 `replaceUserMessageContent` / `removeUserMessageByContent` 两个方法（按内容从后往前定位最近一条 `role==='user'` 且 `content===original_query` 的消息做替换 / 移除），并随 store 导出。
+- **行为差异**：
+  - 修改前：三个动作均仅调用 `confirm-intent` 并刷新历史，对话区用户消息始终显示原始提问；「取消」后原始提问仍保留。
+  - 修改后：「按理解执行」将对话区用户消息替换为理解后的需求；「按原文执行」保留原文；「取消」移除用户消息。
+- **新增边界条件**：替换 / 移除基于「刷新后后端仍存原始 REQUEST」这一前提，按 `original_query` 精确匹配最近一条用户消息；历史刷新后原提问仍保留在数据库（后端 `confirmIntent` 幂等复用 REQUEST，不重写内容），因此该替换 / 移除仅作用于前端展示层，刷新页面后「取消」丢弃的消息会随历史重新出现。
+
 ### [2026-08-23] 需求理解确认弹窗：intent_confirmation_required 事件处理与 confirm-intent 调用
 - **变更原因**：IntentAgent 匹配得分低于阈值时后端暂停 work 并推送 `intent_confirmation_required` 事件，但前端既无该事件处理、也无 `POST /api/chat/confirm-intent` 调用，导致确认弹窗永不弹出、work 永久卡在 `PAUSED_WAITING_CONFIRMATION`；同时暂停分支此前不落库 REQUEST，历史刷新后用户提问被清空。
 - **功能变更**：

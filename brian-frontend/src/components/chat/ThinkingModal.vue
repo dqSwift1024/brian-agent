@@ -85,16 +85,140 @@ async function focusAgent(agentId: string) {
 function close() {
   sessionStore.closeThinkingModal()
 }
+
+// ===== 弹窗入场/退场动画：从"思考过程"按钮位置按曲线速率弹出，回收也按曲线速率缩回该按钮 =====
+const overlayRef = ref<HTMLElement | null>(null)
+const cardRef = ref<HTMLElement | null>(null)
+const DURATION_MS = 360
+const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+interface Rect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+let startRect: Rect | null = null
+let endRect: Rect | null = null
+
+function rectOf(el: HTMLElement): Rect {
+  const r = el.getBoundingClientRect()
+  return { left: r.left, top: r.top, width: r.width, height: r.height }
+}
+
+function fallbackRect(end: Rect): Rect {
+  const cx = end.left + end.width / 2
+  const cy = end.top + end.height / 2
+  return { left: cx, top: cy, width: 0, height: 0 }
+}
+
+function flipDelta(from: Rect, to: Rect) {
+  return {
+    dx: from.left - to.left,
+    dy: from.top - to.top,
+    sx: to.width > 0 ? from.width / to.width : 1,
+    sy: to.height > 0 ? from.height / to.height : 1,
+  }
+}
+
+// before-enter 触发时元素尚未插入 DOM，getBoundingClientRect 返回全 0；
+// 故在此仅记录动画起点（"思考过程"按钮矩形），并将遮罩置于透明待入场。
+function onBeforeEnter() {
+  const origin = sessionStore.thinkingOrigin
+  startRect = origin && origin.width > 0 && origin.height > 0 ? { ...origin } : null
+  if (overlayRef.value) overlayRef.value.style.opacity = '0'
+}
+
+// enter 触发时元素已插入 DOM，此时才能取到卡片最终（居中）位置作为 FLIP 终点。
+function onEnter(_el: Element, done: () => void) {
+  const el = cardRef.value
+  endRect = el ? rectOf(el) : null
+  if (el && endRect && startRect) {
+    const d = flipDelta(startRect, endRect)
+    el.style.transformOrigin = '0 0'
+    el.style.transform = `translate(${d.dx}px, ${d.dy}px) scale(${d.sx}, ${d.sy})`
+    void el.offsetWidth
+    el.style.transition = `transform ${DURATION_MS}ms ${EASE}`
+    el.style.transform = 'translate(0px, 0px) scale(1, 1)'
+  }
+  if (overlayRef.value) {
+    overlayRef.value.style.transition = `opacity ${DURATION_MS}ms ease`
+    overlayRef.value.style.opacity = '1'
+  }
+  setTimeout(done, DURATION_MS)
+}
+
+function onAfterEnter() {
+  if (cardRef.value) {
+    cardRef.value.style.transition = ''
+    cardRef.value.style.transform = ''
+    cardRef.value.style.transformOrigin = ''
+  }
+  if (overlayRef.value) {
+    overlayRef.value.style.transition = ''
+    overlayRef.value.style.opacity = ''
+  }
+}
+
+function onBeforeLeave() {
+  if (overlayRef.value) {
+    overlayRef.value.style.transition = 'none'
+    overlayRef.value.style.opacity = '1'
+  }
+  if (cardRef.value) {
+    cardRef.value.style.transition = 'none'
+    cardRef.value.style.transformOrigin = '0 0'
+    cardRef.value.style.transform = 'translate(0px, 0px) scale(1, 1)'
+  }
+}
+
+function onLeave(_el: Element, done: () => void) {
+  const el = cardRef.value
+  const end = endRect
+  if (el && end && end.width > 0) {
+    const origin = sessionStore.thinkingOrigin
+    const to = origin && origin.width > 0 && origin.height > 0 ? origin : fallbackRect(end)
+    void el.offsetWidth
+    el.style.transformOrigin = '0 0'
+    el.style.transition = `transform ${DURATION_MS}ms ${EASE}`
+    const d = flipDelta(to, end)
+    el.style.transform = `translate(${d.dx}px, ${d.dy}px) scale(${d.sx}, ${d.sy})`
+  }
+  if (overlayRef.value) {
+    overlayRef.value.style.transition = `opacity ${DURATION_MS}ms ease`
+    overlayRef.value.style.opacity = '0'
+  }
+  setTimeout(done, DURATION_MS)
+}
+
+function onAfterLeave() {
+  startRect = null
+  endRect = null
+  sessionStore.clearThinkingOrigin()
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="visible"
-      class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      @click.self="close"
+    <Transition
+      :css="false"
+      @before-enter="onBeforeEnter"
+      @enter="onEnter"
+      @after-enter="onAfterEnter"
+      @enter-cancelled="onAfterEnter"
+      @before-leave="onBeforeLeave"
+      @leave="onLeave"
+      @after-leave="onAfterLeave"
+      @leave-cancelled="onAfterLeave"
     >
-      <div class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 w-full max-w-4xl mx-4 overflow-hidden flex flex-col max-h-[85vh]">
+      <div
+        v-if="visible"
+        ref="overlayRef"
+        class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        @click.self="close"
+      >
+        <div ref="cardRef" class="bg-white dark:bg-apple-gray-800 rounded-2xl shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 w-full max-w-4xl mx-4 overflow-hidden flex flex-col max-h-[85vh]">
         <div class="px-5 py-3.5 border-b border-apple-gray-200 dark:border-apple-gray-700 flex items-center justify-between flex-shrink-0">
           <div class="flex items-center gap-2">
             <Brain :size="16" class="text-purple-600 dark:text-purple-400" />
@@ -178,7 +302,8 @@ function close() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
