@@ -199,6 +199,7 @@ export class IntentAgentService {
       const ctxIn = Object.assign(new ContextInfoInput(), {
         session_id: sessionId,
         work_id: workId || '',
+        persist_snapshot: false,
       });
       const ctxOut = new ContextInfoOutput();
       await this.infoCore.context(ctxIn, new InfoCoreContext(), ctxOut);

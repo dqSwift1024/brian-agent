@@ -899,3 +899,20 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - 仅剔除内部执行轨迹；正常的 REQUEST / RESPONSE / THINK / REFLECT 等语义内容仍参与召回；trace 记录仍落库用于 ChatMap/思考过程展示，仅不再作为 LLM 上下文。
+
+### [2026-08-24] context 上下文快照冻结：仅问答请求处理时落盘，内部 Agent 复用不再覆盖
+
+**变更原因**：`info_context_source` 快照由 `InfoCoreService.context()` 每次调用都「先删后插」落盘。同一 work 在 IntentAgent（fetchPinnedInfo）、buildWorkContext、BUILD_WORK_CONTEXT、以及后续 execAgent / Planner / Writer 内部会多次复用 `context()`，导致快照被反复覆盖：时间线推进后混入「本次问答之后」的消息，且随机采样（Math.random）与向量/关键词/标签召回（索引持续更新）的弱相关维度在后续重采时结果漂移，最终「思考过程」弹窗展示的上下文与问答处理时实际执行使用的上下文不一致。
+
+**修改的方法**：
+- `ContextInfoInput` — 新增 `persist_snapshot?: boolean`（默认 true，仅问答请求处理时落盘）；
+- `InfoCoreService.context` / `fillContextTriplesAndPersist` — 增加 `persist` 参数，仅 `persist_snapshot !== false` 时才调用 `persistContextSourceMap`（CUSTOM 与 DEFAULT 两种构建模式均条件化）；
+- 内部 Agent 复用 `context()` 的调用点（`AgentExecutionService.execAgent`、`PlannerAgentService`、`WriterAgentService`、`IntentAgentService.fetchPinnedInfo`）— 显式传 `persist_snapshot: false`，仅取查询结果、不覆盖权威快照；
+- 权威快照落盘点收敛为 JSONNode `BUILD_WORK_CONTEXT`（`JSONNodeService.handleBuildWorkContext` 显式传 `persist_snapshot: true`，其在 `SAVE_USER_INPUT` 之后执行，当前 REQUEST 已落库，快照完整）；入口 `OrchestrationEntry.buildWorkContext` 显式传 `persist_snapshot: false`（其在 `SAVE_USER_INPUT` 之前执行，快照的 CURRENT 会误识别，故不落盘）。快照全程按 `work_id` 请求（`soContextByWork`）、生成（`context`）、落盘（`persistContextSourceMap`）。
+
+**影响的端点**：
+- 历史「思考过程」上下文（`soContextByWork`）— 快照冻结在问答请求处理时（BUILD_WORK_CONTEXT），不再混入问答之后的消息、随机/语义召回结果固定；
+- 权威上下文构建（JSONNode `BUILD_WORK_CONTEXT`）— 按同一 `work_id` 生成并落盘快照，展示与执行一致。
+
+**可能存在的问题**：
+- 暂停等待确认（paused）的 work 在确认重跑前仅由 IntentAgent 阶段处理，此时 `persist_snapshot: false` 不落盘，快照在确认重跑后的 `BUILD_WORK_CONTEXT` 阶段才写入（与现有「暂停 work 思考过程仅展示 Intent 块」行为一致）。

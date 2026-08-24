@@ -38,7 +38,7 @@ const containerStyle = computed(() => {
 
 // 节点状态解析：优先取实时执行状态（agentExecutions），其次取节点自带的 status
 function resolveStatus(node: (typeof nodes.value)[number]): AgentExecutionStatus {
-  const rt = sessionStore.agentExecutions[node.id]
+  const rt = sessionStore.agentExecutions[node.agentId ?? node.id]
   if (rt) return rt.status
   const s = String(node.status ?? '').toUpperCase()
   if (s.includes('COMPLET') || s.includes('SUCCESS') || s.includes('DONE')) return 'SUCCESS'
@@ -111,7 +111,8 @@ function edgeColor(source: string): string {
 
 function handleSelect(node: (typeof nodes.value)[number]) {
   selectedId.value = selectedId.value === node.id ? null : node.id
-  emit('select', node.id)
+  // 点击节点 → 联动下方 Agent 执行区：按 agent_id 定位（节点主键 id 为 task_id）
+  emit('select', node.agentId || node.id)
 }
 
 const activeNode = computed(() => nodes.value.find((n) => n.id === selectedId.value) ?? null)

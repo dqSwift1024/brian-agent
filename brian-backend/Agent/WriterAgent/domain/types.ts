@@ -62,6 +62,8 @@ export class WriteOutput extends Output {
   blocks: Block[] = [];
   // 最终回复的处理结果类型（错误透传时标记 call_error / internal_error，供下游评估跳过）
   handle_result_type = '';
+  // 本次 write 的轨迹 id（已落库 agent_execution_trace，供编排层关联 orchestration_agent_execution）
+  trace_id = '';
 }
 
 export class SaveUserProfileInput extends Input {

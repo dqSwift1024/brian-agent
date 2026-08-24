@@ -1613,7 +1613,7 @@ export class InfoCoreService {
         random: 0,
         current: 0,
       };
-      await this.fillContextTriplesAndPersist(output, resultList, input.work_id);
+      await this.fillContextTriplesAndPersist(output, resultList, input.work_id, input.persist_snapshot !== false);
       return true;
     }
 
@@ -1900,7 +1900,7 @@ const rawPriority = priorityOrderStr
       current: output.categories.current.length,
     };
 
-    await this.fillContextTriplesAndPersist(output, resultList, input.work_id);
+    await this.fillContextTriplesAndPersist(output, resultList, input.work_id, input.persist_snapshot !== false);
 
     return true;
   }
@@ -2794,11 +2794,14 @@ const rawPriority = priorityOrderStr
 
   /**
    * 组装三对象（source_ids_map / content_map / attribute_map）到 output，并按 work_id 落盘来源关系。
+   * @param persist 是否将来源关系落盘到 info_context_source 表；内部 Agent 复用 context() 时应传 false，
+   *                仅问答请求处理时的权威上下文构建（BUILD_WORK_CONTEXT / buildWorkContext）才落盘。
    */
   private async fillContextTriplesAndPersist(
     output: ContextInfoOutput,
     resultList: ContextInfoItem[],
     workId: string,
+    persist: boolean = true,
   ): Promise<void> {
     const sourceIdsMap: ContextSourceIdMap = {};
     const contentMap: ContextContentMap = {};
@@ -2837,7 +2840,9 @@ const rawPriority = priorityOrderStr
     output.content_map = contentMap;
     output.attribute_map = attributeMap;
 
-    await this.persistContextSourceMap(workId, sourceIdsMap);
+    if (persist) {
+      await this.persistContextSourceMap(workId, sourceIdsMap);
+    }
   }
 
   /** 将 work_id → 来源 → info_id 关系落盘到 info_context_source 表（幂等：先删后插）。 */

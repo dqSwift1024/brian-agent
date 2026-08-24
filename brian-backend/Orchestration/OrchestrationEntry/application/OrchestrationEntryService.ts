@@ -620,11 +620,15 @@ export class OrchestrationEntryService {
       // });
 
       // ===== 修改后的代码：传入 info: input.user_query 以支撑向量/关键词/标签召回 =====
+      // 注：此处入口级构建在 SAVE_USER_INPUT 之前执行，当前 REQUEST 尚未落库，快照的 CURRENT 会误识别，
+      //     故不落盘快照（persist_snapshot: false）；权威快照由 JSONNode BUILD_WORK_CONTEXT 在
+      //     SAVE_USER_INPUT 之后按同一 work_id 落盘，保证快照与问答实际执行使用的上下文一致。
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
         session_id: input.session_id,
         work_id: input.work_id,
         selected_msg_ids: input.selected_msg_ids,
         info: input.user_query,
+        persist_snapshot: false,
       });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);

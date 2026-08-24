@@ -160,6 +160,7 @@ export interface DagNodeItem {
   content?: string
   status?: string
   agentName?: string
+  agentId?: string
   taskId?: string
   input?: string
   output?: string

@@ -6,6 +6,7 @@ import { AgentLibraryService } from '../AgentLibrary/application/AgentLibrarySer
 import { AgentStrategyService } from '../AgentStrategy/application/AgentStrategyService';
 import { createTestDb, makeAccess, setupAgentTestMocks,
   EvolutorAgentContext, EvalWorkAgentInput, EvalWorkAgentOutput,
+  EvalWriterAgentInput, EvalWriterAgentOutput,
   GetEvaluationInput, GetEvaluationOutput, GetEvolutionReportInput, GetEvolutionReportOutput,
   ConfigEvolutorAgentInput, ConfigEvolutorAgentOutput,
 } from '../EvolutorAgent/domain/types';
@@ -27,10 +28,11 @@ describe('EvolutorAgent', () => {
   let builder: AgentBuilderService;
   let libSvc: AgentLibraryService;
   let stratSvc: AgentStrategyService;
+  let db: any;
 
   beforeAll(async () => {
     await setupAgentTestMocks();
-    const db = await createTestDb();
+    db = await createTestDb();
     libSvc = new AgentLibraryService(db, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
     stratSvc = new AgentStrategyService(db, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
     
@@ -143,6 +145,36 @@ describe('EvolutorAgent', () => {
       await evolutor.configEvolutorAgent(Object.assign(new ConfigEvolutorAgentInput(), { llm_id: 'evolutor-model-1' }),
         new EvolutorAgentContext(), out);
       expect(out.config?.llm_id).toBe('evolutor-model-1');
+    });
+  });
+
+  describe('evalWriterAgent', () => {
+    it('TC-EA-040: evalWriterAgent 记录执行轨迹（trace_id + token 用量）', async () => {
+      const mockLLM = {
+        execLLM: vi.fn().mockImplementation(async (_i: unknown, _c: unknown, o: { result?: string; input_tokens?: number; output_tokens?: number; raw_response?: string }) => {
+          o.result = JSON.stringify({ clarity: 80, informativeness: 80, user_alignment: 80, conciseness: 80, overall: 80, suggestions: [] });
+          o.input_tokens = 60;
+          o.output_tokens = 40;
+          o.raw_response = '{"overall":80}';
+          return true;
+        }),
+      } as any;
+      const traceEvolutor = new EvolutorAgentService(db, mockLLM, NOOP_PROMPTS_ACCESS,
+        NOOP_INFO_CORE, NOOP_MQ_ACCESS, NOOP_MQ_CORE,
+        makeAccess(builder), makeAccess(libSvc), NOOP_AGENT_EXECUTION);
+      const out = new EvalWriterAgentOutput();
+      await traceEvolutor.evalWriterAgent(Object.assign(new EvalWriterAgentInput(), {
+        agent_id: 'writer-1', work_id: 'w-1', interact_id: 'i-1',
+        user_query: '帮我汇总', final_response: '最终回复',
+        agent_results: [{ agent_id: 'a1', task_content: 't1', result: 'r1' }],
+      }), new EvolutorAgentContext(), out);
+      expect(out.trace_id).toBeTruthy();
+      const rows = db.queryRaw<{ trace_id: string; total_token_usage: number }>(
+        'SELECT "trace_id", "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ?',
+        [out.trace_id],
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].total_token_usage).toBe(100);
     });
   });
 });

@@ -624,7 +624,7 @@ export class OrchestrationExecutionService {
         { field: 'task_content', value: input.task_content },
         { field: 'status', value: 'COMPLETED' },
         { field: 'answer', value: input.answer },
-        { field: 'trace_id', value: '' },
+        { field: 'trace_id', value: input.trace_id ?? '' },
         { field: 'iterations', value: 0 },
         { field: 'elapsed_ms', value: input.elapsed_ms ?? 0 },
         { field: 'error_info', value: '' },

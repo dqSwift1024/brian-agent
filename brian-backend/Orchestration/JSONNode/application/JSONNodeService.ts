@@ -720,6 +720,9 @@ export class JSONNodeService {
         work_id: workId,
         selected_msg_ids: selectedMsgIds,
         info: userQuery,
+        // 权威快照落盘点：此节点在 SAVE_USER_INPUT 之后执行，当前 REQUEST 已落库，
+        // 按 work_id 生成并落盘本次问答的上下文快照（仅 source → info_id）。
+        persist_snapshot: true,
       });
       const ctxInfoOutput = new ContextInfoOutput();
       await this.infoCore.context(ctxInfoInput, new InfoCoreContext(), ctxInfoOutput);
@@ -1141,6 +1144,7 @@ export class JSONNodeService {
       '汇总执行结果并生成最终回复',
       writeOutput.response,
       writeElapsed,
+      writeOutput.trace_id,
     );
 
     const updData: DataObject[] = [
@@ -1166,6 +1170,7 @@ export class JSONNodeService {
     taskContent: string,
     answer: string,
     elapsedMs: number,
+    traceId?: string,
   ): Promise<void> {
     if (!agentId) return;
     try {
@@ -1177,6 +1182,7 @@ export class JSONNodeService {
           task_content: taskContent,
           answer,
           elapsed_ms: elapsedMs,
+          trace_id: traceId ?? '',
         }),
         new OrchestrationExecutionContext(),
         new RecordSystemAgentExecutionOutput(),
@@ -1223,6 +1229,7 @@ export class JSONNodeService {
         need_optimize: evalWriterOutput.need_optimize,
       }),
       evalWriterElapsed,
+      evalWriterOutput.trace_id,
     );
 
     for (const ar of agent_results) {

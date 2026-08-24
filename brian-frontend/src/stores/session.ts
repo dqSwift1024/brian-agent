@@ -668,16 +668,19 @@ export const useSessionStore = defineStore('session', () => {
 
     const dag = planning.value.agentDag
     if (dag && dag.nodes.length > 0) {
-      const idx = dag.nodes.findIndex((n) => n.id === agentId)
-      if (idx >= 0) {
-        const node = dag.nodes[idx]
-        if (agentName) {
-          node.agentName = agentName
-          if (!node.label || node.label.startsWith('任务 ') || node.label.startsWith('Task ')) {
-            node.label = agentName
+      // 按 agentId 匹配节点：同一 Agent 可复用到多个任务节点，需同步更新全部匹配节点
+      // （节点主键 id 为 task_id，仅保证画布唯一性，不再承载 agent 关联）。
+      const matched = dag.nodes.filter((n) => n.agentId === agentId)
+      if (matched.length > 0) {
+        for (const node of matched) {
+          if (agentName) {
+            node.agentName = agentName
+            if (!node.label || node.label.startsWith('任务 ') || node.label.startsWith('Task ')) {
+              node.label = agentName
+            }
           }
+          node.status = NODE_STATUS_MAP[status]
         }
-        node.status = NODE_STATUS_MAP[status]
         planning.value = { ...planning.value, agentDag: { ...dag, nodes: [...dag.nodes] } }
       }
     }

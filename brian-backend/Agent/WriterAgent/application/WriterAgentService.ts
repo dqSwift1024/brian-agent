@@ -36,6 +36,8 @@ import {
   AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
 import { parseJsonObject, formatContextCategories } from '../../shared/signature';
+import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
+import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
 
 const FORMAT_ENUM = ['TEXT', 'MARKDOWN', 'JSON'];
 const STYLE_ENUM = ['clear', 'concise', 'detailed', 'creative'];
@@ -43,6 +45,8 @@ const DEPTH_ENUM = ['shallow', 'medium', 'deep'];
 const LANGUAGE_ENUM = ['zh-CN', 'en-US'];
 
 export class WriterAgentService {
+  private readonly traceStore: TraceStore;
+
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly llmAccess: LLMAccess,
@@ -52,7 +56,9 @@ export class WriterAgentService {
     private readonly agentLibrary: AgentLibraryAccess,
     private readonly soulAccess?: SoulAccess,
     private readonly llmCore?: LLMCoreAccess,
-  ) {}
+  ) {
+    this.traceStore = new TraceStore(relationDb);
+  }
 
   // ===== 原始 write 方法（保留作为参考） =====
   /*
@@ -118,6 +124,7 @@ export class WriterAgentService {
             work_id: ctx.work_id || '',
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.user_query,
+            persist_snapshot: false,
           }),
           new InfoCoreContext(),
           ctxOut,
@@ -210,6 +217,7 @@ export class WriterAgentService {
 
   // ===== 修改后的 write 方法：支持兼容兼顾 r.answer 和 r.result 字段 =====
   async write(input: WriteInput, ctx: WriterAgentContext, output: WriteOutput): Promise<boolean> {
+    const startedAt = IdGenerator.now();
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,
@@ -271,6 +279,7 @@ export class WriterAgentService {
             work_id: ctx.work_id || '',
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.user_query,
+            persist_snapshot: false,
           }),
           new InfoCoreContext(),
           ctxOut,
@@ -309,6 +318,18 @@ export class WriterAgentService {
       output.response_format = preferences.format || 'MARKDOWN';
       output.token_usage = 0;
       output.handle_result_type = errorResults[0]?.handle_result_type ?? HandleResultType.INTERNAL_ERROR;
+      await this.recordTrace(output, {
+        agentId: buildOut.agent_id,
+        agentName: agent?.agent_name ?? buildOut.agent_id,
+        soulId: agent?.soul_id ?? '',
+        taskContent: input.user_query,
+        response: errorText,
+        inputTokens: 0,
+        outputTokens: 0,
+        rawResponse: '',
+        elapsedMs: IdGenerator.now() - startedAt,
+        templateId: config?.write_prompt_template_id,
+      });
       return true;
     }
 
@@ -384,7 +405,72 @@ export class WriterAgentService {
     output.response = response;
     output.response_format = preferences.format || 'MARKDOWN';
     output.token_usage = tokens;
+    await this.recordTrace(output, {
+      agentId: buildOut.agent_id,
+      agentName: agent?.agent_name ?? buildOut.agent_id,
+      soulId: agent?.soul_id ?? '',
+      taskContent: input.user_query,
+      response,
+      inputTokens: Number(llmOut.input_tokens ?? 0),
+      outputTokens: Number(llmOut.output_tokens ?? 0),
+      rawResponse: String(llmOut.raw_response ?? llmOut.result ?? ''),
+      elapsedMs: IdGenerator.now() - startedAt,
+      templateId: config?.write_prompt_template_id,
+    });
     return true;
+  }
+
+  /**
+   * 记录 Writer 单次 LLM 调用的执行轨迹（与 Work Agent 的 trace 存储逻辑保持一致），
+   * 供「思考过程 / 执行过程」采集 Writer 的 token 消耗与输出。
+   * best-effort：轨迹落库失败不影响汇总结果。
+   */
+  private async recordTrace(
+    output: WriteOutput,
+    params: {
+      agentId: string;
+      agentName: string;
+      soulId: string;
+      taskContent: string;
+      response: string;
+      inputTokens: number;
+      outputTokens: number;
+      rawResponse: string;
+      elapsedMs: number;
+      templateId: string | undefined;
+    },
+  ): Promise<void> {
+    try {
+      const traceId = IdGenerator.generate();
+      const now = IdGenerator.now();
+      await this.traceStore.save({
+        trace_id: traceId,
+        agent_id: params.agentId,
+        start_time: now,
+        end_time: now + params.elapsedMs,
+        iterations: buildSingleAnswerTrace({
+          answer: params.response,
+          raw_response: params.rawResponse,
+          input_tokens: params.inputTokens,
+          output_tokens: params.outputTokens,
+          elapsed_ms: params.elapsedMs,
+          template_id: params.templateId,
+          builtin_id: PROMPT_IDS.writer,
+          variables: {
+            task_content: params.taskContent,
+            agent_name: params.agentName,
+            domain: 'writer',
+            tools_json: '{}',
+            soul_id: params.soulId,
+          },
+        }),
+        total_token_usage: params.inputTokens + params.outputTokens,
+        answer: params.response,
+      });
+      output.trace_id = traceId;
+    } catch {
+      /* best-effort：轨迹记录失败不影响汇总结果 */
+    }
   }
 
   async saveUserProfile(

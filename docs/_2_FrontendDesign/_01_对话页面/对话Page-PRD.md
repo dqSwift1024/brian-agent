@@ -192,6 +192,16 @@
 
 ## 7. 变更记录
 
+### [2026-08-24] 修复确认需求理解弹窗：点击按钮立即关闭
+- **变更原因**：`handleIntentConfirm` 的弹窗关闭逻辑位于 `finally` 块，需等 `await chatApi.confirmIntent(...)` 返回后才执行；而 APPROVE/KEEP 会让后端同步重入 `receiveWork` 重新执行完整编排（重新跑所有 Agent 与 LLM 调用，耗时较长），HTTP 响应迟迟不回，导致「按理解执行 / 按原文执行」点击后弹窗长期停留、看似"没有关闭"。
+- **功能变更**（前端）：
+  1. `ChatArea.vue` 的 `handleIntentConfirm` 将 `sessionStore.clearIntentConfirmation()` 从 `finally` 块提前到函数开头（捕获 `conf` 之后、发起 `confirm-intent` 请求之前）立即执行，弹窗即时关闭。
+  2. `confirm-intent` 请求改为后台异步完成；`finally` 块仍负责刷新 `loadDag` / `loadChatHistory` 并按 action 回写用户消息（按理解执行替换、取消丢弃）。
+- **行为差异**：
+  - 修改前：点击「按理解执行 / 按原文执行」后，弹窗需等后端同步编排全部完成、confirm-intent 响应返回后才关闭，耗时期间弹窗看似无响应。
+  - 修改后：点击任意动作按钮（按理解执行 / 按原文执行 / 取消）后弹窗立即关闭，后续编排与历史刷新在后台完成。
+- **新增边界条件**：弹窗立即关闭后，`conf` 为点击时捕获的局部变量，后续 `replaceUserMessageContent(conf.original_query, conf.understood_requirement)` / `removeUserMessageByContent(conf.original_query)` 仍按捕获值正确执行，不受弹窗关闭影响。
+
 ### [2026-08-24] 确认需求理解弹窗：按理解执行替换原始输入、取消丢弃原始输入
 - **变更原因**：确认弹窗三个动作此前仅触发 `confirm-intent` 并刷新历史，未按要求回写用户原始输入——「按理解执行」后对话区仍展示原始提问而非理解后的需求；「取消」后原始提问仍残留在对话区，与"按理解执行替换、按原文执行保留、取消丢弃"的交互预期不符。
 - **功能变更**（前端）：

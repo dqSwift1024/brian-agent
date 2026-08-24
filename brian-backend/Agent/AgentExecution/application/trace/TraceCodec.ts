@@ -75,6 +75,38 @@ export function stringifyTrace(iterations: TraceIterations): string {
   return JSON.stringify(iterations);
 }
 
+/**
+ * 构建系统 Agent（Writer / Evolutor 等非 ReACT 单次 LLM 调用）的单迭代 Answer 轨迹。
+ *
+ * 系统 Agent 无 think / act / reflect 循环，仅一次 LLM 调用产出最终结果，
+ * 因此轨迹退化为「单条 iteration + answer 步」，与 Work Agent 无规则（no-rule）
+ * 直答路径（iteration_index 0 仅含 answer）保持结构一致。
+ */
+export function buildSingleAnswerTrace(params: {
+  answer: string;
+  raw_response: string;
+  input_tokens: number;
+  output_tokens: number;
+  elapsed_ms: number;
+  template_id?: string;
+  builtin_id: string;
+  variables: PromptVariables;
+}): TraceIterations {
+  const tokenUsage = params.input_tokens + params.output_tokens;
+  return [{
+    iteration_index: 0,
+    answer: {
+      answer: params.answer,
+      raw_response: params.raw_response,
+      input_tokens: params.input_tokens,
+      output_tokens: params.output_tokens,
+      token_usage: tokenUsage,
+      prompt_ref: buildPromptRef(params.template_id, params.builtin_id, params.variables),
+    },
+    iteration_elapsed_ms: params.elapsed_ms,
+  }];
+}
+
 /** 构建 info_raw 中的轻量 trace 引用（供 ChatMap 展示，不含完整 iterations）。 */
 export function buildLightTraceRef(
   traceId: string,

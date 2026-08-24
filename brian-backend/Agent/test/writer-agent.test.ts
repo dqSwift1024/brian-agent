@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { ValidationError } from '@brian-agent/base';
 import { WriterAgentService } from '../WriterAgent/application/WriterAgentService';
 import { AgentBuilderService } from '../AgentBuilder/application/AgentBuilderService';
@@ -7,6 +7,7 @@ import { AgentStrategyService } from '../AgentStrategy/application/AgentStrategy
 import { createTestDb, makeAccess, setupAgentTestMocks,
   WriterAgentContext, SaveUserProfileInput, SaveUserProfileOutput,
   GetUserProfileInput, GetUserProfileOutput, ConfigWriterAgentInput, ConfigWriterAgentOutput,
+  WriteInput, WriteOutput,
 } from '../WriterAgent/domain/types';
 import { createTestDb, makeAccess, setupAgentTestMocks,
   NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS, NOOP_INFO_CORE,
@@ -18,10 +19,11 @@ describe('WriterAgent', () => {
   let builder: AgentBuilderService;
   let libSvc: AgentLibraryService;
   let stratSvc: AgentStrategyService;
+  let db: any;
 
   beforeAll(async () => {
     await setupAgentTestMocks();
-    const db = await createTestDb();
+    db = await createTestDb();
     libSvc = new AgentLibraryService(db, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
     stratSvc = new AgentStrategyService(db, NOOP_LLM_ACCESS, NOOP_PROMPTS_ACCESS);
     
@@ -105,6 +107,33 @@ describe('WriterAgent', () => {
       await writer.configWriterAgent(Object.assign(new ConfigWriterAgentInput(), { llm_id: 'writer-model-1' }),
         new WriterAgentContext(), out);
       expect(out.config?.llm_id).toBe('writer-model-1');
+    });
+  });
+
+  describe('write', () => {
+    it('TC-WR-020: write 记录执行轨迹（trace_id + token 用量）', async () => {
+      const mockLLM = {
+        execLLM: vi.fn().mockImplementation(async (_i: unknown, _c: unknown, o: { result?: string; input_tokens?: number; output_tokens?: number; raw_response?: string }) => {
+          o.result = JSON.stringify([{ type: 'text_paragraph', content: '汇总结果' }]);
+          o.input_tokens = 120;
+          o.output_tokens = 80;
+          o.raw_response = '{"result":"ok"}';
+          return true;
+        }),
+      } as any;
+      const traceWriter = new WriterAgentService(db, mockLLM, NOOP_PROMPTS_ACCESS, NOOP_INFO_CORE, makeAccess(builder), makeAccess(libSvc));
+      const out = new WriteOutput();
+      await traceWriter.write(Object.assign(new WriteInput(), {
+        work_id: 'w-1', interact_id: 'i-1', user_query: '帮我汇总',
+        agent_results: [{ agent_id: 'a1', task_content: 't1', result: 'r1' }],
+      }), new WriterAgentContext(), out);
+      expect(out.trace_id).toBeTruthy();
+      const rows = db.queryRaw<{ trace_id: string; total_token_usage: number; answer: string }>(
+        'SELECT "trace_id", "total_token_usage", "answer" FROM "agent_execution_trace" WHERE "trace_id" = ?',
+        [out.trace_id],
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].total_token_usage).toBe(200);
     });
   });
 });

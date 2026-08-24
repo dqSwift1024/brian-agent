@@ -885,7 +885,11 @@ async function buildThinkingBlocksAndDag(
               const content = String(n.task_content || '');
               const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`);
               return {
-                id: String(n.agent_id || `agent-${i}`),
+                // 节点主键改用 task_id（唯一），agent_id 仅作展示/执行联动字段：
+                // 同一 Agent 可复用到多个任务（如 30fb48e6 同时承担 task_2 / task_4），
+                // 若以 agent_id 为主键会重复 key 导致画布节点折叠、依赖边形成假环、布局塌陷。
+                id: String(n.task_id || `task-${i}`),
+                agentId: String(n.agent_id || ''),
                 label: `任务 ${i + 1}: ${title}`,
                 domain,
                 content,
@@ -894,8 +898,9 @@ async function buildThinkingBlocksAndDag(
               };
             }),
             edges: (dagObj.agent_edges || []).map((e: any) => ({
-              source: String(e.from_agent_id || ''),
-              target: String(e.to_agent_id || ''),
+              // 依赖边按任务级 id 关联（与节点主键 task_id 一致），避免 agent 复用导致的假环
+              source: String(e.from_task_id || ''),
+              target: String(e.to_task_id || ''),
               label: String(e.data_dependency || ''),
             })),
           });
@@ -904,7 +909,7 @@ async function buildThinkingBlocksAndDag(
     }
 
     const execRows = relationDb.queryRaw<Record<string, unknown>>(
-      `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created, e.execution_type,
+      `SELECT e.id as exec_id, e.work_id, e.agent_id, e.task_id, e.task_content, e.status, e.answer, e.trace_id, e.elapsed_ms, e.created, e.execution_type,
               a.agent_name, a.agent_type, a.soul_id,
               t.iterations_json, t.total_token_usage
        FROM orchestration_agent_execution e
@@ -1139,12 +1144,27 @@ async function buildThinkingBlocksAndDag(
         contextData.tagRelativeMessages = toMessages('TAG_RELATIVE');
         contextData.keywordMessages = toMessages('KEYWORD');
         contextData.randomMessages = toMessages('RANDOM');
-        contextData.categoryIds = sourceIdsMap;
+        // ===== 原始代码（保留参考）：直接下发 sourceIdsMap（大写 key），与前端期望的小写 key 不一致 =====
+        // contextData.categoryIds = sourceIdsMap;
+        // ===== 修改后：将大写来源 key 映射为前端 ThinkingContext 期望的小写分类 key，
+        //       CUSTOM → selected（手动勾选），其余与分类名一致 =====
+        contextData.categoryIds = {
+          selected: sourceIdsMap.CUSTOM ?? sourceIdsMap.SELECTED ?? [],
+          citing: sourceIdsMap.CITING ?? [],
+          timeline: sourceIdsMap.TIMELINE ?? [],
+          pinned: sourceIdsMap.PINNED ?? [],
+          similarity: sourceIdsMap.SIMILARITY ?? [],
+          tag_relative: sourceIdsMap.TAG_RELATIVE ?? [],
+          keyword: sourceIdsMap.KEYWORD ?? [],
+          random: sourceIdsMap.RANDOM ?? [],
+        };
       }
 
       // 如果精确匹配 trace_id 没有找到 iterations_json，再次尝试使用 agent_id + created 拟合获取 trace
       let iterJson = row.iterations_json;
       let tokenUsage = row.total_token_usage ? Number(row.total_token_usage) : 0;
+      // 轨迹迭代数组（外层作用域声明，供后续 prompt 重建使用；缺失 trace 时为 [])
+      let iters: any[] = [];
 
       if (!iterJson && agentId) {
         try {
@@ -1173,7 +1193,7 @@ async function buildThinkingBlocksAndDag(
 
       if (iterJson) {
         try {
-          const iters = JSON.parse(String(iterJson));
+          iters = JSON.parse(String(iterJson));
           if (Array.isArray(iters)) {
             for (const iter of iters) {
               if (iter.think) {
@@ -1330,7 +1350,12 @@ async function buildThinkingBlocksAndDag(
       // （执行状态由 orchestration_agent_execution.status 决定：COMPLETED 成功 / EXEC_FAILED 失败 / CANCELLED·PENDING 未执行）
       if (workDagMap.has(wid)) {
         const dagData = workDagMap.get(wid);
-        const nodeInDag = dagData.nodes.find((n: any) => n.id === agentId);
+        // 按 task_id 精确定位节点：同一 Agent 复用多个任务时，每条执行记录对应唯一 task，
+        // 避免 find(agentId) 只命中第一个任务节点导致复用任务的节点信息缺失。
+        const taskIdOfRow = String(row.task_id ?? '');
+        const nodeInDag = taskIdOfRow
+          ? dagData.nodes.find((n: any) => n.taskId === taskIdOfRow)
+          : dagData.nodes.find((n: any) => n.agentId === agentId);
         if (nodeInDag) {
           nodeInDag.agentName = agentName;
           nodeInDag.input = inputQuery;
@@ -1368,8 +1393,29 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       const params = u.searchParams;
       const body = (method === 'POST' || method === 'PUT' || method === 'DELETE') ? await jsonBody(req) : {};
 
+      // ===== Health Routes =====
+      // Kubernetes 风格健康检查：存活检查返回 200，就绪检查验证 RelationDB 连通性。
+      // 轻量设计：不探测 LLM/MCP 等外部依赖（完整聚合见 /api/monitor/health-all），
+      // 保证探针快速返回、不阻塞事件循环。
+      if (method === 'GET' && pathname === '/api/health') {
+        let db = 'healthy';
+        try {
+          ctx.relationDb.queryRaw('SELECT 1');
+        } catch {
+          db = 'unhealthy';
+        }
+        const healthy = db === 'healthy';
+        sendJson(res, healthy ? 200 : 503, {
+          status: healthy ? 'ok' : 'unhealthy',
+          version: '1.0.0',
+          uptime: Math.round(process.uptime()),
+          timestamp: new Date().toISOString(),
+          db,
+        });
+        return;
+
       // ===== Config Routes =====
-      if (method === 'GET' && pathname === '/api/config') {
+      } else if (method === 'GET' && pathname === '/api/config') {
         const input: GetConfigDetailInput = Object.assign(new GetConfigDetailInput(), {});
         const output = new GetConfigDetailOutput();
         const context = new ConfigContext();

@@ -432,6 +432,13 @@ export class ContextInfoInput extends Input {
   selected_msg_ids?: string[];
   /** 自定义指定消息 ID 列表（等同 selected_msg_ids） */
   custom_info_ids?: string[];
+  /**
+   * 是否将采集来源快照（source → info_id，仅 ID 不含内容）落盘到 info_context_source 表。
+   * 默认 true。内部 Agent（execAgent / Planner / Writer / IntentAgent）复用 context() 仅需查询结果，
+   * 不应覆盖本次问答在「问答请求处理时」生成的权威快照，须显式传 false，避免快照混入问答之后的信息
+   * 或非确定性（随机采样 / 语义相似 / 关键词 / 标签）召回结果，导致展示与执行不一致。
+   */
+  persist_snapshot?: boolean;
 }
 
 /** context 出参 */

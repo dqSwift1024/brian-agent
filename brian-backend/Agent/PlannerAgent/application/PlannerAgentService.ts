@@ -102,6 +102,7 @@ export class PlannerAgentService {
             work_id: ctx.work_id || '',
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.task_content,
+            persist_snapshot: false,
           }),
           new InfoCoreContext(),
           ctxOut,

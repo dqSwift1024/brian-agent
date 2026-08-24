@@ -41,6 +41,8 @@ import {
 import {
   GetTraceInput, GetTraceOutput, AgentExecutionContext,
 } from '../../AgentExecution/domain/types';
+import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
+import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
 import { parseJsonObject } from '../../shared/signature';
 
 const OPTIMIZE_QUEUE = 'agent.optimize';
@@ -65,6 +67,7 @@ function mapEval(row: Record<string, unknown>): AgentEvaluationRecord {
 
 export class EvolutorAgentService {
   private scheduleWorkerId = '';
+  private readonly traceStore: TraceStore;
 
   constructor(
     private readonly relationDb: RelationDBAccess,
@@ -77,7 +80,9 @@ export class EvolutorAgentService {
     private readonly agentLibrary: AgentLibraryAccess,
     private readonly agentExecution: AgentExecutionAccess,
     private readonly llmCore?: LLMCoreAccess,
-  ) {}
+  ) {
+    this.traceStore = new TraceStore(relationDb);
+  }
 
   async evalWorkAgent(
     input: EvalWorkAgentInput,
@@ -233,6 +238,7 @@ export class EvolutorAgentService {
     if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
       return true;
     }
+    const startedAt = IdGenerator.now();
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,
@@ -271,6 +277,10 @@ export class EvolutorAgentService {
       },
     );
 
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let rawResponse = '';
+
     try {
       const llmOut = new ExecLLMOutput();
       const ok = await this.llmAccess.execLLM(
@@ -278,6 +288,9 @@ export class EvolutorAgentService {
         new LLMContext(),
         llmOut,
       );
+      inputTokens = Number(llmOut.input_tokens ?? 0);
+      outputTokens = Number(llmOut.output_tokens ?? 0);
+      rawResponse = String(llmOut.raw_response ?? llmOut.result ?? '');
       if (ok && llmOut.result) {
         const parsed = parseJsonObject(llmOut.result);
         if (parsed) {
@@ -334,7 +347,76 @@ export class EvolutorAgentService {
     output.scores = scores;
     output.suggestions = suggestions;
     output.need_optimize = needOptimize;
+    await this.recordTrace(output, {
+      agentId: buildOut.agent_id,
+      agentName: evolutor?.agent_name ?? buildOut.agent_id,
+      taskContent: input.user_query,
+      scores,
+      suggestions,
+      inputTokens,
+      outputTokens,
+      rawResponse,
+      elapsedMs: IdGenerator.now() - startedAt,
+      templateId: config?.eval_write_prompt_template_id,
+    });
     return true;
+  }
+
+  /**
+   * 记录 Evolutor（evalWriterAgent）单次 LLM 调用的执行轨迹（与 Work Agent 的 trace 存储逻辑保持一致），
+   * 供「思考过程 / 执行过程」采集 Evolutor 的 token 消耗与评估输出。
+   * best-effort：轨迹落库失败不影响评估结果。
+   */
+  private async recordTrace(
+    output: EvalWriterAgentOutput,
+    params: {
+      agentId: string;
+      agentName: string;
+      taskContent: string;
+      scores: unknown;
+      suggestions: string[];
+      inputTokens: number;
+      outputTokens: number;
+      rawResponse: string;
+      elapsedMs: number;
+      templateId: string | undefined;
+    },
+  ): Promise<void> {
+    try {
+      const traceId = IdGenerator.generate();
+      const now = IdGenerator.now();
+      const answer = JSON.stringify({
+        scores: params.scores,
+        suggestions: params.suggestions,
+      });
+      await this.traceStore.save({
+        trace_id: traceId,
+        agent_id: params.agentId,
+        start_time: now,
+        end_time: now + params.elapsedMs,
+        iterations: buildSingleAnswerTrace({
+          answer,
+          raw_response: params.rawResponse,
+          input_tokens: params.inputTokens,
+          output_tokens: params.outputTokens,
+          elapsed_ms: params.elapsedMs,
+          template_id: params.templateId,
+          builtin_id: PROMPT_IDS.evalWrite,
+          variables: {
+            task_content: params.taskContent,
+            agent_name: params.agentName,
+            domain: 'eval_write',
+            tools_json: '{}',
+            soul_id: '',
+          },
+        }),
+        total_token_usage: params.inputTokens + params.outputTokens,
+        answer,
+      });
+      output.trace_id = traceId;
+    } catch {
+      /* best-effort：轨迹记录失败不影响评估结果 */
+    }
   }
 
   async startEvalSchedule(

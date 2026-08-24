@@ -96,6 +96,8 @@ export class EvalWriterAgentOutput extends Output {
   scores: WriterEvalScores = { clarity: 0, informativeness: 0, user_alignment: 0, conciseness: 0, overall: 0 };
   suggestions: string[] = [];
   need_optimize = false;
+  // 本次评估的轨迹 id（已落库 agent_execution_trace，供编排层关联 orchestration_agent_execution）
+  trace_id = '';
 }
 
 // ---------------------------------------------------------------------------

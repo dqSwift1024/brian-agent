@@ -146,9 +146,52 @@ function resolveAutoThinkingOrigin() {
 
 const confirmingIntent = ref(false)
 
+// ===== 原始 handleIntentConfirm（保留参考）：弹窗关闭逻辑位于 finally，需等 confirm-intent 响应后才关闭 =====
+// async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
+//   const conf = sessionStore.intentConfirmation
+//   if (!conf) return
+//   confirmingIntent.value = true
+//   try {
+//     await chatApi.confirmIntent({
+//       session_id: conf.session_id,
+//       work_id: conf.work_id,
+//       action,
+//       understood_requirement: action === 'APPROVE' ? conf.understood_requirement : undefined,
+//     })
+//   } catch (err) {
+//     const errBlock: Block = {
+//       id: `block-err-${Date.now()}`,
+//       msgId: `msg-${Date.now()}`,
+//       role: 'system',
+//       type: 'ErrorFallback',
+//       message: err instanceof Error ? err.message : '确认需求失败',
+//       errorCode: 'CONFIRM_INTENT_FAILED',
+//       retryAvailable: false,
+//       meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+//     } as Block
+//     sessionStore.addBlock(errBlock)
+//   } finally {
+//     confirmingIntent.value = false
+//     sessionStore.clearIntentConfirmation()
+//     const sid = sessionStore.currentSessionId
+//     if (sid) {
+//       await sessionStore.loadDag(sid, 'default-user')
+//       await sessionStore.loadChatHistory(sid, 'default-user')
+//     }
+//     if (action === 'APPROVE' && conf.understood_requirement) {
+//       sessionStore.replaceUserMessageContent(conf.original_query, conf.understood_requirement)
+//     } else if (action === 'CANCEL') {
+//       sessionStore.removeUserMessageByContent(conf.original_query)
+//     }
+//   }
+// }
+
+// ===== 修改后：点击按钮立即关闭弹窗，confirm-intent 后台异步完成后再刷新历史与回写内容 =====
 async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
   const conf = sessionStore.intentConfirmation
   if (!conf) return
+  // 立即关闭确认弹窗，避免后端同步重入编排（APPROVE/KEEP 会重新执行完整编排、耗时较长）期间弹窗长期停留
+  sessionStore.clearIntentConfirmation()
   confirmingIntent.value = true
   try {
     await chatApi.confirmIntent({
@@ -171,7 +214,6 @@ async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
     sessionStore.addBlock(errBlock)
   } finally {
     confirmingIntent.value = false
-    sessionStore.clearIntentConfirmation()
     // 确认后刷新历史与 ChatMap，展示本轮最终结果
     const sid = sessionStore.currentSessionId
     if (sid) {
@@ -727,7 +769,10 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
             const content = String(n.task_content ?? '')
             const title = domain || (content ? content.slice(0, 16) : `任务 #${i + 1}`)
             return {
-              id: String(n.agent_id ?? `agent-${i}`),
+              // 节点主键用 task_id（唯一），agent_id 仅作执行联动字段：
+              // 同一 Agent 复用到多个任务时避免重复 key 导致的节点折叠与布局塌陷
+              id: String(n.task_id ?? `task-${i}`),
+              agentId: String(n.agent_id ?? ''),
               label: `任务 ${i + 1}: ${title}`,
               domain,
               content,
@@ -737,8 +782,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
           }),
           edges: Array.isArray(agentDag.agent_edges)
             ? agentDag.agent_edges.map((e: Record<string, unknown>) => ({
-                source: String(e.from_agent_id ?? ''),
-                target: String(e.to_agent_id ?? ''),
+                source: String(e.from_task_id ?? ''),
+                target: String(e.to_task_id ?? ''),
                 label: String(e.data_dependency ?? ''),
               }))
             : [],
