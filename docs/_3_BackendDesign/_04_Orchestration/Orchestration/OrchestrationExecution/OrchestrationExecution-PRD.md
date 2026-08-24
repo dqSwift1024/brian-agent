@@ -284,6 +284,7 @@
 - input：ConfigOrchestrationExecutionInput（继承 Input），包含以下字段：
   - max_concurrent：默认最大并发执行数（可选，默认 1）
   - dag_timeout_ms：DAG 执行总超时时间（可选，默认 600000 = 10 分钟，0 表示不限制）
+  - agent_timeout_ms：单 Agent 执行超时时间（可选，默认 300000 = 5 分钟，0 表示不限制；防止单个 Work Agent 挂起拖垮整个 DAG）
 - context：ConfigOrchestrationExecutionContext（继承 Context），会话上下文（session_id 等）
 - output：ConfigOrchestrationExecutionOutput（继承 Output），承载返回内容：
   - 当前生效的全部配置
@@ -494,3 +495,23 @@
 
 **可能存在的问题**：
 - 历史扁平 DAG 无 `parent_task_id`，全部视为叶子任务（向后兼容），不触发父任务汇总。
+
+### [2026-08-24] 单 Agent 执行超时兜底（agent_timeout_ms）
+
+**变更原因**：`DagScheduler` / `execDAG` 原无单 Agent 级超时，单个 Work Agent 的 LLM 调用挂起会拖垮整个 DAG，最终只能等 JSONNode 节点超时（原配置 20 分钟）兜底，用户体感极差。
+
+**修改的方法**：
+- `OrchestrationExecution/domain/types.ts` — `OrchestrationExecutionConfig` 新增 `agent_timeout_ms`（默认 300000）；`ConfigOrchestrationExecutionInput` 新增 `agent_timeout_ms`。
+- `DagScheduler.ts` — `DagSchedulerConfig` 新增 `nodeTimeoutMs`；新增 `executeNode` 方法，对单节点执行做 Promise 竞速超时，超时抛错经 `run()` 收敛为 `DagNodeFailureError` 快速失败。
+- `OrchestrationExecutionService` — `ensureConfigLoaded` 加载 `agent_timeout_ms`；`execDAG` 传入 `nodeTimeoutMs`；`configOrchestrationExecution` 校验并下发该配置。
+- `OrchestrationEntrySchemaInitializer` — 幂等迁移新增 `agent_timeout_ms` 列，并将 `node_timeout_ms > 600000` clamp 到 600000。
+- `Application/Config` — 注册并映射 `orchestration.execution.agent_timeout_ms` 配置项。
+
+**新增测试用例**：
+- `Orchestration/test/dag-scheduler.test.ts` — 单节点挂起按 `nodeTimeoutMs` 快速失败；`nodeTimeoutMs=0` 不限制；超时前完成正常返回。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— 单 Agent 挂起由最长 20 分钟缩短为 `agent_timeout_ms`（默认 5 分钟）快速失败。
+
+**可能存在的问题**：
+- 节点超时后底层 `execSingleAgent` 无法被强制取消，其内部未完成的 LLM 调用会在后台自行失败（HTTP 2 分钟超时），落库为 best-effort，不影响后续编排。

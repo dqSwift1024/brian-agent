@@ -98,6 +98,9 @@ export class OrchestrationExecutionService {
       if (current.dag_timeout_ms !== undefined && current.dag_timeout_ms !== null) {
         this.config.dag_timeout_ms = Number(current.dag_timeout_ms);
       }
+      if (current.agent_timeout_ms !== undefined && current.agent_timeout_ms !== null) {
+        this.config.agent_timeout_ms = Number(current.agent_timeout_ms);
+      }
       this.configLoaded = true;
     } catch {
       /* 表未就绪或查询失败时使用默认配置 */
@@ -1005,6 +1008,7 @@ export class OrchestrationExecutionService {
     const runOutput = await scheduler.run(nodes, edges, executor, {
       concurrency,
       timeoutMs,
+      nodeTimeoutMs: this.config.agent_timeout_ms,
       logger: this.logger,
       onCompleted: async (completed: number) => {
         if (!work_id) return;
@@ -1407,6 +1411,9 @@ export class OrchestrationExecutionService {
     if (input.dag_timeout_ms !== undefined && input.dag_timeout_ms < 0) {
       throw new ValidationError('dag_timeout_ms must be non-negative');
     }
+    if (input.agent_timeout_ms !== undefined && input.agent_timeout_ms < 0) {
+      throw new ValidationError('agent_timeout_ms must be non-negative');
+    }
 
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: ORCHESTRATION_CONFIG_TABLE },
@@ -1418,6 +1425,7 @@ export class OrchestrationExecutionService {
 
     this.config.max_concurrent = (current.max_concurrent as number) ?? this.config.max_concurrent;
     this.config.dag_timeout_ms = (current.dag_timeout_ms as number) ?? this.config.dag_timeout_ms;
+    this.config.agent_timeout_ms = (current.agent_timeout_ms as number) ?? this.config.agent_timeout_ms;
 
     const data: DataObject[] = [];
 
@@ -1428,6 +1436,10 @@ export class OrchestrationExecutionService {
     if (input.dag_timeout_ms !== undefined) {
       this.config.dag_timeout_ms = input.dag_timeout_ms;
       data.push({ field: 'dag_timeout_ms', value: input.dag_timeout_ms });
+    }
+    if (input.agent_timeout_ms !== undefined) {
+      this.config.agent_timeout_ms = input.agent_timeout_ms;
+      data.push({ field: 'agent_timeout_ms', value: input.agent_timeout_ms });
     }
 
     if (data.length > 0) {

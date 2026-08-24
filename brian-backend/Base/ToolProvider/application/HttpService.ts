@@ -19,6 +19,9 @@ import type { ConfigService } from '../../shared/config/ConfigService';
 /** 默认超时 60 秒 */
 const DEFAULT_TIMEOUT_MS = 60000;
 
+/** Promise 一次性收敛回调：err 非空走 reject，否则以 value 走 resolve。 */
+type ProxySettle = (err: Error | null, value?: HttpResponse) => void;
+
 export class HttpService {
   private readonly config?: ConfigService;
 
@@ -117,8 +120,10 @@ export class HttpService {
 
   /**
    * 代理请求（外部地址 + 代理环境变量）。
-   * 使用 https-proxy-agent / http-proxy-agent 库。
-   * 若 agent 库不可用则降级为直连。
+   *
+   * 使用 https-proxy-agent / http-proxy-agent 库；agent 库不可用时降级为直连。
+   * 关键保证：任何终止路径（超时 / abort / 连接错误 / 响应完成）都会调用 settle 收敛 Promise，
+   * 避免「超时后既不 resolve 也不 reject」导致调用方永久挂起。
    */
   private proxyFetch(
     req: HttpRequest,
@@ -126,102 +131,137 @@ export class HttpService {
     proxy: string,
     timeoutMs: number,
   ): Promise<HttpResponse> {
-    return new Promise((resolve, reject) => {
-      let isSettled = false;
-      const isHttps = parsedUrl.protocol === 'https:';
-      const lib = isHttps ? https : http;
-
-      let agent: any = undefined;
-      try {
-        if (isHttps) {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { HttpsProxyAgent } = require('https-proxy-agent');
-          agent = new HttpsProxyAgent(proxy);
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { HttpProxyAgent } = require('http-proxy-agent');
-          agent = new HttpProxyAgent(proxy);
-        }
-      } catch {
-        // 缺少 agent 库时降级为直接直连
-      }
-
-      const headers: Record<string, string> = {};
-      if (req.headers) {
-        for (const [k, v] of Object.entries(req.headers)) {
-          if (v !== undefined) headers[k] = String(v);
-        }
-      }
-
-      const reqOptions: https.RequestOptions = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port ? Number(parsedUrl.port) : (isHttps ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: req.method || 'GET',
-        headers,
-        timeout: timeoutMs,
-      };
-      if (agent) {
-        reqOptions.agent = agent;
-      }
-
-      const timer = setTimeout(() => {
-        if (!isSettled) {
-          isSettled = true;
-          clientReq.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
-
-      const clientReq = lib.request(reqOptions, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-        res.on('end', () => {
-          if (isSettled) return;
-          isSettled = true;
-          clearTimeout(timer);
-          const bodyBuffer = Buffer.concat(chunks);
-          const bodyText = bodyBuffer.toString('utf-8');
-          resolve({
-            ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
-            status: res.statusCode || 200,
-            statusText: res.statusMessage || '',
-            headers: this.lowercaseHeaders(res.headers),
-            bodyText,
-          });
-        });
-      });
-
-      clientReq.on('error', (err) => {
-        if (!isSettled) {
-          isSettled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
-      });
-
-      clientReq.on('timeout', () => {
-        if (!isSettled) {
-          isSettled = true;
-          clearTimeout(timer);
-          clientReq.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
-        }
-      });
-
-      if (req.signal) {
-        req.signal.addEventListener('abort', () => {
-          if (!isSettled) {
-            isSettled = true;
-            clearTimeout(timer);
-            clientReq.destroy(new Error('Request aborted'));
-          }
-        });
-      }
-
-      if (req.body) {
-        clientReq.write(typeof req.body === 'string' ? req.body : req.body.toString());
-      }
-      clientReq.end();
+    return new Promise<HttpResponse>((resolve, reject) => {
+      const settle = this.createProxySettle(resolve, reject);
+      const agent = this.resolveProxyAgent(parsedUrl, proxy);
+      const options = this.buildProxyOptions(parsedUrl, req, agent, timeoutMs);
+      const clientReq = this.openProxyRequest(parsedUrl, options);
+      const cleanup = this.armProxyTimeout(clientReq, req, timeoutMs, settle);
+      this.attachProxyResponse(clientReq, cleanup, settle);
+      this.sendProxyBody(clientReq, req);
     });
+  }
+
+  /** 构造一次性 settle 回调，保证 Promise 只被收敛一次。 */
+  private createProxySettle(
+    resolve: (v: HttpResponse) => void,
+    reject: (e: Error) => void,
+  ): ProxySettle {
+    let settled = false;
+    return (err, value) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(value as HttpResponse);
+    };
+  }
+
+  /** 解析 https/http 代理 agent；库不可用时返回 undefined（降级为直连）。 */
+  private resolveProxyAgent(parsedUrl: URL, proxy: string): unknown {
+    try {
+      if (parsedUrl.protocol === 'https:') {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        return new HttpsProxyAgent(proxy);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { HttpProxyAgent } = require('http-proxy-agent');
+      return new HttpProxyAgent(proxy);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** 组装代理请求选项（含 socket 空闲超时与代理 agent）。 */
+  private buildProxyOptions(
+    parsedUrl: URL,
+    req: HttpRequest,
+    agent: unknown,
+    timeoutMs: number,
+  ): https.RequestOptions {
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers ?? {})) {
+      if (v !== undefined) headers[k] = String(v);
+    }
+    const options: https.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port ? Number(parsedUrl.port) : (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      method: req.method || 'GET',
+      headers,
+      timeout: timeoutMs,
+    };
+    if (agent) options.agent = agent as https.RequestOptions['agent'];
+    return options;
+  }
+
+  /** 建立底层 socket 请求（响应经 'response' 事件异步绑定）。 */
+  private openProxyRequest(parsedUrl: URL, options: https.RequestOptions): http.ClientRequest {
+    const lib = parsedUrl.protocol === 'https:' ? https : http;
+    return lib.request(options);
+  }
+
+  /** 挂载绝对超时定时器、socket 空闲超时与外部 abort 信号，返回清理函数。 */
+  private armProxyTimeout(
+    clientReq: http.ClientRequest,
+    req: HttpRequest,
+    timeoutMs: number,
+    settle: ProxySettle,
+  ): () => void {
+    const timer = setTimeout(() => clientReq.destroy(this.timeoutError(timeoutMs)), timeoutMs);
+    const cleanup = (): void => clearTimeout(timer);
+    clientReq.on('timeout', () => clientReq.destroy(this.timeoutError(timeoutMs)));
+    clientReq.on('error', (err) => {
+      cleanup();
+      settle(err instanceof Error ? err : new Error(String(err)));
+    });
+    req.signal?.addEventListener('abort', () => clientReq.destroy(new Error('Request aborted')));
+    return cleanup;
+  }
+
+  /** 收集响应体并在 'end' 时收敛 Promise。 */
+  private attachProxyResponse(
+    clientReq: http.ClientRequest,
+    cleanup: () => void,
+    settle: ProxySettle,
+  ): void {
+    clientReq.on('response', (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+      res.on('error', (err) => {
+        cleanup();
+        settle(err instanceof Error ? err : new Error(String(err)));
+      });
+      res.on('end', () => {
+        cleanup();
+        settle(null, this.buildProxyHttpResponse(res, chunks));
+      });
+    });
+  }
+
+  /** 将原始响应包装为标准 HttpResponse。 */
+  private buildProxyHttpResponse(res: http.IncomingMessage, chunks: Buffer[]): HttpResponse {
+    const status = res.statusCode || 200;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: res.statusMessage || '',
+      headers: this.lowercaseHeaders(res.headers),
+      bodyText: Buffer.concat(chunks).toString('utf-8'),
+    };
+  }
+
+  /** 发送请求体并结束请求。 */
+  private sendProxyBody(clientReq: http.ClientRequest, req: HttpRequest): void {
+    if (req.body) {
+      clientReq.write(typeof req.body === 'string' ? req.body : req.body.toString());
+    }
+    clientReq.end();
+  }
+
+  /** 构造超时错误。 */
+  private timeoutError(timeoutMs: number): Error {
+    return new Error(`Request timeout after ${timeoutMs}ms`);
   }
 
   private headersToRecord(h: Headers): Record<string, string> {

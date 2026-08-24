@@ -339,3 +339,16 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 **可能存在的问题**：
 - 截断是兜底防护，正常对话远低于上限不受影响；极端超长上下文会丢失部分次要信息（优先保留高优先级来源，逐类截断）。
+
+### [2026-08-24] Work Agent 上下文关闭跨会话召回
+
+**变更原因**：`execAgent` 构建上下文时默认走 `InfoCore.context` 的多维度智能召回，其中标签/向量相似/关键词/随机全局兜底会召回无关历史会话内容，污染当前子任务上下文，导致任务漂移（如「研究 AI」漂成「搜索并总结 DeepSeek V4」）。
+
+**修改的方法**：
+- `AgentExecutionService.execAgent()` — 调用 `infoCore.context` 时传 `enable_cross_session: false`，仅保留会话内时间线 / 钉住 / 引用，任务内容与上游摘要仍经 `task_content` 注入。
+
+**影响的端点**：
+- `POST /api/chat/stream` 中 Work Agent 各阶段的上下文组装（不再注入跨会话记忆）。
+
+**可能存在的问题**：
+- Work Agent 因此丢失跨会话长程记忆；若后续需要「按需注入跨会话记忆」，可经 `enable_cross_session` 配置化开关恢复。

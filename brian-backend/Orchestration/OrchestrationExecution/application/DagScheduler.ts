@@ -41,6 +41,8 @@ export interface DagSchedulerConfig {
   concurrency: number;
   /** DAG 总超时时间（ms）。<=0 表示不限制。 */
   timeoutMs: number;
+  /** 单节点执行超时（ms）。<=0 表示不限制；超时按节点失败快速失败。 */
+  nodeTimeoutMs?: number;
   /** 每完成一个节点后回调（completed = 累计完成数），用于进度落库 / 流式推送。 */
   onCompleted?: (completed: number, total: number) => Promise<void> | void;
   /** 超时后回调，接收所有尚未执行（也非失败）的节点，用于标记 CANCELLED。 */
@@ -196,6 +198,35 @@ export class DagScheduler {
     return summaries;
   }
 
+  /** 执行单节点，带节点级超时；超时抛错由上层统一收敛为快速失败。 */
+  private executeNode(
+    executor: DagNodeExecutor,
+    node: AgentNode,
+    upstreamSummaries: string[],
+    timeoutMs: number,
+  ): Promise<DagNodeResult> {
+    if (timeoutMs <= 0) {
+      return executor(node, upstreamSummaries);
+    }
+    return new Promise<DagNodeResult>((resolve, reject) => {
+      const name = node.agent_id || node.task_id || 'unknown';
+      const timer = setTimeout(
+        () => reject(new Error(`Agent ${name} 执行超时（${timeoutMs}ms）`)),
+        timeoutMs,
+      );
+      executor(node, upstreamSummaries).then(
+        (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
   async run(
     nodes: AgentNode[],
     edges: AgentEdge[],
@@ -204,6 +235,7 @@ export class DagScheduler {
   ): Promise<DagSchedulerOutput> {
     const concurrency = Math.max(1, config.concurrency);
     const timeoutMs = config.timeoutMs;
+    const nodeTimeoutMs = config.nodeTimeoutMs ?? 0;
     const total = nodes.length;
     const startedAt = Date.now();
 
@@ -244,7 +276,7 @@ export class DagScheduler {
 
       let result: DagNodeResult;
       try {
-        result = await executor(node, upstreamSummaries);
+        result = await this.executeNode(executor, node, upstreamSummaries, nodeTimeoutMs);
       } catch (err: unknown) {
         failedCount++;
         if (!failure) {

@@ -9,6 +9,8 @@ export class OrchestrationExecutionContext extends Context {
 export class OrchestrationExecutionConfig {
   max_concurrent = 1;
   dag_timeout_ms = 600000;
+  /** 单 Agent 执行超时（ms），<=0 表示不限制；防止单个 Work Agent 挂起拖垮整个 DAG。 */
+  agent_timeout_ms = 300000;
 }
 
 export interface TaskNode {
@@ -228,6 +230,7 @@ export class GetOrchestrationExecQueueStatusOutput extends Output {
 export class ConfigOrchestrationExecutionInput extends Input {
   max_concurrent?: number;
   dag_timeout_ms?: number;
+  agent_timeout_ms?: number;
 }
 
 export class ConfigOrchestrationExecutionOutput extends Output {

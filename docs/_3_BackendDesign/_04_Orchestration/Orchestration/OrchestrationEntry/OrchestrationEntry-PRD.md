@@ -314,8 +314,9 @@
 | max_concurrent | 默认最大并发执行数 | INT | N | | 默认 1 |
 | default_max_iterations | 单 Agent 默认最大迭代次数 | INT | N | | 默认 10 |
 | dag_timeout_ms | DAG 执行总超时时间（ms） | INT | N | | 默认 300000，0 表示不限制 |
+| agent_timeout_ms | 单 Agent 执行超时时间（ms） | INT | N | | 默认 300000，0 表示不限制（2026-08-24 新增） |
 | max_execution_depth | JSONNode 最大执行深度 | INT | N | | 默认 50 |
-| node_timeout_ms | JSONNode 单节点执行超时（ms） | INT | N | | 默认 300000 |
+| node_timeout_ms | JSONNode 单节点执行超时（ms） | INT | N | | 默认 300000，启动迁移 clamp 到 <=600000 |
 | trace_enabled | JSONNode 是否开启执行追踪 | BOOL | N | | 默认 true |
 
 注意：`orchestration_config` 为整个 Orchestration 层共享配置表，各子模块的 config* 方法仅更新自身相关字段。
@@ -384,3 +385,29 @@
 
 **可能存在的问题**：
 - updateInfo 仅改写 info 正文，不更新摘要 / 关键词 / 向量等派生数据（需求确认场景 REQUEST 尚未触发派生处理，影响可控）。
+
+### [2026-08-24] confirmIntent 重入透传 trace_id，修复复制 TraceId 按钮失效
+
+**变更原因**：需求确认（APPROVE / KEEP）重入 `receiveWork` 时未透传 `trace_id`，导致确认流程写出的 `info_raw.RESPONSE` 的 `trace_id` 为空；刷新后 `/api/chat/history` 返回 `traceId` 为空，前端 `MessageCard` 的「复制 TraceId」按钮点击无响应。
+
+**修改的方法**：
+- `OrchestrationEntryService.confirmIntent` — 重入 `receiveWork` 的 `rwInput` 增加 `trace_id: String(metadata.trace_id ?? '')`，从已落库的 `orchestration_work.metadata` 取回首次提交的 trace_id。
+
+**影响的端点**：
+- `POST /api/chat/confirm-intent` — APPROVE / KEEP 重入编排写出的 RESPONSE 消息 trace_id 与首次提交一致，刷新后复制 TraceId 可用。
+
+**可能存在的问题**：
+- 历史数据中已产生的空 trace_id RESPONSE 不回补（仅影响未来确认流程）。
+
+### [2026-08-24] orchestration_config 新增 agent_timeout_ms 并收敛 node_timeout_ms
+
+**变更原因**：为单 Agent 执行超时兜底新增配置列；同时将存量库中过大的 `node_timeout_ms`（曾手工配置为 1200000 = 20 分钟）收敛到合理区间，避免单点卡死放大到 20 分钟以上。
+
+**修改的方法**：
+- `OrchestrationEntrySchemaInitializer.init()` — 幂等迁移：`ALTER TABLE orchestration_config ADD COLUMN agent_timeout_ms`（默认 300000，try/catch 已存在则跳过）；`UPDATE orchestration_config SET node_timeout_ms=600000 WHERE node_timeout_ms > 600000`。
+
+**影响的端点**：
+- 后端启动时的 schema 初始化 / 迁移（对已有库幂等，新增库直接建表即含该列）。
+
+**可能存在的问题**：
+- 存量库中刻意配置的 `node_timeout_ms > 600000` 会在下次启动被 clamp，属预期的「收敛到合理区间」行为。

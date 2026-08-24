@@ -202,6 +202,7 @@ export class AgentExecutionService {
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.task_content,
             persist_snapshot: false,
+            enable_cross_session: false,
           }),
           new InfoCoreContext(),
           ctxOut,

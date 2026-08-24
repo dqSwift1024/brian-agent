@@ -249,6 +249,7 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // --- OrchestrationExecution ---
   orch('execution', 'basic', 'max_concurrent', '最大并发数', 'INT', 1),
   orch('execution', 'basic', 'dag_timeout_ms', 'DAG 超时（ms）', 'INT', 300000, '整个 DAG 执行的最大超时时间'),
+  orch('execution', 'basic', 'agent_timeout_ms', '单 Agent 超时（ms）', 'INT', 300000, '单个 Work Agent 执行的最大超时时间'),
 
   // --- OrchestrationVisualization ---
   orch('visualization', 'basic', 'max_nodes_in_graph', 'Agent 执行 DAG 最大节点数', 'INT', 50, '编排层生成 Agent 执行 DAG 图时最多展示的 Agent 节点数，超过则截断（防止 DAG 过大）'),

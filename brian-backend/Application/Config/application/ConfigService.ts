@@ -1384,6 +1384,7 @@ export class ConfigService {
       const input: any = {};
       if (prefix.startsWith('orchestration.execution.max_concurrent')) input.max_concurrent = value as number;
       else if (prefix.startsWith('orchestration.execution.dag_timeout_ms')) input.dag_timeout_ms = value as number;
+      else if (prefix.startsWith('orchestration.execution.agent_timeout_ms')) input.agent_timeout_ms = value as number;
       const output: any = {};
       await this.orchestrationExecution.configOrchestrationExecution(input, {} as any, output);
       return;

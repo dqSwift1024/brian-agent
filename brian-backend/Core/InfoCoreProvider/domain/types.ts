@@ -433,6 +433,11 @@ export class ContextInfoInput extends Input {
   /** 自定义指定消息 ID 列表（等同 selected_msg_ids） */
   custom_info_ids?: string[];
   /**
+   * 是否允许跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 全局兜底）。
+   * 默认 true。Work Agent 执行子任务时应传 false，避免无关历史会话污染当前任务上下文。
+   */
+  enable_cross_session?: boolean;
+  /**
    * 是否将采集来源快照（source → info_id，仅 ID 不含内容）落盘到 info_context_source 表。
    * 默认 true。内部 Agent（execAgent / Planner / Writer / IntentAgent）复用 context() 仅需查询结果，
    * 不应覆盖本次问答在「问答请求处理时」生成的权威快照，须显式传 false，避免快照混入问答之后的信息

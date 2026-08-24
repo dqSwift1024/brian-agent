@@ -477,6 +477,7 @@
   - info_id：信息 ID（可选，用于辅助检索关联消息）
   - mode：构建模式（可选：`DEFAULT` 默认构建 / `CUSTOM` 自定义构建）
   - selected_msg_ids / custom_info_ids：自定义消息 ID 列表（可选；若提供且非空，自动按自定义构建模式处理）
+  - enable_cross_session：是否允许跨会话召回（可选，默认 true；传 false 时跳过标签相关性 / 向量相似 / 关键词 / 随机全局兜底等全系统维度，仅保留会话内时间线 / 钉住 / 引用，供 Work Agent 执行子任务时规避无关历史会话污染）
 - context：InfoCoreContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ContextInfoOutput（继承 Output），承载返回内容：
   - list：构建的上下文消息列表，每项对象包含：
@@ -608,6 +609,8 @@
 ## 重要内容
 
 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
+
+1. `context` 的默认构建模式默认会做「全系统」跨会话召回（标签相关性 / 向量相似 / 关键词 / 随机全局兜底）；当 `enable_cross_session=false` 时跳过这些跨会话维度，仅保留会话内时间线 / 钉住 / 引用，供 Work Agent 子任务执行时规避无关历史会话污染（2026-08-24 新增）。
 
 ## 3. 表设计
 

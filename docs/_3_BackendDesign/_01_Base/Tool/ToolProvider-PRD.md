@@ -141,4 +141,5 @@ import { ToolAccess, HttpAccess, ToolSchemaInitializer, IdGenerator, JsonParser,
 2. **HTTP 子模块（HttpAccess / HttpService）例外**：依赖 `tool_config` 配置表（经 `ToolSchemaInitializer` 建表），存储 `http_timeout_ms` 等全局 HTTP 配置，由各层 Provider（LLM / MCP 等）在启动时注入；
 3. 外部 HTTP 请求统一经 `HttpAccess.request` 发起，禁止各层自行实现 `fetch` + `AbortController` 超时 / 代理分叉逻辑；
 4. `JsonParser.parse` 的解析顺序：剥离围栏后直接 parse → 正则提取对象 → 正则提取数组，全部失败返回 null；
-5. 正则匹配后端执行时对非法 pattern / flags 做了 try-catch 容错，返回 `valid: false` 而非抛异常。
+5. 正则匹配后端执行时对非法 pattern / flags 做了 try-catch 容错，返回 `valid: false` 而非抛异常；
+6. `HttpService.proxyFetch` 的终止路径（绝对超时定时器 / socket 空闲超时 / abort 信号 / 连接错误 / 响应完成）统一经一次性 `settle` 收敛 Promise，任一路径都会 reject/resolve，杜绝「超时后既不 resolve 也不 reject」导致调用方永久挂起（2026-08-24 修复）。

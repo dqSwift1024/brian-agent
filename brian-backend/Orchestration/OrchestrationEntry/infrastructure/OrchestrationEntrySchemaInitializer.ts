@@ -96,5 +96,19 @@ export class OrchestrationEntrySchemaInitializer {
       WHERE id = 'orchestration_config_default'
         AND (strategy_prompt_template_id = '' OR strategy_prompt_template_id IS NULL)
     `);
+
+    // 迁移：新增单 Agent 执行超时列（幂等）
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE orchestration_config ADD COLUMN agent_timeout_ms INTEGER NOT NULL DEFAULT 300000`,
+      );
+    } catch { /* 列已存在 */ }
+
+    // 迁移：节点级超时收敛到合理区间（<=10 分钟），避免单点卡死放大到 20 分钟以上
+    this.relationDb.executeRaw(`
+      UPDATE orchestration_config
+      SET node_timeout_ms = 600000, updated = ${now}
+      WHERE node_timeout_ms > 600000
+    `);
   }
 }

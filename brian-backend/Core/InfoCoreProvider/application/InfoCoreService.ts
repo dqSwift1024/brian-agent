@@ -1625,6 +1625,9 @@ export class InfoCoreService {
     const simLimit = contextConfig?.base_similarity_count ?? 150;
     const kwLimit = contextConfig?.base_keyword_count ?? 100;
     const randLimit = contextConfig?.base_random_count ?? 50;
+    // 是否允许跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 全局兜底）。
+    // Work Agent 执行子任务时应关闭，避免无关历史会话污染当前任务上下文。
+    const enableCrossSession = input.enable_cross_session !== false;
 
     // ===== 原始计算方式（保留作为参考）=====
     // const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
@@ -1686,7 +1689,7 @@ export class InfoCoreService {
 
     // TAG_RELATIVE (全系统标签相关性消息)
     const tagCandidates: InfoRawRecord[] = [];
-    if (refInfoRow && tagLimit > 0) {
+    if (refInfoRow && tagLimit > 0 && enableCrossSession) {
       try {
         const relInput = new RelationKInfoInput();
         relInput.info_id = refInfoRow.info_id;
@@ -1701,7 +1704,7 @@ export class InfoCoreService {
 
     // SIMILARITY (全系统向量语义相似消息)
     const simCandidates: InfoRawRecord[] = [];
-    if (refText && simLimit > 0) {
+    if (refText && simLimit > 0 && enableCrossSession) {
       try {
         const simInput = new SimilarKInfoInput();
         simInput.info = refText;
@@ -1717,7 +1720,7 @@ export class InfoCoreService {
 
     // KEYWORD (全系统关键词匹配消息)
     const kwCandidates: InfoRawRecord[] = [];
-    if (refText && kwLimit > 0) {
+    if (refText && kwLimit > 0 && enableCrossSession) {
       try {
         const kwInput = new KeywordKInfoInput();
         kwInput.info = refText;
@@ -1772,7 +1775,7 @@ export class InfoCoreService {
               [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
             randCandidates = shuffled.slice(0, finalRandCount);
-          } else {
+          } else if (enableCrossSession) {
             // 若当前 session 消息均已被已有维度采集，则在全局原始消息库中随机调取其他历史消息
             const globalRows = await this.relationDb.select(INFO_RAW_TABLE, {
               page: { current: 1, size: 100 },
