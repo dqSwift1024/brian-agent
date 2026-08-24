@@ -30,6 +30,7 @@ export class ExecAgentInput extends Input {
   interact_id!: string;
   task_content!: string;
   max_iterations?: number;
+  task_id?: string;
 }
 
 export class ExecAgentOutput extends Output {
@@ -98,6 +99,8 @@ export class ActOutput extends Output {
   result = '';
   tool_type = '';
   tool_id = '';
+  params: Record<string, unknown> = {};
+  next_action = '';
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,8 @@ export const useSessionStore = defineStore('session', () => {
   let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
   // 每个 Agent 独立的执行运行时状态（思考中/成功/失败），key = agent_id
   const agentExecutions = ref<Record<string, AgentRuntimeInfo>>({})
+  // 每个任务节点的执行运行时状态（同一 Agent 复用到多个任务时按 task_id 精确区分），key = task_id
+  const taskExecutions = ref<Record<string, AgentRuntimeInfo>>({})
   // 评估结果弹窗：展示某消息对应 work 的 Evolutor 评估评分 JSON
   const evalResultVisible = ref(false)
   const evalResultLoading = ref(false)
@@ -377,6 +379,7 @@ export const useSessionStore = defineStore('session', () => {
     resetPlanning()
     thinkingDag.value = null
     agentExecutions.value = {}
+    taskExecutions.value = {}
     localStorage.removeItem('chat-current-session-id')
   }
 
@@ -679,28 +682,46 @@ export const useSessionStore = defineStore('session', () => {
     ERROR: 2,
   }
 
-  function setAgentStatus(agentId: string, status: AgentExecutionStatus, agentName?: string) {
-    if (!agentId) return
-    const prev = agentExecutions.value[agentId]
-    const prevOrder = prev ? (STATUS_ORDER[prev.status] ?? 0) : -1
-    const newOrder = STATUS_ORDER[status] ?? 0
-    // 仅允许状态向前推进，不允许回退
-    if (prev && newOrder < prevOrder) return
+  function setAgentStatus(agentId: string | undefined, status: AgentExecutionStatus, agentName?: string, taskId?: string) {
+    if (!agentId && !taskId) return
 
-    agentExecutions.value = {
-      ...agentExecutions.value,
-      [agentId]: {
-        status,
-        agentName: agentName ?? prev?.agentName,
-        updatedAt: Date.now(),
-      },
+    // 1) Agent 级运行时状态（供"执行过程"卡片展示），按 agent_id 向前推进
+    if (agentId) {
+      const prev = agentExecutions.value[agentId]
+      const prevOrder = prev ? (STATUS_ORDER[prev.status] ?? 0) : -1
+      const newOrder = STATUS_ORDER[status] ?? 0
+      if (!prev || newOrder >= prevOrder) {
+        agentExecutions.value = {
+          ...agentExecutions.value,
+          [agentId]: {
+            status,
+            agentName: agentName ?? prev?.agentName,
+            updatedAt: Date.now(),
+          },
+        }
+      }
     }
 
+    // 2) Task 级运行时状态（供 AgentDAG 节点着色），按 task_id 向前推进
+    const taskKey = taskId || ''
+    if (taskKey) {
+      const tPrev = taskExecutions.value[taskKey]
+      const tPrevOrder = tPrev ? (STATUS_ORDER[tPrev.status] ?? 0) : -1
+      const tNewOrder = STATUS_ORDER[status] ?? 0
+      if (!tPrev || tNewOrder >= tPrevOrder) {
+        taskExecutions.value = {
+          ...taskExecutions.value,
+          [taskKey]: { status, agentName: agentName ?? tPrev?.agentName, updatedAt: Date.now() },
+        }
+      }
+    }
+
+    // 3) 同步 AgentDAG 节点状态：优先按 task_id 精确定位节点（同一 Agent 复用多任务时避免广播）
     const dag = planning.value.agentDag
     if (dag && dag.nodes.length > 0) {
-      // 按 agentId 匹配节点：同一 Agent 可复用到多个任务节点，需同步更新全部匹配节点
-      // （节点主键 id 为 task_id，仅保证画布唯一性，不再承载 agent 关联）。
-      const matched = dag.nodes.filter((n) => n.agentId === agentId)
+      const matched = taskKey
+        ? dag.nodes.filter((n) => n.taskId === taskKey || n.id === taskKey)
+        : dag.nodes.filter((n) => n.agentId === agentId)
       if (matched.length > 0) {
         for (const node of matched) {
           if (agentName) {
@@ -718,6 +739,7 @@ export const useSessionStore = defineStore('session', () => {
 
   function resetAgentStatus() {
     agentExecutions.value = {}
+    taskExecutions.value = {}
   }
 
   return {
@@ -725,7 +747,7 @@ export const useSessionStore = defineStore('session', () => {
     agentChain, splitRatio, isStreaming, selectedMsgIds, citingMode,
     focusInfoId, centerInfoId, thinkingModalVisible, thinkingTargetMsgId, thinkingBlocks,
     thinkingLoading, dagLoading, blocksLoading,
-    planning, thinkingDag, agentExecutions, thinkingOrigin,
+    planning, thinkingDag, agentExecutions, taskExecutions, thinkingOrigin,
     setThinkingOrigin, clearThinkingOrigin,
     setSplitRatio, loadChatList, ensureSession, loadChatHistory, loadDag,
     loadAgentChain, deleteSession, clearMessages, addMessage, replaceUserMessageContent, removeUserMessageByContent, addBlock,

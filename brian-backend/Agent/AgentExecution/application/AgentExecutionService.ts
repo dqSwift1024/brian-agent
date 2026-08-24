@@ -109,6 +109,7 @@ interface AgentExecutionEnv {
   contextData: string;
   llmId: string;
   maxFromRule: number;
+  taskId: string;
   config: AgentExecutionConfigRecord | null;
 }
 
@@ -256,7 +257,7 @@ export class AgentExecutionService {
 
     const env = {
       input, ctx, agent, skillIds, mcpIds, skills, mcps, contextData, toolsJson, maxFromRule, config,
-      agentName, domain, llmId,
+      agentName, domain, llmId, taskId: input.task_id ?? '',
     };
 
     if (!rule?.steps && !rule?.phases) {
@@ -562,6 +563,8 @@ export class AgentExecutionService {
     const params = (action.params as Record<string, unknown>) ?? {};
     output.tool_type = toolType;
     output.tool_id = toolId;
+    output.params = params;
+    output.next_action = input.next_action;
 
     if (toolType === 'SKILL') {
       if (!input.skill_ids.includes(toolId)) {
@@ -1080,7 +1083,7 @@ export class AgentExecutionService {
   ): Promise<StepResult> {
     switch (step.step) {
       case 'Think': return this.runThinkStep(step, env, history, iteration);
-      case 'Act': return this.runActStep(step, env, history);
+      case 'Act': return this.runActStep(step, env, history, iteration);
       case 'Reflect': return this.runReflectStep(step, env, history, iteration, maxIter);
       case 'Answer': return this.runAnswerStep(step, env, history);
       default: return { history, jumpTarget: step.next ?? null, tracePiece: {} };
@@ -1102,7 +1105,7 @@ export class AgentExecutionService {
   ): Promise<StepResult> {
     const thinkOut = new ThinkOutput();
     await this.think(this.buildThinkInput(env, history, iteration), env.ctx, thinkOut);
-    this.pushThink(env, step.step, thinkOut);
+    this.pushThink(env, step.step, thinkOut, iteration);
     const subSteps = this.extractSubSteps(parseJsonObject(thinkOut.next_action));
     return {
       history: `${history}\nThink: ${thinkOut.reasoning}\nNext: ${thinkOut.next_action}`,
@@ -1113,10 +1116,10 @@ export class AgentExecutionService {
     };
   }
 
-  private async runActStep(step: RuleStep, env: AgentExecutionEnv, history: string): Promise<StepResult> {
+  private async runActStep(step: RuleStep, env: AgentExecutionEnv, history: string, iteration: number): Promise<StepResult> {
     const actOut = new ActOutput();
     await this.act(this.buildActInput(env, history), env.ctx, actOut);
-    this.pushAct(env, step.step, actOut);
+    this.pushAct(env, step.step, actOut, iteration);
     return {
       history: `${history}\nAct: ${actOut.result}`,
       jumpTarget: step.next ?? null,
@@ -1133,7 +1136,7 @@ export class AgentExecutionService {
   ): Promise<StepResult> {
     const reflectOut = new ReflectOutput();
     await this.reflect(this.buildReflectInput(env, history, iteration, maxIter), env.ctx, reflectOut);
-    this.pushReflect(env, step.step, reflectOut);
+    this.pushReflect(env, step.step, reflectOut, iteration);
     return {
       history: `${history}\nReflect: ${reflectOut.reflection}`,
       conditionValue: reflectOut.should_continue,
@@ -1221,42 +1224,48 @@ export class AgentExecutionService {
     return Array.isArray(subSteps) ? (subSteps as unknown[]).map(String) : undefined;
   }
 
-  private pushThink(env: AgentExecutionEnv, nodeId: string, thinkOut: ThinkOutput): void {
-    const { ctx, input, agent, agentName } = env;
+  private pushThink(env: AgentExecutionEnv, nodeId: string, thinkOut: ThinkOutput, iteration: number): void {
+    const { ctx, input, agent, agentName, taskId } = env;
     const sessionId = ctx.session_id || '';
-    if (!this.streamAccess || typeof this.streamAccess.pushText !== 'function' || !sessionId || !thinkOut.reasoning) return;
-    this.streamAccess.pushText(sessionId, 'agent_thinking', thinkOut.reasoning, {
+    if (!this.streamAccess || typeof this.streamAccess.pushEvent !== 'function' || !sessionId || !thinkOut.reasoning) return;
+    this.streamAccess.pushEvent(sessionId, 'agent_thinking', 'TRACE', {
+      reasoning: thinkOut.reasoning,
+      next_action: thinkOut.next_action,
+      prompt: thinkOut.prompt,
+      raw_response: thinkOut.raw_response,
+      iteration,
+    }, {
       work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
       agent_id: input.agent_id, agent_name: agentName,
-      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
-      prompt: thinkOut.prompt, raw_response: thinkOut.raw_response,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId, task_id: taskId,
     } as any).catch(() => {});
   }
 
-  private pushAct(env: AgentExecutionEnv, nodeId: string, actOut: ActOutput): void {
-    const { ctx, input, agent, agentName } = env;
+  private pushAct(env: AgentExecutionEnv, nodeId: string, actOut: ActOutput, iteration: number): void {
+    const { ctx, input, agent, agentName, taskId } = env;
     const sessionId = ctx.session_id || '';
     if (!this.streamAccess || typeof this.streamAccess.pushEvent !== 'function' || !sessionId) return;
     this.streamAccess.pushEvent(sessionId, 'agent_action', 'TRACE', {
       tool_type: actOut.tool_type, tool_id: actOut.tool_id, result: actOut.result,
+      params: actOut.params, next_action: actOut.next_action, iteration,
     }, {
       work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
       agent_id: input.agent_id, agent_name: agentName,
-      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId, task_id: taskId,
     } as any).catch(() => {});
   }
 
-  private pushReflect(env: AgentExecutionEnv, nodeId: string, reflectOut: ReflectOutput): void {
-    const { ctx, input, agent, agentName } = env;
+  private pushReflect(env: AgentExecutionEnv, nodeId: string, reflectOut: ReflectOutput, iteration: number): void {
+    const { ctx, input, agent, agentName, taskId } = env;
     const sessionId = ctx.session_id || '';
     if (!this.streamAccess || typeof this.streamAccess.pushEvent !== 'function' || !sessionId) return;
     this.streamAccess.pushEvent(sessionId, 'agent_reflection', 'TRACE', {
       passed: !reflectOut.should_continue, reflection: reflectOut.reflection,
-      prompt: reflectOut.prompt, raw_response: reflectOut.raw_response,
+      prompt: reflectOut.prompt, raw_response: reflectOut.raw_response, iteration,
     }, {
       work_id: input.work_id || ctx.work_id || '', interact_id: input.interact_id || ctx.interact_id || '',
       agent_id: input.agent_id, agent_name: agentName,
-      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId,
+      agent_type: (agent as any)?.agent_type || 'WORKER', node_id: nodeId, task_id: taskId,
     } as any).catch(() => {});
   }
 

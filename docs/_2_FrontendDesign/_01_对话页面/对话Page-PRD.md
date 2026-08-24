@@ -192,6 +192,18 @@
 
 ## 7. 变更记录
 
+### [2026-08-24] AgentDAG 节点状态按 task_id 定位 + 执行过程实时推送每轮输入/输出
+- **变更原因**：① AgentDAG 画布节点以 `task_id` 为主键，但前端运行时状态按 `agent_id` 广播（`setAgentStatus` / `resolveStatus`），同一 Agent 复用到多个任务（如一个研究 Agent 承担 5 个子任务）时，该 Agent 完成任一任务即把其余复用节点一并标绿，出现「任务4 早于任务3、任务8 早于任务7 完成」的展示错误（后端实际按 task 级拓扑顺序执行，属状态展示错误，非编排错误）；② think/act/reflect 各轮输入（prompt/params）与输出（raw_response）此前未推送，「执行过程」块看不到每轮输入输出。
+- **功能变更**（前端 + 后端）：
+  1. **task 级状态存储**：`session.ts` 新增 `taskExecutions`（key = task_id），与 `agentExecutions`（key = agent_id）分离；`setAgentStatus(agentId, status, agentName, taskId)` 同时推进 agent 级（供"执行过程"卡片）与 task 级（供 AgentDAG 节点）状态，节点按 `taskId` 精确定位而非广播。
+  2. **节点状态解析**：`AgentDagFlow.vue` 的 `resolveStatus` 优先取 `taskExecutions[node.taskId]`，其次 `agentExecutions[node.agentId]`，最后回退节点自带 `status`。
+  3. **事件透传 task_id**：后端 `BrianSSEMessage` / `StreamAccess.pushText` / `pushEvent` 增加 `task_id` 字段；`agent_thinking` / `agent_action` / `agent_reflection` / `agent_output` / `agent_error` 均携带 `task_id`；`handleStreamEvent` 解析 `data.task_id` 并透传 `setAgentStatus`。
+  4. **每轮输入/输出实时推送**：后端 `pushThink` / `pushAct` / `pushReflect` 携带 `prompt` / `raw_response` / `params` / `next_action` / `iteration`；前端对应事件处理回填 `thinkBlock.prompt` / `rawResponse`、steps 的 toolCalls 参数与迭代序号；`agent_output` / `agent_error` 回填 `input` / `output`。
+- **行为差异**：
+  - 修改前：复用 Agent 的节点状态广播式着色，出现"任务4 早于任务3、任务8 早于任务7"；执行过程看不到每轮输入（prompt/params）。
+  - 修改后：AgentDAG 节点按 task_id 精确着色（任务4 仅在真正执行完成才变绿）；执行过程实时展示每轮 Think/Act/Reflect 的输入与输出。
+- **新增边界条件**：无 task_id 的旧事件（如 Intent / 构建阶段）回退按 agent_id 定位；历史消息点击"思考过程"走 `buildThinkingBlocksAndDag`（后端已按 task_id 定位节点），行为不变。
+
 ### [2026-08-24] 修复思考过程弹窗：系统回复展示后仍显示「思考中...」
 - **变更原因**：思考块（`ThinkingChain`）的 `meta.status` 仅在 `done` 事件才被 `finalizeBlocks` 收敛为 `done`，而最终回复（`text_chunk`）在 `done` 之前就开始流式输出，导致「思考过程」弹窗顶部 `overallStreaming` 在系统回复已展示后仍因残留 streaming 思考块而显示「思考中...」；同理，Work Agent 的中间产出（`agent_output`）也会先于最终回复展示，加剧该错位。
 - **功能变更**（前端）：

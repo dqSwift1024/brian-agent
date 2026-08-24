@@ -39,6 +39,8 @@ export interface BrianSSEMessage<T = unknown> {
   agent_type?: string;
   /** 所属 DAG 节点 ID */
   node_id?: string;
+  /** 所属任务 ID（用于同一 Agent 复用到多个任务时精确定位执行归属） */
+  task_id?: string;
   /** SSE 事件名（如 agent_thinking, text, dag_node_start, done 等） */
   event: string;
   /** 消息内容大类 */
@@ -83,6 +85,7 @@ export class PushStreamInput<T = unknown> extends Input {
   agent_name?: string;
   agent_type?: string;
   node_id?: string;
+  task_id?: string;
   /** 是否需要按 2-5 字符进行打字机 chunk 分片（仅当 data 包含字符串或为字符串时生效） */
   enable_chunking?: boolean;
   /** 自定义最小 chunk 字符数（默认 2） */

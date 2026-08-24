@@ -36,8 +36,14 @@ const containerStyle = computed(() => {
   return { width: `${l.totalWidth}px`, height: `${h}px` }
 })
 
-// 节点状态解析：优先取实时执行状态（agentExecutions），其次取节点自带的 status
+// 节点状态解析：优先取任务级实时执行状态（taskExecutions，key = task_id），
+// 其次取 agent 级实时状态（agentExecutions），最后回退节点自带 status。
+// 关键：同一 Agent 复用到多个任务时，必须按 task_id 区分，避免一个任务完成导致
+// 所有复用该 Agent 的节点被误标为执行完成。
 function resolveStatus(node: (typeof nodes.value)[number]): AgentExecutionStatus {
+  const taskKey = node.taskId ?? node.id
+  const tt = taskKey ? sessionStore.taskExecutions[taskKey] : undefined
+  if (tt) return tt.status
   const rt = sessionStore.agentExecutions[node.agentId ?? node.id]
   if (rt) return rt.status
   const s = String(node.status ?? '').toUpperCase()

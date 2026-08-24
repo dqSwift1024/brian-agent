@@ -515,3 +515,17 @@
 
 **可能存在的问题**：
 - 节点超时后底层 `execSingleAgent` 无法被强制取消，其内部未完成的 LLM 调用会在后台自行失败（HTTP 2 分钟超时），落库为 best-effort，不影响后续编排。
+
+### [2026-08-24] execSingleAgent 执行事件透传 task_id 与输入/输出
+
+**变更原因**：`execSingleAgent` 调用 `execAgent` 时未透传 task_id，且 `agent_output` / `agent_error` 事件未携带 task_id 与输入/输出，导致前端 AgentDAG 节点状态只能按 agent_id 广播（同一 Agent 复用多任务时出现「任务4 先于任务3 标记完成」的错误着色），且「思考过程」执行过程无法实时展示任务输入与最终输出。
+
+**修改的方法**：
+- `OrchestrationExecutionService.execSingleAgent()` — `ExecAgentInput` 补 `task_id` 透传；`agent_output` 事件新增 `input` / `output` 字段并携带 `task_id`；`agent_error` 事件（成功分支与 catch 分支）新增 `input` 字段并携带 `task_id`。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— 前端按 task_id 关联任务节点，AgentDAG 状态着色与「执行过程」输入/输出实时正确。
+
+**可能存在的问题**：
+- 无（`ExecAgentInput.task_id` 为可选字段，Simple 策略或非 DAG 场景缺省为空字符串，前端回退按 agent_id 定位）。
+

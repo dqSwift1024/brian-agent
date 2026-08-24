@@ -611,6 +611,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
   const payload = (isStructured ? (data.data as Record<string, unknown> ?? {}) : data) as Record<string, unknown>
   const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
   const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
+  const taskId = String(isStructured ? (data.task_id || '') : (payload.task_id || ''))
 
   const formatAgentTitle = (rawName?: string, agId?: string, agType?: string): string => {
     const isUuid = (val?: string) => !val || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
@@ -849,7 +850,8 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
         const st = s.includes('COMPLET') || s.includes('SUCCESS') || s.includes('DONE')
           ? 'SUCCESS'
           : (s.includes('RUN') || s.includes('EXECUT') || s.includes('PROCESS') ? 'RUNNING' : 'PENDING')
-        sessionStore.setAgentStatus(n.id, st, n.agentName)
+        // 节点主键 id 为 task_id；task 级状态按 task_id 记录，agent 级状态按 agentId 记录
+        sessionStore.setAgentStatus(n.agentId, st, n.agentName, n.id)
       }
       break
     }
@@ -946,42 +948,51 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const chunk = typeof payload === 'string' ? payload : String(payload.chunk || payload.reasoning || '')
       const rawAgName = typeof payload.agent_name === 'string' ? payload.agent_name : undefined
       const rawAgType = typeof payload.agent_type === 'string' ? payload.agent_type : undefined
+      const iterIdx = typeof payload.iteration === 'number' ? payload.iteration : undefined
       // 该 Agent 正在思考推理（RUNNING → 黄色）
-      sessionStore.setAgentStatus(agentId, 'RUNNING', rawAgName)
+      sessionStore.setAgentStatus(agentId, 'RUNNING', rawAgName, taskId)
       const thinkBlock = getOrCreateThinkBlock(agentId, rawAgName, rawAgType)
       thinkBlock.content += chunk
       if (typeof payload === 'object' && payload && payload.prompt) {
         thinkBlock.prompt = payload.prompt as string
       }
-      
+      if (typeof payload === 'object' && payload && payload.raw_response) {
+        thinkBlock.rawResponse = payload.raw_response as string
+      }
+      if (typeof payload === 'object' && payload && payload.input) {
+        thinkBlock.input = payload.input as string | Record<string, unknown>
+      }
+
       // 更新 steps
       if (!thinkBlock.steps) thinkBlock.steps = []
       let lastStep = thinkBlock.steps[thinkBlock.steps.length - 1]
-      if (!lastStep || lastStep.phase !== 'THINK') {
-        lastStep = { phase: 'THINK', content: chunk, iteration: thinkBlock.steps.length + 1 }
+      if (!lastStep || lastStep.phase !== 'THINK' || (iterIdx !== undefined && lastStep.iteration !== iterIdx)) {
+        lastStep = { phase: 'THINK', content: chunk, iteration: iterIdx ?? (thinkBlock.steps.length + 1) }
         thinkBlock.steps.push(lastStep)
       } else {
         lastStep.content = (lastStep.content || '') + chunk
       }
 
       if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
-      sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input, prompt: thinkBlock.prompt })
+      sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
       break
     }
 
     case 'agent_action':
     case 'agent_status': {
+      sessionStore.setAgentStatus(agentId, 'RUNNING', undefined, taskId)
       const thinkBlock = getOrCreateThinkBlock(agentId)
       if (!thinkBlock.steps) thinkBlock.steps = []
 
       const toolName = String(payload.tool_name || payload.tool_type || payload.tool_id || 'Tool')
       const params = (payload.params as Record<string, unknown>) || {}
       const result = payload.result
+      const iterIdx = typeof payload.iteration === 'number' ? payload.iteration : undefined
 
       if (toolName !== 'NONE') {
         thinkBlock.steps.push({
           phase: 'ACT',
-          iteration: thinkBlock.steps.length + 1,
+          iteration: iterIdx ?? (thinkBlock.steps.length + 1),
           toolCalls: [{ toolName, toolType: String(payload.tool_type || toolName), params, result }],
         })
         sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
@@ -1004,18 +1015,20 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     case 'agent_reflection': {
       // 反思阶段仍属于思考推理中（RUNNING）
-      sessionStore.setAgentStatus(agentId, 'RUNNING')
+      sessionStore.setAgentStatus(agentId, 'RUNNING', undefined, taskId)
       const thinkBlock = getOrCreateThinkBlock(agentId)
       if (!thinkBlock.steps) thinkBlock.steps = []
       if (payload.prompt) thinkBlock.prompt = payload.prompt as string
+      if (payload.raw_response) thinkBlock.rawResponse = payload.raw_response as string
+      const reflectIter = typeof payload.iteration === 'number' ? payload.iteration : undefined
 
       thinkBlock.steps.push({
         phase: 'REFLECT',
-        iteration: thinkBlock.steps.length + 1,
+        iteration: reflectIter ?? (thinkBlock.steps.length + 1),
         reflection: String(payload.reflection || ''),
         passed: Boolean(payload.passed),
       })
-      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt })
+      sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
       break
     }
 
@@ -1041,15 +1054,17 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       const outputVal = payload.output || payload.result || payload.chunk || payload.answer
       if (agentId) {
         // 该 Agent 已完成产出（SUCCESS → 绿色），并回填 Token 用量与耗时
-        sessionStore.setAgentStatus(agentId, 'SUCCESS')
+        sessionStore.setAgentStatus(agentId, 'SUCCESS', undefined, taskId)
         const thinkBlock = getOrCreateThinkBlock(agentId)
         thinkBlock.output = outputVal as string | Record<string, unknown>
+        if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
         if (typeof payload.token_usage === 'number') thinkBlock.tokenUsage = payload.token_usage
         if (typeof payload.input_tokens === 'number') thinkBlock.inputTokens = payload.input_tokens
         if (typeof payload.output_tokens === 'number') thinkBlock.outputTokens = payload.output_tokens
         if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
         sessionStore.updateBlock(thinkBlock.id, {
           output: thinkBlock.output,
+          input: thinkBlock.input,
           tokenUsage: thinkBlock.tokenUsage,
           inputTokens: thinkBlock.inputTokens,
           outputTokens: thinkBlock.outputTokens,
@@ -1136,14 +1151,16 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     case 'agent_error': {
       // 单个 Agent 执行失败（ERROR → 红色），并记录错误信息
-      sessionStore.setAgentStatus(agentId, 'ERROR')
+      sessionStore.setAgentStatus(agentId, 'ERROR', undefined, taskId)
       const thinkBlock = getOrCreateThinkBlock(agentId)
       if (typeof payload.error_message === 'string' && payload.error_message) {
         thinkBlock.output = { error: payload.error_message } as string | Record<string, unknown>
       }
+      if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
       if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
       sessionStore.updateBlock(thinkBlock.id, {
         output: thinkBlock.output,
+        input: thinkBlock.input,
         durationMs: thinkBlock.durationMs,
         meta: { ...thinkBlock.meta, status: 'done' },
       })

@@ -434,6 +434,7 @@ export class OrchestrationExecutionService {
         interact_id,
         task_content: enhancedContent,
         trace_id: input.trace_id,
+        task_id,
       });
       const execOutput = new ExecAgentOutput();
       const agentCtx = Object.assign(new AgentExecutionContext(), {
@@ -464,7 +465,8 @@ export class OrchestrationExecutionService {
             agent_id,
             error_message: errorMsg,
             elapsed_ms: elapsed,
-          }, { work_id, interact_id, agent_id, node_id: 'ANSWER' });
+            input: enhancedContent,
+          }, { work_id, interact_id, agent_id, node_id: 'ANSWER', task_id });
         }
         output.error = errorMsg;
         return false;
@@ -583,11 +585,14 @@ export class OrchestrationExecutionService {
           token_usage: totalTokens,
           input_tokens: inputTokens,
           output_tokens: outputTokens,
+          input: enhancedContent,
+          output: execOutput.answer,
         }, {
           work_id,
           interact_id,
           agent_id,
           node_id: 'ANSWER',
+          task_id,
         });
       }
 
@@ -625,7 +630,8 @@ export class OrchestrationExecutionService {
           agent_id,
           error_message: errorMsg,
           elapsed_ms: elapsed,
-        }, { work_id, interact_id, agent_id, node_id: 'ANSWER' });
+          input: enhancedContent,
+        }, { work_id, interact_id, agent_id, node_id: 'ANSWER', task_id });
       }
 
       return false;

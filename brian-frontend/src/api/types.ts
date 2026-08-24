@@ -266,6 +266,7 @@ export interface BrianSSEMessage<T = unknown> {
   work_id: string
   agent_id?: string
   node_id?: string
+  task_id?: string
   event: string
   msg_type: SSEMessageType
   full_length?: number

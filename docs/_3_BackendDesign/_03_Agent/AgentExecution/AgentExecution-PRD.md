@@ -352,3 +352,18 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 **可能存在的问题**：
 - Work Agent 因此丢失跨会话长程记忆；若后续需要「按需注入跨会话记忆」，可经 `enable_cross_session` 配置化开关恢复。
+
+### [2026-08-24] 执行事件携带 task_id 并按轮次实时推送输入/输出
+
+**变更原因**：① 流式执行事件（agent_thinking / agent_action / agent_reflection）仅携带 agent_id，同一 Agent 复用到多个任务时前端无法区分执行归属，导致 AgentDAG 节点状态按 agent 级广播（「任务4 先于任务3 标记完成」的展示错误）；② think 的 prompt / raw_response 与 act 的 params 等输入/输出此前未推送，前端「思考过程」执行过程看不到每轮输入输出。
+
+**修改的方法**：
+- `domain/types.ts` — `ExecAgentInput` 新增 `task_id`；`ActOutput` 新增 `params` / `next_action`。
+- `AgentExecutionService` — `env` 携带 `taskId`；`act()` 回填 `params` / `next_action`；`pushThink` 由 `pushText` 改为 `pushEvent`，与 `pushAct` / `pushReflect` 一并携带 `task_id`、`iteration` 及每轮输入/输出（think: reasoning / prompt / raw_response / next_action；act: params / next_action / result；reflect: reflection / prompt / raw_response）。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— 前端按 task_id 精确定位 AgentDAG 节点状态，并在「思考过程」执行过程实时展示每轮 Think/Act/Reflect 的输入与输出。
+
+**可能存在的问题**：
+- `agent_thinking` 由 chunk 分片改为单条结构化事件，思考内容一次性到达（原无延迟打字机，视觉无差异）。
+

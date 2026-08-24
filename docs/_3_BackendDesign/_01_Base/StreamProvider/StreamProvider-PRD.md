@@ -22,6 +22,7 @@ export interface BrianSSEMessage<T = unknown> {
   work_id: string;             // 编排任务工作 ID
   agent_id?: string;           // 产出该消息的 Agent ID (用于多 Agent 并发隔离)
   node_id?: string;            // 所属 DAG 节点 ID
+  task_id?: string;            // 所属任务 ID (同一 Agent 复用到多个任务时精确关联执行归属)
   event: string;               // SSE 事件名 (如 agent_thinking, text_chunk, dag_node_start 等)
   msg_type: SSEMessageType;    // 内容大类 (TEXT | DAG | CONTEXT | AGENT_SPEC | TRACE | CONTROL)
   full_length?: number;        // 预期完整长度 (已知时传递)
