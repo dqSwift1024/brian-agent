@@ -205,7 +205,10 @@ function formatLogDate(d: Date): string {
 function writeFileLog(level: string, message: string, meta?: unknown): void {
   try {
     const ts = new Date().toISOString();
-    const suffix = meta !== undefined && meta !== null ? ' ' + JSON.stringify(meta) : '';
+    let suffix = '';
+    if (meta !== undefined && meta !== null) {
+      suffix = ' ' + (typeof meta === 'string' ? meta : JSON.stringify(meta));
+    }
     const file = path.join(LOG_DIR, `dev-server-${formatLogDate(new Date())}.log`);
     fs.appendFileSync(file, `[${ts}] [${level}] ${message}${suffix}\n`);
   } catch { /* ignore */ }
