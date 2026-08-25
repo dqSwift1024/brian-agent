@@ -261,6 +261,25 @@ export class AgentExecutionService {
     } catch {
       rule = null;
     }
+
+    // ===== 工具可用但策略规则不含 Act 步（如 CoT）时，升级为 ReAct 工具循环 =====
+    // CoT 规则为 Think→Answer，缺少 Act，导致 Think 即使决定 tool_type=CDT/SKILL/MCP 也不会被执行。
+    // 只要 Agent 存在可用工具（绑定 Skill / MCP / 内置浏览器），就应保证工具决策能被实际执行。
+    const hasTools = skillIds.length > 0 || mcpIds.length > 0 || Boolean(this.cdtCore);
+    const ruleHasAct = !!rule?.steps?.some((s) => s.step === 'Act')
+      || !!rule?.phases?.some((p) => p.steps.some((s) => s.step === 'Act'));
+    if (hasTools && rule && !ruleHasAct) {
+      rule = {
+        version: '1.0',
+        max_iterations: 10,
+        steps: [
+          { step: 'Think', next: 'Act', on_error: 'Answer' },
+          { step: 'Act', next: 'Reflect', on_error: 'Answer' },
+          { step: 'Reflect', condition_field: 'should_continue', true_next: 'Think', false_next: 'Answer', on_error: 'Answer' },
+          { step: 'Answer', next: null },
+        ],
+      };
+    }
     const maxFromRule = rule?.max_iterations ?? maxIter;
 
     const env = {

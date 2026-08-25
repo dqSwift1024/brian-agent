@@ -398,4 +398,22 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 - CDT 依赖 Chrome 可执行文件与 `cdt_config` 配置，若环境未安装 Chrome 或 CDT 未启动，`CDT` 分支会抛出业务错误并按现有错误处理流程进入后续迭代或失败。
 - 测试环境（real-test-helpers）未注入 `cdtCore`，浏览器能力在单测中为 `enabled=false`，属预期行为。
 
+### [2026-08-25] 无 Act 步的策略在工具可用时升级为 ReAct 循环
+
+**变更原因**：CDT 已接入工具注册表、Think 也能正确决策 `tool_type=CDT`，但「general-通用问答助手」等 WorkAgent 被 `matchStrategy` 按低复杂度匹配到 **CoT 策略**（`execution_rule` 为 `Think→Answer`，`max_iterations=1`，不含 Act 步）。规则引擎仅按 `execution_rule` 的 step 链推进，导致 Think 决定的工具动作（CDT navigate 等）从未被执行，直接落入 Answer 阶段，Agent 再次以文本回复「无法获取实时天气」。
+
+**修改的方法**：
+- `AgentExecutionService.execAgent` — 解析 `execution_rule` 后新增判定：当 Agent 存在可用工具（绑定 Skill / MCP / 内置浏览器 `cdtCore`）且规则不含 Act 步时，将规则原地升级为 ReAct 循环（`Think→Act→Reflect→(Think)→Answer`，`max_iterations=10`，各步 `on_error` 指向 Answer）。原始代码：
+  ```ts
+  const maxFromRule = rule?.max_iterations ?? maxIter;
+  ```
+
+**影响的端点**：
+- `POST /api/chat`、`POST /api/chat/stream` — 无 Act 步策略（CoT）下的 WorkAgent 在工具可用时按 ReAct 循环执行，Think 决定的 `CDT`/`SKILL`/`MCP` 工具动作得以真正执行（如 `navigate` → `getContent` 读取天气）。
+
+**可能存在的问题**：
+- 工具可用的 WorkAgent 现统一走 ReAct 循环（相对 CoT 多一次 Reflect 的 LLM 调用），简单任务响应耗时会略增，属预期取舍。
+- 系统 Agent（Writer / Planner / Evolutor 等）不经 `execAgent` 规则引擎，不受影响。
+
+
 
