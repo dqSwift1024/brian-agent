@@ -723,3 +723,18 @@ Simple 编排策略使用 JSONNode 的声明式定义：
 
 **可能存在的问题**：
 - 依赖 PlannerAgent 新增 `planHierarchical` 接口（已同步实现）。
+
+### [2026-08-25] PLAN_WORK / BUILD_AGENT_DAG 节点透传 trace_id
+
+**变更原因**：work 级 trace_id 只在少数 Input 透传，`PLAN_WORK`（planHierarchical）与 `BUILD_AGENT_DAG`（buildAgentDAG）传入全新 Input/Context（无 trace_id），AOP 层为这些方法各自生成随机 trace_id，导致其失败时写出的 ERROR 日志带随机 trace_id，监控「最近日志」按真实 traceId 检索不到。同时 `JSONNode: node execution failed` 错误日志 meta 未携带 trace_id。
+
+**修改的方法**：
+- `JSONNodeService.handlePlanWork` — `PlanHierarchicalInput` 与 `PlannerAgentContext` 透传 `sharedData.trace_id`。
+- `JSONNodeService.handleBuildAgentDAG` — `BuildAgentDAGInput` 与执行上下文透传 `sharedData.trace_id`。
+- `JSONNodeService.execJSONNode` 错误日志 — `JSONNode: node execution failed` meta 补充 `trace_id` / `work_id` / `interact_id`。
+
+**影响的端点**：
+- 后端编排链路 `POST /api/chat/stream`（Planning 策略）— 拆解/构建阶段错误日志携带真实 trace_id，监控「最近日志」可按 traceId 检索。
+
+**可能存在的问题**：
+- 依赖 `sharedData.trace_id`（由 `initial_data.trace_id` 注入）非空；历史旧数据无 trace_id。

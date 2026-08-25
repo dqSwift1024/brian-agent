@@ -414,6 +414,9 @@ export class JSONNodeService {
           node_id: node.node_id,
           node_type: node.node_type,
           error: errorMsg,
+          trace_id: (sharedData.trace_id as string) ?? '',
+          work_id: (sharedData.work_id as string) ?? '',
+          interact_id: (sharedData.interact_id as string) ?? '',
         });
         if (node.on_error && node.on_error !== node.node_id) {
           currentNode = nodeMap.get(node.on_error) ?? null;
@@ -973,9 +976,14 @@ export class JSONNodeService {
       work_id: workId,
       interact_id: interactId,
       task_content: userQuery,
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     const planOutput = new PlanHierarchicalOutput();
-    await this.plannerAgent.planHierarchical(planInput, new PlannerAgentContext(), planOutput);
+    await this.plannerAgent.planHierarchical(
+      planInput,
+      Object.assign(new PlannerAgentContext(), { trace_id: (sharedData.trace_id as string) ?? '' }),
+      planOutput,
+    );
 
     sharedData[savePlanKey] = {
       plan_id: planOutput.plan_id,
@@ -1023,13 +1031,14 @@ export class JSONNodeService {
       plan_id: planResult.plan_id,
       task_dag: planResult.task_dag,
       interact_id: interactId,
+      trace_id: (sharedData.trace_id as string) ?? '',
     });
     const buildOutput = new BuildAgentDAGOutput();
     const workId = (sharedData.work_id as string) ?? context.work_id ?? '';
     const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
     await this.orchestrationExecution.buildAgentDAG(
       buildInput,
-      { session_id: sessionId, work_id: workId, interact_id: interactId } as OrchestrationExecutionContext,
+      { session_id: sessionId, work_id: workId, interact_id: interactId, trace_id: (sharedData.trace_id as string) ?? '' } as OrchestrationExecutionContext,
       buildOutput,
     );
 

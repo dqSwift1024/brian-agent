@@ -238,7 +238,9 @@ export class PlannerAgentService {
     }
     const root = this.findRoot(subDag.nodes);
     const children = this.findChildren(subDag.nodes, root?.task_id);
-    const renamed = children.map((c) => ({ ...c, task_id: IdGenerator.generate(), parent_task_id: node.task_id }));
+    // 重置子任务的 dependencies：子任务在 subDag 内部的 dependencies 引用的是 subDag 内部 task_id，
+    // 这些 id 不会进入父 DAG，若不重置会在 dedupe 前留下悬空引用；子任务若仍需拆解，由下方递归重新生成。
+    const renamed = children.map((c) => ({ ...c, task_id: IdGenerator.generate(), parent_task_id: node.task_id, dependencies: [] }));
     nodes.push({ ...node, task_content: root?.task_content ?? node.task_content, dependencies: renamed.map((c) => c.task_id) });
     for (const child of renamed) {
       edges.push({ from_task_id: child.task_id, to_task_id: node.task_id });
@@ -304,11 +306,15 @@ export class PlannerAgentService {
       else kept.push(node);
     }
     const keptIds = new Set(kept.map((n) => n.task_id));
-    const nodes = kept.map((n) => ({
-      ...n,
-      parent_task_id: n.parent_task_id ? (remap.get(n.parent_task_id) ?? n.parent_task_id) : n.parent_task_id,
-      dependencies: n.dependencies.map((d) => remap.get(d) ?? d).filter((d) => d !== n.task_id && keptIds.has(d)),
-    }));
+    const nodes = kept.map((n) => {
+      const parent = n.parent_task_id ? (remap.get(n.parent_task_id) ?? n.parent_task_id) : '';
+      return {
+        ...n,
+        // parent_task_id 同样按 keptIds 收敛，避免指向被合并/不存在的节点
+        parent_task_id: parent && keptIds.has(parent) ? parent : '',
+        dependencies: n.dependencies.map((d) => remap.get(d) ?? d).filter((d) => d !== n.task_id && keptIds.has(d)),
+      };
+    });
     const seen = new Set<string>();
     const edges: PlanTaskEdge[] = [];
     for (const e of dag.edges) {
@@ -335,10 +341,18 @@ export class PlannerAgentService {
     });
     const kept = sorted.slice(0, maxSub);
     const keptIds = new Set(kept.map((n) => n.task_id));
+    // 裁剪后清理指向被丢弃节点的 dependencies / parent_task_id，
+    // 避免「节点仍带子任务引用、但子任务已被裁剪」的悬空引用导致 DAG 展示不完整
+    // （表现为某节点为非结束节点却找不到其子节点）。
+    const nodes = kept.map((n) => ({
+      ...n,
+      parent_task_id: n.parent_task_id && keptIds.has(n.parent_task_id) ? n.parent_task_id : '',
+      dependencies: (n.dependencies ?? []).filter((d) => d !== n.task_id && keptIds.has(d)),
+    }));
     const edges = dag.edges.filter(
       (e) => e.from_task_id !== e.to_task_id && keptIds.has(e.from_task_id) && keptIds.has(e.to_task_id),
     );
-    return { nodes: kept, edges };
+    return { nodes, edges };
   }
 
   /**

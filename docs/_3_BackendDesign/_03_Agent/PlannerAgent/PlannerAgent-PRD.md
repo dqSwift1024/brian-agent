@@ -246,3 +246,18 @@
 
 **可能存在的问题**：
 - 去重为分词相似度启发式，极端语义相近但实为不同任务（如「调研A的定义」vs「调研A的评估」）依赖阈值取舍；阈值过紧可能误合并，可后续接入语义向量召回优化。
+
+### [2026-08-25] 层级拆解悬空引用清理：DAG 完整性修复
+
+**变更原因**：`limitDagSize` 裁剪超上限节点后，保留节点上的 `dependencies` / `parent_task_id` 仍指向被丢弃节点；`decomposeLeaf` 重命名子任务时经 `{...c}` 继承了 subDag 内部 task_id 的 `dependencies`（这些 id 不会进入父 DAG）；`dedupeDag` 未对 `parent_task_id` 按保留节点集合收敛。这些悬空引用导致 Task DAG 图出现「某节点为非结束节点（带子任务引用）却找不到对应子节点」的不完整展示。
+
+**修改的方法**：
+- `PlannerAgentService.decomposeLeaf()` — 重命名子任务时重置 `dependencies: []`，避免继承 subDag 内部 task_id 的悬空引用（子任务若仍需拆解，由递归重新生成）。
+- `PlannerAgentService.dedupeDag()` — `parent_task_id` 经 remap 后按 `keptIds` 收敛，指向被合并/不存在的节点时置空。
+- `PlannerAgentService.limitDagSize()` — 裁剪后同步清理保留节点上 `dependencies` / `parent_task_id` 中指向被丢弃节点的引用。
+
+**影响的端点**：
+- `POST /api/chat/stream`（PLANNING 策略 PLAN_WORK → 层级拆解）— 产出 Task DAG 无悬空引用，可视化完整。
+
+**可能存在的问题**：
+- 裁剪/去重后父任务被丢弃的叶子任务 `parent_task_id` 置空、被视为根节点，不影响执行（执行拓扑以 edges 为准，`dependencies` 仅用于可视化）。
