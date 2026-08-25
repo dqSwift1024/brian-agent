@@ -439,12 +439,12 @@
    c. 将信息内容和 prompt_template_id 调用 PromptsProvider.execPrompt 生成 Prompt；
    d. 调用 LLMProvider.execLLM 得到该信息的 tag 列表；
    e. 将 tag 列表暂时用于本次搜索（也将其异步写入 `info_tag` 表以避免下次重复抽取）；
-3. 根据 tag 列表调用 GraphDBProvider.getGraphNeighbors 从每个 tag 节点出发，按 `similarTo` 边遍历，获取通过加权计算后权重最高的 topN 个关联 tag；
-4. 根据关联 tag 列表，调用 RelationDBProvider.selectDB 反向查询 `info_tag` 表获取包含这些 tag 的 info_id 列表（去重）；
-5. 对收集到的每个 info_id，调用 `lastNInfo` 接口获取实际内容，按 Tag 相关性权重算法（详见 `Tag相关性权重设计.md`）计算的最终分数降序排列；
-6. 返回完整的信息内容列表（含相关性分数），写入 output 返回；
+3. 根据 tag 列表调用 GraphDBProvider.getGraphNeighbors 从每个 tag 节点出发，按 `similarTo` 边遍历，读取边的 `weight`（向量相似度）作为标签相关度，聚合得到关联标签及其权重；
+4. 根据关联标签列表，调用 RelationDBProvider.selectDB 反向查询 `info_tag` 表获取包含这些 tag 的 info_id 列表（多个标签命中同一 info 取最大权重），计算每个 info_id 的累计相关度；
+5. 对收集到的每个 info_id 按累计相关度权重降序排列并截取 topN，调用 `getInfoByInfoId` 获取实际内容；
+6. 返回完整的信息内容列表（含 `relevance_score` 相关性分数，来自 similarTo 边的 weight），写入 output 返回；
 
-**注意**：relationKInfo 通过 GraphDBProvider.getGraphNeighbors 沿 `similarTo` 边遍历标签图获取关联标签。每一次 Tag 相关性计算后，需要对涉及的 `similarTo` 边调用 GraphDBProvider.activateGraphEdge 触发激活事件，当天的激活次数加一，用于动态活跃度维护（详见 `Tag相关性权重设计.md`）；
+**注意**：relationKInfo 沿 `similarTo` 边遍历标签图，以边的 `weight`（向量相似度）作为标签相关度权重扩散到目标信息，使标签图召回真正按相关性排序（而非时间倒序）。`Tag相关性权重设计.md` 中描述的动态活跃度（actMap 衰减）、度数惩罚、跳数衰减、日期分布一致性等扩展公式为后续演进方向，当前实现采用边的静态相似度作为相关性权重。
 
 ### 2.5.6. 信息图结构（graphInfo）
 
@@ -469,14 +469,14 @@
 
 ### 2.5.7. 构建上下文（context）
 
-**功能**：根据 session_id 构建上下文，支持「默认构建」（多维度收集去重）与「自定义构建」（指定消息 ID + 钉住消息）。构建结果按 work_id 落盘到 `info_context_source` 表（来源 → info_id 关系），供历史上下文查看。
+**功能**：根据 session_id 构建上下文，采用单模式多维度智能混合构建。构建结果按 work_id 落盘到 `info_context_source` 表（来源 → info_id 关系），供历史上下文查看。
 **入参**：
 - input：ContextInfoInput（继承 Input），包含以下字段：
   - session_id：会话 ID（必选）
   - work_id：问答工作 ID（必选，作为本次上下文快照的区分维度）
   - info_id：信息 ID（可选，用于辅助检索关联消息）
-  - mode：构建模式（可选：`DEFAULT` 默认构建 / `CUSTOM` 自定义构建）
-  - selected_msg_ids / custom_info_ids：自定义消息 ID 列表（可选；若提供且非空，自动按自定义构建模式处理）
+  - mode：构建模式（已废弃，保留字段以兼容旧调用；不再区分 DEFAULT/CUSTOM 两种模式）
+  - selected_msg_ids / custom_info_ids：复选消息 ID 列表（可选；若提供且非空，复选消息替换时间线）
   - enable_cross_session：是否允许跨会话召回（可选，默认 true；传 false 时跳过标签相关性 / 向量相似 / 关键词 / 随机全局兜底等全系统维度，仅保留会话内时间线 / 钉住 / 引用，供 Work Agent 执行子任务时规避无关历史会话污染）
 - context：InfoCoreContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：ContextInfoOutput（继承 Output），承载返回内容：
@@ -498,28 +498,24 @@
 
 **处理流程**：
 
-1. **自定义构建模式**（`mode === 'CUSTOM'` 或传入 `selected_msg_ids` / `custom_info_ids`）：
-   a. 收集当前 session 下 `pin=1` 的钉住消息，标记为 `PINNED`；
-   b. 遍历传入的消息 ID 列表，查询对应的消息记录，排除已在钉住列表中的项，标记为 `CUSTOM`；
-   c. 对老化清空的消息执行摘要回退，补充完整的消息对象结构；
-   d. 合并钉住消息与自定义消息（钉住在前，自定义在后按时间倒序），截取前 `total` 条返回；
-
-2. **默认构建模式**（`mode === 'DEFAULT'` 且未传入指定消息 ID）：
-   a. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取配置：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`, `priority_order`；
-   b. 并行/依次收集各维度候选消息：
-      - **按时间线消息（会话内）**：查询当前 session 下最近 `base_timeline_count` 条消息（按 created 倒序）；
-      - **标签相关性消息（全系统）**：根据参考消息通过 `relationKInfo` 检索 `base_tag_relative_count` 条；
-      - **向量相似度消息（全系统）**：根据参考消息通过 `similarKInfo` 检索 `base_similarity_count` 条；
-      - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索 `base_keyword_count` 条；
-      - **随机关联消息（全系统）**：从全系统中随机抽样 `base_random_count` 条；
-      - **钉住消息（会话内）**：查询当前 session 下所有 `pin=1` 的消息；
-   c. **当前消息拆分**：时间线中最新一条消息（即本次问答输入）单独拆出，标记为 `CURRENT`，不参与时间线上下文拼接，并从弱相关维度（标签/向量相似/关键词/随机）候选中剔除，避免与任务内容重复出现；
-   d. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
-   e. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；`CURRENT` 消息若已被钉住/引用等显式维度采集则不再重复标记；
-   f. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等）；
-   g. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回；
-   h. 组装三对象（`source_ids_map` / `content_map` / `attribute_map`）到 output（按 info_id 全局去重）；
-   i. 将 `source_ids_map`（来源 → info_id 关系）按 work_id 落盘到 `info_context_source` 表（幂等：先删除该 work_id 旧记录，再逐条插入），内容与属性不落库、需要时经 `info_raw` 实时回查。
+1. 调用 RelationDBProvider.selectOneDB 查询 `info_context_config` 表获取配置：`base_timeline_count`, `base_tag_relative_count`, `base_similarity_count`, `base_keyword_count`, `base_random_count`, `total`, `priority_order`；
+2. 收集**钉住消息（会话内）**：查询当前 session 下所有 `pin=1` 的消息，标记为 `PINNED`；
+3. 收集**基础上下文（会话内）**：
+   - 若提供 `selected_msg_ids` / `custom_info_ids`：复选消息**替换**时间线，逐条反查消息记录（会话内校验），标记为 `CITING`，不再并行采集时间线；
+   - 否则：查询当前 session 下最近 `base_timeline_count` 条消息（按 created 倒序），标记为 `TIMELINE`；
+4. **当前消息拆分**：最新一条消息（即本次问答输入）单独拆出，标记为 `CURRENT`，不参与时间线上下文拼接，并从弱相关维度（标签/向量相似/关键词/随机）候选中剔除，避免与任务内容重复出现；复选模式下当前输入不在复选列表内，单独取最新一条用于 CURRENT 标注与弱相关剔除；
+5. **动态收缩**：除钉住消息外，各弱相关维度（标签 / 向量相似 / 关键词 / 随机）限额按基础上下文（钉住 + 复选/时间线）占比收缩，收缩因子 `shrinkFactor = max(0, 1 - baseContextCount / total)`；基础上下文越多，弱相关维度越少，把预算让给更明确的上下文；
+6. 按收缩后的限额依次收集各弱相关维度候选消息：
+   - **标签相关性消息（全系统）**：根据参考消息通过 `relationKInfo` 检索（按 similarTo 边 weight 相关度降序）；
+   - **向量相似度消息（全系统）**：根据参考消息通过 `similarKInfo` 检索（按相似度分数降序）；
+   - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索（按关键词命中次数降序）；
+   - **随机关联消息（全系统）**：从会话内未选中消息（不足时从全局）随机抽样；
+7. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
+8. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；`CURRENT` 消息若已被钉住/引用等显式维度采集则不再重复标记；
+9. 对收集的所有消息填充标准数据结构（含摘要回退、内容与摘要长度计算等），内部执行轨迹（ACT trace JSON）统一剔除，错误消息（handle_result_type 非 correct）统一过滤；
+10. 截取前 `total` 条，填充 `output.list`、`output.categories` 与 `output.sources_summary` 返回；
+11. 组装三对象（`source_ids_map` / `content_map` / `attribute_map`）到 output（按 info_id 全局去重）；
+12. 将 `source_ids_map`（来源 → info_id 关系）按 work_id 落盘到 `info_context_source` 表（幂等：先删除该 work_id 旧记录，再逐条插入），内容与属性不落库、需要时经 `info_raw` 实时回查。
 
 ### 2.5.8. 按 work_id 查询上下文（soContextByWork）
 
@@ -611,6 +607,8 @@
 所有方法通过代理模式（AOP）增加切面注入能力，默认记录日志和耗时；
 
 1. `context` 的默认构建模式默认会做「全系统」跨会话召回（标签相关性 / 向量相似 / 关键词 / 随机全局兜底）；当 `enable_cross_session=false` 时跳过这些跨会话维度，仅保留会话内时间线 / 钉住 / 引用，供 Work Agent 子任务执行时规避无关历史会话污染（2026-08-24 新增）。
+2. `context` 构建不再区分 DEFAULT/CUSTOM 两种模式（`mode` 字段废弃保留）：复选消息（`selected_msg_ids` / `custom_info_ids`）在提供时**替换**时间线（标记为 `CITING`），其余维度逻辑不变；除钉住消息外，各弱相关维度限额按基础上下文占比动态收缩（2026-08-25 重构）。
+3. `relationKInfo` 标签图召回改为以 `similarTo` 边的 `weight`（向量相似度）作为相关度权重，按累计相关度降序返回，使标签图召回真正按相关性排序（2026-08-25 重构）。
 
 ## 3. 表设计
 

@@ -32,7 +32,8 @@ import {
 import {
   GetAgentInput, GetAgentOutput, AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { parseJsonObject, formatContextCategories } from '../../shared/signature';
+import { parseJsonObject } from '../../shared/signature';
+import { formatContextCategories } from '@brian-agent/base';
 
 type TaskDag = PlanTaskDAG;
 

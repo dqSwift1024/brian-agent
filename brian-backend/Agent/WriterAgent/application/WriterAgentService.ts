@@ -35,7 +35,8 @@ import {
   GetAgentInput, GetAgentOutput, RecordAgentUsageInput, RecordAgentUsageOutput,
   AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { parseJsonObject, formatContextCategories } from '../../shared/signature';
+import { parseJsonObject } from '../../shared/signature';
+import { formatContextCategories } from '@brian-agent/base';
 import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
 import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
 

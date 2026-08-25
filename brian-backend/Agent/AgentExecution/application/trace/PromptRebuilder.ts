@@ -8,9 +8,9 @@ import {
   PromptsAccess, SoulAccess,
   ExecPromptInput, ExecPromptOutput, PromptContext,
   GetSoulInput, GetSoulOutput, SoulContext,
+  formatContextCategories,
 } from '@brian-agent/base';
 import { PromptReference, TraceIterations } from '../../domain/trace';
-import { formatContextCategories } from '../../../shared/signature';
 
 export class PromptRebuilder {
   constructor(

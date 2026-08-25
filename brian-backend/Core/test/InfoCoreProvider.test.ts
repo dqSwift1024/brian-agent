@@ -782,7 +782,7 @@ describe('InfoCoreProvider', () => {
       expect(output.list[0].source).toBeDefined();
     });
 
-    it('should only return selected and pinned items when selected_msg_ids is provided', async () => {
+    it('should replace timeline with selected messages when selected_msg_ids is provided', async () => {
       const sessionId = 'selected-context-session';
       const createdIds: string[] = [];
       for (let i = 0; i < 5; i++) {
@@ -796,28 +796,37 @@ describe('InfoCoreProvider', () => {
       pinIn.info_id = createdIds[0];
       await infoCore.pinInfo(pinIn, new InfoCoreContext(), new PinInfoOutput());
 
-      // Select message 2 and 3 in CUSTOM mode
-      const input = new ContextInfoInput();
-      input.session_id = sessionId;
-      input.work_id = `work-${sessionId}`;
-      input.mode = 'CUSTOM';
-      input.selected_msg_ids = [createdIds[2], createdIds[3]];
-      const output = new ContextInfoOutput();
-      await infoCore.context(input, new InfoCoreContext(), output);
+      // 仅保留 PINNED 与 CITING，关闭其它弱相关维度，隔离随机/时间线/向量等干扰
+      const cfgIn = new UpdateInfoContextConfigInput();
+      cfgIn.priority_order = 'PINNED,CITING';
+      await infoCore.updateInfoContextConfig(cfgIn, new InfoCoreContext(), new UpdateInfoContextConfigOutput());
 
-      expect(output.list.length).toBe(3); // 1 pinned + 2 selected
-      const resultIds = output.list.map((m) => m.info_id);
-      expect(resultIds).toContain(createdIds[0]); // pinned
-      expect(resultIds).toContain(createdIds[2]); // selected
-      expect(resultIds).toContain(createdIds[3]); // selected
-      expect(resultIds).not.toContain(createdIds[1]); // not selected or pinned
-      expect(resultIds).not.toContain(createdIds[4]); // not selected or pinned
+      try {
+        // Select message 2 and 3（复选消息应替换时间线，而非与之并存）
+        const input = new ContextInfoInput();
+        input.session_id = sessionId;
+        input.work_id = `work-${sessionId}`;
+        input.selected_msg_ids = [createdIds[2], createdIds[3]];
+        const output = new ContextInfoOutput();
+        await infoCore.context(input, new InfoCoreContext(), output);
 
-      expect(output.categories?.selected.length).toBe(2);
-      expect(output.categories?.pinned.length).toBe(1);
-      expect(output.categories?.timeline.length).toBe(0);
-      expect(output.sources_summary?.selected).toBe(2);
-      expect(output.sources_summary?.pinned).toBe(1);
+        const citingIds = output.categories?.citing.map((m) => m.info_id) ?? [];
+        const pinnedIds = output.categories?.pinned.map((m) => m.info_id) ?? [];
+        const timelineIds = output.categories?.timeline.map((m) => m.info_id) ?? [];
+
+        // 复选消息替换时间线：复选消息进入 CITING，时间线不再采集
+        expect(citingIds).toContain(createdIds[2]);
+        expect(citingIds).toContain(createdIds[3]);
+        expect(timelineIds.length).toBe(0);
+        expect(pinnedIds).toContain(createdIds[0]);
+        expect(output.sources_summary?.citing).toBe(2);
+        expect(output.sources_summary?.pinned).toBe(1);
+      } finally {
+        // 恢复默认优先级顺序，避免影响后续用例
+        const resetIn = new UpdateInfoContextConfigInput();
+        resetIn.priority_order = 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
+        await infoCore.updateInfoContextConfig(resetIn, new InfoCoreContext(), new UpdateInfoContextConfigOutput());
+      }
     });
 
     it('should populate complete message object data structure', async () => {

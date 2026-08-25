@@ -62,7 +62,8 @@ import {
   StartWorkerInput, StartWorkerOutput, SoWorkerInput, SoWorkerOutput, MQCoreContext,
   LastNInfoInput, LastNInfoOutput,
 } from '@brian-agent/core';
-import { parseJsonObject, formatContextCategories, parseTaskContentAndContext } from '../../shared/signature';
+import { parseJsonObject, parseTaskContentAndContext } from '../../shared/signature';
+import { formatContextCategories } from '@brian-agent/base';
 
 const EVAL_QUEUE = 'agent.eval';
 const EXEC_QUEUE = 'agent.execution';

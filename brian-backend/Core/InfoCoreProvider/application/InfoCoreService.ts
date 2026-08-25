@@ -959,7 +959,8 @@ export class InfoCoreService {
   /**
    * 标签关联搜索：通过标签间的相似性图（similarTo 边）查找最相关的信息。
    *
-   * 最后调用 GraphDBProvider.activateGraphEdge 触发激活事件维护动态活跃度。
+   * 权重口径：以 similarTo 边的 weight（向量相似度）作为标签相关度，沿标签图扩散到目标信息，
+   * 按累计相关度降序返回 topN 条，使标签图召回真正按相关性排序（而非时间倒序）。
    */
   async relationKInfo(
     input: RelationKInfoInput,
@@ -971,11 +972,11 @@ export class InfoCoreService {
     }
 
     const selfTags = await this.ensureSelfTagNames(input.info_id);
-    const relatedTags = await this.collectRelatedTagNames(selfTags);
-    const relatedInfoIds = await this.findInfoIdsByTags(relatedTags);
-    relatedInfoIds.delete(input.info_id);
+    const relatedTags = await this.collectRelatedTags(selfTags);
+    const infoWeights = await this.findInfoWeightsByTags(relatedTags);
+    infoWeights.delete(input.info_id);
 
-    output.list = await this.loadRelatedInfo([...relatedInfoIds], input.topN);
+    output.list = await this.loadRelatedInfo(infoWeights, input.topN);
     return true;
   }
 
@@ -993,19 +994,24 @@ export class InfoCoreService {
     return this.extractTags(infoRow.info, tagConfig);
   }
 
-  /** 汇总各标签经 similarTo 边关联的其它标签名。 */
-  private async collectRelatedTagNames(selfTagNames: string[]): Promise<string[]> {
-    const related = new Set<string>();
+  /** 汇总各标签经 similarTo 边关联的其它标签及其相关度权重（多标签命中同一目标取最大相似度）。 */
+  private async collectRelatedTags(
+    selfTagNames: string[],
+  ): Promise<Array<{ tag: string; weight: number }>> {
+    const weightMap = new Map<string, number>();
     for (const tagName of selfTagNames) {
-      for (const similar of await this.findSimilarTagTexts(tagName)) {
-        related.add(similar);
+      for (const similar of await this.findSimilarTagEdges(tagName)) {
+        const prev = weightMap.get(similar.tag) ?? 0;
+        weightMap.set(similar.tag, Math.max(prev, similar.weight));
       }
     }
-    return [...related];
+    return [...weightMap.entries()]
+      .map(([tag, weight]) => ({ tag, weight }))
+      .sort((a, b) => b.weight - a.weight);
   }
 
-  /** 查找与标签节点相连的 similarTo 边对应的其它标签文本。 */
-  private async findSimilarTagTexts(tagName: string): Promise<string[]> {
+  /** 查找与标签节点相连的 similarTo 边对应的其它标签文本与相关度权重（边 weight / properties.similarity）。 */
+  private async findSimilarTagEdges(tagName: string): Promise<Array<{ tag: string; weight: number }>> {
     const nodeId = await this.findGraphNodeId('Tag', 'tag', tagName);
     if (!nodeId) return [];
     const out = new SelectGraphOutput();
@@ -1021,12 +1027,17 @@ export class InfoCoreService {
       new GraphContext(),
       out,
     );
-    const result: string[] = [];
+    const result: Array<{ tag: string; weight: number }> = [];
     for (const edge of out.list as GraphEdgeRecord[]) {
       const other = edge.from_node_id === nodeId ? edge.to_node_id : edge.from_node_id;
       const tag = await this.getGraphNodeTag(other);
-      if (tag) result.push(tag);
+      if (!tag) continue;
+      const weight = Number(edge.weight ?? 0)
+        || Number((edge.properties as Record<string, unknown> | null)?.['similarity'] ?? 0)
+        || 0;
+      result.push({ tag, weight });
     }
+    result.sort((a, b) => b.weight - a.weight);
     return result;
   }
 
@@ -1037,31 +1048,41 @@ export class InfoCoreService {
     return String(out.node?.content['tag'] ?? '');
   }
 
-  /** 按标签名反向查询关联的 info_id 集合。 */
-  private async findInfoIdsByTags(tagNames: string[]): Promise<Set<string>> {
-    if (tagNames.length === 0) return new Set();
-    const rows = await this.relationDb.select(INFO_TAG_TABLE, {
-      conditions: [{ field: 'tag', operator: Operator.IN, value: tagNames }],
-      fields: ['info_id'],
-    });
-    return new Set(rows.map((r) => r['info_id'] as string));
+  /** 按关联标签反向查询 info_id 及其累计相关度权重（多标签命中同一 info 取最大权重）。 */
+  private async findInfoWeightsByTags(
+    relatedTags: Array<{ tag: string; weight: number }>,
+  ): Promise<Map<string, number>> {
+    const weightMap = new Map<string, number>();
+    for (const { tag, weight } of relatedTags) {
+      const rows = await this.relationDb.select(INFO_TAG_TABLE, {
+        conditions: [{ field: 'tag', operator: Operator.EQ, value: tag }],
+        fields: ['info_id'],
+      });
+      for (const r of rows) {
+        const infoId = r['info_id'] as string;
+        const prev = weightMap.get(infoId) ?? 0;
+        weightMap.set(infoId, Math.max(prev, weight));
+      }
+    }
+    return weightMap;
   }
 
-  /** 按 info_id 加载关联信息记录（含 relevance_score）。 */
+  /** 按累计相关度权重降序加载关联信息记录（含 relevance_score）。 */
   private async loadRelatedInfo(
-    infoIds: string[],
+    weightedIds: Map<string, number>,
     topN: number,
   ): Promise<Array<InfoRawRecord & { relevance_score?: number }>> {
-    if (infoIds.length === 0) return [];
-    const rows = await this.relationDb.select(INFO_RAW_TABLE, {
-      conditions: [{ field: 'info_id', operator: Operator.IN, value: infoIds }],
-      order_by: [{ field: 'created', direction: 'DESC' }],
-      page: { current: 1, size: topN },
-    });
-    return rows.map((r) => ({
-      ...this.toInfoRawRecord(r),
-      relevance_score: 1 / infoIds.length,
-    }));
+    const entries = [...weightedIds.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN);
+    const results: Array<InfoRawRecord & { relevance_score?: number }> = [];
+    for (const [infoId, weight] of entries) {
+      const row = await this.getInfoByInfoId(infoId);
+      if (row) {
+        results.push({ ...row, relevance_score: weight });
+      }
+    }
+    return results;
   }
 
   /**
@@ -1789,9 +1810,6 @@ export class InfoCoreService {
       CollectionSource.RANDOM,
     ];
     const priorityOrderStr = contextConfig?.priority_order;
-    const customIds = input.custom_info_ids || input.selected_msg_ids || [];
-    // 仅当显式设置了 input.mode === 'CUSTOM' 时才进入纯自定义模式，避免传入引用 ID 时将全局上下文误锁死在 CUSTOM 模式
-    const isCustomMode = input.mode === 'CUSTOM';
 
     // Helper: 将 raw record 转为标准 ContextInfoItem
     const toContextItem = async (
@@ -1835,97 +1853,15 @@ export class InfoCoreService {
       };
     };
 
-    // 1. 显式自定义勾选构建模式 (CUSTOM)
-    if (isCustomMode) {
-      // 1.1 收集钉住消息 (PINNED)
-      const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
-        conditions: [
-          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-          { field: 'pin', operator: Operator.EQ, value: 1 },
-        ],
-        order_by: [{ field: 'created', direction: 'DESC' }],
-      });
-      const pinnedItems: ContextInfoItem[] = [];
-      const pinnedIdSet = new Set<string>();
-      for (const row of pinnedRows) {
-        const raw = this.toInfoRawRecord(row);
-        const item = await toContextItem(raw, CollectionSource.PINNED);
-        pinnedItems.push(item);
-        pinnedIdSet.add(item.info_id);
-      }
-
-      // 1.2 收集传入指定消息 (CUSTOM)
-      const customItems: ContextInfoItem[] = [];
-      const seenCustomIds = new Set<string>();
-      for (const msgId of customIds) {
-        if (!msgId || seenCustomIds.has(msgId) || pinnedIdSet.has(msgId)) continue;
-        seenCustomIds.add(msgId);
-        const row = await this.getInfoByInfoId(msgId);
-        if (row && row.session_id === input.session_id) {
-          const item = await toContextItem(row, CollectionSource.CUSTOM);
-          customItems.push(item);
-        }
-      }
-      // 按时间倒序排序
-      customItems.sort((a, b) => b.created - a.created);
-
-      const resultList = [...pinnedItems, ...customItems].slice(0, maxTotal);
-
-      output.list = resultList;
-      const categories: ContextInfoCategories = {
-        selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
-        pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
-        timeline: [],
-        citing: [],
-        tag_relative: [],
-        similarity: [],
-        keyword: [],
-        random: [],
-        current: [],
-      };
-      output.categories = categories;
-      output.category_ids = {
-        selected: categories.selected.map((i: ContextInfoItem) => i.info_id),
-        pinned: categories.pinned.map((i: ContextInfoItem) => i.info_id),
-        timeline: [],
-        citing: [],
-        tag_relative: [],
-        similarity: [],
-        keyword: [],
-        random: [],
-        current: [],
-      };
-      output.sources_summary = {
-        selected: categories.selected.length,
-        pinned: categories.pinned.length,
-        timeline: 0,
-        citing: 0,
-        tag_relative: 0,
-        similarity: 0,
-        keyword: 0,
-        random: 0,
-        current: 0,
-      };
-      await this.fillContextTriplesAndPersist(output, resultList, input.work_id, input.persist_snapshot !== false);
-      return true;
-    }
-
-    // 2. 默认多维度智能混合构建模式 (DEFAULT)
+    // 1. 单模式多维度智能混合构建（无独立 CUSTOM 分支）
+    //    基础上下文：复选消息（selected_msg_ids / custom_info_ids）优先，有复选时复选消息替换时间线；
+    //    无复选时退化为纯时间线。其余维度（标签/向量/关键词/随机）逻辑不变。
     const timelineLimit = contextConfig?.base_timeline_count ?? 500;
-    const tagLimit = contextConfig?.base_tag_relative_count ?? 200;
-    const simLimit = contextConfig?.base_similarity_count ?? 150;
-    const kwLimit = contextConfig?.base_keyword_count ?? 100;
-    const randLimit = contextConfig?.base_random_count ?? 50;
     // 是否允许跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 全局兜底）。
     // Work Agent 执行子任务时应关闭，避免无关历史会话污染当前任务上下文。
     const enableCrossSession = input.enable_cross_session !== false;
 
-    // ===== 原始计算方式（保留作为参考）=====
-    // const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
-    // const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
-
-    // 2.1 收集各维度候选原始消息
-    // PINNED (会话内钉住消息)
+    // 2.1 收集钉住消息 (PINNED，会话内)
     const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
       conditions: [
         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
@@ -1935,31 +1871,44 @@ export class InfoCoreService {
     });
     const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
 
-    // CITING (显式引用的消息，会话内)
+    // 2.2 基础上下文：复选消息（CITING）替换时间线，或纯时间线
+    const selectedIds = (input.selected_msg_ids || input.custom_info_ids || []).filter((id) => Boolean(id));
     const citingCandidates: InfoRawRecord[] = [];
-    const citedMsgIds = input.selected_msg_ids || input.custom_info_ids || [];
-    if (citedMsgIds.length > 0) {
-      for (const msgId of citedMsgIds) {
+    const timelineCandidates: InfoRawRecord[] = [];
+    if (selectedIds.length > 0) {
+      // 复选消息替换时间线：复选消息作为基础上下文，不再并行采集时间线
+      for (const msgId of selectedIds) {
         const r = await this.getInfoByInfoId(msgId);
         if (r && r.session_id === input.session_id) {
           citingCandidates.push(r);
         }
       }
-    }
-
-    // TIMELINE (基于时间线的消息，会话内；独立并行采集，不再与 CITING 互斥)
-    const timelineCandidates: InfoRawRecord[] = [];
-    const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
-    for (const item of tl) {
-      timelineCandidates.push(item);
+    } else {
+      const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
+      for (const item of tl) {
+        timelineCandidates.push(item);
+      }
     }
 
     // 当前消息（本次问答输入）：时间线按 created DESC 排序，最新一条即本次输入，
     // 从时间线中单独拆出作为 CURRENT 类型，避免与 task_content 重复出现在上下文中。
+    // 复选模式下当前输入不在复选列表内，单独取最新一条用于 CURRENT 标注与弱相关维度剔除。
     let currentCandidate: InfoRawRecord | null = null;
     if (timelineCandidates.length > 0) {
       currentCandidate = timelineCandidates.shift() ?? null;
+    } else if (selectedIds.length > 0) {
+      const latest = await this.lastNInfoTimeline(input.session_id, 1);
+      currentCandidate = latest[0] ?? null;
     }
+
+    // 2.3 动态收缩：除钉住消息外，各弱相关维度限额按基础上下文（钉住 + 复选/时间线）占比收缩。
+    //     基础上下文越多，弱相关维度越少，把预算让给更明确的上下文，避免无关信息挤占。
+    const baseContextCount = pinnedCandidates.length + citingCandidates.length + timelineCandidates.length;
+    const shrinkFactor = maxTotal > 0 ? Math.max(0, 1 - baseContextCount / maxTotal) : 1;
+    const tagLimit = Math.floor((contextConfig?.base_tag_relative_count ?? 200) * shrinkFactor);
+    const simLimit = Math.floor((contextConfig?.base_similarity_count ?? 150) * shrinkFactor);
+    const kwLimit = Math.floor((contextConfig?.base_keyword_count ?? 100) * shrinkFactor);
+    const randLimit = Math.floor((contextConfig?.base_random_count ?? 50) * shrinkFactor);
 
     // 获取参考文本：优先使用 input.info（当前用户提问文本），其次查找 input.info_id 记录，最后从 CITING/TIMELINE 中提取
     let refText = input.info || '';
@@ -2024,65 +1973,49 @@ export class InfoCoreService {
       } catch { /* ignore */ }
     }
 
-    // RANDOM (随机采样消息：优先抽取未在前面维度被选中的新消息)
+    // RANDOM (随机采样消息：优先抽取未在前面维度被选中的新消息；限额已按基础上下文动态收缩)
     let randCandidates: InfoRawRecord[] = [];
     if (randLimit > 0) {
       try {
-        // 动态收缩：其他维度已采集越多，随机采样这种弱相关信息就越少
-        const otherCollected =
-          pinnedCandidates.length +
-          citingCandidates.length +
-          timelineCandidates.length +
-          tagCandidates.length +
-          simCandidates.length +
-          kwCandidates.length;
-        const dynamicRandCount =
-          maxTotal > 0
-            ? Math.max(1, Math.floor((otherCollected * randLimit) / maxTotal))
-            : 1;
-        const finalRandCount = Math.min(randLimit, dynamicRandCount);
+        const existingIds = new Set<string>([
+          ...pinnedCandidates.map((c) => c.info_id),
+          ...citingCandidates.map((c) => c.info_id),
+          ...timelineCandidates.map((c) => c.info_id),
+        ]);
 
-        if (finalRandCount > 0) {
-          const existingIds = new Set<string>([
-            ...pinnedCandidates.map((c) => c.info_id),
-            ...citingCandidates.map((c) => c.info_id),
-            ...timelineCandidates.map((c) => c.info_id),
-          ]);
+        const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
+          conditions: [
+            { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+          ],
+        });
+        const sessionCandidates = sessionAllRows
+          .map((r) => this.toInfoRawRecord(r))
+          .filter((c) => !existingIds.has(c.info_id))
+          .filter((c) => this.isCorrectInfo(c));
 
-          const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
-            conditions: [
-              { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-            ],
+        if (sessionCandidates.length > 0) {
+          const shuffled = [...sessionCandidates];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+          randCandidates = shuffled.slice(0, randLimit);
+        } else if (enableCrossSession) {
+          // 若当前 session 消息均已被已有维度采集，则在全局原始消息库中随机调取其他历史消息
+          const globalRows = await this.relationDb.select(INFO_RAW_TABLE, {
+            page: { current: 1, size: 100 },
           });
-          const sessionCandidates = sessionAllRows
+          const globalCandidates = globalRows
             .map((r) => this.toInfoRawRecord(r))
             .filter((c) => !existingIds.has(c.info_id))
             .filter((c) => this.isCorrectInfo(c));
-
-          if (sessionCandidates.length > 0) {
-            const shuffled = [...sessionCandidates];
+          if (globalCandidates.length > 0) {
+            const shuffled = [...globalCandidates];
             for (let i = shuffled.length - 1; i > 0; i--) {
               const j = Math.floor(Math.random() * (i + 1));
               [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
-            randCandidates = shuffled.slice(0, finalRandCount);
-          } else if (enableCrossSession) {
-            // 若当前 session 消息均已被已有维度采集，则在全局原始消息库中随机调取其他历史消息
-            const globalRows = await this.relationDb.select(INFO_RAW_TABLE, {
-              page: { current: 1, size: 100 },
-            });
-            const globalCandidates = globalRows
-              .map((r) => this.toInfoRawRecord(r))
-              .filter((c) => !existingIds.has(c.info_id))
-              .filter((c) => this.isCorrectInfo(c));
-            if (globalCandidates.length > 0) {
-              const shuffled = [...globalCandidates];
-              for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-              }
-              randCandidates = shuffled.slice(0, finalRandCount);
-            }
+            randCandidates = shuffled.slice(0, randLimit);
           }
         }
       } catch { /* ignore */ }

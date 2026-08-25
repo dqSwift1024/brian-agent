@@ -491,9 +491,13 @@ export class ContextInfoInput extends Input {
   info_id?: string;
   /** 参考信息文本内容，用于检索语义相似/关键词/标签关联消息 */
   info?: string;
-  /** 构建模式：DEFAULT 默认构建 / CUSTOM 自定义构建 */
+  /**
+   * 构建模式：已废弃，保留字段以兼容旧调用。上下文构建不再区分 DEFAULT/CUSTOM 两种模式，
+   * 复选消息（selected_msg_ids / custom_info_ids）在提供时自动替换时间线，其余维度逻辑不变。
+   * @deprecated
+   */
   mode?: 'DEFAULT' | 'CUSTOM' | string;
-  /** 复选消息 ID 列表（勾选后仅提取复选消息与钉住消息） */
+  /** 复选消息 ID 列表（勾选后复选消息替换时间线，其余维度逻辑不变） */
   selected_msg_ids?: string[];
   /** 自定义指定消息 ID 列表（等同 selected_msg_ids） */
   custom_info_ids?: string[];

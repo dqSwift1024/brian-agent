@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildTaskSignature, parseJsonObject, formatContextCategories } from '../shared/signature';
+import { buildTaskSignature, parseJsonObject } from '../shared/signature';
+import { formatContextCategories } from '@brian-agent/base';
 
 describe('AgentShared - buildTaskSignature', () => {
   it('TC-SH-001: 正常格式 [domain] + 正文', () => {

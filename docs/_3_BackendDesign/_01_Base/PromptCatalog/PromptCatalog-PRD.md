@@ -72,3 +72,15 @@
 **影响的端点**：
 - `POST /api/chat`、`POST /api/chat/stream` — WorkAgent 的 Think/Reflect 阶段现在能正确感知当前任务主体（城市/关键词），不再被历史上下文中的旧主体误导。
 
+### [2026-08-25] 上下文文本化收敛到 PromptCatalog（新增 contextFormatter）
+
+**变更原因**：上下文结构化数据 → prompt 片段文本的拼接逻辑（`formatContextCategories`）原散落在 Agent 层 `shared/signature.ts`，被 AgentExecution / Writer / Planner / PromptRebuilder 多处重复引用，职责不清。上下文文本化属于 Prompt 装配层职责，应收敛到 Base 层 PromptCatalog 统一承载。
+
+**修改的方法**：
+- 新增 `Base/PromptCatalog/contextFormatter.ts` — 从 Agent 层迁移 `formatContextCategories` 及 `ContextItemLike` / `ContextCategoriesLike` / `ContextOutputLike` 纯接口（不依赖 Core 层类型），经 `PromptCatalog/index.ts` 与 `@brian-agent/base` 统一导出；
+- `Agent/shared/signature.ts` — 移除 `formatContextCategories` 与相关接口，仅保留 Agent 层专用的 `buildTaskSignature` / `parseJsonObject` / `parseTaskContentAndContext`；
+- `AgentExecutionService` / `WriterAgentService` / `PlannerAgentService` / `PromptRebuilder` / `shared-full.test` — 改从 `@brian-agent/base` 导入 `formatContextCategories`。
+
+**影响的端点**：
+- 所有将上下文文本化注入 `context_data` 变量的 Agent / Prompt 渲染链路（Think / Reflect / Answer / Writer / Planner）。
+
