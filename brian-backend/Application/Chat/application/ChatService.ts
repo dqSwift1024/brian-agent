@@ -13,6 +13,8 @@ import type { InfoCoreAccess } from '@brian-agent/core';
 import {
   LastNInfoInput, LastNInfoOutput,
   GraphInfoInput, GraphInfoOutput,
+  SoCitationEdgesInput, SoCitationEdgesOutput,
+  DelInfoGraphInput, DelInfoGraphOutput,
   KeywordKInfoInput, KeywordKInfoOutput,
   PinInfoInput, PinInfoOutput,
   InfoCoreContext,
@@ -507,10 +509,8 @@ export class ChatService {
           ]);
         }
 
-        // 3. 删除主表与关系表
-        await this.relationDb.delete('info_graph', [
-          { field: 'session_id', operator: Operator.EQ, value: sessionId },
-        ]);
+        // 3. 删除主表与 GraphDB 引用节点/边
+        await this.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new InfoCoreContext(), new DelInfoGraphOutput());
         await this.relationDb.delete('info_raw', [
           { field: 'session_id', operator: Operator.EQ, value: sessionId },
         ]);
@@ -960,11 +960,11 @@ export class ChatService {
 
     const pageRows = allRows.slice(start, end);
 
-    let graphRows: Array<Record<string, unknown>> = [];
+    let graphRows: Array<{ citing_info_id: string; cited_info_id: string }> = [];
     try {
-      graphRows = await this.relationDb.select('info_graph', {
-        fields: ['citing_info_id', 'cited_info_id'],
-      });
+      const citeOut = new SoCitationEdgesOutput();
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      graphRows = citeOut.edges;
     } catch { /* degrade gracefully */ }
 
     for (const row of pageRows) {
@@ -972,8 +972,8 @@ export class ChatService {
       const citedInfoIds: string[] = [];
 
       for (const g of graphRows) {
-        const citing = String(g.citing_info_id ?? '');
-        const cited = String(g.cited_info_id ?? '');
+        const citing = g.citing_info_id;
+        const cited = g.cited_info_id;
         if (cited === row.info_id && citing) {
           citingInfoIds.push(citing);
         }

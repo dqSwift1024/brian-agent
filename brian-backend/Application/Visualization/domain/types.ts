@@ -93,7 +93,6 @@ export class ConfigVisualizationOutput extends Output {
 
 export const VISUALIZATION_CONFIG_TABLE = 'visualization_config';
 export const INFO_RAW_TABLE = 'info_raw';
-export const INFO_GRAPH_TABLE = 'info_graph';
 
 export const DEFAULT_MAX_NODES_PER_GRAPH = 200;
 export const DEFAULT_MESSAGE_SUMMARY_LENGTH = 50;

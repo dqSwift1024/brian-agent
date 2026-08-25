@@ -282,6 +282,63 @@ export class GraphDBComponent {
   }
 
   /**
+   * 基于 SQLite 递归 CTE（WITH RECURSIVE）计算多跳邻居节点 ID。
+   *
+   * 作为图遍历的底层能力，一次 SQL 完成有界深度内的可达性展开，支持：
+   * - direction：OUT / IN / BOTH 遍历方向；
+   * - edge_type：按边类型过滤（可选）；
+   * - only_active：仅遍历激活边；
+   * - maxDepth：最大跳数（递归深度上限，防环）；
+   * - fanOutThreshold：扇出熔断阈值，扇出度超过该值的 hub 节点不展开其邻居（防图爆炸）。
+   *
+   * @returns 邻居节点 ID 列表（不含起始节点，去重）
+   */
+  queryNeighborsByCTE(params: {
+    startNodeId: string;
+    maxDepth: number;
+    direction: 'OUT' | 'IN' | 'BOTH';
+    edgeType?: string;
+    onlyActive: boolean;
+    fanOutThreshold: number;
+  }): string[] {
+    const { startNodeId, maxDepth, direction, edgeType, onlyActive, fanOutThreshold } = params;
+    const esc = (s: string) => this.escape(s);
+
+    const filterParts: string[] = [];
+    if (onlyActive) filterParts.push('is_active = 1');
+    if (edgeType) filterParts.push(`edge_type = '${esc(edgeType)}'`);
+    const filter = filterParts.length > 0 ? ` WHERE ${filterParts.join(' AND ')}` : '';
+
+    const outNeighbor = `SELECT from_node_id AS parent_id, to_node_id AS node_id FROM graph_edge${filter}`;
+    const inNeighbor = `SELECT to_node_id AS parent_id, from_node_id AS node_id FROM graph_edge${filter}`;
+    const neighborSQL =
+      direction === 'OUT' ? outNeighbor :
+        direction === 'IN' ? inNeighbor :
+          `${outNeighbor} UNION ALL ${inNeighbor}`;
+
+    const fanoutSQL = `SELECT parent_id, COUNT(*) AS cnt FROM (${neighborSQL}) GROUP BY parent_id`;
+
+    const sql = `
+      WITH RECURSIVE reachable(depth, node_id) AS (
+        SELECT 0 AS depth, '${esc(startNodeId)}' AS node_id
+        UNION ALL
+        SELECT r.depth + 1, n.node_id
+        FROM reachable r
+        JOIN (${neighborSQL}) n ON n.parent_id = r.node_id
+        LEFT JOIN (${fanoutSQL}) f ON f.parent_id = r.node_id
+        WHERE r.depth < ${Math.max(1, Math.floor(maxDepth))}
+          AND (f.cnt IS NULL OR f.cnt <= ${Math.max(0, Math.floor(fanOutThreshold))})
+      )
+      SELECT DISTINCT node_id FROM reachable WHERE node_id != '${esc(startNodeId)}'
+    `;
+
+    const db = this.dbOrThrow;
+    const rows = db.prepare(sql).all() as Array<{ node_id: unknown }>;
+    return rows.map((r) => String(r.node_id));
+  }
+
+
+  /**
    * 获取数据库文件磁盘占用大小（字节）。
    */
   getDiskUsage(): number {

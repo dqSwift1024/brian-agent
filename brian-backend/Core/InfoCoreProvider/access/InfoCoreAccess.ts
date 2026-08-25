@@ -32,6 +32,8 @@ import {
   KeywordInfoOutput,
   GraphTagInput,
   GraphTagOutput,
+  RebuildCooccurGraphInput,
+  RebuildCooccurGraphOutput,
   LastNInfoInput,
   LastNInfoOutput,
   GraphNInfoInput,
@@ -44,6 +46,12 @@ import {
   RelationKInfoOutput,
   GraphInfoInput,
   GraphInfoOutput,
+  SoCitationEdgesInput,
+  SoCitationEdgesOutput,
+  DelInfoGraphInput,
+  DelInfoGraphOutput,
+  RebuildCitationGraphInput,
+  RebuildCitationGraphOutput,
   ContextInfoInput,
   ContextInfoOutput,
   SoContextByWorkInput,
@@ -204,6 +212,15 @@ export class InfoCoreAccess {
     return this.service.graphTag(input, context, output);
   }
 
+  /** 从 info_tag 表全量重建共现边（cooccur），用于存量数据回填 */
+  async rebuildCooccurGraph(
+    input: RebuildCooccurGraphInput,
+    context: InfoCoreContext,
+    output: RebuildCooccurGraphOutput,
+  ): Promise<boolean> {
+    return this.service.rebuildCooccurGraph(input, context, output);
+  }
+
   // -------------------------------------------------------------------------
   // Search
   // -------------------------------------------------------------------------
@@ -260,6 +277,33 @@ export class InfoCoreAccess {
     output: GraphInfoOutput,
   ): Promise<boolean> {
     return this.service.graphInfo(input, context, output);
+  }
+
+  /** 查询 GraphDB 引用边（CITATION），替代旧 info_graph 表 */
+  async soCitationEdges(
+    input: SoCitationEdgesInput,
+    context: InfoCoreContext,
+    output: SoCitationEdgesOutput,
+  ): Promise<boolean> {
+    return this.service.soCitationEdges(input, context, output);
+  }
+
+  /** 级联删除 GraphDB info 节点与引用边 */
+  async delInfoGraph(
+    input: DelInfoGraphInput,
+    context: InfoCoreContext,
+    output: DelInfoGraphOutput,
+  ): Promise<boolean> {
+    return this.service.delInfoGraph(input, context, output);
+  }
+
+  /** 迁移旧 info_graph 表数据到 GraphDB，并删除旧表 */
+  async rebuildCitationGraph(
+    input: RebuildCitationGraphInput,
+    context: InfoCoreContext,
+    output: RebuildCitationGraphOutput,
+  ): Promise<boolean> {
+    return this.service.rebuildCitationGraph(input, context, output);
   }
 
   /** 构建 Agent 上下文（五源融合） */

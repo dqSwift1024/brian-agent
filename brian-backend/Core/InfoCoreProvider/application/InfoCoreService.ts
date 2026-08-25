@@ -48,6 +48,8 @@ import {
   KeywordInfoOutput,
   GraphTagInput,
   GraphTagOutput,
+  RebuildCooccurGraphInput,
+  RebuildCooccurGraphOutput,
   LastNInfoInput,
   LastNInfoOutput,
   GraphNInfoInput,
@@ -60,6 +62,12 @@ import {
   RelationKInfoOutput,
   GraphInfoInput,
   GraphInfoOutput,
+  SoCitationEdgesInput,
+  SoCitationEdgesOutput,
+  DelInfoGraphInput,
+  DelInfoGraphOutput,
+  RebuildCitationGraphInput,
+  RebuildCitationGraphOutput,
   ContextInfoInput,
   ContextInfoOutput,
   ContextInfoCategories,
@@ -93,7 +101,6 @@ import {
   ExistInfoOutput,
   INFO_RAW_TABLE,
   INFO_CONTEXT_SOURCE_TABLE,
-  INFO_GRAPH_TABLE,
   INFO_TAG_TABLE,
   INFO_SUMMARY_TABLE,
   INFO_KEYWORD_TABLE,
@@ -105,7 +112,6 @@ import {
 } from '../domain/types';
 import type {
   InfoRawRecord,
-  InfoGraphRecord,
   InfoTagRecord,
   InfoSummaryRecord,
   InfoTagConfigRecord,
@@ -138,8 +144,16 @@ import {
   GraphContext,
   AddGraphNodeInput,
   AddGraphNodeOutput,
+  UpdateGraphNodeInput,
+  UpdateGraphNodeOutput,
   AddGraphEdgeInput,
   AddGraphEdgeOutput,
+  UpdateGraphEdgeInput,
+  UpdateGraphEdgeOutput,
+  DelGraphEdgeInput,
+  DelGraphEdgeOutput,
+  DelGraphNodeInput,
+  DelGraphNodeOutput,
   GraphTarget,
   SelectGraphInput,
   SelectGraphOutput,
@@ -170,6 +184,18 @@ import {
 } from '@brian-agent/base';
 
 const jieba = Jieba.withDict(dict);
+
+// 共现边类型：两个标签出现在同一条 info 记录上即建立一条边，权重为共现次数
+const COOCCUR_EDGE_TYPE = 'cooccur';
+
+// 关键词共现边类型：两个关键词出现在同一条 info 记录上即建立一条边
+const KEYWORD_COOCCUR_EDGE_TYPE = 'keywordCooccur';
+
+// 引用边类型：info 引用（citing）另一条 info（cited），用于图遍历与可视化
+const CITATION_EDGE_TYPE = 'CITATION';
+
+// 旧版 info 引用关系表名（迁移后 DROP）
+const LEGACY_INFO_GRAPH_TABLE = 'info_graph';
 
 // ---------------------------------------------------------------------------
 // 停用词集合（中英文）
@@ -245,7 +271,7 @@ export class InfoCoreService {
    *
    * 流程：
    * 1. 插入 info_raw 表。
-   * 2. 若 parent_info_ids 存在，创建 info_graph 边。
+   * 2. 若 parent_info_ids 存在，创建 GraphDB info 节点与 CITATION 边。
    * 3. 摘要落库：错误信息（非 correct）直接用原文作为摘要；正常信息经 input.summary 传入后落库。
    * 4. 异步触发处理（仅正常信息）：vectorInfo / tagInfo / keywordInfo（摘要生成不在本方法内触发）。
    */
@@ -286,9 +312,9 @@ export class InfoCoreService {
       { field: 'handle_result_type', value: handleResultType },
     ]);
 
-    // 创建图引用边
+    // 创建图引用边（GraphDB：info 节点 + CITATION 边）
     if (input.parent_info_ids && input.parent_info_ids.length > 0) {
-      await this.createGraphEdges(id, infoId, input.session_id, input.parent_info_ids, now);
+      await this.connectCitationEdges(infoId, input.session_id, input.info, input.parent_info_ids);
     }
 
     output.info_id = infoId;
@@ -428,12 +454,16 @@ export class InfoCoreService {
       const tagId = IdGenerator.generate();
       try {
         await this.insertTag(tagId, input.info_id, tag, now);
+        await this.ensureTextNode('Tag', 'tag', tag, true);
         await this.maintainTagVector(tag, tagConfig);
         await this.graphTag(Object.assign(new GraphTagInput(), { tag_id: tagId }), new InfoCoreContext(), new GraphTagOutput());
       } catch {
         // 标签重复跳过
       }
     }
+
+    // 共现边：同一 info 上的标签两两建立 cooccur 边（不依赖向量化）
+    await this.buildCooccurEdges(tags);
 
     output.tags = tags;
     return true;
@@ -545,7 +575,11 @@ export class InfoCoreService {
         `INSERT INTO "${INFO_KEYWORD_TABLE}" ("info_id", "word") VALUES (?, ?)`,
         [input.info_id, word],
       );
+      await this.ensureTextNode('keyword', 'keyword', word, true);
     }
+
+    // 共现边：同一 info 上的关键词两两建立 keywordCooccur 边（不依赖向量化）
+    await this.buildKeywordCooccurEdges(keywords);
 
     output.keywords = keywords;
     return true;
@@ -593,6 +627,108 @@ export class InfoCoreService {
 
     output.node_id = nodeId;
     return true;
+  }
+
+  /**
+   * 从 info_tag 表全量重建共现边（cooccur）。
+   *
+   * 用于存量数据回填：删除所有 cooccur 边后，按 info_id 分组重新统计标签共现对并落库。
+   * 该过程幂等，可与增量 buildCooccurEdges 配合使用（tagInfo 在保存时实时建边，
+   * 本方法负责历史标签的一次性回填）。
+   */
+  async rebuildCooccurGraph(
+    _input: RebuildCooccurGraphInput,
+    _context: InfoCoreContext,
+    output: RebuildCooccurGraphOutput,
+  ): Promise<boolean> {
+    // 标签共现边
+    const tagResult = await this.rebuildCooccurForSource(INFO_TAG_TABLE, 'tag', 'Tag', 'tag', COOCCUR_EDGE_TYPE);
+    // 关键词共现边
+    const kwResult = await this.rebuildCooccurForSource(INFO_KEYWORD_TABLE, 'word', 'keyword', 'keyword', KEYWORD_COOCCUR_EDGE_TYPE);
+    output.deleted_edges = tagResult.deleted + kwResult.deleted;
+    output.rebuilt_edges = tagResult.rebuilt + kwResult.rebuilt;
+    return true;
+  }
+
+  /** 从指定表全量重建某类文本的节点（含频次属性）与共现边（幂等：先删后建）。 */
+  private async rebuildCooccurForSource(
+    table: string,
+    field: string,
+    nodeType: string,
+    textField: string,
+    edgeType: string,
+  ): Promise<{ deleted: number; rebuilt: number }> {
+    // 1. 删除该 node_type 的所有节点（级联删除关联边与激活数据），保证幂等重建
+    const nodeSel = new SelectGraphOutput();
+    await this.graphDb.selectGraph(
+      { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
+      new GraphContext(),
+      nodeSel,
+    );
+    const nodeIds = (nodeSel.list as GraphNodeRecord[]).map((n) => n.id);
+    if (nodeIds.length > 0) {
+      await this.graphDb.delGraphNode(
+        { ids: nodeIds } as DelGraphNodeInput,
+        new GraphContext(),
+        new DelGraphNodeOutput(),
+      );
+    }
+
+    // 2. 读表：统计频次 + 按 info_id 分组
+    const rows = await this.relationDb.select(table, {
+      order_by: [{ field: 'info_id', direction: 'ASC' }],
+    });
+    const freqMap = new Map<string, number>();
+    const byInfo = new Map<string, string[]>();
+    for (const row of rows) {
+      const infoId = String(row['info_id'] ?? '');
+      const text = String(row[field] ?? '').trim();
+      if (!infoId || !text) continue;
+      freqMap.set(text, (freqMap.get(text) || 0) + 1);
+      const list = byInfo.get(infoId);
+      if (list) list.push(text);
+      else byInfo.set(infoId, [text]);
+    }
+
+    // 3. 建节点（content 含频次属性 freq，节点属性完全存于 GraphDB）
+    const textToId = new Map<string, string>();
+    for (const [text, freq] of freqMap) {
+      const out = new AddGraphNodeOutput();
+      await this.graphDb.addGraphNode(
+        {
+          data: { node_type: nodeType, content: { [textField]: text, freq } } as GraphNodeData,
+        } as AddGraphNodeInput,
+        new GraphContext(),
+        out,
+      );
+      textToId.set(text, out.id);
+    }
+
+    // 4. 统计共现对（去重、累加共现次数），一次性建共现边
+    const edgeMap = new Map<string, { fromId: string; toId: string; weight: number }>();
+    for (const items of byInfo.values()) {
+      const unique = Array.from(new Set(items));
+      if (unique.length < 2) continue;
+      for (let i = 0; i < unique.length; i++) {
+        for (let j = i + 1; j < unique.length; j++) {
+          const a = unique[i] < unique[j] ? unique[i] : unique[j];
+          const b = unique[i] < unique[j] ? unique[j] : unique[i];
+          const fromId = textToId.get(a);
+          const toId = textToId.get(b);
+          if (!fromId || !toId) continue;
+          const key = `${fromId}\u0001${toId}`;
+          const existing = edgeMap.get(key);
+          if (existing) existing.weight += 1;
+          else edgeMap.set(key, { fromId, toId, weight: 1 });
+        }
+      }
+    }
+    let rebuilt = 0;
+    for (const e of edgeMap.values()) {
+      await this.addCooccurEdge(e.fromId, e.toId, edgeType, e.weight);
+      rebuilt++;
+    }
+    return { deleted: nodeIds.length, rebuilt };
   }
 
   // =========================================================================
@@ -928,9 +1064,8 @@ export class InfoCoreService {
 
     const infoIds = new Set(infoRows.map((r) => r['info_id'] as string));
 
-    const graphEdges = await this.relationDb.select(INFO_GRAPH_TABLE, {
-      conditions: [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }],
-    });
+    const citeEdgesOut = new SoCitationEdgesOutput();
+    await this.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { session_id: input.session_id }), _context, citeEdgesOut);
 
     // 节点统一以 info_id 作为 id（与边的 from/to 同命名空间）
     const nodes = infoRows.map((r) => ({
@@ -942,15 +1077,15 @@ export class InfoCoreService {
       handle_result_type: (r['handle_result_type'] as string) || DEFAULT_HANDLE_RESULT_TYPE,
     }));
 
-    // 引用边（info_graph：用户引用其他消息）
-    const citationEdges = graphEdges
-      .filter((e) => infoIds.has(e['citing_info_id'] as string) && infoIds.has(e['cited_info_id'] as string))
+    // 引用边（GraphDB CITATION 边：用户引用其他消息）
+    const citationEdges = citeEdgesOut.edges
+      .filter((e) => infoIds.has(e.citing_info_id) && infoIds.has(e.cited_info_id))
       .map((e) => ({
-        id: e['id'] as string,
-        from: e['citing_info_id'] as string,
-        to: e['cited_info_id'] as string,
-        citing_info_id: e['citing_info_id'] as string,
-        cited_info_id: e['cited_info_id'] as string,
+        id: e.id,
+        from: e.citing_info_id,
+        to: e.cited_info_id,
+        citing_info_id: e.citing_info_id,
+        cited_info_id: e.cited_info_id,
         edge_type: 'CITATION',
       }));
 
@@ -981,6 +1116,109 @@ export class InfoCoreService {
     }
 
     output.graph = { nodes, edges: [...replyEdges, ...citationEdges] };
+    return true;
+  }
+
+  /**
+   * 查询 GraphDB 引用边（CITATION），替代旧 info_graph 表的读取。
+   *
+   * 返回 info_id 维度的引用关系（citing → cited）。可选按 session_id / citing_info_id /
+   * cited_info_id 过滤；session_id 取自边 properties 中记录的引用方（citing）所属会话。
+   */
+  async soCitationEdges(
+    input: SoCitationEdgesInput,
+    _context: InfoCoreContext,
+    output: SoCitationEdgesOutput,
+  ): Promise<boolean> {
+    const selOut = new SelectGraphOutput();
+    await this.graphDb.selectGraph(
+      { target: GraphTarget.EDGE, edge_type: CITATION_EDGE_TYPE } as SelectGraphInput,
+      new GraphContext(),
+      selOut,
+    );
+    const edges = (selOut.list as GraphEdgeRecord[]).map((e) => ({
+      id: e.id,
+      citing_info_id: String(e.properties?.['citing_info_id'] ?? ''),
+      cited_info_id: String(e.properties?.['cited_info_id'] ?? ''),
+      session_id: String(e.properties?.['session_id'] ?? ''),
+    }));
+    let result = edges;
+    if (input.session_id) result = result.filter((e) => e.session_id === input.session_id);
+    if (input.citing_info_id) result = result.filter((e) => e.citing_info_id === input.citing_info_id);
+    if (input.cited_info_id) result = result.filter((e) => e.cited_info_id === input.cited_info_id);
+    output.edges = result;
+    return true;
+  }
+
+  /**
+   * 级联删除 GraphDB 中的 info 节点及关联的引用边（CITATION）。
+   *
+   * 供删除记忆 / 删除会话时调用，替代旧 info_graph 表的级联清理。
+   */
+  async delInfoGraph(
+    input: DelInfoGraphInput,
+    _context: InfoCoreContext,
+    output: DelInfoGraphOutput,
+  ): Promise<boolean> {
+    const infoIds = (input.info_ids ?? []).map((x) => String(x)).filter(Boolean);
+    if (infoIds.length === 0) {
+      output.deleted_nodes = 0;
+      return true;
+    }
+    const nodeIds: string[] = [];
+    for (const infoId of infoIds) {
+      const nodeId = await this.findInfoGraphNodeId(infoId);
+      if (nodeId) nodeIds.push(nodeId);
+    }
+    if (nodeIds.length === 0) {
+      output.deleted_nodes = 0;
+      return true;
+    }
+    const delOut = new DelGraphNodeOutput();
+    await this.graphDb.delGraphNode({ ids: nodeIds } as DelGraphNodeInput, new GraphContext(), delOut);
+    output.deleted_nodes = delOut.affected_rows;
+    return true;
+  }
+
+  /**
+   * 迁移旧 info_graph 表数据到 GraphDB（一次性），迁移完成后删除旧表。
+   *
+   * 旧实现把 info 引用边存在 RelationDB 的 info_graph 表；本方法将存量引用边迁移为
+   * GraphDB 的 CITATION 边（info 节点 + 边），随后 DROP 旧表，实现图结构收敛到 GraphDB。
+   */
+  async rebuildCitationGraph(
+    _input: RebuildCitationGraphInput,
+    _context: InfoCoreContext,
+    output: RebuildCitationGraphOutput,
+  ): Promise<boolean> {
+    let legacyRows: Array<Record<string, unknown>> = [];
+    try {
+      legacyRows = await this.relationDb.select(LEGACY_INFO_GRAPH_TABLE, {});
+    } catch {
+      legacyRows = [];
+    }
+
+    let migrated = 0;
+    for (const row of legacyRows) {
+      const citing = String(row['citing_info_id'] ?? '');
+      const cited = String(row['cited_info_id'] ?? '');
+      const session = String(row['session_id'] ?? '');
+      if (!citing || !cited) continue;
+      const citingInfo = await this.getInfoByInfoId(citing);
+      const citedInfo = await this.getInfoByInfoId(cited);
+      const fromNodeId = await this.ensureInfoGraphNode(citing, { session_id: session, info: citingInfo?.info ?? '' });
+      const toNodeId = await this.ensureInfoGraphNode(cited, { session_id: citedInfo?.session_id ?? session, info: citedInfo?.info ?? '' });
+      await this.connectCitationEdge(fromNodeId, toNodeId, citing, cited, session);
+      migrated++;
+    }
+    output.migrated_edges = migrated;
+
+    try {
+      await this.relationDb.executeRaw(`DROP TABLE IF EXISTS "${LEGACY_INFO_GRAPH_TABLE}"`);
+      output.dropped_table = true;
+    } catch {
+      output.dropped_table = false;
+    }
     return true;
   }
 
@@ -2607,17 +2845,52 @@ const rawPriority = priorityOrderStr
     return String(nodeOut.node?.content['tag'] ?? '');
   }
 
-  /** 确保标签节点存在（按文本去重），返回节点 ID。 */
-  private async ensureTagNode(tag: string): Promise<string> {
-    const existing = await this.findGraphNodeId('Tag', 'tag', tag);
-    if (existing) return existing;
+  /**
+   * 确保文本节点存在（按 node_type + content[textField] 去重），返回节点 ID。
+   *
+   * 节点属性（含频次 freq）完全存于 GraphDB 节点 content；incrementFreq 为 true 时
+   * 将 freq +1（用于标签/关键词每次出现时累加频次）。
+   */
+  private async ensureTextNode(
+    nodeType: string,
+    textField: string,
+    text: string,
+    incrementFreq = false,
+  ): Promise<string> {
+    const existing = await this.findGraphNode(nodeType, textField, text);
+    if (existing) {
+      if (incrementFreq) {
+        const freq = Number(existing.content?.['freq'] ?? 0) + 1;
+        await this.graphDb.updateGraphNode(
+          { id: existing.id, data: { content: { ...(existing.content ?? {}), [textField]: text, freq } } } as UpdateGraphNodeInput,
+          new GraphContext(),
+          new UpdateGraphNodeOutput(),
+        );
+      }
+      return existing.id;
+    }
     const out = new AddGraphNodeOutput();
     await this.graphDb.addGraphNode(
-      { data: { node_type: 'Tag', content: { tag } } as GraphNodeData } as AddGraphNodeInput,
+      {
+        data: {
+          node_type: nodeType,
+          content: { [textField]: text, freq: incrementFreq ? 1 : 0 },
+        } as GraphNodeData,
+      } as AddGraphNodeInput,
       new GraphContext(),
       out,
     );
     return out.id;
+  }
+
+  /** 确保标签节点存在（按文本去重），返回节点 ID。 */
+  private async ensureTagNode(tag: string): Promise<string> {
+    return this.ensureTextNode('Tag', 'tag', tag);
+  }
+
+  /** 确保关键词节点存在（按文本去重），返回节点 ID。 */
+  private async ensureKeywordNode(keyword: string): Promise<string> {
+    return this.ensureTextNode('keyword', 'keyword', keyword);
   }
 
   /** 建立/更新 similarTo 边（异常静默忽略，避免重复边阻断）。 */
@@ -2631,6 +2904,108 @@ const rawPriority = priorityOrderStr
             edge_type: 'similarTo',
             weight: score,
             properties: { similarity: score, actMap: {} },
+          } as GraphEdgeData,
+        } as AddGraphEdgeInput,
+        new GraphContext(),
+        new AddGraphEdgeOutput(),
+      );
+    } catch {
+      // 忽略边已存在等异常
+    }
+  }
+
+  /**
+   * 为同一 info 上共现的标签建立 cooccur 边（共现策略，不依赖向量化）。
+   *
+   * 与「涌现」标签图 / 「关键词图」的共现口径一致：两个标签出现在同一条 info
+   * 记录上即建立一条边，边权重为共现次数。将共现关系持久化到 GraphDB，使图数据库
+   * 的边数与标签图展示一致（此前仅依赖 similarTo 语义边，embedding 链路不可用时会退化为零边）。
+   */
+  private async buildCooccurEdges(tags: string[]): Promise<void> {
+    await this.buildCooccurEdgesForType(tags, 'Tag', 'tag', COOCCUR_EDGE_TYPE);
+  }
+
+  /** 为同一 info 上共现的关键词建立 cooccur 边（共现策略，不依赖向量化）。 */
+  private async buildKeywordCooccurEdges(keywords: string[]): Promise<void> {
+    await this.buildCooccurEdgesForType(keywords, 'keyword', 'keyword', KEYWORD_COOCCUR_EDGE_TYPE);
+  }
+
+  /** 泛化：为同一 info 上共现的文本项两两建立 cooccur 边。 */
+  private async buildCooccurEdgesForType(
+    items: string[],
+    nodeType: string,
+    textField: string,
+    edgeType: string,
+  ): Promise<void> {
+    const unique = Array.from(new Set(items.map((t) => t.trim()).filter(Boolean)));
+    if (unique.length === 0) return;
+    // 确保所有文本节点存在（含孤立项，保证图节点完整）
+    for (const t of unique) {
+      await this.ensureTextNode(nodeType, textField, t);
+    }
+    if (unique.length < 2) return;
+    for (let i = 0; i < unique.length; i++) {
+      for (let j = i + 1; j < unique.length; j++) {
+        const a = unique[i] < unique[j] ? unique[i] : unique[j];
+        const b = unique[i] < unique[j] ? unique[j] : unique[i];
+        await this.upsertCooccurEdgeForType(a, b, nodeType, textField, edgeType);
+      }
+    }
+  }
+
+  /** 建立/累加一对文本项的 cooccur 边（按文本规范化方向，幂等）。 */
+  private async upsertCooccurEdgeForType(
+    textA: string,
+    textB: string,
+    nodeType: string,
+    textField: string,
+    edgeType: string,
+  ): Promise<void> {
+    try {
+      const fromId = await this.ensureTextNode(nodeType, textField, textA);
+      const toId = await this.ensureTextNode(nodeType, textField, textB);
+      const selOut = new SelectGraphOutput();
+      await this.graphDb.selectGraph(
+        {
+          target: GraphTarget.EDGE,
+          edge_type: edgeType,
+          conditions: [
+            { field: 'from_node_id', operator: Operator.EQ, value: fromId },
+            { field: 'to_node_id', operator: Operator.EQ, value: toId },
+          ],
+        } as SelectGraphInput,
+        new GraphContext(),
+        selOut,
+      );
+      const existing = selOut.list?.[0] as GraphEdgeRecord | undefined;
+      if (existing) {
+        await this.graphDb.updateGraphEdge(
+          {
+            id: existing.id,
+            data: { weight: (Number(existing.weight) || 0) + 1 },
+          } as UpdateGraphEdgeInput,
+          new GraphContext(),
+          new UpdateGraphEdgeOutput(),
+        );
+      } else {
+        await this.addCooccurEdge(fromId, toId, edgeType);
+      }
+    } catch {
+      // 共现边建立失败不影响文本保存
+    }
+  }
+
+  /** 直接建立一条 cooccur 边（节点已存在、边未建立时调用）。 */
+  private async addCooccurEdge(fromId: string, toId: string, edgeType: string, weight = 1): Promise<void> {
+    try {
+      await this.graphDb.addGraphEdge(
+        {
+          data: {
+            from_node_id: fromId,
+            to_node_id: toId,
+            edge_type: edgeType,
+            weight,
+            properties: { cooccurrence: weight },
           } as GraphEdgeData,
         } as AddGraphEdgeInput,
         new GraphContext(),
@@ -2746,28 +3121,49 @@ const rawPriority = priorityOrderStr
   // Private: Graph helpers
   // =========================================================================
 
-  private async createGraphEdges(
-    rowId: string,
+  /**
+   * 建立 GraphDB 引用边：确保当前 info 与各 parent 的 info 节点存在，并创建 CITATION 边。
+   */
+  private async connectCitationEdges(
     infoId: string,
     sessionId: string,
+    infoText: string,
     parentInfoIds: string[],
-    now: number,
   ): Promise<void> {
+    const fromNodeId = await this.ensureInfoGraphNode(infoId, { session_id: sessionId, info: infoText });
     for (const parentId of parentInfoIds) {
-      const edgeId = IdGenerator.generate();
-      try {
-        await this.relationDb.insert(INFO_GRAPH_TABLE, [
-          { field: 'id', value: edgeId },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'session_id', value: sessionId },
-          { field: 'info_id', value: infoId },
-          { field: 'citing_info_id', value: infoId },
-          { field: 'cited_info_id', value: parentId },
-        ]);
-      } catch {
-        // 忽略重复边
-      }
+      if (!parentId) continue;
+      const parentRow = await this.getInfoByInfoId(parentId);
+      if (!parentRow) continue;
+      const toNodeId = await this.ensureInfoGraphNode(parentId, { session_id: parentRow.session_id, info: parentRow.info });
+      await this.connectCitationEdge(fromNodeId, toNodeId, infoId, parentId, sessionId);
+    }
+  }
+
+  /** 建立单条 CITATION 边（异常静默忽略，避免重复边阻断）。 */
+  private async connectCitationEdge(
+    fromNodeId: string,
+    toNodeId: string,
+    citingInfoId: string,
+    citedInfoId: string,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      await this.graphDb.addGraphEdge(
+        {
+          data: {
+            from_node_id: fromNodeId,
+            to_node_id: toNodeId,
+            edge_type: CITATION_EDGE_TYPE,
+            weight: 1,
+            properties: { citing_info_id: citingInfoId, cited_info_id: citedInfoId, session_id: sessionId },
+          } as GraphEdgeData,
+        } as AddGraphEdgeInput,
+        new GraphContext(),
+        new AddGraphEdgeOutput(),
+      );
+    } catch {
+      // 忽略边已存在等异常
     }
   }
 
@@ -2801,12 +3197,12 @@ const rawPriority = priorityOrderStr
     return this.findGraphNodeId('info', 'info_id', infoId);
   }
 
-  /** 在 GraphDB 中按 node_type + content 字段值查找节点 ID。 */
-  private async findGraphNodeId(
+  /** 在 GraphDB 中按 node_type + content 字段值查找节点完整记录。 */
+  private async findGraphNode(
     nodeType: string,
     field: string,
     value: unknown,
-  ): Promise<string | null> {
+  ): Promise<GraphNodeRecord | null> {
     const out = new SelectGraphOutput();
     await this.graphDb.selectGraph(
       { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
@@ -2815,9 +3211,19 @@ const rawPriority = priorityOrderStr
     );
     for (const node of out.list) {
       const content = (node as GraphNodeRecord).content ?? {};
-      if (content[field] === value) return (node as GraphNodeRecord).id;
+      if (content[field] === value) return node as GraphNodeRecord;
     }
     return null;
+  }
+
+  /** 在 GraphDB 中按 node_type + content 字段值查找节点 ID。 */
+  private async findGraphNodeId(
+    nodeType: string,
+    field: string,
+    value: unknown,
+  ): Promise<string | null> {
+    const node = await this.findGraphNode(nodeType, field, value);
+    return node ? node.id : null;
   }
 
   // =========================================================================

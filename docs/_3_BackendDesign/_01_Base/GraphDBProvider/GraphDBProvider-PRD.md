@@ -506,7 +506,7 @@
 
 1. GraphDBProvider 是图数据的唯一操作入口，上层不可直接操作图数据库；
 2. 图数据库组件默认集成 GraphDB，通过 Repository 接口封装底层图数据库操作；
-3. 图数据库基于 SQLite + CTE 实现，所有图数据表均为 SQLite 普通表；通过 CypherTranslator 将 Cypher 查询翻译为 SQL 执行，图遍历能力在应用层通过迭代查询实现；`graph_edge` 为 SQLite 表，`from_node_id` / `to_node_id` 作为属性字段显式存储关系端点；
+3. 图数据库基于 SQLite + CTE 实现，所有图数据表均为 SQLite 普通表；通过 CypherTranslator 将 Cypher 查询翻译为 SQL 执行（节点/边 CRUD 与查询），多跳遍历（`getGraphNeighbors`）基于 SQLite 递归 CTE（`WITH RECURSIVE`）一次性展开，配合扇出熔断（`fan_out_threshold`）与深度上限防环防爆；`graph_edge` 为 SQLite 表，`from_node_id` / `to_node_id` 作为属性字段显式存储关系端点；
 4. Condition、OrderBy、Page 为项目公共查询对象，定义于 `RelationDBProvider-PRD.md`，本 Provider 直接引用，不重复定义；
 5. 节点 / 边的系统字段（`id`、`created`、`updated` 及边的 `last_activation_time`、`is_active`）由 Provider 维护，不可通过 Data 对象修改；边的 `last_activation_time`、`is_active` 由激活 / 老化机制维护，不可通过 updateGraphEdge 直接修改；
 6. 边的激活机制通过 `activateGraphEdge` 记录激活事件并按天累计激活次数（写入 graph_edge_daily_activation），用于维护边的权重和活跃度；激活次数不再以累计字段存储，避免老边累计值天然偏高；

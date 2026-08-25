@@ -47,7 +47,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 - `session_id`（STRING，必选）：会话 ID
 - `msg_content`（STRING，必选）：用户输入内容
 - `citing_msg_ids`（STRING[]，可选）：引用的消息 ID 列表
-- `selected_msg_ids`（STRING[]，可选）：复选的消息 ID 列表（勾选消息进行问答时传入；复选消息自动作为本次输入消息的被引用信息写入 `info_graph`，且本次问答仅以复选消息与钉住消息构建上下文）
+- `selected_msg_ids`（STRING[]，可选）：复选的消息 ID 列表（勾选消息进行问答时传入；复选消息自动作为本次输入消息的被引用信息写入 GraphDB 引用边，且本次问答仅以复选消息与钉住消息构建上下文）
 - `force_orchestration_strategy`（ENUM，可选）：强制编排策略（"SIMPLE" | "PLANNING"）
 - `trace_id`（STRING，可选）：请求链路追踪 ID，贯穿整条处理链路与日志，前端生成并透传；不传时由后端自动生成
 
@@ -162,7 +162,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 1. 校验 `session_ids` 非空；
 2. 调用 RelationDBProvider.transactionDB 开启事务：
    a. 遍历 session_ids，调用 RelationDBProvider.deleteDB 删除 `chat_session` 表中对应记录；
-   b. 调用 RelationDBProvider.deleteDB 删除 `info_graph` 表中该 session 的引用关系记录；
+   b. 调用 InfoCore.delInfoGraph 删除 GraphDB 中该 session 的 info 节点与引用边；
    c. 调用 RelationDBProvider.deleteDB 删除 `info_raw` 表中该 session 的消息记录（级联清理摘要、向量、标签等加工数据由 InfoCore.delInfo 负责定时清理）；
 3. 事务提交，返回 deleted_count；
 
@@ -288,7 +288,7 @@ Chat Application 是系统最上层的用户交互入口，位于 Application �
 **处理流程**：
 
 1. 调用 InfoCore.lastNInfo 查询消息（传入 session_id、work_id、lastN 等过滤条件）；
-2. 批量查询 `info_graph` 表计算每条消息的引用（cited_count / cited_info_ids）与被引用（citing_count / citing_info_ids）关联关系；
+2. 调用 InfoCore.soCitationEdges 批量查询 GraphDB 引用边，计算每条消息的引用（cited_count / cited_info_ids）与被引用（citing_count / citing_info_ids）关联关系；
 3. 过滤出 info_type ∈ {REQUEST, RESPONSE}，映射为前端 camelCase 结构后返回；
 
 #### 3.4.2. 搜索消息（searchMessage）

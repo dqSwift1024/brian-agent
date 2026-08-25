@@ -104,7 +104,7 @@
 | TC-CHAT-052 | 删除不存在的会话 | session_ids=["nonexistent"] | HTTP 200，deleted_count=0（幂等） |
 | TC-CHAT-053 | 部分存在的批量删除 | session_ids=["valid","nonexistent"] | deleted_count=1（只删除存在的） |
 | TC-CHAT-054 | session_ids 为空数组 | session_ids=[] | HTTP 400 |
-| TC-CHAT-055 | 删除会话级联清理 | 会话有消息和引用关系 | chat_session、info_raw、info_graph 中相关记录均删除 |
+| TC-CHAT-055 | 删除会话级联清理 | 会话有消息和引用关系 | chat_session、info_raw 及 GraphDB 中相关 info 节点与引用边均删除 |
 | TC-CHAT-056 | 删除会话事务回滚 | 删除过程中 DB 异常 | 事务回滚，会话和消息不被部分删除 |
 
 ### 3.3 搜索会话 — searchSession

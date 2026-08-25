@@ -1026,13 +1026,11 @@ export class GraphDBService {
    *
    * PRD 3.3.2 条：从指定节点开始多跳遍历，返回 depth 范围内的所有邻居节点。
    *
-   * 通过迭代 Cypher 查询实现多跳遍历：
-   * 1. 从 node_id 开始，作为初始 frontier；
-   * 2. 对每一深度层级（1 到 max_depth）：
-   *    - 根据 direction 查询与当前 frontier 匹配的边；
-   *    - 应用 edge_type 过滤、is_active 过滤；
-   *    - 收集邻居节点 ID（对向端点）；
-   * 3. 返回所有唯一邻居节点（不含起始节点）。
+   * 基于 SQLite 递归 CTE（WITH RECURSIVE）实现多跳遍历：
+   * 1. 从 node_id 开始，作为递归 CTE 的锚点；
+   * 2. 递归展开邻居：按 direction 展开边，应用 edge_type 过滤、is_active 过滤；
+   * 3. 通过扇出熔断（fan_out_threshold）跳过 hub 节点的展开，防止图爆炸；
+   * 4. 返回所有唯一邻居节点（不含起始节点）。
    *
    * @param input 入参（node_id 起始节点，depth 深度，edge_type 边类型过滤，direction 方向，only_active 仅激活边）
    * @param context 执行上下文
@@ -1067,117 +1065,25 @@ export class GraphDBService {
       throw new NotFoundError('GraphNode', input.node_id);
     }
 
-    // 迭代遍历
-    const visited = new Set<string>([input.node_id]);
-    let frontier = [input.node_id];
+    // 基于 SQLite 递归 CTE（WITH RECURSIVE）一次性展开多跳邻居
+    const dir = direction === GraphDirection.OUT ? 'OUT'
+      : direction === GraphDirection.IN ? 'IN'
+      : 'BOTH';
+    const neighborIds = this.graphDb.queryNeighborsByCTE({
+      startNodeId: input.node_id,
+      maxDepth,
+      direction: dir,
+      edgeType: input.edge_type,
+      onlyActive,
+      fanOutThreshold,
+    });
 
-    for (let depth = 0; depth < maxDepth; depth++) {
-      if (frontier.length === 0) {
-        break;
-      }
-
-      const frontierList = this.buildInList(frontier);
-      const whereParts: string[] = [];
-
-      // 方向条件
-      if (direction === GraphDirection.OUT) {
-        whereParts.push(`from.id IN ${frontierList}`);
-      } else if (direction === GraphDirection.IN) {
-        whereParts.push(`to.id IN ${frontierList}`);
-      } else {
-        whereParts.push(
-          `(from.id IN ${frontierList} OR to.id IN ${frontierList})`,
-        );
-      }
-
-      // 边类型过滤
-      if (input.edge_type) {
-        whereParts.push(
-          `e.edge_type = '${this.escape(input.edge_type)}'`,
-        );
-      }
-
-      // 仅激活边过滤
-      if (onlyActive) {
-        whereParts.push(`e.is_active = 1`);
-      }
-
-      const edges = await this.graphDb.queryAll(
-        `MATCH (from:graph_node)-[e:graph_edge]->(to:graph_node) ` +
-          `WHERE ${whereParts.join(' AND ')} ` +
-          `RETURN from.id AS from_id, to.id AS to_id`,
-      );
-
-      // 统计每个 frontier 节点的扇出度（按遍历方向），用于扇出熔断
-      const fanOutMap = new Map<string, number>();
-      for (const edge of edges) {
-        const fromId = String(edge.from_id);
-        const toId = String(edge.to_id);
-        if (direction === GraphDirection.OUT) {
-          fanOutMap.set(fromId, (fanOutMap.get(fromId) ?? 0) + 1);
-        } else if (direction === GraphDirection.IN) {
-          fanOutMap.set(toId, (fanOutMap.get(toId) ?? 0) + 1);
-        } else {
-          fanOutMap.set(fromId, (fanOutMap.get(fromId) ?? 0) + 1);
-          fanOutMap.set(toId, (fanOutMap.get(toId) ?? 0) + 1);
-        }
-      }
-
-      // 扇出熔断：扇出度超过阈值的节点跳过其邻居扩展（防止 hub 节点导致图爆炸）
-      const fusedNodes = new Set<string>();
-      for (const [nodeId, degree] of fanOutMap) {
-        if (degree > fanOutThreshold) {
-          fusedNodes.add(nodeId);
-        }
-      }
-
-      // 收集邻居节点 ID
-      const nextFrontier: string[] = [];
-      for (const edge of edges) {
-        const fromId = String(edge.from_id);
-        const toId = String(edge.to_id);
-        if (direction === GraphDirection.OUT) {
-          // 出边：邻居是 to_node_id
-          if (fusedNodes.has(fromId)) continue;
-          if (!visited.has(toId)) {
-            nextFrontier.push(toId);
-          }
-        } else if (direction === GraphDirection.IN) {
-          // 入边：邻居是 from_node_id
-          if (fusedNodes.has(toId)) continue;
-          if (!visited.has(fromId)) {
-            nextFrontier.push(fromId);
-          }
-        } else {
-          // BOTH：取对向端点
-          if (!fusedNodes.has(fromId) && frontier.includes(fromId) && !visited.has(toId)) {
-            nextFrontier.push(toId);
-          }
-          if (!fusedNodes.has(toId) && frontier.includes(toId) && !visited.has(fromId)) {
-            nextFrontier.push(fromId);
-          }
-        }
-      }
-
-      // 更新 visited 与 frontier
-      const newFrontier: string[] = [];
-      for (const id of nextFrontier) {
-        if (!visited.has(id)) {
-          visited.add(id);
-          newFrontier.push(id);
-        }
-      }
-      frontier = newFrontier;
-    }
-
-    // 查询所有邻居节点的完整信息
-    visited.delete(input.node_id);
-    const neighborIds = Array.from(visited);
     if (neighborIds.length === 0) {
       output.list = [];
       return true;
     }
 
+    // 查询所有邻居节点的完整信息
     const neighborIdsList = this.buildInList(neighborIds);
     const rows = await this.graphDb.queryAll(
       `MATCH (n:graph_node) WHERE n.id IN ${neighborIdsList} RETURN n`,

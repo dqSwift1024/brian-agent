@@ -39,7 +39,7 @@ import {
   TriggerCronTaskInput, TriggerCronTaskOutput,
   ListCronTaskRunsInput, ListCronTaskRunsOutput,
 } from './Base/CronProvider';
-import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput } from './Core/InfoCoreProvider';
+import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput, RebuildCooccurGraphInput, RebuildCooccurGraphOutput, DelInfoGraphInput, DelInfoGraphOutput, RebuildCitationGraphInput, RebuildCitationGraphOutput } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
 import { SkillCoreAccess, SkillCoreContext, AgeSkillInput, AgeSkillOutput } from './Core/SkillCoreProvider';
@@ -350,6 +350,64 @@ function readVectorDimension(relationDb: any): number {
   return 1536;
 }
 
+/**
+ * 从 GraphDB 读取某类文本的共现图（节点 + 共现边），组装为前端所需的
+ * `{ nodes, edges }` 结构。节点与边的图结构、节点属性（频次）与共现权重
+ * 完全来自 GraphDB，不再依赖关系数据库。
+ */
+async function buildCooccurGraphFromGraphDB(
+  ctx: any,
+  nodeType: string,
+  textField: string,
+  edgeType: string,
+): Promise<{ nodes: Array<{ id: string; name: string; weight: number; degree: number }>; edges: Array<{ source: string; target: string; weight: number }> }> {
+  const { GraphContext, SelectGraphInput, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
+
+  // 1. 读节点（GraphDB，含频次属性 freq）
+  const nodeOut = new SelectGraphOutput();
+  await ctx.graphDBAccess.selectGraph(
+    { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
+    new GraphContext(),
+    nodeOut,
+  );
+  const rawNodes = (nodeOut.list as Array<{ id: string; content?: Record<string, unknown> }>)
+    .map((n) => ({ id: n.id, text: String(n.content?.[textField] ?? ''), freq: Number(n.content?.['freq'] ?? 0) }))
+    .filter((n) => n.text);
+
+  // 2. 读共现边（GraphDB）
+  const edgeOut = new SelectGraphOutput();
+  await ctx.graphDBAccess.selectGraph(
+    { target: GraphTarget.EDGE, edge_type: edgeType } as SelectGraphInput,
+    new GraphContext(),
+    edgeOut,
+  );
+  const rawEdges = edgeOut.list as Array<{ from_node_id: string; to_node_id: string; weight: number }>;
+
+  const idToText = new Map(rawNodes.map((n) => [n.id, n.text]));
+
+  // 3. 度数（由 GraphDB 共现边统计）
+  const degreeMap = new Map<string, number>();
+  for (const e of rawEdges) {
+    const s = idToText.get(e.from_node_id);
+    const t = idToText.get(e.to_node_id);
+    if (!s || !t) continue;
+    degreeMap.set(s, (degreeMap.get(s) || 0) + 1);
+    degreeMap.set(t, (degreeMap.get(t) || 0) + 1);
+  }
+
+  const nodes = rawNodes.map((n) => ({
+    id: n.text,
+    name: n.text,
+    weight: n.freq || 1,
+    degree: degreeMap.get(n.text) || 0,
+  }));
+  const edges = rawEdges
+    .map((e) => ({ source: idToText.get(e.from_node_id) ?? '', target: idToText.get(e.to_node_id) ?? '', weight: e.weight }))
+    .filter((e) => e.source && e.target);
+
+  return { nodes, edges };
+}
+
 async function buildContext() {
   // ---- Base Providers ----
   const relationDb = new RelationDBAccess({ dbPath: path.join(DATA_DIR, 'brian.db'), wal: true, autoCreateConfigTable: true });
@@ -426,6 +484,28 @@ async function buildContext() {
   // ---- Core Providers ----
   const infoCore = new InfoCoreAccess(relationDb, llmAccess, promptsAccess, vectorDBAccess, graphDBAccess, logger);
   await infoCore.initialize();
+
+  // 存量数据回填：重建 GraphDB 共现边（cooccur），使「系统健康」GraphDB 的边数与标签图一致
+  try {
+    const rebuildOut = new RebuildCooccurGraphOutput();
+    await infoCore.rebuildCooccurGraph(new RebuildCooccurGraphInput(), new InfoCoreContext(), rebuildOut);
+    if ((rebuildOut.rebuilt_edges ?? 0) > 0 || (rebuildOut.deleted_edges ?? 0) > 0) {
+      logger.info('[startup] rebuild cooccur edges', `deleted=${rebuildOut.deleted_edges} rebuilt=${rebuildOut.rebuilt_edges}`);
+    }
+  } catch (e: any) {
+    logger.warn('[startup] rebuild cooccur edges', 'failed', e?.message || String(e));
+  }
+
+  // 存量数据迁移：旧 info_graph 表引用边迁移到 GraphDB（CITATION），并删除旧表
+  try {
+    const citeOut = new RebuildCitationGraphOutput();
+    await infoCore.rebuildCitationGraph(new RebuildCitationGraphInput(), new InfoCoreContext(), citeOut);
+    if ((citeOut.migrated_edges ?? 0) > 0 || citeOut.dropped_table) {
+      logger.info('[startup] migrate citation edges', `migrated=${citeOut.migrated_edges} dropped_table=${citeOut.dropped_table}`);
+    }
+  } catch (e: any) {
+    logger.warn('[startup] migrate citation edges', 'failed', e?.message || String(e));
+  }
 
   // 向量维度统一由 SQLite 的 info_vector_config.dimension 管理（配置中心可修改），
   // 读取后作为向量表（LanceDB）的维度来源初始化。
@@ -3109,9 +3189,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.relationDb.delete('info_summary', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         await ctx.relationDb.delete('info_keyword', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         await ctx.relationDb.delete('info_vector', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
-        await ctx.relationDb.delete('info_graph', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
-        await ctx.relationDb.delete('info_graph', [{ field: 'citing_info_id', operator: Operator.IN, value: infoIds }]);
-        await ctx.relationDb.delete('info_graph', [{ field: 'cited_info_id', operator: Operator.IN, value: infoIds }]);
+        await ctx.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new InfoCoreContext(), new DelInfoGraphOutput());
         const affected = await ctx.relationDb.delete('info_raw', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         sendJson(res, 200, { deleted_count: affected });
 
@@ -3123,103 +3201,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && pathname === '/api/memory/tag-graph') {
         try {
-          // 节点：info_tag 去重标签（按文本），weight = 频次
-          const tagRows = ctx.relationDb.queryRaw<{ tag: string; cnt: number }>(
-            'SELECT "tag", COUNT(*) AS "cnt" FROM "info_tag" GROUP BY "tag" ORDER BY "cnt" DESC',
-          );
-          if (!tagRows || tagRows.length === 0) {
-            sendJson(res, 200, { nodes: [], edges: [] });
-            return;
-          }
-          // 共现边：同一 info_id 下同时出现的标签对
-          const coRows = ctx.relationDb.queryRaw<{ info_id: string; tag: string }>(
-            'SELECT "info_id", "tag" FROM "info_tag" ORDER BY "info_id"',
-          );
-          const byInfo = new Map<string, string[]>();
-          for (const r of coRows) {
-            if (!byInfo.has(r.info_id)) byInfo.set(r.info_id, []);
-            byInfo.get(r.info_id)!.push(r.tag);
-          }
-          const edgeMap = new Map<string, { source: string; target: string; weight: number }>();
-          for (const tags of byInfo.values()) {
-            for (let i = 0; i < tags.length; i++) {
-              for (let j = i + 1; j < tags.length; j++) {
-                const a = tags[i] < tags[j] ? tags[i] : tags[j];
-                const b = tags[i] < tags[j] ? tags[j] : tags[i];
-                const key = `${a}\u0001${b}`;
-                const existing = edgeMap.get(key);
-                if (existing) existing.weight += 1;
-                else edgeMap.set(key, { source: a, target: b, weight: 1 });
-              }
-            }
-          }
-          const degreeMap = new Map<string, number>();
-          for (const e of edgeMap.values()) {
-            degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
-            degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
-          }
-          const graphNodes = tagRows.map((r) => ({
-            id: r.tag,
-            name: r.tag,
-            weight: r.cnt,
-            degree: degreeMap.get(r.tag) || 0,
-          }));
-          const graphEdges = Array.from(edgeMap.values()).map((e) => ({
-            source: e.source,
-            target: e.target,
-            weight: e.weight,
-          }));
-          sendJson(res, 200, { nodes: graphNodes, edges: graphEdges });
+          const g = await buildCooccurGraphFromGraphDB(ctx, 'Tag', 'tag', 'cooccur');
+          sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
 
       } else if (method === 'GET' && pathname === '/api/memory/keyword-graph') {
         try {
-          const rows = ctx.relationDb.queryRaw<{ info_id: string; word: string }>(
-            'SELECT "info_id", "word" FROM "info_keyword" ORDER BY "word"',
-          );
-          if (!rows || rows.length === 0) {
-            sendJson(res, 200, { nodes: [], edges: [] });
-            return;
-          }
-          const wordFreq = new Map<string, number>();
-          const byInfo = new Map<string, Set<string>>();
-          for (const r of rows) {
-            wordFreq.set(r.word, (wordFreq.get(r.word) || 0) + 1);
-            if (!byInfo.has(r.info_id)) byInfo.set(r.info_id, new Set());
-            byInfo.get(r.info_id)!.add(r.word);
-          }
-          // 共现边：两个关键词出现在同一 info 上
-          const edgeMap = new Map<string, { source: string; target: string; weight: number }>();
-          for (const ws of byInfo.values()) {
-            const arr = Array.from(ws);
-            for (let i = 0; i < arr.length; i++) {
-              for (let j = i + 1; j < arr.length; j++) {
-                const a = arr[i] < arr[j] ? arr[i] : arr[j];
-                const b = arr[i] < arr[j] ? arr[j] : arr[i];
-                const key = `${a}\u0001${b}`;
-                const existing = edgeMap.get(key);
-                if (existing) existing.weight += 1;
-                else edgeMap.set(key, { source: a, target: b, weight: 1 });
-              }
-            }
-          }
-          const degreeMap = new Map<string, number>();
-          for (const e of edgeMap.values()) {
-            degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
-            degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
-          }
-          const keywordNodes = Array.from(wordFreq.keys()).map((w) => ({
-            id: w,
-            name: w,
-            weight: wordFreq.get(w) || 0,
-            degree: degreeMap.get(w) || 0,
-          }));
-          const keywordEdges = Array.from(edgeMap.values()).map((e) => ({
-            source: e.source,
-            target: e.target,
-            weight: e.weight,
-          }));
-          sendJson(res, 200, { nodes: keywordNodes, edges: keywordEdges });
+          const g = await buildCooccurGraphFromGraphDB(ctx, 'keyword', 'keyword', 'keywordCooccur');
+          sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
       // ---- Graph Search: text-based tag traversal ----
       } else if (method === 'POST' && pathname === '/api/memory/graph-search') {

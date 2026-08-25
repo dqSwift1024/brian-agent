@@ -10,6 +10,7 @@ import {
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   LastNInfoInput, LastNInfoOutput, RelationKInfoInput, RelationKInfoOutput, InfoCoreContext,
+  SoCitationEdgesInput, SoCitationEdgesOutput,
 } from '@brian-agent/core';
 import {
   MatchLLMInput, MatchLLMOutput, CheckLLMQuotaInput, CheckLLMQuotaOutput,
@@ -924,14 +925,10 @@ export class UserProfileService {
       } catch { /* best-effort */ }
 
       try {
-        const citeRows = this.relationDb.queryRaw(
-          `SELECT COUNT(*) as cnt FROM info_graph ig
-           INNER JOIN info_raw ir ON ig.info_id = ir.info_id
-           WHERE ir.session_id = ?`,
-          [sessionId],
-        );
-        citingFrequency = Number(citeRows[0]?.cnt ?? 0);
-        evidence.push({ source: 'info_graph', citing_count: citingFrequency });
+        const citeOut = new SoCitationEdgesOutput();
+        await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { session_id: sessionId }), new InfoCoreContext(), citeOut);
+        citingFrequency = citeOut.edges.length;
+        evidence.push({ source: 'graph_citation', citing_count: citingFrequency });
       } catch { /* best-effort */ }
     }
 

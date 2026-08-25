@@ -29,7 +29,7 @@ import {
   PromptContext,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import { InfoCoreContext, LastNInfoInput, LastNInfoOutput, GraphInfoInput, GraphInfoOutput } from '@brian-agent/core';
+import { InfoCoreContext, LastNInfoInput, LastNInfoOutput, GraphInfoInput, GraphInfoOutput, SoCitationEdgesInput, SoCitationEdgesOutput } from '@brian-agent/core';
 import type {
   AgentExecutionAccess,
   AgentLibraryAccess,
@@ -82,7 +82,6 @@ import {
   ConfigVisualizationOutput,
   VISUALIZATION_CONFIG_TABLE,
   INFO_RAW_TABLE,
-  INFO_GRAPH_TABLE,
   DEFAULT_MAX_NODES_PER_GRAPH,
   DEFAULT_MESSAGE_SUMMARY_LENGTH,
   DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
@@ -603,31 +602,27 @@ export class VisualizationService {
 
     if (includeCitation) {
       const allInfoIds = nodes.map((n) => String(n.info_id));
+      const allInfoIdSet = new Set(allInfoIds);
       try {
-        for (const infoId of allInfoIds) {
-          const citingRows = await this.relationDb.select(INFO_GRAPH_TABLE, {
-            conditions: [
-              { field: 'citing_info_id', operator: Operator.EQ, value: infoId },
-            ],
-            fields: ['citing_info_id', 'cited_info_id'],
+        const citeOut = new SoCitationEdgesOutput();
+        await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+        for (const e of citeOut.edges) {
+          if (!allInfoIdSet.has(e.citing_info_id)) continue;
+          const fromId = e.cited_info_id;
+          const toId = e.citing_info_id;
+          if (!fromId || !toId || fromId === toId) continue;
+          const dirKey = `${fromId}->${toId}`;
+          if (directionalEdgeSet.has(dirKey)) continue; // 两个消息框之间同一方向不重复连线
+          directionalEdgeSet.add(dirKey);
+          edges.push({
+            id: `cite_${fromId}_${toId}`,
+            from: fromId,
+            to: toId,
+            edge_type: 'CITATION',
           });
-          for (const row of citingRows) {
-            const fromId = String(row.cited_info_id ?? '');
-            const toId = String(row.citing_info_id ?? '');
-            if (!fromId || !toId || fromId === toId) continue;
-            const dirKey = `${fromId}->${toId}`;
-            if (directionalEdgeSet.has(dirKey)) continue; // 两个消息框之间同一方向不重复连线
-            directionalEdgeSet.add(dirKey);
-            edges.push({
-              id: `cite_${fromId}_${toId}`,
-              from: fromId,
-              to: toId,
-              edge_type: 'CITATION',
-            });
-          }
         }
       } catch (err) {
-        this.logWarn('query info_graph citations failed', err);
+        this.logWarn('query GraphDB citations failed', err);
       }
     }
 
@@ -855,9 +850,9 @@ export class VisualizationService {
     if (!includeCiting || infoIds.length === 0) return map;
 
     try {
-      const citedRows = await this.relationDb.select(INFO_GRAPH_TABLE, {
-        fields: ['citing_info_id', 'cited_info_id'],
-      });
+      const citeOut = new SoCitationEdgesOutput();
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      const citedRows = citeOut.edges;
 
       for (const id of infoIds) {
         const citingInfoIds: string[] = [];
@@ -865,11 +860,11 @@ export class VisualizationService {
         let citingCount = 0;
 
         for (const row of citedRows) {
-          if (String(row.citing_info_id ?? '') === id) {
-            citedInfoIds.push(String(row.cited_info_id ?? ''));
+          if (row.citing_info_id === id) {
+            citedInfoIds.push(row.cited_info_id);
           }
-          if (String(row.cited_info_id ?? '') === id) {
-            citingInfoIds.push(String(row.citing_info_id ?? ''));
+          if (row.cited_info_id === id) {
+            citingInfoIds.push(row.citing_info_id);
             citingCount++;
           }
         }
@@ -911,11 +906,9 @@ export class VisualizationService {
 
   private async buildParentInfoIds(infoId: string): Promise<string[]> {
     try {
-      const rows = await this.relationDb.select(INFO_GRAPH_TABLE, {
-        conditions: [{ field: 'citing_info_id', operator: Operator.EQ, value: infoId }],
-        fields: ['cited_info_id'],
-      });
-      return [...new Set(rows.map((r) => String(r.cited_info_id ?? '')).filter(Boolean))];
+      const citeOut = new SoCitationEdgesOutput();
+      await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { citing_info_id: infoId }), new InfoCoreContext(), citeOut);
+      return [...new Set(citeOut.edges.map((e) => e.cited_info_id).filter(Boolean))];
     } catch {
       return [];
     }

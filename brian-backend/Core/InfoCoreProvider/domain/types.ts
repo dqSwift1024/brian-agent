@@ -48,17 +48,6 @@ export interface InfoRawRecord {
   handle_result_type: string;
 }
 
-/** info_graph 表记录 */
-export interface InfoGraphRecord {
-  id: string;
-  created: number;
-  updated: number;
-  session_id: string;
-  info_id: string;
-  citing_info_id: string;
-  cited_info_id: string;
-}
-
 /** info_vector 表记录 */
 export interface InfoVectorRecord {
   id: string;
@@ -243,6 +232,21 @@ export class GraphTagOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// rebuildCooccurGraph
+// ---------------------------------------------------------------------------
+
+/** rebuildCooccurGraph 入参（无业务字段，用于触发共现边重建） */
+export class RebuildCooccurGraphInput extends Input {}
+
+/** rebuildCooccurGraph 出参 */
+export class RebuildCooccurGraphOutput extends Output {
+  /** 重建前删除的旧 cooccur 边数 */
+  deleted_edges = 0;
+  /** 重建的共现边数 */
+  rebuilt_edges = 0;
+}
+
+// ---------------------------------------------------------------------------
 // lastNInfo
 // ---------------------------------------------------------------------------
 
@@ -345,6 +349,49 @@ export class GraphInfoOutput extends Output {
     nodes: Array<{ id: string; label: string; info_id: string; info_type?: string; info_creator_role?: string; handle_result_type?: string }>;
     edges: Array<{ id: string; from: string; to: string; citing_info_id: string; cited_info_id: string; edge_type?: string }>;
   } = { nodes: [], edges: [] };
+}
+
+// ---------------------------------------------------------------------------
+// soCitationEdges（GraphDB 引用边查询，替代旧 info_graph 表）
+// ---------------------------------------------------------------------------
+
+/** soCitationEdges 入参（可选过滤条件） */
+export class SoCitationEdgesInput extends Input {
+  session_id?: string;
+  citing_info_id?: string;
+  cited_info_id?: string;
+}
+
+/** soCitationEdges 出参 */
+export class SoCitationEdgesOutput extends Output {
+  edges: Array<{ id: string; citing_info_id: string; cited_info_id: string; session_id: string }> = [];
+}
+
+// ---------------------------------------------------------------------------
+// delInfoGraph（级联删除 GraphDB info 节点与引用边）
+// ---------------------------------------------------------------------------
+
+/** delInfoGraph 入参 */
+export class DelInfoGraphInput extends Input {
+  info_ids!: string[];
+}
+
+/** delInfoGraph 出参 */
+export class DelInfoGraphOutput extends Output {
+  deleted_nodes = 0;
+}
+
+// ---------------------------------------------------------------------------
+// rebuildCitationGraph（迁移旧 info_graph 表到 GraphDB）
+// ---------------------------------------------------------------------------
+
+/** rebuildCitationGraph 入参（无业务字段，用于触发旧表迁移） */
+export class RebuildCitationGraphInput extends Input {}
+
+/** rebuildCitationGraph 出参 */
+export class RebuildCitationGraphOutput extends Output {
+  migrated_edges = 0;
+  dropped_table = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +671,6 @@ export class ExistInfoOutput extends Output {
 
 export const INFO_RAW_TABLE = 'info_raw';
 export const INFO_CONTEXT_SOURCE_TABLE = 'info_context_source';
-export const INFO_GRAPH_TABLE = 'info_graph';
 export const INFO_VECTOR_TABLE = 'info_vector';
 export const INFO_TAG_TABLE = 'info_tag';
 export const INFO_TAG_VECTOR_TABLE = 'info_tag_vector';

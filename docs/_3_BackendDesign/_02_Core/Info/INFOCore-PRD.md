@@ -30,7 +30,7 @@
 1. 生成 `info_id`（UUID），计算 `info_length = len(info)`；
 2. 调用 RelationDBProvider.insertDB 将 `{ session_id, work_id, interact_id, info_id, info_type, info_creator_role, info_creator_id, info, info_length, pin: false }` 写入 `info_raw` 表；
 3. 若 `parent_info_ids` 非空，遍历列表：
-   a. 对每个 `parent_info_id`，调用 RelationDBProvider.insertDB 将引用关系 `{ session_id, info_id, citing_info_id: info_id, cited_info_id: parent_info_id }` 写入 `info_graph` 表；
+   a. 对每个 `parent_info_id`，调用 GraphDBProvider 建立 info 节点与 `CITATION` 边（边 properties 存 `citing_info_id`/`cited_info_id`/`session_id`）；
 4. 将 `info_id` 写入 output 返回，主流程结束；
 5. —— 以下步骤异步执行（fire-and-forget，不阻塞主流程）——
 6. 调用 `keywordInfo` 接口对信息内容进行分词，写入 FTS5 虚拟表 `info_keyword`；
@@ -375,9 +375,9 @@
   - info_list：信息内容列表
 **处理流程**：
 
-1. 以 info_id 为起点，通过跳数限制和邻接点选择策略裁剪遍历 `info_graph` 表（非完整 BFS），权衡效率与效果：
-   a. 从 info_id 出发，查询 `cited_info_id = info_id` 的所有记录（即 info_id 引用了哪些消息），收集 citing_info_id 列表；
-   b. 对每个 citing_info_id 递归查询其引用的消息，按引用层级（hop）递增，最多遍历 lastN 条或直到没有更多引用；
+1. 以 info_id 为起点，通过 GraphDB 图遍历（递归 CTE，带跳数限制与扇出熔断）在 info 引用图中遍历（非完整 BFS），权衡效率与效果：
+   a. 从 info_id 出发，查询 GraphDB 中与该 info 节点相连的 `CITATION` 边，收集邻居 info 节点；
+   b. 对每个邻居递归展开，按引用层级（hop）递增，最多遍历 lastN 条或直到没有更多引用；
    c. 使用 visited 集合避免重复遍历同一条消息；
 2. 按引用层级（越靠近起点的越优先）和创建时间倒序排序，截取前 lastN 条；
 3. 遍历结果，对每条记录判断 info 字段是否不为空：是则直接返回；否则查询 `info_summary` 表获取摘要替代；
@@ -457,13 +457,13 @@
   - graph_structure：图引用结构
 **处理流程**：
 
-1. 调用 RelationDBProvider.selectDB 根据 `session_id` 查询 `info_graph` 表，获取该会话中所有的消息引用关系记录（citing_info_id → cited_info_id）；
+1. 调用 GraphDBProvider 查询 GraphDB 中 `CITATION` 边（按 `session_id` 过滤），获取该会话中所有的消息引用关系记录（citing_info_id → cited_info_id）；
 2. 调用 RelationDBProvider.selectDB 根据 `session_id` 查询 `info_raw` 表，获取该会话中所有消息的元数据（info_id, info_creator_role, created, pin）；
 3. 以 info_id 为节点，引用关系（citing_info_id → cited_info_id）为有向边，在内存中构建有向图结构：
    a. 每个节点标注 role（user/assistant/system）、created（时间戳）、pin（是否钉住）；
    b. 每条边标注方向：从引用者（citing_info_id）指向被引用者（cited_info_id）；
 4. 按时间顺序对节点排序，将图结构（nodes + edges）序列化为 JSON 格式写入 output 返回；
-5. 若 `info_graph` 或 `info_raw` 表无数据，返回空图结构（nodes=[], edges=[]）；
+5. 若 GraphDB 中无该会话的 `CITATION` 边或 `info_raw` 表无数据，返回空图结构（nodes=[], edges=[]）；
 
 **返回**：Boolean，表示查询是否完成；图结构通过 output 参数返回
 
@@ -635,20 +635,12 @@
 | info_length | 信息长度 | INT | N | | |
 | pin | 是否钉住本消息 | BOOL | N | | |
 
-### 3.2. 图结构信息（SQLite）
+### 3.2. 图结构信息（GraphDB）
 
-- 表名：info_graph
-- 库名：info
+信息引用关系存储于 GraphDB（`graph_node` / `graph_edge`，见 GraphDBProvider-PRD）：
 
-| 字段名 | 含义 | 类型 | 是否可以为空（Y可以为空/N不能为空） | 索引类型 | 备注 |
-| ------ | ----- | ----- | ----- | ----- | ----- |
-| id | 数据唯一标识 | UUID | N | 主键 | |
-| created | 创建时间 | timestamp | N | 普通索引 | |
-| updated | 最后更新时间 | timestamp | N | 普通索引 | |
-| session_id | 会话ID | UUID | N | 普通索引 | |
-| info_id | 信息ID | UUID | N | 普通索引 | |
-| citing_info_id | 引用的消息ID | UUID | N | 普通索引 | |
-| cited_info_id | 被引用的消息ID | UUID | N | 普通索引 | |
+- info 节点：`node_type = 'info'`，`content = { info_id, session_id, info_preview }`；
+- 引用边：`edge_type = 'CITATION'`，`from_node_id`（引用者）→ `to_node_id`（被引用者），`properties = { citing_info_id, cited_info_id, session_id }`。
 
 ### 3.3. 信息向量表（MiniVectorDB）
 
@@ -816,10 +808,10 @@ InfoCore 的业务方法通过 `dev-server.ts` 手写路由分发暴露给前端
 | GET | `/api/memory/search?keyword=&type=&limit=` | `info_raw` + `info_tag` | 内容/标签 LIKE 搜索；`type` 为前端类型（semantic/episodic/procedural/working），映射到 `info_type` 集合 |
 | GET | `/api/memory/tags` | `info_tag` | 去重标签列表（按频次降序） |
 | GET | `/api/memory/tag/:userId/:tag` | `info_raw` JOIN `info_tag` | 按标签文本查询关联信息，映射为 `MemoryItem` |
-| GET | `/api/memory/tag-graph` | `info_tag` | Tag 共现图：节点为去重标签（weight=频次），边为同一 info 上标签的共现对 |
-| GET | `/api/memory/keyword-graph` | `info_keyword` | 关键词共现图：节点为去重关键词（weight=频次），边为同一 info 上关键词的共现对 |
+| GET | `/api/memory/tag-graph` | GraphDB | Tag 共现图：节点为去重标签（weight=节点 content.freq），边为同一 info 上标签的共现对（`cooccur` 边） |
+| GET | `/api/memory/keyword-graph` | GraphDB | 关键词共现图：节点为去重关键词（weight=节点 content.freq），边为同一 info 上关键词的共现对（`keywordCooccur` 边） |
 | GET | `/api/memory/stats/:userId` | `info_raw` | 统计信息总数及按 `info_type` 分布 |
-| DELETE | `/api/memory` | `info_raw` + 派生表 | 按 `info_ids` 批量删除记忆，级联清理 `info_tag` / `info_summary` / `info_keyword` / `info_vector` / `info_graph` |
+| DELETE | `/api/memory` | `info_raw` + 派生表 | 按 `info_ids` 批量删除记忆，级联清理 `info_tag` / `info_summary` / `info_keyword` / `info_vector`，并删除 GraphDB info 节点与引用边 |
 
 ### 4.1 info_type → 前端展示类型映射
 
@@ -833,6 +825,8 @@ InfoCore 的业务方法通过 `dev-server.ts` 手写路由分发暴露给前端
 ### 4.2 Tag 图 / 关键词图说明
 
 Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两个标签（或关键词）出现在同一条 info 记录上即建立一条边，边权重为共现次数。该策略不依赖向量相似度（`similarTo` 边），保证在未完成向量化或标签建图时也能稳定展示关联网络。`graphTag` 构建的 `similarTo` 边仍用于 `relationKInfo` 相关性搜索与图搜索（`/api/memory/graph-search`）。
+
+共现关系同时持久化到 GraphDB：`tagInfo` 在保存时为同一 info 的标签两两建立 `cooccur` 边（边类型 `cooccur`，权重为共现次数），`rebuildCooccurGraph` 用于存量数据全量回填。这样 GraphDB 的边数（「监控 > 系统健康 > GraphDB」）与标签图展示一致，不再依赖向量化。
 
 ## 5. 变更记录
 
@@ -919,3 +913,77 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - 暂停等待确认（paused）的 work 在确认重跑前仅由 IntentAgent 阶段处理，此时 `persist_snapshot: false` 不落盘，快照在确认重跑后的 `BUILD_WORK_CONTEXT` 阶段才写入（与现有「暂停 work 思考过程仅展示 Intent 块」行为一致）。
+
+### [2026-08-25] GraphDB 持久化共现边（cooccur），修复「系统健康 GraphDB 无边」
+
+**变更原因**：GraphDB 的边此前仅有 `similarTo`（标签语义相似）一种，依赖 `info_vector_config.llm_id` 生成 embedding 并在 VectorDB 检索相似标签。当 embedding 链路不可用（向量配置指向已删除模型、无 embedding 模型启用）时，`searchSimilarTags` 恒返回空，GraphDB 只有 463 个 `Tag` 节点却 0 条边，与「涌现」标签图 /「关键词图」展示的共现边不一致。
+
+**修改的方法**：
+- `InfoCoreService.tagInfo` — 标签落库后调用 `buildCooccurEdges(tags)`，为同一 info 上的标签两两建立 `cooccur` 边；
+- `InfoCoreService.buildCooccurEdges` / `upsertCooccurEdge`（新增私有方法）— 按标签文本规范化方向建立/累加 `cooccur` 边（权重为共现次数，幂等）；
+- `InfoCoreService.rebuildCooccurGraph`（新增）— 删除旧 `cooccur` 边后从 `info_tag` 表按 `info_id` 分组全量重建，用于存量回填；
+- `InfoCoreAccess.rebuildCooccurGraph` + `RebuildCooccurGraphInput/Output` — 暴露回填入口；
+- `dev-server.ts` — 启动时调用 `rebuildCooccurGraph` 一次性回填存量标签共现边。
+
+**影响的端点**：
+- `GET /api/monitor/health-all` — GraphDB 组件「边」计数由 0 变为真实共现边数；
+- 所有经 `saveInfo` 触发 `tagInfo` 的消息，新增标签时同步写入 GraphDB `cooccur` 边。
+
+**可能存在的问题**：
+- `cooccur` 边暂未被 `relationKInfo` / 图搜索（`/api/memory/graph-search`）消费，仅用于 GraphDB 健康计数与图数据完整性；后续可让图搜索同时遍历 `cooccur` 边；
+- 存量回填为启动时一次性执行，若 `info_tag` 因 `delInfo` 级联删除而减少，已存在的 `cooccur` 边不会自动衰减，需再次重启触发重建。
+
+### [2026-08-25] 图结构收敛到 GraphDB：删除 info_graph 表，引用边迁移为 CITATION 边
+
+**变更原因**：info↔info 引用关系此前双轨并存——`info_graph` 表（RelationDB）存引用边、GraphDB 存 `similarTo`/`cooccur` 标签边；且 `ensureInfoGraphNode` 为死代码，GraphDB 无 `info` 节点，`graphNInfo` 恒返回空。为消除旧式关系库存边的代码逻辑，将图结构统一收敛到 GraphDB（SQLite + CTE）。
+
+**修改的方法**：
+- `InfoCoreService.saveInfo` — 不再写 `info_graph`；改为 `connectCitationEdges`（确保 info 节点 + 建 `CITATION` 边，边 properties 存 `citing_info_id`/`cited_info_id`/`session_id`）；
+- `InfoCoreService` 新增 `soCitationEdges`（查 CITATION 边）、`delInfoGraph`（级联删 info 节点与边）、`rebuildCitationGraph`（迁移旧表并 DROP）；删除 `createGraphEdges`；
+- `InfoCoreSchemaInitializer` — 移除 `info_graph` 表与索引；
+- `ChatService.deleteSession` / 消息列表、`VisualizationService`、`UserProfileService`、`dev-server.ts DELETE /api/memory` — 引用边读写全部改走 `InfoCoreAccess.soCitationEdges` / `delInfoGraph`；
+- 删除 `InfoGraphRecord` / `INFO_GRAPH_TABLE` 类型与常量。
+
+**影响的端点**：
+- `graphInfo` / 消息图可视化 / 会话删除 / 用户画像「引用频次」等全部改为读取 GraphDB CITATION 边；
+- 启动时一次性迁移旧 `info_graph` 存量数据到 GraphDB 并 DROP 旧表。
+
+**可能存在的问题**：
+- 旧 `info_graph` 表仅在启动迁移后被 DROP，干净新库无此表；迁移失败时旧表保留但不再被读写；
+- `graphNInfo` 依赖 GraphDB info 节点，现仅对存在引用关系的 info 建节点（无引用的 info 无节点）。
+
+### [2026-08-25] 图逻辑全收敛到 GraphDB：关键词建图 + 关联图端点改读 GraphDB + 递归 CTE 遍历
+
+**变更原因**：「涌现」标签图 /「关键词图」端点此前从 RelationDB 实时算共现，关键词甚至从未建图；图遍历（getGraphNeighbors）此前为应用层迭代 BFS，与 PRD「SQLite + CTE」口径不符。为落实「所有图逻辑走 GraphDBProvider」这一硬性约束，将标签/关键词共现图完全落图，前端关联图改读 GraphDB，遍历改为 SQLite 递归 CTE。
+
+**修改的方法**：
+- `GraphDBComponent.queryNeighborsByCTE`（新增）— 原生 SQL `WITH RECURSIVE` 多跳遍历（方向 / edge_type / is_active / 深度 / 扇出熔断）；
+- `GraphDBService.getGraphNeighbors` — 由应用层迭代 BFS 改为调用递归 CTE；
+- `InfoCoreService.keywordInfo` — 关键词落库后调用 `buildKeywordCooccurEdges` 建 `keyword` 节点 + `keywordCooccur` 边；
+- `InfoCoreService` 泛化共现建图：`ensureTextNode` / `buildCooccurEdgesForType` / `upsertCooccurEdgeForType` 同时支撑标签与关键词；`rebuildCooccurGraph` 同时回填标签与关键词共现边；
+- `dev-server.ts` `/api/memory/tag-graph` 与 `/api/memory/keyword-graph` — 改从 GraphDB 读节点与共现边（频次由 RelationDB 统计补齐，属上层统计而非图结构）。
+
+**影响的端点**：
+- `GET /api/memory/tag-graph`、`GET /api/memory/keyword-graph` — 图结构（节点/边/共现权重）改由 GraphDB 提供；
+- 所有经 `saveInfo` 触发 `tagInfo` / `keywordInfo` 的消息，同步写 GraphDB 标签/关键词节点与共现边。
+
+**可能存在的问题**：
+- 节点展示频次仍从 `info_tag` / `info_keyword` 统计补齐（未存于 GraphDB 节点 content），若后续要求节点属性完全自包含需迁移频次入节点；
+- 孤立标签/关键词（未与其它项共现）已通过 `buildCooccurEdgesForType` 预先建节点，保证节点完整；但历史存量需重启触发 `rebuildCooccurGraph` 回填。
+
+### [2026-08-25] 节点属性（频次）完全迁入 GraphDB，关联图不再依赖关系数据库
+
+**变更原因**：上一版「涌现」/「关键词图」端点的节点频次仍由 RelationDB（info_tag / info_keyword）统计补齐，违反「节点属性应存于图数据库」的原则。
+
+**修改的方法**：
+- `InfoCoreService.ensureTextNode` — 节点 content 新增 `freq` 属性（频次），`incrementFreq` 参数支持每次标签/关键词出现时 freq+1；
+- `InfoCoreService.findGraphNode`（新增）— 返回完整节点记录（替代仅返回 ID 的 `findGraphNodeId`）；
+- `InfoCoreService.tagInfo` / `keywordInfo` — 落库 info_tag / info_keyword 时同步 `ensureTextNode(..., true)` 累加节点频次；
+- `InfoCoreService.rebuildCooccurForSource` — 重建时删除该 node_type 全部节点并重建（content 含频次），共现边去重后按共现次数赋权；
+- `dev-server.ts buildCooccurGraphFromGraphDB` — 节点权重改读 GraphDB 节点 `content.freq`，不再查 RelationDB。
+
+**影响的端点**：
+- `GET /api/memory/tag-graph`、`GET /api/memory/keyword-graph` — 节点、边、节点频次、共现权重全部由 GraphDB 提供。
+
+**可能存在的问题**：
+- `rebuildCooccurGraph` 仍以 `info_tag` / `info_keyword` 表为回填数据源（这是标签/关键词的权威内容存储，非图结构）；运行时增量写入以 GraphDB 为准。

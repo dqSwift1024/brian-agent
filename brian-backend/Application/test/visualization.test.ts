@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { RelationDBAccess, IdGenerator, Operator } from '@brian-agent/base';
+import {
+  RelationDBAccess, IdGenerator, Operator, GraphDBAccess,
+  GraphContext, AddGraphNodeInput, AddGraphNodeOutput, AddGraphEdgeInput, AddGraphEdgeOutput,
+  GraphTarget, SelectGraphInput, SelectGraphOutput,
+} from '@brian-agent/base';
 import type { GraphInfoInput } from '@brian-agent/core';
 import { VisualizationService } from '../Visualization/application/VisualizationService';
 import {
@@ -50,16 +54,37 @@ function insInfoRaw(db: RelationDBAccess, o: Record<string, unknown>) {
   db.insert('info_raw', fields);
 }
 
-function insInfoGraph(db: RelationDBAccess, citingInfoId: string, citedInfoId: string, sessionId = 'sess-1') {
-  db.insert('info_graph', [
-    { field: 'id', value: genId() },
-    { field: 'created', value: now() },
-    { field: 'updated', value: now() },
-    { field: 'session_id', value: sessionId },
-    { field: 'info_id', value: genId() },
-    { field: 'citing_info_id', value: citingInfoId },
-    { field: 'cited_info_id', value: citedInfoId },
-  ]);
+async function ensureInfoGraphNode(graphDb: GraphDBAccess, infoId: string, sessionId: string): Promise<string> {
+  const selOut = new SelectGraphOutput();
+  await graphDb.selectGraph({ target: GraphTarget.NODE, node_type: 'info' } as SelectGraphInput, new GraphContext(), selOut);
+  for (const n of selOut.list as Array<{ id: string; content?: Record<string, unknown> }>) {
+    if (n.content?.['info_id'] === infoId) return n.id;
+  }
+  const addOut = new AddGraphNodeOutput();
+  await graphDb.addGraphNode(
+    { data: { node_type: 'info', content: { info_id: infoId, session_id: sessionId, info_preview: '' } } } as AddGraphNodeInput,
+    new GraphContext(),
+    addOut,
+  );
+  return addOut.id;
+}
+
+async function insInfoGraph(graphDb: GraphDBAccess, citingInfoId: string, citedInfoId: string, sessionId = 'sess-1') {
+  const fromId = await ensureInfoGraphNode(graphDb, citingInfoId, sessionId);
+  const toId = await ensureInfoGraphNode(graphDb, citedInfoId, sessionId);
+  await graphDb.addGraphEdge(
+    {
+      data: {
+        from_node_id: fromId,
+        to_node_id: toId,
+        edge_type: 'CITATION',
+        weight: 1,
+        properties: { citing_info_id: citingInfoId, cited_info_id: citedInfoId, session_id: sessionId },
+      },
+    } as AddGraphEdgeInput,
+    new GraphContext(),
+    new AddGraphEdgeOutput(),
+  );
 }
 
 function insInfoSummary(db: RelationDBAccess, infoId: string, summary: string) {
@@ -210,7 +235,7 @@ describe('VisualizationService', () => {
     it('TC-VIS-005: include_citing_info=true (default) includes citing fields', async () => {
       const infoId = 'info-100';
       insInfoRaw(ctxEnv.db, { info_id: infoId });
-      insInfoGraph(ctxEnv.db, infoId, 'info-200');
+      await insInfoGraph(ctxEnv.graphDBAccess, infoId, 'info-200');
 
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
@@ -266,9 +291,9 @@ describe('VisualizationService', () => {
 
     it('TC-VIS-010: citing_count correct', async () => {
       insInfoRaw(ctxEnv.db, { info_id: 'info-cited' });
-      insInfoGraph(ctxEnv.db, 'other-1', 'info-cited');
-      insInfoGraph(ctxEnv.db, 'other-2', 'info-cited');
-      insInfoGraph(ctxEnv.db, 'other-3', 'info-cited');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'other-1', 'info-cited');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'other-2', 'info-cited');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'other-3', 'info-cited');
 
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
@@ -373,7 +398,7 @@ describe('VisualizationService', () => {
       const sessId = 'sess-edges';
       insInfoRaw(ctxEnv.db, { session_id: sessId, info_id: 'info-1', info: 'N1' });
       insInfoRaw(ctxEnv.db, { session_id: sessId, info_id: 'info-2', info: 'N2' });
-      insInfoGraph(ctxEnv.db, 'info-1', 'info-2', sessId);
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-1', 'info-2', sessId);
 
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
@@ -394,7 +419,7 @@ describe('VisualizationService', () => {
       const sessId = 'sess-cite';
       insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-A', info_id: 'info-1', info: 'A' });
       insInfoRaw(ctxEnv.db, { session_id: sessId, work_id: 'work-B', info_id: 'info-2', info: 'B' });
-      insInfoGraph(ctxEnv.db, 'info-1', 'info-2', sessId);
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-1', 'info-2', sessId);
 
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
@@ -479,7 +504,7 @@ describe('VisualizationService', () => {
       const sessId = 'sess-meta';
       insInfoRaw(ctxEnv.db, { session_id: sessId, info_id: 'ia', info: 'A' });
       insInfoRaw(ctxEnv.db, { session_id: sessId, info_id: 'ib', info: 'B' });
-      insInfoGraph(ctxEnv.db, 'ia', 'ib', sessId);
+      await insInfoGraph(ctxEnv.graphDBAccess, 'ia', 'ib', sessId);
 
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
@@ -1133,7 +1158,7 @@ describe('VisualizationService', () => {
     it('TC-VIS-099: include_citation_edges=true (default) -> CITATION edges', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a', info_type: 'RESPONSE', info: 'A' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_type: 'RESPONSE', info: 'B' });
-      insInfoGraph(ctxEnv.db, 'info-a', 'info-b');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-a', 'info-b');
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1147,7 +1172,7 @@ describe('VisualizationService', () => {
     it('TC-VIS-100: include_citation_edges=false -> no citation', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a', info: 'A' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-b', info_type: 'RESPONSE', info: 'B' });
-      insInfoGraph(ctxEnv.db, 'info-a', 'info-b');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-a', 'info-b');
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1180,7 +1205,7 @@ describe('VisualizationService', () => {
         info_type: 'REQUEST', info: 'Q' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', info_id: 'info-a',
         info_type: 'RESPONSE', info: 'A' });
-      insInfoGraph(ctxEnv.db, 'info-q', 'info-a');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-q', 'info-a');
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
@@ -1226,7 +1251,7 @@ describe('VisualizationService', () => {
         info_type: 'RESPONSE', info: 'C' });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-B', info_id: 'info-cited',
         info_type: 'RESPONSE', info: 'D' });
-      insInfoGraph(ctxEnv.db, 'info-citing', 'info-cited');
+      await insInfoGraph(ctxEnv.graphDBAccess, 'info-citing', 'info-cited');
 
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';

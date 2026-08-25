@@ -285,7 +285,7 @@
 ```
 
 **处理逻辑**：
-1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；将对应 REQUEST 消息 ID 传入 `parent_info_ids`，在 `info_graph` 中建立引用边（RESPONSE 引用 REQUEST）；saveInfo 失败时降级记录日志，不中断编排；
+1. 调用 InfoCore.saveInfo 保存为 RESPONSE 角色；将对应 REQUEST 消息 ID 传入 `parent_info_ids`，在 GraphDB 中建立引用边（RESPONSE 引用 REQUEST）；saveInfo 失败时降级记录日志，不中断编排；
 2. 调用 RelationDBProvider.updateDB 更新 orchestration_work 表 status 和 final_response 字段；
 
 ### 3.13. HANDLE_ERROR — 错误处理

@@ -1,7 +1,7 @@
 /**
  * @fileoverview InfoCoreProvider 表结构初始化。
  *
- * 创建 11 张表：info_raw、info_graph、info_vector、info_tag、
+ * 创建 10 张表：info_raw、info_vector、info_tag、
  * info_tag_vector、info_summary、info_keyword、info_tag_config、
  * info_summary_config、info_config、info_vector_config、info_context_config。
  * DDL 通过 RelationDBAccess.executeRaw 执行。
@@ -11,7 +11,6 @@ import type { RelationDBAccess } from '@brian-agent/base';
 import {
   INFO_RAW_TABLE,
   INFO_CONTEXT_SOURCE_TABLE,
-  INFO_GRAPH_TABLE,
   INFO_VECTOR_TABLE,
   INFO_TAG_TABLE,
   INFO_TAG_VECTOR_TABLE,
@@ -107,28 +106,6 @@ export class InfoCoreSchemaInitializer {
     );
     this.relationDb.executeRaw(
       `CREATE INDEX IF NOT EXISTS "idx_${INFO_CONTEXT_SOURCE_TABLE}_work_source" ON "${INFO_CONTEXT_SOURCE_TABLE}" ("work_id", "source")`,
-    );
-
-    // info_graph — 信息引用关系图
-    this.relationDb.executeRaw(`
-      CREATE TABLE IF NOT EXISTS "${INFO_GRAPH_TABLE}" (
-        "id"              TEXT    NOT NULL PRIMARY KEY,
-        "created"         INTEGER NOT NULL,
-        "updated"         INTEGER NOT NULL,
-        "session_id"      TEXT    NOT NULL,
-        "info_id"         TEXT    NOT NULL,
-        "citing_info_id"  TEXT    NOT NULL,
-        "cited_info_id"   TEXT    NOT NULL
-      )
-    `);
-    this.relationDb.executeRaw(
-      `CREATE INDEX IF NOT EXISTS "idx_${INFO_GRAPH_TABLE}_info_id" ON "${INFO_GRAPH_TABLE}" ("info_id")`,
-    );
-    this.relationDb.executeRaw(
-      `CREATE INDEX IF NOT EXISTS "idx_${INFO_GRAPH_TABLE}_citing_info_id" ON "${INFO_GRAPH_TABLE}" ("citing_info_id")`,
-    );
-    this.relationDb.executeRaw(
-      `CREATE INDEX IF NOT EXISTS "idx_${INFO_GRAPH_TABLE}_cited_info_id" ON "${INFO_GRAPH_TABLE}" ("cited_info_id")`,
     );
 
     // info_vector — 向量化存储

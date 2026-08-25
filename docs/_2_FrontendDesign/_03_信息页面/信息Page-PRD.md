@@ -166,7 +166,7 @@
 ### 7.3 删除
 
 - **二次确认**：单个删除与批量删除均弹出确认弹窗，提示将同步清理关联数据且不可恢复。
-- **级联删除**（后端 `ChatService.deleteSession`）：删除 `chat_session`、`info_raw`、`info_graph`，并按会话下 `info_id` 级联清理 `info_tag`、`info_summary`、`info_keyword`、`info_vector`。
+- **级联删除**（后端 `ChatService.deleteSession`）：删除 `chat_session`、`info_raw`，并按会话下 `info_id` 级联清理 `info_tag`、`info_summary`、`info_keyword`、`info_vector`，同时删除 GraphDB 中该会话的 info 节点与引用边。
 - **不删除** `info_tag_vector`（全局标签向量，跨会话共享，由 `orphan_tag_check` 定时任务负责清理孤立标签）。
 - **批量删除健壮性**：批量删除采用 `Promise.allSettled`，单条失败不影响其余会话删除。
 

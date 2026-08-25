@@ -112,7 +112,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
 **处理流程**：
 
 1. 调用 InfoCore.lastNInfo 查询消息列表；
-2. 对每条消息，调用 RelationDBProvider.selectDB 查询 `info_graph` 表获取引用关系（citing_info_ids 和 cited_info_ids）；
+2. 对每条消息，调用 InfoCore.soCitationEdges 查询 GraphDB 引用边获取引用关系（citing_info_ids 和 cited_info_ids）；
 3. 统计被引用次数（citing_count）；
 4. 若 include_context_source=true 且消息为 AGENT 角色，查询 AgentContext 获取该消息的上下文来源；
 5. 分页返回；
@@ -397,7 +397,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
    a. 调用 RelationDBProvider.selectDB 查询 `info_raw` 表，按 work_id 分组；
    b. 同 work_id 内的 USER 消息（REQUEST）→ SYSTEM 消息（RESPONSE）建立 QUESTION_ANSWER 边；
 3. 若 include_citation_edges=true：
-   a. 调用 RelationDBProvider.selectDB 查询 `info_graph` 表获取引用关系；
+   a. 调用 InfoCore.soCitationEdges 查询 GraphDB 引用边获取引用关系；
    b. 建立 CITATION 边（citing_info_id → cited_info_id）；
 4. 按 max_nodes 限制节点数，优先保留最近的节点；
 5. 返回 DAG 数据；
