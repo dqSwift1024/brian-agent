@@ -868,6 +868,8 @@ const profile = ref<UserProfileData | null>(null)
 const profileHistory = ref<ProfileHistoryItem[]>([])
 const loadingProfile = ref(false)
 const generatingProfile = ref(false)
+const resettingProfile = ref(false)
+const resetProfileConfirm = ref(false)
 const selectedVersion = ref<ProfileVersionData | null>(null)
 const loadingVersion = ref(false)
 
@@ -887,6 +889,21 @@ async function handleGenerateProfile() {
     await loadProfile()
   } catch { /* ignore */ }
   finally { generatingProfile.value = false }
+}
+
+function handleResetProfile() {
+  resetProfileConfirm.value = true
+}
+
+async function confirmResetProfile() {
+  resetProfileConfirm.value = false
+  resettingProfile.value = true
+  try {
+    await userProfileApi.reset()
+    selectedVersion.value = null
+    await loadProfile()
+  } catch { /* ignore */ }
+  finally { resettingProfile.value = false }
 }
 
 async function openVersion(version: number) {
@@ -1371,7 +1388,7 @@ onBeforeUnmount(() => {
 watch(activeTab, (val) => {
   localStorage.setItem('brian-info-active-tab', val)
   if (val === 'profile') loadProfile()
-})
+}, { immediate: true })
 
 let historySearchTimer: ReturnType<typeof setTimeout> | null = null
 watch([historySearch, historyStartTime, historyEndTime], () => {
@@ -2178,14 +2195,24 @@ function searchMemoryByEnter() {
           <h3 class="text-lg font-semibold flex items-center gap-2">
             <UserRound :size="20" class="text-brian-blue" /> 用户画像
           </h3>
-          <button
-            class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
-            :disabled="generatingProfile"
-            @click="handleGenerateProfile"
-          >
-            <RefreshCw :size="13" :class="generatingProfile ? 'animate-spin' : ''" />
-            {{ generatingProfile ? '生成中...' : '生成画像' }}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-apple-gray-200 dark:border-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 rounded-lg hover:bg-apple-gray-50 dark:hover:bg-apple-gray-800 transition-colors disabled:opacity-60"
+              :disabled="resettingProfile || generatingProfile"
+              @click="handleResetProfile"
+            >
+              <Trash2 :size="13" />
+              {{ resettingProfile ? '重置中...' : '重置画像' }}
+            </button>
+            <button
+              class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-brian-blue text-white rounded-lg hover:bg-brian-blue/90 transition-colors disabled:opacity-60"
+              :disabled="generatingProfile"
+              @click="handleGenerateProfile"
+            >
+              <RefreshCw :size="13" :class="generatingProfile ? 'animate-spin' : ''" />
+              {{ generatingProfile ? '生成中...' : '生成画像' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="loadingProfile" class="text-center py-16 text-apple-gray-400">
@@ -2285,6 +2312,24 @@ function searchMemoryByEnter() {
             </div>
             </div>
           </div>
+
+        <!-- 重置画像确认弹窗 -->
+        <div v-if="resetProfileConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="resetProfileConfirm = false">
+          <div class="block-card w-full max-w-sm mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">确认重置画像</h3>
+              <button class="p-1 rounded-lg text-apple-gray-400 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-700" @click="resetProfileConfirm = false"><X :size="18" /></button>
+            </div>
+            <p class="text-sm text-apple-gray-600 dark:text-apple-gray-300">
+              确定要重置画像吗？将清空画像内容（总结、维度数据与历史版本）。
+            </p>
+            <p class="text-xs text-apple-gray-400 mt-1">画像维度配置将保留，此操作不可恢复。</p>
+            <div class="flex justify-end gap-2 mt-6">
+              <button class="btn-secondary" @click="resetProfileConfirm = false">取消</button>
+              <button class="px-3 py-2 text-xs font-medium bg-error-red text-white rounded-lg hover:bg-error-red/90 transition-colors" @click="confirmResetProfile">确认重置</button>
+            </div>
+          </div>
+        </div>
         </div>
       </div>
 

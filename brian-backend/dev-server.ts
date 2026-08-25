@@ -17,7 +17,7 @@ import { SkillAccess } from './Base/SkillProvider';
 import { PromptsAccess, AddPromptInput, DelPromptInput, UpdatePromptInput } from './Base/PromptsProvider';
 import { GraphDBAccess } from './Base/GraphDBProvider';
 import { MQAccess, SendMQInput, SendMQOutput, ConsumeMQInput, ConsumeMQOutput, GetQueueStatsInput, GetQueueStatsOutput, AckMQInput, AckMQOutput, MQContext } from './Base/MQProvider';
-import { LogAccess } from './Base/LogProvider';
+import { LogAccess, LogContext, DelLogInput, DelLogOutput } from './Base/LogProvider';
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
@@ -99,6 +99,7 @@ import {
   SaveUserPreferenceInput, SaveUserPreferenceOutput,
   GetProfileHistoryInput, GetProfileHistoryOutput,
   GetProfileByVersionInput, GetProfileByVersionOutput,
+  ResetUserProfileInput, ResetUserProfileOutput,
   ConfigProfileDirectionInput, ConfigProfileDirectionOutput,
   DeleteProfileDirectionInput, DeleteProfileDirectionOutput,
   GetProfileDirectionInput, GetProfileDirectionOutput,
@@ -187,6 +188,37 @@ let _seq = 0;
 const DATA_DIR = process.env.BRIAN_DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// 日志文件目录：启动日志、定时任务日志、调试日志写入本地文件（不入库），
+// 业务错误日志仍通过 LogProvider 持久化到 SQLite（brian_log.db）。
+const LOG_DIR = process.env.BRIAN_LOG_DIR || path.join(DATA_DIR, 'logs');
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+
+/** 按天生成日志文件名（dev-server-YYYY-MM-DD.log） */
+function formatLogDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** 追加写入本地日志文件（启动/定时/调试日志），失败静默忽略 */
+function writeFileLog(level: string, message: string, meta?: unknown): void {
+  try {
+    const ts = new Date().toISOString();
+    const suffix = meta !== undefined && meta !== null ? ' ' + JSON.stringify(meta) : '';
+    const file = path.join(LOG_DIR, `dev-server-${formatLogDate(new Date())}.log`);
+    fs.appendFileSync(file, `[${ts}] [${level}] ${message}${suffix}\n`);
+  } catch { /* ignore */ }
+}
+
+/** 文件日志器：debug/info/warn 写文件，error 仅作为兜底（业务错误仍走 DB） */
+const fileLogger = {
+  debug: (message: string, meta?: unknown) => writeFileLog('DEBUG', message, meta),
+  info: (message: string, meta?: unknown) => writeFileLog('INFO', message, meta),
+  warn: (message: string, meta?: unknown) => writeFileLog('WARN', message, meta),
+  error: (message: string, meta?: unknown) => writeFileLog('ERROR', message, meta),
+};
+
 function createLogger(logAccess?: LogAccess): any {
   if (!logAccess) {
     return { debug: (..._a: any[]) => {}, info: (..._a: any[]) => {}, warn: (..._a: any[]) => {}, error: (..._a: any[]) => {} };
@@ -221,9 +253,12 @@ function createLogger(logAccess?: LogAccess): any {
     } catch { /* ignore */ }
   };
   return {
-    debug: (message: string, meta?: unknown) => write('DEBUG', message, meta),
-    info: (message: string, meta?: unknown) => write('INFO', message, meta),
-    warn: (message: string, meta?: unknown) => write('WARN', message, meta),
+    // 调试日志（含 AOP 切面的 invoke/done）不写入数据库，避免非业务切面日志污染日志库
+    debug: () => {},
+    // 启动/定时任务等 INFO/WARN 日志直接写日志文件，不入库
+    info: (message: string, meta?: unknown) => writeFileLog('INFO', message, meta),
+    warn: (message: string, meta?: unknown) => writeFileLog('WARN', message, meta),
+    // 业务错误日志（含 AOP 切面的 failed）通过 LogProvider 持久化到 SQLite
     error: (message: string, meta?: unknown) => write('ERROR', message, meta),
   };
 }
@@ -3782,6 +3817,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetProfileDirectionOutput();
         await ctx.userProfileAccess.getProfileDirection(input, new UserProfileContext(), output);
         sendJson(res, 200, { directions: output.directions });
+      } else if (method === 'POST' && pathname === '/api/profile/reset') {
+        const input = Object.assign(new ResetUserProfileInput(), {
+          session_id: body.session_id || undefined,
+        });
+        const output = new ResetUserProfileOutput();
+        await ctx.userProfileAccess.resetUserProfile(input, new UserProfileContext(), output);
+        sendJson(res, 200, { success: true, reset_count: output.reset_count });
       } else if (method === 'POST' && pathname === '/api/profile/direction') {
         const input = Object.assign(new ConfigProfileDirectionInput(), {
           directions: Array.isArray(body.directions) ? body.directions : [],
@@ -3973,6 +4015,25 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         } catch (e: any) {
           sendJson(res, 500, { error: e?.message || '日志查询失败' });
         }
+
+      } else if (method === 'DELETE' && pathname === '/api/monitor/logs') {
+        const rawIds = (body as Record<string, unknown>).ids;
+        const ids = Array.isArray(rawIds)
+          ? (rawIds as unknown[]).map((x) => String(x)).filter(Boolean)
+          : [];
+        if (ids.length === 0) {
+          sendJson(res, 400, { error: 'ids 必须为非空数组' });
+          return;
+        }
+        const output = new DelLogOutput();
+        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { ids }), new LogContext(), output);
+        sendJson(res, 200, { deleted_count: output.affected_rows });
+
+      } else if (method === 'DELETE' && pathname === '/api/monitor/logs/all') {
+        const output = new DelLogOutput();
+        // 使用未来时间作为 before_time，删除全部日志
+        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { before_time: Date.now() + 86400000 }), new LogContext(), output);
+        sendJson(res, 200, { deleted_count: output.affected_rows });
 
       } else if (method === 'GET' && pathname === '/api/config/work') {
         sendJson(res, 200, []);
@@ -4248,6 +4309,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               work_id: r.work_id,
               interact_id: r.interact_id,
               score: r.score,
+              matched_chunks: r.matched_chunks,
             })),
             count: output.list.length,
           });
@@ -4382,14 +4444,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 404, { error: `Route not found: ${method} ${pathname}` });
       }
     } catch (err: any) {
-      console.error('[dev-server] Error:', err.message);
+      fileLogger.error('[dev-server] Error:', err.message);
       sendJson(res, 500, { error: err.message || 'Internal server error' });
     }
   });
 }
 
 async function main() {
-  console.log('[dev-server] Initializing brian-backend (real backends, no mocks)...');
+  fileLogger.info('[dev-server] Initializing brian-backend (real backends, no mocks)...');
   const ctx = await buildContext();
   const server = createServer(ctx);
   // 防止 Node.js HTTP Server 默认超时中断长连接（如 SSE 对话流或多轮 Agent 思考）
@@ -4410,8 +4472,8 @@ async function main() {
   const HOST = process.env.BRIAN_HOST || '127.0.0.1';
 
   server.listen(PORT, HOST, () => {
-    console.log(`[dev-server] brian-backend running at http://${HOST}:${PORT}`);
-    console.log(`[dev-server] Data directory: ${DATA_DIR}`);
+    fileLogger.info(`[dev-server] brian-backend running at http://${HOST}:${PORT}`);
+    fileLogger.info(`[dev-server] Data directory: ${DATA_DIR}`);
     // 自动启动 CDT
     try {
       import('./Base/CDTProvider/domain/types').then(async (t) => {
@@ -4419,27 +4481,27 @@ async function main() {
         const o = new StartCDTOutput();
         await ctx.cdtAccess.startCDT(new StartCDTInput(), new CDTContext(), o);
         if (!o.error) {
-          console.log(`[dev-server] CDT started on port ${o.port}, endpoint: ${o.endpoint}`);
+          fileLogger.info(`[dev-server] CDT started on port ${o.port}, endpoint: ${o.endpoint}`);
         } else {
-          console.warn(`[dev-server] CDT start failed: ${o.error}`);
+          fileLogger.warn(`[dev-server] CDT start failed: ${o.error}`);
         }
       });
     } catch {}
   });
 
   const gracefulShutdown = (signal: string) => {
-    console.log(`\n[dev-server] Shutting down (${signal})...`);
+    fileLogger.info(`[dev-server] Shutting down (${signal})...`);
     const finish = () => server.close(() => process.exit(0));
     try {
       // 关闭所有运行中的 MCP 进程，并重置状态
       ctx.mcpAccess.stopAllMcp().then((count) => {
-        if (count > 0) console.log(`[dev-server] MCP stopped (${count})`);
+        if (count > 0) fileLogger.info(`[dev-server] MCP stopped (${count})`);
       }).catch(() => {}).finally(() => {
         // 停止 CDT
         import('./Base/CDTProvider/domain/types').then(async (t) => {
           const { CDTContext, StopCDTInput, StopCDTOutput } = t;
           await ctx.cdtAccess.stopCDT(new StopCDTInput(), new CDTContext(), new StopCDTOutput());
-          console.log('[dev-server] CDT stopped');
+          fileLogger.info('[dev-server] CDT stopped');
         }).catch(() => {}).finally(finish);
       });
     } catch {
@@ -4451,6 +4513,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[dev-server] Fatal error:', err);
+  fileLogger.error('[dev-server] Fatal error:', err);
   process.exit(1);
 });

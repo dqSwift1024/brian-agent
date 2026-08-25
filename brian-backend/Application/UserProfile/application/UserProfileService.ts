@@ -37,6 +37,7 @@ import {
   SaveUserPreferenceInput, SaveUserPreferenceOutput,
   GetProfileHistoryInput, GetProfileHistoryOutput,
   GetProfileByVersionInput, GetProfileByVersionOutput,
+  ResetUserProfileInput, ResetUserProfileOutput,
   ConfigUserProfileInput, ConfigUserProfileOutput,
 } from '../domain/types';
 
@@ -490,6 +491,32 @@ export class UserProfileService {
       dimensions,
       profile_summary: String(record.profile_summary ?? ''),
     };
+    return true;
+  }
+
+  async resetUserProfile(
+    input: ResetUserProfileInput,
+    _ctx: UserProfileContext,
+    output: ResetUserProfileOutput,
+  ): Promise<boolean> {
+    const conditions = input.session_id
+      ? [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }]
+      : [];
+
+    const records = await this.queryTable(USER_PROFILE_RECORD_TABLE, conditions);
+    const recordIds = records.map((r) => String(r.id));
+
+    let deleted = 0;
+    for (const recordId of recordIds) {
+      await this.relationDb.delete(USER_PROFILE_DIMENSION_DATA_TABLE, [
+        { field: 'profile_record_id', operator: Operator.EQ, value: recordId },
+      ]);
+      deleted += 1;
+    }
+
+    await this.relationDb.delete(USER_PROFILE_RECORD_TABLE, conditions);
+
+    output.reset_count = deleted;
     return true;
   }
 

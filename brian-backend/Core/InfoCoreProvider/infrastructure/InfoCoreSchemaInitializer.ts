@@ -208,12 +208,14 @@ export class InfoCoreSchemaInitializer {
     // info_vector_config — 向量化配置
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS "${INFO_VECTOR_CONFIG_TABLE}" (
-        "id"        TEXT    NOT NULL PRIMARY KEY,
-        "created"   INTEGER NOT NULL,
-        "updated"   INTEGER NOT NULL,
-        "llm_id"    TEXT    NOT NULL,
-        "dimension" INTEGER NOT NULL DEFAULT 1536,
-        "enable"    INTEGER NOT NULL DEFAULT 1
+        "id"            TEXT    NOT NULL PRIMARY KEY,
+        "created"       INTEGER NOT NULL,
+        "updated"       INTEGER NOT NULL,
+        "llm_id"        TEXT    NOT NULL,
+        "dimension"     INTEGER NOT NULL DEFAULT 1536,
+        "enable"        INTEGER NOT NULL DEFAULT 1,
+        "chunk_size"    INTEGER NOT NULL DEFAULT 512,
+        "chunk_overlap" INTEGER NOT NULL DEFAULT 64
       )
     `);
 
@@ -241,6 +243,8 @@ export class InfoCoreSchemaInitializer {
       `ALTER TABLE "${INFO_CONTEXT_CONFIG_TABLE}" ADD COLUMN "priority_order" TEXT NOT NULL DEFAULT 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'`,
       `ALTER TABLE "${INFO_SUMMARY_CONFIG_TABLE}" ADD COLUMN "threshold" INTEGER NOT NULL DEFAULT 100`,
       `ALTER TABLE "${INFO_SUMMARY_CONFIG_TABLE}" ADD COLUMN "info_types" TEXT NOT NULL DEFAULT 'RESPONSE'`,
+      `ALTER TABLE "${INFO_VECTOR_CONFIG_TABLE}" ADD COLUMN "chunk_size" INTEGER NOT NULL DEFAULT 512`,
+      `ALTER TABLE "${INFO_VECTOR_CONFIG_TABLE}" ADD COLUMN "chunk_overlap" INTEGER NOT NULL DEFAULT 64`,
     ]) {
       try {
         this.relationDb.executeRaw(col);

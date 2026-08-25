@@ -14,6 +14,7 @@ import {
   SaveUserPreferenceInput, SaveUserPreferenceOutput,
   GetProfileHistoryInput, GetProfileHistoryOutput,
   GetProfileByVersionInput, GetProfileByVersionOutput,
+  ResetUserProfileInput, ResetUserProfileOutput,
   ConfigUserProfileInput, ConfigUserProfileOutput,
 } from '../domain/types';
 
@@ -106,6 +107,13 @@ export class UserProfileAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.getProfileByVersion(i, c, o);
+  }
+
+  async resetUserProfile(
+    i: ResetUserProfileInput, c: UserProfileContext, o: ResetUserProfileOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.resetUserProfile(i, c, o);
   }
 
   async configUserProfile(

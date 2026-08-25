@@ -16,6 +16,7 @@ import {
   NotFoundError,
 } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
+import type { Logger } from '../../shared/aop/AopProxy';
 import {
   CDTContext,
   StartCDTInput,
@@ -102,7 +103,7 @@ export class CDTService {
   private latestFrameHeight = 0;
   private spoofedEnv: CDTEnv | null = null;
 
-  constructor(private readonly relationDb: RelationDBAccess, dataDir: string = '') {
+  constructor(private readonly relationDb: RelationDBAccess, dataDir: string = '', private readonly logger?: Logger) {
     this.config = new ConfigService(relationDb, CDT_CONFIG_TABLE);
     this.dataDir = dataDir;
   }
@@ -619,7 +620,7 @@ export class CDTService {
     const reason = errorMessage
       ? `错误: ${errorMessage}`
       : `退出码=${code}, 信号=${signal}`;
-    console.warn(`[CDTService] Chrome 进程非预期退出 (${reason})`);
+    this.logger?.warn?.(`[CDTService] Chrome 进程非预期退出 (${reason})`);
 
     this.stopCommandWs();
     this.stopKeepAlive();
@@ -668,7 +669,7 @@ export class CDTService {
           if (resolved) return;
           resolved = true;
           ws.off('open', onOpen);
-          console.warn(`[CDTService] 保活 WebSocket 连接失败: ${err.message}`);
+          this.logger?.warn?.(`[CDTService] 保活 WebSocket 连接失败: ${err.message}`);
           try { ws.close(); } catch { /* ignore */ }
           resolve(false);
         };
@@ -680,14 +681,14 @@ export class CDTService {
           if (this.keepAliveWs === ws) {
             this.stopKeepAlive();
             if (this.isProcessAlive()) {
-              console.warn('[CDTService] 保活 WebSocket 意外断开，Chrome 仍运行中，将尝试重连');
+              this.logger?.warn?.('[CDTService] 保活 WebSocket 意外断开，Chrome 仍运行中，将尝试重连');
               this.startKeepAlive().catch(() => {});
             }
           }
         });
       });
     } catch (e: unknown) {
-      console.warn(`[CDTService] 保活 WebSocket 创建失败: ${e instanceof Error ? e.message : String(e)}`);
+      this.logger?.warn?.(`[CDTService] 保活 WebSocket 创建失败: ${e instanceof Error ? e.message : String(e)}`);
       return false;
     }
   }

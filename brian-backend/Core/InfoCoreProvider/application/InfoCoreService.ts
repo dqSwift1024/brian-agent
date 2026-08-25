@@ -26,6 +26,7 @@ import {
   ContextSource,
   HandleResultType,
   DEFAULT_HANDLE_RESULT_TYPE,
+  RecursiveTextSplitter,
 } from '@brian-agent/base';
 import type { Condition } from '@brian-agent/base';
 import { Jieba } from '@node-rs/jieba';
@@ -392,7 +393,8 @@ export class InfoCoreService {
   // =========================================================================
 
   /**
-   * 向量化信息：生成 embedding 后写入 LanceDB（向量唯一存储，不再落 SQLite）。
+   * 向量化信息：按 chunk_size 分块（考虑分隔符与重叠覆盖率）后逐块生成 embedding，
+   * 写入 LanceDB（向量唯一存储，不再落 SQLite）。
    */
   async vectorInfo(
     input: ProcessInfoInput,
@@ -406,11 +408,25 @@ export class InfoCoreService {
       output.vector_id = input.info_id;
       return true;
     }
-    const embedding = await this.buildInfoEmbedding(input.info_id);
-    if (!embedding || embedding.length === 0) {
-      return true;
+
+    const infoRow = await this.getInfoByInfoId(input.info_id);
+    if (!infoRow) throw new NotFoundError('信息', input.info_id);
+    if (infoRow.handle_result_type !== HandleResultType.CORRECT) return true;
+    const vectorConfig = await this.getInfoVectorConfig();
+    if (!vectorConfig || vectorConfig.enable !== 1) return true;
+
+    // 分块：短文本保持单向量，长文本按分隔符 + 重叠拆分
+    const chunks = this.splitInfoChunks(infoRow.info, vectorConfig);
+
+    // 逐块生成 embedding；任一块失败则整体放弃（保持幂等，后续可重试）
+    const embeddings: number[][] = [];
+    for (const chunk of chunks) {
+      const embedding = await this.generateEmbedding(chunk, vectorConfig);
+      if (!embedding || embedding.length === 0) return true;
+      embeddings.push(embedding);
     }
-    await this.upsertInfoVector(input.info_id, embedding);
+
+    await this.upsertInfoChunks(input.info_id, chunks, embeddings);
     output.vector_id = input.info_id;
     return true;
   }
@@ -882,8 +898,12 @@ export class InfoCoreService {
       return true;
     }
 
-    const hits = await this.searchInfoVectors(embedding, input.topK, input.similarity_threshold ?? 0);
-    output.list = await this.toScoredInfoList(hits);
+    // 检索时放大 topK（一个 info 可能拆成多个 chunk），
+    // 聚合去重后再截取回 topK 个 info，保证返回足够多不同信息。
+    const topK = Math.max(1, Math.floor(input.topK));
+    const hits = await this.searchInfoVectors(embedding, topK * 3, input.similarity_threshold ?? 0);
+    const scored = await this.toScoredInfoList(hits);
+    output.list = scored.slice(0, topK);
     return true;
   }
 
@@ -2411,6 +2431,12 @@ const rawPriority = priorityOrderStr
         throw new ValidationError(`llm_id ${input.llm_id} 不是向量模型（llm_type=${llmOutput.llm.llm_type}），向量化仅支持 embedding 类型模型`);
       }
     }
+    if (input.chunk_size !== undefined && (!Number.isInteger(input.chunk_size) || input.chunk_size <= 0)) {
+      throw new ValidationError('chunk_size 必须为正整数');
+    }
+    if (input.chunk_overlap !== undefined && (!Number.isInteger(input.chunk_overlap) || input.chunk_overlap < 0)) {
+      throw new ValidationError('chunk_overlap 必须为 >= 0 的整数');
+    }
     // 维度变更需同步重建向量表（applyDimension 内部校验 LanceDB 无数据时重建）
     if (input.dimension !== undefined) {
       await this.vectorDb.applyDimension(input.dimension);
@@ -2420,6 +2446,8 @@ const rawPriority = priorityOrderStr
         llm_id: '',
         dimension: 1536,
         enable: 1,
+        chunk_size: 512,
+        chunk_overlap: 64,
       },
     });
     return true;
@@ -2756,18 +2784,58 @@ const rawPriority = priorityOrderStr
     return out.vector;
   }
 
-  /** 生成信息向量：校验信息存在且为正确结果、向量配置启用后调用 LLM。 */
-  private async buildInfoEmbedding(infoId: string): Promise<number[]> {
-    const infoRow = await this.getInfoByInfoId(infoId);
-    if (!infoRow) throw new NotFoundError('信息', infoId);
-    if (infoRow.handle_result_type !== HandleResultType.CORRECT) return [];
-    const vectorConfig = await this.getInfoVectorConfig();
-    if (!vectorConfig || vectorConfig.enable !== 1) return [];
-    return this.generateEmbedding(infoRow.info, vectorConfig);
+  /**
+   * 将 info 文本按向量配置分块（LangChain 风格递归分隔符 + 重叠）。
+   *
+   * 长度不超过 chunk_size 时不拆分，返回单元素数组（内容为原文），
+   * 保证短文本仍走单向量路径（向量 id = info_id，与历史数据兼容）。
+   */
+  private splitInfoChunks(info: string, vectorConfig: InfoVectorConfigRecord): string[] {
+    const chunkSize = this.normalizeChunkSize(vectorConfig.chunk_size);
+    if (chunkSize <= 0) return [info];
+    const length = RecursiveTextSplitter.charLength(info);
+    if (length <= chunkSize) return [info];
+
+    const overlap = this.normalizeChunkOverlap(vectorConfig.chunk_overlap, chunkSize);
+    return RecursiveTextSplitter.splitText(info, {
+      chunkSize,
+      chunkOverlap: overlap,
+    });
   }
 
-  private async upsertInfoVector(infoId: string, embedding: number[]): Promise<void> {
-    await this.upsertVector(infoId, infoId, embedding, { kind: 'info', info_id: infoId });
+  /** 写入信息向量：单 chunk 时向量 id = info_id；多 chunk 时依次为 info_id、info_id#1… */
+  private async upsertInfoChunks(
+    infoId: string,
+    chunks: string[],
+    embeddings: number[][],
+  ): Promise<void> {
+    const multi = chunks.length > 1;
+    const vectors: VectorObject[] = chunks.map((chunk, i) => ({
+      id: i === 0 ? infoId : `${infoId}#${i}`,
+      content: chunk,
+      embedding: embeddings[i],
+      metadata: multi
+        ? { kind: 'info', info_id: infoId, chunk_index: i, chunk_total: chunks.length }
+        : { kind: 'info', info_id: infoId },
+    }));
+
+    const out = new AddVectorOutput();
+    await this.vectorDb.addVector(
+      { vectors } as AddVectorInput,
+      new VectorContext(),
+      out,
+    );
+  }
+
+  private normalizeChunkSize(raw: unknown): number {
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : 512;
+  }
+
+  private normalizeChunkOverlap(raw: unknown, chunkSize: number): number {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) return 64;
+    return Math.min(n, chunkSize - 1);
   }
 
   private async upsertTagVector(tag: string, embedding: number[]): Promise<void> {
@@ -2822,13 +2890,30 @@ const rawPriority = priorityOrderStr
 
   private async toScoredInfoList(
     hits: VectorSearchResult[],
-  ): Promise<Array<InfoRawRecord & { score?: number }>> {
-    const results: Array<InfoRawRecord & { score?: number }> = [];
+  ): Promise<Array<InfoRawRecord & { score?: number; matched_chunks?: string[] }>> {
+    // 多个 chunk 命中同一 info 时，按 info_id 去重聚合，取最高分，
+    // 并把命中的 chunk 片段收集到 matched_chunks（便于展示命中原文）。
+    const byInfo = new Map<string, { score: number; chunks: string[] }>();
     for (const hit of hits) {
       const infoId = String(hit.metadata?.['info_id'] ?? hit.id);
-      const infoRow = await this.getInfoByInfoId(infoId);
-      if (infoRow) results.push({ ...infoRow, score: hit.score });
+      const content = hit.content ?? '';
+      const cur = byInfo.get(infoId);
+      if (!cur) {
+        byInfo.set(infoId, { score: hit.score, chunks: content ? [content] : [] });
+      } else {
+        if (hit.score > cur.score) cur.score = hit.score;
+        if (content) cur.chunks.push(content);
+      }
     }
+
+    const results: Array<InfoRawRecord & { score?: number; matched_chunks?: string[] }> = [];
+    for (const [infoId, agg] of byInfo) {
+      const infoRow = await this.getInfoByInfoId(infoId);
+      if (infoRow) {
+        results.push({ ...infoRow, score: agg.score, matched_chunks: agg.chunks });
+      }
+    }
+    results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     return results;
   }
 
@@ -3412,7 +3497,7 @@ const rawPriority = priorityOrderStr
     );
     await this.ensureDefaultConfigRow(
       INFO_VECTOR_CONFIG_TABLE,
-      { llm_id: '', dimension: 1536, enable: 1 },
+      { llm_id: '', dimension: 1536, enable: 1, chunk_size: 512, chunk_overlap: 64 },
     );
     await this.ensureDefaultConfigRow(
       INFO_TAG_CONFIG_TABLE,
@@ -3606,6 +3691,8 @@ const rawPriority = priorityOrderStr
       llm_id: raw['llm_id'] as string,
       dimension: raw['dimension'] as number,
       enable: raw['enable'] as number,
+      chunk_size: Number(raw['chunk_size'] ?? 512),
+      chunk_overlap: Number(raw['chunk_overlap'] ?? 64),
     };
   }
 

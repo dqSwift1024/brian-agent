@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watchEffect } from 'vue'
-import { Activity, Cpu, HardDrive, Database, TrendingUp, Layers, RefreshCw, Eye, Copy, Check, CheckSquare, Square, Search } from '@lucide/vue'
+import { Activity, Cpu, HardDrive, Database, TrendingUp, Layers, RefreshCw, Eye, Copy, Check, CheckSquare, Square, Search, Trash2 } from '@lucide/vue'
 import { monitorApi } from '@/api'
 import type { SystemHealth } from '@/api/types'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -112,6 +112,37 @@ async function copySelectedLogs() {
   if (selected.length === 0) return
   const text = selected.map(formatLogEntry).join('\n')
   await copyToClipboard(text)
+}
+
+async function deleteLog(id: string) {
+  try {
+    await monitorApi.deleteLogs([id])
+    if (selectedLogs.value.has(id)) {
+      const next = new Set(selectedLogs.value)
+      next.delete(id)
+      selectedLogs.value = next
+    }
+    await fetchAll()
+  } catch { /* */ }
+}
+
+async function deleteSelectedLogs() {
+  const ids = [...selectedLogs.value]
+  if (ids.length === 0) return
+  try {
+    await monitorApi.deleteLogs(ids)
+    selectedLogs.value = new Set()
+    await fetchAll()
+  } catch { /* */ }
+}
+
+async function clearAllLogs() {
+  if (!window.confirm('确定要清空全部日志吗？此操作不可恢复。')) return
+  try {
+    await monitorApi.clearLogs()
+    selectedLogs.value = new Set()
+    await fetchAll()
+  } catch { /* */ }
 }
 
 onMounted(() => {
@@ -474,31 +505,70 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
 
       <div class="flex items-center justify-between mb-2 text-xs">
         <span class="text-apple-gray-400">{{ logs.length }} 条日志{{ selectedLogs.size > 0 ? `（已选 ${selectedLogs.size} 条）` : '' }}</span>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
           <button v-if="selectedLogs.size > 0" class="flex items-center gap-1 px-2 py-1 rounded-lg text-brian-blue hover:bg-brian-blue/10" @click="copySelectedLogs">
             <Copy :size="12" /> 批量复制({{ selectedLogs.size }})
+          </button>
+          <button v-if="selectedLogs.size > 0" class="flex items-center gap-1 px-2 py-1 rounded-lg text-error-red hover:bg-error-red/10" @click="deleteSelectedLogs">
+            <Trash2 :size="12" /> 批量删除({{ selectedLogs.size }})
           </button>
           <button class="flex items-center gap-1 text-apple-gray-500 hover:text-brian-blue" @click="toggleSelectAllLogs">
             <component :is="allLogsSelected ? CheckSquare : Square" :size="14" />
             {{ allLogsSelected ? '取消全选' : '全选' }}
           </button>
+          <button class="flex items-center gap-1 px-2 py-1 rounded-lg text-error-red hover:bg-error-red/10" @click="clearAllLogs">
+            <Trash2 :size="12" /> 清空
+          </button>
         </div>
       </div>
 
       <div v-if="logs.length === 0" class="text-center py-6 text-apple-gray-400 text-sm">暂无日志</div>
-      <div v-else class="space-y-1 max-h-80 overflow-y-auto font-mono text-xs">
-        <div v-for="entry in logs" :key="entry.id" class="flex items-center gap-2 py-1 px-2 rounded hover:bg-apple-gray-50 dark:hover:bg-apple-gray-800/50">
-          <input type="checkbox" class="rounded flex-shrink-0" :checked="selectedLogs.has(entry.id)" @change="toggleLogSelect(entry.id)" />
-          <span class="text-apple-gray-400 flex-shrink-0">{{ new Date(entry.timestamp).toLocaleTimeString('zh-CN') }}</span>
-          <span class="flex-shrink-0 px-1 rounded font-medium" :class="logLevelColors[entry.level] || ''">{{ entry.level }}</span>
-          <span class="text-apple-gray-500 flex-shrink-0">{{ entry.source }}</span>
-          <span v-if="entry.trace_id" class="text-brian-blue/70 flex-shrink-0" :title="`traceId: ${entry.trace_id}`">{{ entry.trace_id.slice(0, 8) }}</span>
-          <span class="truncate flex-1">{{ entry.message }}</span>
-          <button class="p-0.5 rounded text-apple-gray-400 hover:text-brian-blue flex-shrink-0" title="复制" @click="copyLog(entry.id)">
-            <Check v-if="copiedLogId === entry.id" :size="12" class="text-success-green" />
-            <Copy v-else :size="12" />
-          </button>
-        </div>
+      <div v-else class="max-h-80 overflow-y-auto rounded-lg border border-apple-gray-100 dark:border-apple-gray-700">
+        <table class="w-full table-fixed text-xs font-mono">
+          <colgroup>
+            <col class="w-8" />
+            <col class="w-24" />
+            <col class="w-16" />
+            <col class="w-28" />
+            <col class="w-24" />
+            <col />
+            <col class="w-20" />
+          </colgroup>
+          <thead class="sticky top-0 bg-apple-gray-50 dark:bg-apple-gray-800 z-10">
+            <tr class="text-left text-apple-gray-400 border-b border-apple-gray-100 dark:border-apple-gray-700">
+              <th class="py-2 px-2">
+                <input type="checkbox" class="rounded" :checked="allLogsSelected" @change="toggleSelectAllLogs" />
+              </th>
+              <th class="py-2 px-2 font-medium">时间</th>
+              <th class="py-2 px-2 font-medium">级别</th>
+              <th class="py-2 px-2 font-medium">来源</th>
+              <th class="py-2 px-2 font-medium">TraceId</th>
+              <th class="py-2 px-2 font-medium">消息</th>
+              <th class="py-2 px-2 font-medium text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-apple-gray-50 dark:divide-apple-gray-800/50">
+            <tr v-for="entry in logs" :key="entry.id" class="hover:bg-apple-gray-50 dark:hover:bg-apple-gray-800/50">
+              <td class="py-1.5 px-2">
+                <input type="checkbox" class="rounded" :checked="selectedLogs.has(entry.id)" @change="toggleLogSelect(entry.id)" />
+              </td>
+              <td class="py-1.5 px-2 text-apple-gray-400 whitespace-nowrap">{{ new Date(entry.timestamp).toLocaleTimeString('zh-CN') }}</td>
+              <td class="py-1.5 px-2"><span class="px-1 rounded font-medium" :class="logLevelColors[entry.level] || ''">{{ entry.level }}</span></td>
+              <td class="py-1.5 px-2 text-apple-gray-500 truncate" :title="entry.source">{{ entry.source }}</td>
+              <td class="py-1.5 px-2 text-brian-blue/70 truncate" :title="entry.trace_id ? `traceId: ${entry.trace_id}` : ''">{{ entry.trace_id ? entry.trace_id.slice(0, 8) : '' }}</td>
+              <td class="py-1.5 px-2 truncate" :title="entry.message">{{ entry.message }}</td>
+              <td class="py-1.5 px-2 text-right whitespace-nowrap">
+                <button class="p-1 rounded text-apple-gray-400 hover:text-brian-blue" title="复制" @click="copyLog(entry.id)">
+                  <Check v-if="copiedLogId === entry.id" :size="13" class="text-success-green" />
+                  <Copy v-else :size="13" />
+                </button>
+                <button class="p-1 rounded text-apple-gray-400 hover:text-error-red" title="删除" @click="deleteLog(entry.id)">
+                  <Trash2 :size="13" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

@@ -11,7 +11,7 @@
 LogProvider 是日志的唯一操作入口，上层不可直接调用 console.log 或其他日志库。
 所有组件的日志输出（包括 AOP 切面自动记录的日志）均通过 LogProvider 完成。
 
-LogProvider **日志仅持久化于 SQLite**（`log_record` 表），不写入本地文件，支持日志查询、统计与可视化。
+LogProvider 是业务日志的持久化入口：**业务错误日志（ERROR）写入 SQLite**（`log_record` 表），支持查询、统计与可视化；**启动/定时任务日志（INFO/WARN）与调试日志（DEBUG）不写库**，改由 dev-server 入口写入本地日志文件（`data/logs/dev-server-YYYY-MM-DD.log`），避免非业务的 AOP 切面日志（`invoke`/`done`）污染日志库。
 
 ### 1.3 集成依赖
 
@@ -20,9 +20,12 @@ LogProvider **日志仅持久化于 SQLite**（`log_record` 表），不写入�
 
 ### 1.4 日志存储设计
 
-日志只写入 SQLite（`log_record` 表），不写入本地文件。日志按保留天数与最大条数自动老化：
-- 超过保留天数（默认 30 天）的日志自动清理；
-- 日志总条数超过最大保留条数（默认 70 万条）时，自动删除最旧记录。
+日志按级别分流存储：
+- **ERROR（业务错误）** 写入 SQLite（`log_record` 表），按保留天数与最大条数自动老化：
+  - 超过保留天数（默认 30 天）的日志自动清理；
+  - 日志总条数超过最大保留条数（默认 70 万条）时，自动删除最旧记录。
+- **DEBUG（含 AOP 切面的 invoke/done）** 不写库（直接丢弃），避免高频切面日志淹没业务日志；
+- **INFO / WARN（启动、定时任务等）** 由 dev-server 入口写本地日志文件，不入库。
 
 老化策略参数从关系数据库配置表 `log_config` 读取（`retention_days` / `max_log_count`），
 可在「配置中心」页面动态配置，无需修改代码。
@@ -338,3 +341,16 @@ const soulAccess = new SoulAccess(relationDb, {
   - 所有经 AopProxy 包装的 Service 方法——日志 `log_record.trace_id` 恒有值，可经 `/api/logs?trace_id=` 检索。
 - **可能存在的问题**：
   - 查询类方法（`soLog` / `queryLogs`）的 `trace_id` 入参为过滤条件，AOP 只回填 `Context` 不回填 `Input`，故不影响查询语义。
+
+### [2026-08-25] 日志按级别分流：切面/调试日志不再入库，启动日志写文件
+- **变更原因**：`log_record` 表被非业务的 AOP 切面日志（`invoke`/`done`）淹没（DEBUG 占 70 万条中的绝大多数），业务错误日志难以观察；启动日志无需持久化。
+- **功能变更**：
+  - `dev-server.ts` 新增文件日志器（`data/logs/dev-server-YYYY-MM-DD.log`，按天分文件，`BRIAN_LOG_DIR` 可覆盖）；
+  - `createLogger` 分层路由：`debug` 丢弃、`info`/`warn` 写文件、`error` 写入 LogProvider(SQLite)；
+  - dev-server 入口层 `console.log/error/warn`（启动、关闭、CDT 状态）统一改走文件日志器；
+  - `Logger` 接口新增可选 `info?`/`warn?`；`CDTService` 的 `console.warn` 改走 `logger.warn`。
+- **影响的端点**：
+  - 监控页 `GET /api/monitor/logs/query` —— 返回结果不再含 DEBUG/INFO 切面日志，仅业务 ERROR；
+  - 日志文件 `data/logs/*.log` —— 新增启动/定时/调试日志输出。
+- **可能存在的问题**：
+  - 业务 `logger.debug` 调用（如 `DagScheduler`、`StreamService`）随 AOP 切面日志一并丢弃，如需保留需显式提升为 `info`/`warn`。

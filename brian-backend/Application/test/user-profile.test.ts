@@ -8,6 +8,7 @@ import {
   GetUserProfileOutput, GenerateProfileInput, GenerateProfileOutput,
   SaveUserPreferenceInput, SaveUserPreferenceOutput, GetProfileHistoryInput,
   GetProfileHistoryOutput, GetProfileByVersionInput, GetProfileByVersionOutput,
+  ResetUserProfileInput, ResetUserProfileOutput,
   ConfigUserProfileInput, ConfigUserProfileOutput,
 } from '../UserProfile/domain/types';
 import { setupRealTestEnvironment, cleanupTempDirs } from './real-test-helpers';
@@ -1029,6 +1030,76 @@ describe('UserProfileService', () => {
       const output = new GetProfileByVersionOutput();
 
       await expect(service.getProfileByVersion(input, ctx(), output)).rejects.toThrow();
+    });
+  });
+
+  // =====================================================================
+  // resetUserProfile
+  // =====================================================================
+
+  describe('resetUserProfile', () => {
+    function setupProfileLLMForReset() {
+      vi.spyOn(llmCore as any, 'matchLLM' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+        o.llm_id = 'reset-llm';
+        o.llm = { llm_provider_id: 'p1' };
+        return true;
+      });
+      (llmAccess.execLLM as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+        o.result = JSON.stringify({ value: 'reset-val', confidence: 0.9, evidence: ['ev'] });
+        return true;
+      });
+    }
+
+    it('TC-UP-096: reset after generate → clears records and dimensions, version returns to 0', async () => {
+      setupProfileLLMForReset();
+      await service.generateProfile(new GenerateProfileInput(), ctx(), new GenerateProfileOutput());
+
+      const recsBefore = await db.select('user_profile_record', {});
+      expect(recsBefore.length).toBeGreaterThan(0);
+
+      const input = new ResetUserProfileInput();
+      const output = new ResetUserProfileOutput();
+      const result = await service.resetUserProfile(input, ctx(), output);
+
+      expect(result).toBe(true);
+      expect(output.reset_count).toBeGreaterThan(0);
+
+      const recsAfter = await db.select('user_profile_record', {});
+      const dimsAfter = await db.select('user_profile_dimension_data', {});
+      expect(recsAfter.length).toBe(0);
+      expect(dimsAfter.length).toBe(0);
+
+      const getOut = new GetUserProfileOutput();
+      await service.getUserProfile(new GetUserProfileInput(), ctx(), getOut);
+      expect(getOut.profile_version).toBe(0);
+    });
+
+    it('TC-UP-097: reset with session_id → only clears that session, keeps others', async () => {
+      setupProfileLLMForReset();
+
+      const inA = Object.assign(new GenerateProfileInput(), { session_id: 'reset-session-a' });
+      await service.generateProfile(inA, ctx(), new GenerateProfileOutput());
+      const inB = Object.assign(new GenerateProfileInput(), { session_id: 'reset-session-b' });
+      await service.generateProfile(inB, ctx(), new GenerateProfileOutput());
+
+      const input = Object.assign(new ResetUserProfileInput(), { session_id: 'reset-session-a' });
+      const output = new ResetUserProfileOutput();
+      await service.resetUserProfile(input, ctx(), output);
+
+      expect(output.reset_count).toBe(1);
+
+      const remaining = await db.select('user_profile_record', {});
+      expect(remaining.length).toBe(1);
+      expect(remaining[0].session_id).toBe('reset-session-b');
+    });
+
+    it('TC-UP-098: reset with no data → returns true with reset_count 0', async () => {
+      const input = new ResetUserProfileInput();
+      const output = new ResetUserProfileOutput();
+      const result = await service.resetUserProfile(input, ctx(), output);
+
+      expect(result).toBe(true);
+      expect(output.reset_count).toBe(0);
     });
   });
 

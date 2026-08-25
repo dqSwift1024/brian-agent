@@ -25,7 +25,7 @@ export class CDTAccess {
 
   constructor(relationDb: RelationDBAccess, dataDir: string = '', logger?: Logger) {
     new CDTSchemaInitializer(relationDb).init();
-    const rawService = new CDTService(relationDb, dataDir);
+    const rawService = new CDTService(relationDb, dataDir, logger);
     this.service = AopProxy.wrap(rawService, { logger });
   }
 

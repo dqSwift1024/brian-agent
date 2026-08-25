@@ -262,6 +262,25 @@ UserProfile Application 是用户画像的管理和展示层，负责：
 1. 调用 WriterAgent.saveUserProfile 保存用户偏好；
 2. 返回保存结果；
 
+#### 3.2.4. 重置画像（resetUserProfile）
+
+**功能**：清空画像内容（画像记录、维度数据与历史版本），维度配置保留
+
+**URL**：`POST /api/profile/reset`
+
+**入参（ResetUserProfileInput extends Input）**：
+- session_id（STRING，可选）：指定会话时仅重置该会话画像；缺省时重置全部
+
+**输出**：
+- reset_count（INT）：被重置（删除）的画像记录数
+
+**处理流程**：
+
+1. 按 session_id（可选）查询 `user_profile_record` 表；
+2. 级联删除各记录的 `user_profile_dimension_data` 维度数据；
+3. 删除 `user_profile_record` 记录；
+4. 返回删除条数；
+
 ### 3.3. 画像历史
 
 #### 3.3.1. 获取画像演变历史（getProfileHistory）

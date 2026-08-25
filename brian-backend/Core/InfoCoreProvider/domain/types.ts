@@ -133,6 +133,10 @@ export interface InfoVectorConfigRecord {
   llm_id: string;
   dimension: number;
   enable: number;
+  /** 分块大小（字符/码点数），超过该长度的 info 会被拆分为多个 chunk 向量化 */
+  chunk_size: number;
+  /** 相邻 chunk 之间的重叠长度（字符/码点数），保证边界上下文覆盖率 */
+  chunk_overlap: number;
 }
 
 /** info_context_config 表记录 */
@@ -300,7 +304,7 @@ export class SimilarKInfoInput extends Input {
 
 /** similarKInfo 出参 */
 export class SimilarKInfoOutput extends Output {
-  list: Array<InfoRawRecord & { score?: number }> = [];
+  list: Array<InfoRawRecord & { score?: number; matched_chunks?: string[] }> = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +616,8 @@ export class UpdateInfoVectorConfigInput extends Input {
   llm_id?: string;
   dimension?: number;
   enable?: number;
+  chunk_size?: number;
+  chunk_overlap?: number;
 }
 /** updateInfoVectorConfig 出参 */
 export class UpdateInfoVectorConfigOutput extends Output {}

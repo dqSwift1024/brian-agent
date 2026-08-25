@@ -138,12 +138,14 @@
 
 #### 3.6.3 日志列表
 
--   **渲染**：等宽字体，12px，单条格式 `[时间] [级别] [模块] [traceId] 消息`。
+-   **渲染**：表格形式（带表头：时间 / 级别 / 来源 / TraceId / 消息 / 操作），等宽字体，12px，固定高度可滚动，表头粘性。
 -   **级别颜色**：DEBUG 灰 / INFO 蓝 / WARN 橙 / ERROR 红。
 -   **每条操作**：
-    -   复选框：勾选后支持批量复制。
+    -   复选框：勾选后支持批量复制/批量删除。
     -   复制按钮：复制该条完整内容（含时间/级别/模块/traceId/caller/消息），复制成功图标短暂切换为 ✓。
--   **批量操作**：全选/取消全选、批量复制（复制选中日志，换行拼接）。
+    -   删除按钮：删除该条日志（`DELETE /api/monitor/logs`）。
+-   **批量操作**：全选/取消全选、批量复制（复制选中日志，换行拼接）、批量删除（删除选中日志）。
+-   **一键清空**：清空全部日志按钮（`DELETE /api/monitor/logs/all`，二次确认）。
 
 #### 3.6.4 日志级别分布迷你图
 -   水平堆叠条形图或环形图，展示当前时间范围内各级别占比。
@@ -161,6 +163,9 @@
 | `/api/analytics/model-distribution` | GET | 模型 Token 分布数据 | 切换时 / 5min |
 | `/api/monitor/logs/stream` | WebSocket/SSE | 实时日志推送 | 持久连接 |
 | `/api/monitor/logs/query` | GET | 历史日志查询（level, source, keyword, timeRange, limit） | 筛选变更 / 初始加载 |
+| `/api/monitor/logs/sources` | GET | 日志来源模块去重列表（筛选下拉） | 初始加载 |
+| `/api/monitor/logs` | DELETE | 删除指定日志（body: `ids[]`） | 删除/批量删除 |
+| `/api/monitor/logs/all` | DELETE | 一键清空全部日志 | 清空 |
 | `/api/monitor/logs/stats` | GET | 日志级别分布统计（参数: timeRange） | 5s / 筛选变更 |
 
 ## 5. 异常处理与容错

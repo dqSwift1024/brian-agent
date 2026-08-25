@@ -25,6 +25,10 @@ import { IdGenerator } from '../../ToolProvider/IdGenerator';
 export interface Logger {
   /** 记录调试日志 */
   debug(message: string, meta?: Record<string, unknown>): void;
+  /** 记录信息日志（可选） */
+  info?(message: string, meta?: Record<string, unknown>): void;
+  /** 记录警告日志（可选） */
+  warn?(message: string, meta?: Record<string, unknown>): void;
   /** 记录错误日志 */
   error(message: string, meta?: Record<string, unknown>): void;
 }

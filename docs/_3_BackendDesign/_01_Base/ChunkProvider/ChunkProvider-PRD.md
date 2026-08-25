@@ -86,3 +86,27 @@ Base/ChunkProvider/
 - 滚动缓冲区容量根据 windowSize 动态计算
 - 缓冲区满时立即分块并释放已处理内容
 - 大文件（GB 级）可正常处理，不会 OOM
+
+## 7. 递归分隔符文本分块器（RecursiveTextSplitter）
+
+在滑动窗口分块之外，新增 LangChain 风格的递归分隔符分块器（`application/RecursiveTextSplitter.ts`），供向量化等语义敏感场景使用。
+
+### 7.1. 设计目标
+
+优先在语义边界（段落、换行、句号、空格等）切分长文本，避免在句子中间生硬断开；不足一块时合并，超出时递归降级到下一级分隔符，最终按字符硬切。
+
+### 7.2. 分隔符（DEFAULT_SEPARATORS）
+
+按优先级从高到低：`\n\n`（段落）、`\n`（换行）、`。！？!?`（句末）、`；;`（分号）、`，,`（逗号）、` `（空格）、`''`（字符硬切）。
+
+### 7.3. 配置参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| chunkSize | 512 | 分块最大字符数（码点数） |
+| chunkOverlap | 64 | 相邻 chunk 重叠字符数，须 < chunkSize |
+
+### 7.4. 导出
+
+- `RecursiveTextSplitter`：静态方法 `splitText(text, options)`、`charLength(text)`；
+- `DEFAULT_SEPARATORS`、`RecursiveSplitOptions` 类型。

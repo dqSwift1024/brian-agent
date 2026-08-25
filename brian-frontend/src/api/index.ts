@@ -313,6 +313,10 @@ export const monitorApi = {
     ).then(r => r.entries)
   },
   logSources: () => request<{ sources: string[] }>('/monitor/logs/sources').then(r => r.sources),
+  deleteLogs: (ids: string[]) =>
+    request<{ deleted_count: number }>('/monitor/logs', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  clearLogs: () =>
+    request<{ deleted_count: number }>('/monitor/logs/all', { method: 'DELETE' }),
 }
 
 export const feedbackApi = {
@@ -373,6 +377,11 @@ export const userProfileApi = {
     request<{ history: ProfileHistoryItem[] }>(`/profile/history${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}${limit ? `&limit=${limit}` : ''}`).then(r => r.history),
   version: (version: number, sessionId?: string) =>
     request<ProfileVersionData>(`/profile/version/${version}${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+  reset: (sessionId?: string) =>
+    request<{ success: boolean; reset_count: number }>('/profile/reset', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    }),
 }
 
 export const visualizationApi = {

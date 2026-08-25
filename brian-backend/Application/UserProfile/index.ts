@@ -18,6 +18,8 @@ export {
   GetProfileHistoryOutput,
   GetProfileByVersionInput,
   GetProfileByVersionOutput,
+  ResetUserProfileInput,
+  ResetUserProfileOutput,
   ConfigUserProfileInput,
   ConfigUserProfileOutput,
   USER_PROFILE_DIRECTION_TABLE,

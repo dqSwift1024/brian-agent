@@ -31,6 +31,9 @@ export class GetProfileHistoryOutput extends Output { history: Array<Record<stri
 export class GetProfileByVersionInput extends Input { version!: number; session_id?: string; }
 export class GetProfileByVersionOutput extends Output { profile: Record<string, unknown> = {}; }
 
+export class ResetUserProfileInput extends Input { session_id?: string; }
+export class ResetUserProfileOutput extends Output { reset_count = 0; }
+
 export class ConfigUserProfileInput extends Input { auto_generate_interval_ms?: number; profile_analysis_prompt_template_id?: string; max_conversation_sample_count?: number; profile_retention_versions?: number; min_confidence_threshold?: number; }
 export class ConfigUserProfileOutput extends Output { config: Record<string, unknown> = {}; }
 

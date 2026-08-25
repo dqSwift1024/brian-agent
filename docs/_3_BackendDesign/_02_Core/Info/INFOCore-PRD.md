@@ -1004,3 +1004,21 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - 一键清理只删 GraphDB 节点/边，不删 `info_tag` / `info_keyword` 表数据；重启后 `rebuildCooccurGraph` 会从表回填重建图。
+
+### [2026-08-25] 向量化按 chunk_size 分块（递归分隔符 + 重叠），检索聚合去重
+
+**变更原因**：长文本 info 整段生成单个 embedding，语义被稀释、跨段落相似度失真；相似信息检索一个 info 只有一个向量，命中精度低。
+
+**修改的方法**：
+- `Base/ChunkProvider` 新增 `RecursiveTextSplitter`（LangChain 风格递归分隔符 + 重叠）；
+- `InfoCoreService.vectorInfo` — 按 `chunk_size` 拆分（分隔符 + 重叠），逐块生成 embedding 写入 LanceDB；单 chunk 时向量 id = info_id（兼容历史），多 chunk 时为 `info_id#1…`；
+- `InfoCoreService.similarKInfo` — 检索放大 topK（topK×3）后按 info_id 去重聚合取最高分，截回 topK；命中 chunk 片段收集到 `matched_chunks`；
+- `info_vector_config` 表新增 `chunk_size`（默认 512）/ `chunk_overlap`（默认 64），`UpdateInfoVectorConfigInput` 支持这两个字段。
+
+**影响的端点**：
+- `POST /api/memory/similar`（similarKInfo）— 返回 `matched_chunks` 字段（命中原文片段）；
+- 向量化配置更新接口 — 支持 `chunk_size` / `chunk_overlap`。
+
+**可能存在的问题**：
+- 存量已向量化的长文本不会自动重新分块，需重建向量表后重新向量化；
+- chunk 拆分后同一 info 的多个 chunk 命中会被聚合，`score` 取最高分。
