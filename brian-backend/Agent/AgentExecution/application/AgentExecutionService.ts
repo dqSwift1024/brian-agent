@@ -203,6 +203,23 @@ export class AgentExecutionService {
         // );
 
         // ===== 修改后的代码：传入 info: input.task_content =====
+        // ===== 原始代码（保留作为参考）：曾传 enable_cross_session: false 关闭跨会话召回 =====
+        //   await this.infoCore.context(
+        //     Object.assign(new ContextInfoInput(), {
+        //       session_id: sessionId,
+        //       work_id: input.work_id || ctx.work_id || '',
+        //       selected_msg_ids: ctx.selected_msg_ids,
+        //       info: input.task_content,
+        //       persist_snapshot: false,
+        //       enable_cross_session: false,
+        //     }),
+        //     new InfoCoreContext(),
+        //     ctxOut,
+        //   );
+        // ===== 修改后的代码：保持默认 enable_cross_session=true =====
+        // 跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM）是 Agent 长程记忆的核心维度，
+        // 不应被关闭。此前关闭是为了避免任务漂移，但漂移根因是 think 模板把 context_data 当作 task，
+        // 现已在 think 模板显式注入 task_content 修复，跨会话上下文仅作补充参考，不再取代当前任务。
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: sessionId,
@@ -210,7 +227,6 @@ export class AgentExecutionService {
             selected_msg_ids: ctx.selected_msg_ids,
             info: input.task_content,
             persist_snapshot: false,
-            enable_cross_session: false,
           }),
           new InfoCoreContext(),
           ctxOut,

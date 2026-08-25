@@ -499,7 +499,8 @@ export class ContextInfoInput extends Input {
   custom_info_ids?: string[];
   /**
    * 是否允许跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 全局兜底）。
-   * 默认 true。Work Agent 执行子任务时应传 false，避免无关历史会话污染当前任务上下文。
+   * 默认 true。跨会话召回是 Agent 长程记忆的核心维度，一般保持开启；
+   * 仅在确有需要隔离历史会话的极特殊场景才显式传 false。
    */
   enable_cross_session?: boolean;
   /**

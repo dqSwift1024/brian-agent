@@ -415,5 +415,27 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 - 工具可用的 WorkAgent 现统一走 ReAct 循环（相对 CoT 多一次 Reflect 的 LLM 调用），简单任务响应耗时会略增，属预期取舍。
 - 系统 Agent（Writer / Planner / Evolutor 等）不经 `execAgent` 规则引擎，不受影响。
 
+### [2026-08-25] 恢复 WorkAgent 跨会话上下文召回（多维上下文）
+
+**变更原因**：`execAgent` 此前传 `enable_cross_session: false`，导致 `InfoCore.context` 跳过 TAG_RELATIVE / SIMILARITY / KEYWORD 及 RANDOM 全局兜底，上下文中只剩 TIMELINE + CURRENT，丢失了长程记忆与随机回忆维度（用户反馈「只有时间线上下文，至少应有随机」）。该关闭动作本为规避任务漂移，但漂移根因是 think 模板把 `context_data`（历史上下文）当作任务主体，已在 think 模板显式注入 `task_content` 修复，跨会话上下文仅作补充参考，不再取代当前任务。
+
+**修改的方法**：
+- `AgentExecutionService.execAgent` — 移除 `ContextInfoInput` 中的 `enable_cross_session: false`，恢复默认 `true`。原始代码：
+  ```ts
+  await this.infoCore.context(Object.assign(new ContextInfoInput(), {
+    session_id: sessionId, work_id: ..., selected_msg_ids: ..., info: input.task_content,
+    persist_snapshot: false, enable_cross_session: false,
+  }), new InfoCoreContext(), ctxOut);
+  ```
+- `InfoCoreProvider/domain/types.ts` — `enable_cross_session` 注释更新为「默认 true，跨会话召回是长程记忆核心维度，仅在极特殊场景才显式传 false」。
+
+**影响的端点**：
+- `POST /api/chat`、`POST /api/chat/stream` — WorkAgent 上下文重新包含 PINNED / TIMELINE / TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM 多维召回，至少保证 RANDOM 兜底存在。
+
+**可能存在的问题**：
+- 跨会话召回会引入其他历史会话的相关内容作为补充参考；已通过 think/reflect 模板的「任务以 `<task>` 为准、禁止沿用历史旧主体」约束降低漂移风险。
+- SIMILARITY / KEYWORD / TAG_RELATIVE 依赖向量库、关键词索引、标签数据，数据未就绪时召回为空（best-effort），不影响 RANDOM 兜底。
+
+
 
 
