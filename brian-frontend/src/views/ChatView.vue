@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus, History, Search, Trash2, X, PanelRight, Square, CheckSquare, Edit3, Check } from '@lucide/vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import Header from '@/components/layout/Header.vue'
@@ -12,6 +12,7 @@ import type { ChatSession } from '@/api/types'
 
 const sessionStore = useSessionStore()
 const route = useRoute()
+const router = useRouter()
 const showSidebar = ref(false)
 const showSearch = ref(false)
 const searchQuery = ref('')
@@ -49,6 +50,20 @@ onMounted(async () => {
     await sessionStore.loadChatHistory(sid, 'default-user')
   } catch { /* ignore */ }
   await sessionStore.loadDag(sid, 'default-user')
+})
+
+// ===== 保持 URL 的 session 参数与当前会话同步 =====
+// 侧边栏切换会话、新建对话、删除当前会话、发送首条消息创建会话等场景都会改写 currentSessionId，
+// 若不同步 URL 中的 session 参数，刷新后 onMounted 会优先读取到过期的 ?session=xxx，
+// 导致「刷新后会话变成其他会话」。这里统一在 currentSessionId 变化时用 replace 同步 query，
+// 不新增历史记录（避免返回键在会话间来回跳转）。
+watch(() => sessionStore.currentSessionId, (sid) => {
+  const currentQuery = typeof route.query.session === 'string' ? route.query.session : ''
+  if (sid && sid !== currentQuery) {
+    router.replace({ query: { session: sid } })
+  } else if (!sid && currentQuery) {
+    router.replace({ query: {} })
+  }
 })
 
 function toggleSidebar() {
