@@ -626,6 +626,48 @@ export class VisualizationService {
       }
     }
 
+    // ===== 追问关系（ChatMap）=====
+    // 未通过复选框选择上下文（即该 REQUEST 没有任何引用边把它作为引用方）的用户提问，
+    // 视为对上一轮回答的追问：建立「上一回答 → 本次提问」的 CITATION 边，
+    // 使 ChatMap 中第二次提问连线指向（引用）第一次回答。
+    if (includeCitation) {
+      // 已被某条 CITATION 边作为引用方（to = citing_info_id）的节点集合
+      const citingTargetIds = new Set<string>();
+      for (const e of edges) {
+        if (e.edge_type === 'CITATION') citingTargetIds.add(String(e.to));
+      }
+      // 按时间升序排列 REQUEST / RESPONSE 节点
+      const ordered = nodes
+        .filter((n) => {
+          const t = String(n.info_type ?? '').toUpperCase();
+          return t === InfoType.REQUEST || t === InfoType.RESPONSE;
+        })
+        .sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0));
+
+      let lastResponseId: string | null = null;
+      for (const n of ordered) {
+        const infoId = String(n.info_id ?? '');
+        const type = String(n.info_type ?? '').toUpperCase();
+        if (type === InfoType.RESPONSE) {
+          lastResponseId = infoId;
+        } else if (type === InfoType.REQUEST) {
+          // 提问未被引用（未复选上下文）且存在上一回答时，补一条追问边
+          if (lastResponseId && !citingTargetIds.has(infoId)) {
+            const dirKey = `${lastResponseId}->${infoId}`;
+            if (!directionalEdgeSet.has(dirKey) && lastResponseId !== infoId) {
+              directionalEdgeSet.add(dirKey);
+              edges.push({
+                id: `followup_${dirKey}`,
+                from: lastResponseId,
+                to: infoId,
+                edge_type: 'CITATION',
+              });
+            }
+          }
+        }
+      }
+    }
+
     output.session_id = input.session_id;
     output.graph = { nodes, edges };
     output.metadata = {

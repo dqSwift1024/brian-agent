@@ -399,6 +399,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
 3. 若 include_citation_edges=true：
    a. 调用 InfoCore.soCitationEdges 查询 GraphDB 引用边获取引用关系；
    b. 建立 CITATION 边（citing_info_id → cited_info_id）；
+   c. 补追问关系边：未通过复选框选择上下文（即该 REQUEST 没有任何引用边把它作为引用方）的用户提问，视为对上一轮回答的追问，建立「上一回答 → 本次提问」的 CITATION 边（edge id 以 `followup_` 前缀标识）；
 4. 按 max_nodes 限制节点数，优先保留最近的节点；
 5. 返回 DAG 数据；
 

@@ -1335,6 +1335,50 @@ describe('VisualizationService', () => {
         expect(aId).toBeGreaterThan(bId);
       }
     });
+
+    it('TC-VIS-111: 追问关系 — 未复选上下文时建立上一回答→本次提问 CITATION 边', async () => {
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'q1',
+        info_type: 'REQUEST', info: 'Q1', created: 100 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'a1',
+        info_type: 'RESPONSE', info: 'A1', created: 200 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-2', info_id: 'q2',
+        info_type: 'REQUEST', info: 'Q2', created: 300 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-2', info_id: 'a2',
+        info_type: 'RESPONSE', info: 'A2', created: 400 });
+
+      const input = new GetVisualizedMessageDAGInput();
+      input.session_id = 'sess-1';
+      const out = new GetVisualizedMessageDAGOutput();
+      await svc.getVisualizedMessageDAG(input, ctx(), out);
+
+      const edges = (out.graph as any).edges;
+      const followup = edges.find((e: any) => e.edge_type === 'CITATION' && e.from === 'a1' && e.to === 'q2');
+      expect(followup).toBeDefined();
+      expect(followup.id).toBe('followup_a1->q2');
+    });
+
+    it('TC-VIS-112: 追问关系 — 复选上下文后不补追问边', async () => {
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'q1',
+        info_type: 'REQUEST', info: 'Q1', created: 100 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'a1',
+        info_type: 'RESPONSE', info: 'A1', created: 200 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-2', info_id: 'q2',
+        info_type: 'REQUEST', info: 'Q2', created: 300 });
+      insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-2', info_id: 'a2',
+        info_type: 'RESPONSE', info: 'A2', created: 400 });
+      // q2 通过复选框引用 a1（显式引用边）
+      await insInfoGraph(ctxEnv.graphDBAccess, 'q2', 'a1');
+
+      const input = new GetVisualizedMessageDAGInput();
+      input.session_id = 'sess-1';
+      const out = new GetVisualizedMessageDAGOutput();
+      await svc.getVisualizedMessageDAG(input, ctx(), out);
+
+      const edges = (out.graph as any).edges;
+      const followup = edges.find((e: any) => e.edge_type === 'CITATION' && e.from === 'a1' && e.to === 'q2');
+      expect(followup).toBeDefined();
+      expect(followup.id).toBe('cite_a1_q2');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════
