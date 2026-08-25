@@ -60,3 +60,15 @@
 
 **影响的端点**：
 - 所有经 `renderTemplate`（DB 未就绪兜底）或 `execPrompt` 渲染的 Prompt。
+
+### [2026-08-25] 修复 DB 自定义「Worker Think / Reflect」模板缺失 task_content
+
+**变更原因**：DB 中自定义的「Worker Think」（`7d4997c7…`）与「Worker Reflect」（`57206602…`）模板的 `<task>` 段误用了 `{{ context_data }}`（历史上下文），未引用 `{{ task_content }}`（当前任务）。当历史上下文累积了大量旧主体（如「北京」）时，Think/Reflect 阶段只看到历史上下文而看不到当前任务，导致用户问「厦门的天气」却按历史中的「北京」执行（navigate 到北京页面）。内置 `builtin.think`/`builtin.reflect` 已在 2026-08-22 修正为 `Task: {{task_content}}` + `Context: {{context_data}}`，但 DB 自定义模板未同步。
+
+**修改的方法**：
+- DB `prompt_template`「Worker Think」— `<execution_context>` 拆分为 `<task>{{ task_content }}</task>` 与 `<context>{{ context_data }}</context>`，并在 `decision_protocol`/`prohibitions` 增加「任务以 `<task>` 为准、params 目标主体必须与 `<task>` 一致、禁止沿用历史旧主体」约束。
+- DB `prompt_template`「Worker Reflect」— `<evaluation_context>` 同样拆分 `<task>` 与 `<context>`，评估时核对工具结果是否服务于 `<task>` 的目标主体。
+
+**影响的端点**：
+- `POST /api/chat`、`POST /api/chat/stream` — WorkAgent 的 Think/Reflect 阶段现在能正确感知当前任务主体（城市/关键词），不再被历史上下文中的旧主体误导。
+
