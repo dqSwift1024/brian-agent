@@ -50,6 +50,8 @@ import {
   SoCitationEdgesOutput,
   DelInfoGraphInput,
   DelInfoGraphOutput,
+  ClearGraphInput,
+  ClearGraphOutput,
   RebuildCitationGraphInput,
   RebuildCitationGraphOutput,
   ContextInfoInput,
@@ -295,6 +297,15 @@ export class InfoCoreAccess {
     output: DelInfoGraphOutput,
   ): Promise<boolean> {
     return this.service.delInfoGraph(input, context, output);
+  }
+
+  /** 一键清理某类文本图（node_type 节点及其边） */
+  async clearGraph(
+    input: ClearGraphInput,
+    context: InfoCoreContext,
+    output: ClearGraphOutput,
+  ): Promise<boolean> {
+    return this.service.clearGraph(input, context, output);
   }
 
   /** 迁移旧 info_graph 表数据到 GraphDB，并删除旧表 */

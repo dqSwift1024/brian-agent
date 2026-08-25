@@ -974,6 +974,10 @@ const keywordDraggingId = ref<string | null>(null)
 const keywordPanning = ref(false)
 const keywordPanStart = ref<{ x: number; y: number } | null>(null)
 const keywordSvgRef = ref<SVGSVGElement | null>(null)
+const tagSearch = ref('')
+const clearingTagGraph = ref(false)
+const keywordSearch = ref('')
+const clearingKeywordGraph = ref(false)
 
 function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): TagLayoutNode[] {
   const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
@@ -1255,6 +1259,93 @@ function onKeywordGraphMouseUp() {
 function onKeywordNodeMouseDown(event: MouseEvent, nodeId: string) {
   event.stopPropagation()
   keywordDraggingId.value = nodeId
+}
+
+// ---- 一键清理 ----
+
+async function clearTagGraph() {
+  if (clearingTagGraph.value) return
+  clearingTagGraph.value = true
+  try {
+    await memoryApi.clearTagGraph()
+    graphNodes.value = []
+    graphEdges.value = []
+    tagLayoutNodes.value = []
+    selectedTag.value = null
+    selectedTagMemories.value = []
+    tagSearch.value = ''
+    tagGraphScale.value = 1
+    tagGraphTx.value = 0
+    tagGraphTy.value = 0
+  } catch { /* ignore */ }
+  finally { clearingTagGraph.value = false }
+}
+
+async function clearKeywordGraph() {
+  if (clearingKeywordGraph.value) return
+  clearingKeywordGraph.value = true
+  try {
+    await memoryApi.clearKeywordGraph()
+    keywordGraphNodes.value = []
+    keywordGraphEdges.value = []
+    keywordLayoutNodes.value = []
+    selectedKeyword.value = null
+    selectedKeywordMemories.value = []
+    keywordSearch.value = ''
+    keywordScale.value = 1
+    keywordTx.value = 0
+    keywordTy.value = 0
+  } catch { /* ignore */ }
+  finally { clearingKeywordGraph.value = false }
+}
+
+// ---- 搜索定位居中 ----
+
+async function focusTagNode() {
+  const q = tagSearch.value.trim().toLowerCase()
+  if (!q) return
+  const nodes = tagLayoutNodes.value
+  let target = nodes.find((n) => n.name.toLowerCase() === q)
+  if (!target) target = nodes.filter((n) => n.name.toLowerCase().includes(q)).sort((a, b) => (b.weight || 0) - (a.weight || 0))[0]
+  if (!target) return
+  tagGraphScale.value = 1.6
+  tagGraphTx.value = 350 - target.x * tagGraphScale.value
+  tagGraphTy.value = 350 - target.y * tagGraphScale.value
+  selectedTag.value = target.id
+  try {
+    const name = graphNodes.value.find((n) => n.id === target!.id)?.name || target!.id
+    selectedTagMemories.value = await memoryApi.byTag('default-user', name)
+  } catch { selectedTagMemories.value = [] }
+}
+
+async function focusKeywordNode() {
+  const q = keywordSearch.value.trim().toLowerCase()
+  if (!q) return
+  const nodes = keywordLayoutNodes.value
+  let target = nodes.find((n) => n.name.toLowerCase() === q)
+  if (!target) target = nodes.filter((n) => n.name.toLowerCase().includes(q)).sort((a, b) => (b.weight || 0) - (a.weight || 0))[0]
+  if (!target) return
+  keywordScale.value = 1.6
+  keywordTx.value = 350 - target.x * keywordScale.value
+  keywordTy.value = 350 - target.y * keywordScale.value
+  selectedKeyword.value = target.id
+  try {
+    const kw = keywordGraphNodes.value.find((n) => n.id === target!.id)?.name || target!.id
+    const data = await memoryApi.search('default-user', { keyword: kw, limit: 20 })
+    selectedKeywordMemories.value = data.memories
+  } catch { selectedKeywordMemories.value = [] }
+}
+
+function resetTagGraphView() {
+  tagGraphScale.value = 1
+  tagGraphTx.value = 0
+  tagGraphTy.value = 0
+}
+
+function resetKeywordGraphView() {
+  keywordScale.value = 1
+  keywordTx.value = 0
+  keywordTy.value = 0
 }
 
 onMounted(() => {
@@ -1869,6 +1960,18 @@ function searchMemoryByEnter() {
 
       <!-- Tag graph tab -->
       <div v-if="activeTab === 'tagGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="relative">
+            <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+            <input v-model="tagSearch" placeholder="搜索标签并定位..." class="pl-8 pr-3 py-1.5 w-60 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusTagNode" />
+          </div>
+          <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="focusTagNode">定位</button>
+          <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetTagGraphView">重置视图</button>
+          <span class="text-xs text-apple-gray-400 ml-1">共 {{ graphNodes.length }} 节点</span>
+          <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingTagGraph" @click="clearTagGraph">
+            <Trash2 :size="14" /> {{ clearingTagGraph ? '清理中...' : '一键清理' }}
+          </button>
+        </div>
         <div class="flex gap-4 flex-1 min-h-0">
           <div class="flex-1 overflow-hidden relative" :class="panning || draggingTagId ? 'cursor-grabbing' : 'cursor-grab'">
             <div class="absolute top-3 right-3 z-10 w-60 rounded-xl border border-apple-gray-200/70 dark:border-apple-gray-700 bg-white/90 dark:bg-apple-gray-900/90 backdrop-blur-sm shadow-sm p-3 text-xs text-apple-gray-600 dark:text-apple-gray-300 pointer-events-none">
@@ -1963,6 +2066,18 @@ function searchMemoryByEnter() {
 
       <!-- Keyword graph tab -->
       <div v-if="activeTab === 'keywordGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="relative">
+            <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
+            <input v-model="keywordSearch" placeholder="搜索关键词并定位..." class="pl-8 pr-3 py-1.5 w-60 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusKeywordNode" />
+          </div>
+          <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="focusKeywordNode">定位</button>
+          <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetKeywordGraphView">重置视图</button>
+          <span class="text-xs text-apple-gray-400 ml-1">共 {{ keywordGraphNodes.length }} 节点</span>
+          <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingKeywordGraph" @click="clearKeywordGraph">
+            <Trash2 :size="14" /> {{ clearingKeywordGraph ? '清理中...' : '一键清理' }}
+          </button>
+        </div>
         <div v-if="loadingKeywordGraph" class="text-center py-16 text-apple-gray-400 flex-1">加载中...</div>
         <div v-else-if="keywordGraphNodes.length === 0" class="text-center py-16 text-apple-gray-400 text-sm flex-1">暂无关键词数据</div>
         <div v-else class="flex gap-4 flex-1 min-h-0">

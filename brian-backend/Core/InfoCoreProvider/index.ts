@@ -40,6 +40,8 @@ export {
   SoCitationEdgesOutput,
   DelInfoGraphInput,
   DelInfoGraphOutput,
+  ClearGraphInput,
+  ClearGraphOutput,
   RebuildCitationGraphInput,
   RebuildCitationGraphOutput,
   ContextInfoInput,

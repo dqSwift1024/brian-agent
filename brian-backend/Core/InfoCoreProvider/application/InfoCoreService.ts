@@ -66,6 +66,8 @@ import {
   SoCitationEdgesOutput,
   DelInfoGraphInput,
   DelInfoGraphOutput,
+  ClearGraphInput,
+  ClearGraphOutput,
   RebuildCitationGraphInput,
   RebuildCitationGraphOutput,
   ContextInfoInput,
@@ -1177,6 +1179,37 @@ export class InfoCoreService {
     const delOut = new DelGraphNodeOutput();
     await this.graphDb.delGraphNode({ ids: nodeIds } as DelGraphNodeInput, new GraphContext(), delOut);
     output.deleted_nodes = delOut.affected_rows;
+    return true;
+  }
+
+  /**
+   * 一键清理某类文本图（如标签图 / 关键词图）：删除该 node_type 的所有节点，
+   * 级联删除关联的边与激活数据。
+   */
+  async clearGraph(
+    input: ClearGraphInput,
+    _context: InfoCoreContext,
+    output: ClearGraphOutput,
+  ): Promise<boolean> {
+    const nodeType = String(input.node_type ?? '').trim();
+    if (!nodeType) {
+      throw new ValidationError('clearGraph 需要提供 node_type');
+    }
+    const selOut = new SelectGraphOutput();
+    await this.graphDb.selectGraph(
+      { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
+      new GraphContext(),
+      selOut,
+    );
+    const nodeIds = (selOut.list as GraphNodeRecord[]).map((n) => n.id);
+    if (nodeIds.length > 0) {
+      await this.graphDb.delGraphNode(
+        { ids: nodeIds } as DelGraphNodeInput,
+        new GraphContext(),
+        new DelGraphNodeOutput(),
+      );
+    }
+    output.deleted_nodes = nodeIds.length;
     return true;
   }
 

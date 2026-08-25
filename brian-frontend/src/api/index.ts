@@ -115,8 +115,14 @@ export const memoryApi = {
       method: 'DELETE',
       body: JSON.stringify({ info_ids: infoIds }),
     }),
-  tagGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/tag-graph'),
-  keywordGraph: () => request<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/memory/keyword-graph'),
+  tagGraph: (limit = 100) =>
+    request<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/memory/tag-graph?limit=${limit}`),
+  keywordGraph: (limit = 100) =>
+    request<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/memory/keyword-graph?limit=${limit}`),
+  clearTagGraph: () =>
+    request<{ deleted_nodes: number }>('/memory/tag-graph', { method: 'DELETE' }),
+  clearKeywordGraph: () =>
+    request<{ deleted_nodes: number }>('/memory/keyword-graph', { method: 'DELETE' }),
   stats: (userId: string) =>
     request<{ totalMemories: number; byType: Record<string, number> }>(`/memory/stats/${encodeURIComponent(userId)}`),
   heatmap: (year: number, month: number) =>

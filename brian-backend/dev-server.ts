@@ -39,7 +39,7 @@ import {
   TriggerCronTaskInput, TriggerCronTaskOutput,
   ListCronTaskRunsInput, ListCronTaskRunsOutput,
 } from './Base/CronProvider';
-import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput, RebuildCooccurGraphInput, RebuildCooccurGraphOutput, DelInfoGraphInput, DelInfoGraphOutput, RebuildCitationGraphInput, RebuildCitationGraphOutput } from './Core/InfoCoreProvider';
+import { InfoCoreAccess, DelInfoInput, DelInfoOutput, InfoCoreContext, SimilarKInfoInput, SimilarKInfoOutput, RebuildCooccurGraphInput, RebuildCooccurGraphOutput, DelInfoGraphInput, DelInfoGraphOutput, RebuildCitationGraphInput, RebuildCitationGraphOutput, ClearGraphInput, ClearGraphOutput } from './Core/InfoCoreProvider';
 import { LLMCoreAccess } from './Core/LLMCoreProvider';
 import { MCPCoreAccess } from './Core/MCPCoreProvider';
 import { SkillCoreAccess, SkillCoreContext, AgeSkillInput, AgeSkillOutput } from './Core/SkillCoreProvider';
@@ -354,12 +354,16 @@ function readVectorDimension(relationDb: any): number {
  * 从 GraphDB 读取某类文本的共现图（节点 + 共现边），组装为前端所需的
  * `{ nodes, edges }` 结构。节点与边的图结构、节点属性（频次）与共现权重
  * 完全来自 GraphDB，不再依赖关系数据库。
+ *
+ * 支持 limit（默认 100）：按频次降序取前 limit 个节点，并只返回这些节点之间的边，
+ * 避免节点过多导致前端图不可观测。
  */
 async function buildCooccurGraphFromGraphDB(
   ctx: any,
   nodeType: string,
   textField: string,
   edgeType: string,
+  limit = 100,
 ): Promise<{ nodes: Array<{ id: string; name: string; weight: number; degree: number }>; edges: Array<{ source: string; target: string; weight: number }> }> {
   const { GraphContext, SelectGraphInput, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
 
@@ -370,22 +374,27 @@ async function buildCooccurGraphFromGraphDB(
     new GraphContext(),
     nodeOut,
   );
-  const rawNodes = (nodeOut.list as Array<{ id: string; content?: Record<string, unknown> }>)
+  const allNodes = (nodeOut.list as Array<{ id: string; content?: Record<string, unknown> }>)
     .map((n) => ({ id: n.id, text: String(n.content?.[textField] ?? ''), freq: Number(n.content?.['freq'] ?? 0) }))
     .filter((n) => n.text);
 
-  // 2. 读共现边（GraphDB）
+  // 按频次降序取前 limit 个节点
+  const rawNodes = [...allNodes].sort((a, b) => b.freq - a.freq).slice(0, Math.max(1, Math.floor(limit)));
+  const keptIds = new Set(rawNodes.map((n) => n.id));
+
+  // 2. 读共现边（GraphDB），只保留两端都在保留节点集合内的边
   const edgeOut = new SelectGraphOutput();
   await ctx.graphDBAccess.selectGraph(
     { target: GraphTarget.EDGE, edge_type: edgeType } as SelectGraphInput,
     new GraphContext(),
     edgeOut,
   );
-  const rawEdges = edgeOut.list as Array<{ from_node_id: string; to_node_id: string; weight: number }>;
+  const rawEdges = (edgeOut.list as Array<{ from_node_id: string; to_node_id: string; weight: number }>)
+    .filter((e) => keptIds.has(e.from_node_id) && keptIds.has(e.to_node_id));
 
   const idToText = new Map(rawNodes.map((n) => [n.id, n.text]));
 
-  // 3. 度数（由 GraphDB 共现边统计）
+  // 3. 度数（由保留的 GraphDB 共现边统计）
   const degreeMap = new Map<string, number>();
   for (const e of rawEdges) {
     const s = idToText.get(e.from_node_id);
@@ -3201,15 +3210,31 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && pathname === '/api/memory/tag-graph') {
         try {
-          const g = await buildCooccurGraphFromGraphDB(ctx, 'Tag', 'tag', 'cooccur');
+          const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100));
+          const g = await buildCooccurGraphFromGraphDB(ctx, 'Tag', 'tag', 'cooccur', limit);
           sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
 
       } else if (method === 'GET' && pathname === '/api/memory/keyword-graph') {
         try {
-          const g = await buildCooccurGraphFromGraphDB(ctx, 'keyword', 'keyword', 'keywordCooccur');
+          const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100));
+          const g = await buildCooccurGraphFromGraphDB(ctx, 'keyword', 'keyword', 'keywordCooccur', limit);
           sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
+
+      } else if (method === 'DELETE' && pathname === '/api/memory/tag-graph') {
+        try {
+          const out = new ClearGraphOutput();
+          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'Tag' }), new InfoCoreContext(), out);
+          sendJson(res, 200, { deleted_nodes: out.deleted_nodes });
+        } catch (e: any) { sendJson(res, 500, { error: e?.message || '清理失败' }); }
+
+      } else if (method === 'DELETE' && pathname === '/api/memory/keyword-graph') {
+        try {
+          const out = new ClearGraphOutput();
+          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'keyword' }), new InfoCoreContext(), out);
+          sendJson(res, 200, { deleted_nodes: out.deleted_nodes });
+        } catch (e: any) { sendJson(res, 500, { error: e?.message || '清理失败' }); }
       // ---- Graph Search: text-based tag traversal ----
       } else if (method === 'POST' && pathname === '/api/memory/graph-search') {
         const query = typeof body.query === 'string' ? body.query.trim() : '';

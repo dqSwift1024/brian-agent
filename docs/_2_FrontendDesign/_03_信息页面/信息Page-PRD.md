@@ -377,3 +377,18 @@
 
 **可能存在的问题**：
 - 批量删除为逐表 `DELETE ... IN` 级联，未清理全局标签向量 `info_tag_vector`（由 `orphan_tag_check` 定时任务处理）；删除后左侧日期导航与热力图需下次加载才会刷新。
+### [2026-08-25] Tag关系图 / 关键词图：节点限流 + 一键清理 + 搜索定位居中
+
+**变更原因**：关键词图节点过多（数百节点、数千边）导致力导向图重叠不可观测；两图缺少一键清理与按节点搜索定位能力。
+
+**修改的方法**：
+- 前端 `InfoView.vue` — Tag关系图 / 关键词图 Tab 顶部新增工具栏：搜索框 +「定位」按钮（按节点名匹配，命中后平移缩放到展示区中心并选中、加载关联记忆）、「重置视图」按钮、红色「一键清理」按钮（二次操作后清空图并重置视图），并显示当前节点数；
+- 前端 `api/index.ts` — `tagGraph(limit)` / `keywordGraph(limit)` 支持节点限流参数；新增 `clearTagGraph()` / `clearKeywordGraph()`；
+- 后端 `dev-server.ts` — `GET /api/memory/tag-graph` / `GET /api/memory/keyword-graph` 支持 `limit`（默认 100，按频次降序取前 N 节点及这些节点间的边）；新增 `DELETE /api/memory/tag-graph` / `DELETE /api/memory/keyword-graph` 一键清理；
+- 后端 `InfoCoreService.clearGraph`（新增）— 按 node_type 删除该类型全部节点（级联删边）。
+
+**影响的端点**：
+- `GET /api/memory/tag-graph?limit=`、`GET /api/memory/keyword-graph?limit=`、`DELETE /api/memory/tag-graph`、`DELETE /api/memory/keyword-graph`。
+
+**可能存在的问题**：
+- 一键清理仅删 GraphDB 节点/边，不删 `info_tag` / `info_keyword` 表；重启后 `rebuildCooccurGraph` 会从表回填重建。

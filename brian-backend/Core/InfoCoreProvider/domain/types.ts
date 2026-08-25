@@ -382,6 +382,20 @@ export class DelInfoGraphOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
+// clearGraph（一键清理某类文本图的节点与边）
+// ---------------------------------------------------------------------------
+
+/** clearGraph 入参（node_type 指定要清理的节点类型，如 Tag / keyword） */
+export class ClearGraphInput extends Input {
+  node_type!: string;
+}
+
+/** clearGraph 出参 */
+export class ClearGraphOutput extends Output {
+  deleted_nodes = 0;
+}
+
+// ---------------------------------------------------------------------------
 // rebuildCitationGraph（迁移旧 info_graph 表到 GraphDB）
 // ---------------------------------------------------------------------------
 

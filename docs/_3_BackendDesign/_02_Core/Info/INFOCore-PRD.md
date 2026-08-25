@@ -987,3 +987,20 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 
 **可能存在的问题**：
 - `rebuildCooccurGraph` 仍以 `info_tag` / `info_keyword` 表为回填数据源（这是标签/关键词的权威内容存储，非图结构）；运行时增量写入以 GraphDB 为准。
+
+### [2026-08-25] 关联图可观测性：节点限流 + 一键清理 + 搜索定位
+
+**变更原因**：关键词图节点过多（数百节点、数千边）导致前端力导向图不可观测；且缺少一键清理与按节点定位能力。
+
+**修改的方法**：
+- `InfoCoreService.clearGraph`（新增）— 按 node_type 删除该类型全部节点（级联删边与激活数据）；
+- `dev-server.ts buildCooccurGraphFromGraphDB` — 新增 `limit`（默认 100）：按频次降序取前 N 节点，只返回这些节点之间的边；
+- `dev-server.ts` `GET /api/memory/tag-graph` / `GET /api/memory/keyword-graph` — 支持 `limit` 查询参数（1~500）；
+- `dev-server.ts` `DELETE /api/memory/tag-graph` / `DELETE /api/memory/keyword-graph`（新增）— 一键清理对应图。
+
+**影响的端点**：
+- `GET /api/memory/tag-graph?limit=`、`GET /api/memory/keyword-graph?limit=` — 返回限流后的图；
+- `DELETE /api/memory/tag-graph`、`DELETE /api/memory/keyword-graph` — 删除全部节点与边。
+
+**可能存在的问题**：
+- 一键清理只删 GraphDB 节点/边，不删 `info_tag` / `info_keyword` 表数据；重启后 `rebuildCooccurGraph` 会从表回填重建图。
