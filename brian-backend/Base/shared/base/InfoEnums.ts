@@ -13,6 +13,7 @@ export enum InfoType {
   ACT = 'ACT',
   SKILL = 'SKILL',
   MCP = 'MCP',
+  CDT = 'CDT',
   SELF_LEARNING = 'SELF_LEARNING',
   AGENT = 'AGENT',
 }

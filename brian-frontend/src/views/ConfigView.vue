@@ -403,6 +403,7 @@ const INFO_TYPE_LABELS: Record<string, string> = {
   THINK: '思考',
   SKILL: '技能',
   MCP: 'MCP',
+  CDT: '浏览器',
   ACT: '行动',
   REFLECT: '反思',
 }
@@ -413,6 +414,7 @@ const INFO_CREATOR_LABELS: Record<string, string> = {
   AGENT: 'Agent',
   SKILL: '技能',
   MCP: 'MCP',
+  CDT: '浏览器',
 }
 
 // 上下文构建维度（采集来源）

@@ -123,13 +123,13 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 #### 2.3.2. Act（执行）
 
-**功能**：执行由 Think 阶段决定的下一步行动（调用 Skill 或 MCP 工具）
+**功能**：执行由 Think 阶段决定的下一步行动（调用 Skill、MCP 工具或内置浏览器 CDT）
 **入参**：
 - input：ActInput（继承 Input），包含以下字段：
   - agent_id：Agent ID
   - skill_ids：可用 Skill ID 列表
   - mcp_ids：可用 MCP ID 列表
-  - next_action：Think 阶段产出的行动计划（JSON：`{ "tool_type": "SKILL"|"MCP", "tool_id": "...", "params": {...} }`）
+  - next_action：Think 阶段产出的行动计划（JSON：`{ "tool_type": "SKILL"|"MCP"|"CDT", "tool_id": "...", "params": {...} }`）
   - context_data：当前上下文数据
 - context：ActContext（继承 Context），会话上下文（session_id, work_id, interact_id, trace_id 等）
 - output：ActOutput（继承 Output），承载返回内容：
@@ -149,9 +149,13 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
    a. 校验 `tool_id` 是否在入参 `mcp_ids` 列表中；不存在则返回错误："MCP 不在 Agent 的绑定列表中"；
    b. 调用 MCPProvider.execMcp，传入 `tool_id` 和 `params`，执行 MCP 调用；
    c. 获取执行结果写入 `result`；
-4. 若 `tool_type` 为 NONE（Think 阶段决定不需要工具）：直接返回空 result；
-5. 调用 InfoCore.saveInfo 保存 Act 的执行结果（SKILL：info_type=SKILL、info_creator_role=SKILL；MCP：info_type=MCP、info_creator_role=MCP；parent_info_ids 关联 Think 的 msg_id）；
-6. 将执行结果写入 output 返回；
+4. 若 `tool_type` 为 CDT（内置浏览器能力，无需绑定校验）：
+   a. 取 `tool_id` 为浏览器操作 id（navigate / getContent / click / typeText / scroll / evaluate）；
+   b. 经 CDTCoreAccess 调用对应浏览器操作，所有浏览器调用统一走 CDT 链路；
+   c. 获取执行结果写入 `result`；
+5. 若 `tool_type` 为 NONE（Think 阶段决定不需要工具）：直接返回空 result；
+6. 调用 InfoCore.saveInfo 保存 Act 的执行结果（SKILL：info_type=SKILL、info_creator_role=SKILL；MCP：info_type=MCP、info_creator_role=MCP；CDT：info_type=CDT、info_creator_role=CDT；parent_info_ids 关联 Think 的 msg_id）；
+7. 将执行结果写入 output 返回；
 
 #### 2.3.3. Reflect（反思）
 
@@ -366,4 +370,32 @@ Agent 执行过程被抽象为以下四个原子接口。各接口可独立开�
 
 **可能存在的问题**：
 - `agent_thinking` 由 chunk 分片改为单条结构化事件，思考内容一次性到达（原无延迟打字机，视觉无差异）。
+
+### [2026-08-25] 修复 loadSkills 查询错误列 + CDT 接入工具注册表
+
+**变更原因**：① `loadSkills` 查询了 `skill` 表中不存在的 `work` 列，导致 SQL 抛异常被 catch 吞掉、工具清单恒为空，即使 Agent 已绑定 Skill 也无法注入 `tools_json`，Think 阶段判定无工具而直接文本回复；② 浏览器自动化能力（CDT）此前未接入 Agent 的 Think→Act 工具链，Agent 无法通过浏览器获取实时信息（如天气）。
+
+**修改的方法**：
+- `AgentExecutionService.loadSkills` — 原始代码：
+  ```ts
+  const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; work: string }>(
+    `SELECT "id", "skill_brief", "work" FROM "skill" WHERE "id" IN (...)`,
+    ids,
+  );
+  ```
+  改为查询实际存在的 `skill_md` 列，避免抛异常返回空列表。
+- `AgentExecutionService` — 构造函数新增 `cdtCore?: CDTCoreAccess`；`toolsJson` 新增 `browser` 清单；`act()` 新增 `CDT` 分支；新增 `buildBrowserToolDef` / `execCdtAction` / `extractEvalText` 方法，浏览器操作（navigate/getContent/click/typeText/scroll/evaluate）统一经 `CDTCoreAccess` 执行。
+- `AgentExecutionAccess` — 构造函数透传 `cdtCore`。
+- `dev-server.ts` — 装配时向 `AgentExecutionAccess` 注入 `cdtCore`。
+- `Base/InfoEnums.ts` / `shared` — `InfoType` 新增 `CDT = 'CDT'`。
+- `Base/PromptCatalog/catalog.ts` — think 内置模板的 `tool_type` 增加 `CDT`。
+- DB `prompt_template`（Worker Think）— 同步更新 `tool_registry` 说明与 `tool_type` 枚举，运行时生效。
+
+**影响的端点**：
+- `POST /api/chat`、`POST /api/chat/stream` — WorkAgent 执行时 `tools_json` 现包含 `browser`，Think 阶段可决定 `tool_type=CDT` 并经 CDT 完成浏览器操作（如访问天气网站读取内容）。
+
+**可能存在的问题**：
+- CDT 依赖 Chrome 可执行文件与 `cdt_config` 配置，若环境未安装 Chrome 或 CDT 未启动，`CDT` 分支会抛出业务错误并按现有错误处理流程进入后续迭代或失败。
+- 测试环境（real-test-helpers）未注入 `cdtCore`，浏览器能力在单测中为 `enabled=false`，属预期行为。
+
 

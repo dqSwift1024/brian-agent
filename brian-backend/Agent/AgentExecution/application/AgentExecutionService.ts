@@ -19,11 +19,17 @@ import {
 } from '@brian-agent/base';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentStrategyAccess } from '../../AgentStrategy/access/AgentStrategyAccess';
-import type { InfoCoreAccess, MQCoreAccess, SkillCoreAccess, MCPCoreAccess, LLMCoreAccess } from '@brian-agent/core';
+import type { InfoCoreAccess, MQCoreAccess, SkillCoreAccess, MCPCoreAccess, LLMCoreAccess, CDTCoreAccess } from '@brian-agent/core';
 import {
   MatchSkillInput, MatchSkillOutput, SkillCoreContext,
   MatchMcpInput, MatchMcpOutput, McpCoreContext,
   MatchLLMInput, MatchLLMOutput, LLMCoreContext,
+  CDTCoreContext,
+  CDTCoreNavigateInput, CDTCoreNavigateOutput,
+  CDTCoreTypeTextInput, CDTCoreTypeTextOutput,
+  CDTCoreClickInput, CDTCoreClickOutput,
+  CDTCoreScrollInput, CDTCoreScrollOutput,
+  CDTCoreEvaluateInput, CDTCoreEvaluateOutput,
 } from '@brian-agent/core';
 import {
   AGENT_EXECUTION_CONFIG_TABLE, AGENT_EXECUTION_TRACE_TABLE, type AgentExecutionConfigRecord,
@@ -138,6 +144,7 @@ export class AgentExecutionService {
     private readonly skillCore: SkillCoreAccess,
     private readonly mcpCore: MCPCoreAccess,
     private readonly llmCore: LLMCoreAccess,
+    private readonly cdtCore?: CDTCoreAccess,
     private readonly logger?: Logger,
     private readonly streamAccess?: StreamAccess,
   ) {
@@ -239,6 +246,7 @@ export class AgentExecutionService {
     const toolsJson = JSON.stringify({
       skills: skills.map((s) => ({ id: s.id, description: s.brief, work: s.work })),
       mcps: mcps.map((m) => ({ id: m.id, name: m.title, description: m.brief })),
+      browser: this.buildBrowserToolDef(),
     });
 
     let history = '';
@@ -616,6 +624,21 @@ export class AgentExecutionService {
       } catch (err) {
         await this.saveStepInfo(
           ctx, 'MCP', 'MCP', toolId, this.errorText(err),
+          classifyHandleResult(err, 'external'),
+        );
+        throw err;
+      }
+    }
+
+    if (toolType === 'CDT') {
+      try {
+        const result = await this.execCdtAction(toolId, params);
+        output.result = result;
+        await this.saveStepInfo(ctx, InfoType.CDT, 'CDT', toolId, result);
+        return true;
+      } catch (err) {
+        await this.saveStepInfo(
+          ctx, InfoType.CDT, 'CDT', toolId, this.errorText(err),
           classifyHandleResult(err, 'external'),
         );
         throw err;
@@ -1361,11 +1384,20 @@ export class AgentExecutionService {
       const entries = out.skills ?? [];
       if (entries.length === 0) return [];
       const ids = entries.map((s) => s.skill_id);
-      const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; work: string }>(
-        `SELECT "id", "skill_brief", "work" FROM "skill" WHERE "id" IN (${ids.map(() => '?').join(',')})`,
+      // ===== 原始代码（保留作为参考）：skill 表无 work 列，查询会抛异常被 catch 吞掉 =====
+      // const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; work: string }>(
+      //   `SELECT "id", "skill_brief", "work" FROM "skill" WHERE "id" IN (${ids.map(() => '?').join(',')})`,
+      //   ids,
+      // );
+      // const workMap = new Map((skillRows || []).map((r) => [r.id, r.work]));
+      // return entries.map((s) => ({ id: s.skill_id, brief: s.skill_brief, work: workMap.get(s.skill_id) || s.skill_brief }));
+
+      // ===== 修改后的代码：work 字段取自 skill_md 列（skill 表实际存在的工作指令列）=====
+      const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; skill_md: string }>(
+        `SELECT "id", "skill_brief", "skill_md" FROM "skill" WHERE "id" IN (${ids.map(() => '?').join(',')})`,
         ids,
       );
-      const workMap = new Map((skillRows || []).map((r) => [r.id, r.work]));
+      const workMap = new Map((skillRows || []).map((r) => [r.id, r.skill_md]));
       return entries.map((s) => ({ id: s.skill_id, brief: s.skill_brief, work: workMap.get(s.skill_id) || s.skill_brief }));
     } catch {
       return [];
@@ -1399,6 +1431,125 @@ export class AgentExecutionService {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * 构建浏览器工具清单（CDT 内置浏览器自动化能力）。
+   *
+   * 浏览器能力无需像 Skill / MCP 那样绑定到 Agent，而是作为内置能力始终可用
+   * （前提是 CDTCoreAccess 已注入）。调用方式：next_action.tool_type="CDT"，
+   * tool_id 取下方 operations 中的 id，params 按各 operation 的参数填写。
+   */
+  private buildBrowserToolDef(): Record<string, unknown> {
+    return {
+      enabled: Boolean(this.cdtCore),
+      description: '内置浏览器自动化能力（基于 CDT/Chrome DevTools Protocol）。用于访问网页、读取网页内容（如天气、新闻、搜索结果）、点击、填表等。调用方式：next_action.tool_type="CDT"，tool_id 为下方 operations 中的 id，params 按各 operation 的参数填写。',
+      operations: [
+        { id: 'navigate', description: '打开指定 URL 页面（如 https://weather.cma.cn/）', params: { url: '目标网址', waitForLoad: '是否等待加载完成，默认 true' } },
+        { id: 'getContent', description: '提取当前页面可见文本内容，用于读取网页信息', params: {} },
+        { id: 'click', description: '点击页面元素', params: { selector: 'CSS 选择器' } },
+        { id: 'typeText', description: '在输入框中输入文字（如搜索框）', params: { selector: 'CSS 选择器', text: '要输入的文字' } },
+        { id: 'scroll', description: '滚动页面', params: { pixels: '滚动像素数', toBottom: '是否滚动到底部' } },
+        { id: 'evaluate', description: '在页面执行 JavaScript 表达式并返回结果', params: { expression: 'JS 表达式' } },
+      ],
+    };
+  }
+
+  /**
+   * 执行 CDT 浏览器操作。
+   *
+   * 所有浏览器调用统一经 CDTCoreAccess（Core 层）完成，最终落到 CDTProvider（Base 层）
+   * 的 Chrome DevTools Protocol 通道，保证浏览器操作不绕过 CDT 链路。
+   */
+  private async execCdtAction(operation: string, params: Record<string, unknown>): Promise<string> {
+    const cdt = this.cdtCore;
+    if (!cdt) throw new ValidationError('CDT 浏览器能力未注入（cdtCore 为空）');
+
+    const op = String(operation || '').trim().toLowerCase();
+    switch (op) {
+      case 'navigate': {
+        const url = String(params.url ?? '').trim();
+        if (!url) throw new ValidationError('CDT navigate 需要 url 参数');
+        const out = new CDTCoreNavigateOutput();
+        const ok = await cdt.navigate(
+          Object.assign(new CDTCoreNavigateInput(), { url, waitForLoad: params.waitForLoad !== false }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT navigate 执行失败');
+        return `已打开页面：${url}`;
+      }
+      case 'getcontent': {
+        const out = new CDTCoreEvaluateOutput();
+        const ok = await cdt.evaluate(
+          Object.assign(new CDTCoreEvaluateInput(), { expression: 'document.body ? document.body.innerText : ""' }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT getContent 执行失败');
+        return this.extractEvalText(out.result).slice(0, 8000);
+      }
+      case 'click': {
+        const selector = String(params.selector ?? '').trim();
+        if (!selector) throw new ValidationError('CDT click 需要 selector 参数');
+        const out = new CDTCoreClickOutput();
+        const ok = await cdt.click(
+          Object.assign(new CDTCoreClickInput(), { selector }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT click 执行失败');
+        return `已点击元素：${selector}`;
+      }
+      case 'typetext': {
+        const selector = String(params.selector ?? '').trim();
+        const text = String(params.text ?? '');
+        if (!selector) throw new ValidationError('CDT typeText 需要 selector 参数');
+        const out = new CDTCoreTypeTextOutput();
+        const ok = await cdt.typeText(
+          Object.assign(new CDTCoreTypeTextInput(), { selector, text }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT typeText 执行失败');
+        return `已在 ${selector} 中输入文字`;
+      }
+      case 'scroll': {
+        const out = new CDTCoreScrollOutput();
+        const ok = await cdt.scroll(
+          Object.assign(new CDTCoreScrollInput(), {
+            pixels: Number(params.pixels ?? 0) || undefined,
+            toBottom: Boolean(params.toBottom),
+          }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT scroll 执行失败');
+        return '已滚动页面';
+      }
+      case 'evaluate': {
+        const expression = String(params.expression ?? '').trim();
+        if (!expression) throw new ValidationError('CDT evaluate 需要 expression 参数');
+        const out = new CDTCoreEvaluateOutput();
+        const ok = await cdt.evaluate(
+          Object.assign(new CDTCoreEvaluateInput(), { expression }),
+          new CDTCoreContext(),
+          out,
+        );
+        if (!ok) throw new ValidationError(out.error || 'CDT evaluate 执行失败');
+        return this.extractEvalText(out.result);
+      }
+      default:
+        throw new ValidationError(`不支持的 CDT 操作：${operation}`);
+    }
+  }
+
+  /** 从 CDP Runtime.evaluate 结果对象中提取文本值。 */
+  private extractEvalText(raw: unknown): string {
+    const value = (raw as { result?: { value?: unknown } } | undefined)?.result?.value;
+    if (typeof value === 'string') return value;
+    if (value === undefined || value === null) return '';
+    return JSON.stringify(value);
   }
 
   private async saveStepInfo(

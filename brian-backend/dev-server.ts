@@ -310,6 +310,7 @@ function mapInfoToMemory(row: any, tags: string[] = []): any {
     [InfoType.ACT]: 'working',
     [InfoType.SKILL]: 'procedural',
     [InfoType.MCP]: 'procedural',
+    [InfoType.CDT]: 'procedural',
     [InfoType.SELF_LEARNING]: 'semantic',
     [InfoType.AGENT]: 'procedural',
   };
@@ -342,6 +343,7 @@ function computeMemoryConfidence(infoType: string, tags: string[], infoLength: n
     [InfoType.RESPONSE]: 0.5,
     [InfoType.SKILL]: 0.45,
     [InfoType.MCP]: 0.45,
+    [InfoType.CDT]: 0.45,
     [InfoType.AGENT]: 0.45,
     [InfoType.ACT]: 0.4,
     [InfoType.REFLECT]: 0.35,
@@ -584,7 +586,7 @@ async function buildContext() {
   await agentContext.initialize();
   const agentBuilder = new AgentBuilderAccess(relationDb, llmAccess, promptsAccess, agentLibrary, agentStrategy, llmCore, mcpCore, skillCore, soulCore, logger, infoCore, streamAccess);
   await agentBuilder.initialize();
-  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, llmCore, logger, streamAccess);
+  const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, llmCore, cdtCore, logger, streamAccess);
   await agentExecution.initialize();
   const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore, logger);
   await writerAgent.initialize();

@@ -31,6 +31,7 @@ export const InfoTypeSchema = z.enum([
   'ACT',
   'SKILL',
   'MCP',
+  'CDT',
   'SELF_LEARNING',
   'AGENT',
 ]);

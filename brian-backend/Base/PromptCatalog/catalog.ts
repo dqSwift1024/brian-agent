@@ -68,7 +68,7 @@ export const BUILTIN_PROMPTS: BuiltinPromptDef[] = [
       'History: {{history}}',
       'Tools: {{tools_json}}',
       'Iteration: {{iteration}}',
-      'Reason step by step. If external tools are needed, set next_action.tool_type to SKILL or MCP with tool_id and params. Return JSON: {"reasoning":"...","next_action":{"tool_type":"NONE|SKILL|MCP","tool_id":"","params":{},"sub_steps":[]}}',
+      'Reason step by step. If external tools are needed, set next_action.tool_type to SKILL, MCP or CDT with tool_id and params. CDT 为内置浏览器能力，tool_id 取 browser.operations 中的 id。Return JSON: {"reasoning":"...","next_action":{"tool_type":"NONE|SKILL|MCP|CDT","tool_id":"","params":{},"sub_steps":[]}}',
       '只输出必要内容，保持准确、完整、简洁，不输出多余说明。',
     ].join('\n'),
   },
