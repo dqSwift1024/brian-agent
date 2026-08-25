@@ -7,7 +7,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 60000,
     hookTimeout: 60000,
-    include: ['test/**/*.e2e.test.ts'],
+    include: ['test/**/*.test.ts'],
     server: {
       deps: {
         inline: [],
@@ -18,6 +18,7 @@ export default defineConfig({
     conditions: ['import', 'node'],
     mainFields: ['module', 'main'],
     alias: {
+      '@': path.resolve(__dirname, 'src'),
       'graphdblite': path.resolve(__dirname, 'test/__mocks__/congraphdb.ts'),
       'tiny-graph-db': path.resolve(__dirname, 'test/__mocks__/congraphdb.ts'),
       '@brian-agent/base': path.resolve(__dirname, '../brian-backend/Base/index.ts'),

@@ -1336,7 +1336,7 @@ describe('VisualizationService', () => {
       }
     });
 
-    it('TC-VIS-111: 追问关系 — 未复选上下文时建立上一回答→本次提问 CITATION 边', async () => {
+    it('TC-VIS-111: 追问关系 — 未复选上下文时建立上一回答→本次提问 FOLLOW_UP 边', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'q1',
         info_type: 'REQUEST', info: 'Q1', created: 100 });
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'a1',
@@ -1352,9 +1352,10 @@ describe('VisualizationService', () => {
       await svc.getVisualizedMessageDAG(input, ctx(), out);
 
       const edges = (out.graph as any).edges;
-      const followup = edges.find((e: any) => e.edge_type === 'CITATION' && e.from === 'a1' && e.to === 'q2');
+      const followup = edges.find((e: any) => e.edge_type === 'FOLLOW_UP' && e.from === 'a1' && e.to === 'q2');
       expect(followup).toBeDefined();
       expect(followup.id).toBe('followup_a1->q2');
+      expect(edges.filter((e: any) => e.edge_type === 'FOLLOW_UP').length).toBe(1);
     });
 
     it('TC-VIS-112: 追问关系 — 复选上下文后不补追问边', async () => {

@@ -360,7 +360,7 @@ export interface ChatMapNode {
 export interface ChatMapEdge {
   source: string
   target: string
-  edgeType: 'QUESTION_ANSWER' | 'CITATION'
+  edgeType: 'QUESTION_ANSWER' | 'CITATION' | 'FOLLOW_UP'
 }
 
 export interface MemoryItem {

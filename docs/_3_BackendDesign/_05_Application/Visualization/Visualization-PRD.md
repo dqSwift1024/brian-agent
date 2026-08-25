@@ -218,7 +218,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
   {
     "evaluation": { "eval_id": "...", "overall": 85, "scores": { "correctness": 90, "completeness": 80 } }
   }
-  ```
+```
 
 **处理流程**：
 
@@ -378,6 +378,11 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
         "to_info_id": "info_uuid",
         "edge_type": "CITATION",
         "work_id": "work_uuid_2"
+      },
+      {
+        "from_info_id": "info_uuid_4",
+        "to_info_id": "info_uuid_5",
+        "edge_type": "FOLLOW_UP"
       }
     ]
   },
@@ -390,6 +395,8 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
 }
 ```
 
+> 边类型说明：`QUESTION_ANSWER`（提问→回答，同 work）；`CITATION`（被引用→引用方，复选引用）；`FOLLOW_UP`（上一回答→本次提问，未复选上下文的追问）。
+
 **处理流程**：
 
 1. 调用 InfoCore.lastNInfo 查询 session 下的所有消息（作为节点）；
@@ -399,7 +406,7 @@ Visualization Application 是系统可视化数据的**唯一对外入口**。Ch
 3. 若 include_citation_edges=true：
    a. 调用 InfoCore.soCitationEdges 查询 GraphDB 引用边获取引用关系；
    b. 建立 CITATION 边（citing_info_id → cited_info_id）；
-   c. 补追问关系边：未通过复选框选择上下文（即该 REQUEST 没有任何引用边把它作为引用方）的用户提问，视为对上一轮回答的追问，建立「上一回答 → 本次提问」的 CITATION 边（edge id 以 `followup_` 前缀标识）；
+   c. 补追问关系边：未通过复选框选择上下文（即该 REQUEST 没有任何引用边把它作为引用方）的用户提问，视为对上一轮回答的追问，建立「上一回答 → 本次提问」的 `FOLLOW_UP` 边（edge id 以 `followup_` 前缀标识，与「复选引用」的 `CITATION` 边类型区分）；
 4. 按 max_nodes 限制节点数，优先保留最近的节点；
 5. 返回 DAG 数据；
 

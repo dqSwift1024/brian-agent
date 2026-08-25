@@ -51,52 +51,58 @@ function edgeKey(e: { source: string; target: string; edgeType: string }) {
 }
 
 // 连线路径：
-// 1. QUESTION_ANSWER：从提问方 (REQUEST) 下边中点指向回答方 (RESPONSE) 上边中点（向下箭头）
-// 2. CITATION：从被引用方 (s) 右边中点指向引用方 (t) 左边中点（向右箭头）
-function edgePath(e: { source: string; target: string; edgeType: string }) {
-  const s = nodeMap.value.get(e.source)
-  const t = nodeMap.value.get(e.target)
-  if (!s || !t) return ''
+// 1. QUESTION_ANSWER / FOLLOW_UP（纵向）：从提问方 (REQUEST) 下边中点指向回答方 (RESPONSE) 上边中点（向下箭头）
+// 2. CITATION（横向）：从被引用方 (s) 右边中点指向引用方 (t) 左边中点（向右箭头）
+function isVerticalEdge(e: { edgeType: string }) {
+  return e.edgeType === 'QUESTION_ANSWER' || e.edgeType === 'FOLLOW_UP'
+}
 
-  if (e.edgeType === 'QUESTION_ANSWER') {
-    const sx = s.x + NODE_W / 2
-    const sy = s.y + NODE_H
-    const tx = t.x + NODE_W / 2
-    const ty = t.y
-    const midY = (sy + ty) / 2
-    return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
-  }
+function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
+  const sx = s.x + NODE_W / 2
+  const sy = s.y + NODE_H
+  const tx = t.x + NODE_W / 2
+  const ty = t.y
+  const midY = (sy + ty) / 2
+  return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
+}
 
-  // CITATION: 从被引用方右边中点指向引用方左边中点
+function citationEdgePath(s: ChatMapNode, t: ChatMapNode) {
   const sx = s.x + NODE_W
   const sy = s.y + NODE_H / 2
   const tx = t.x
   const ty = t.y + NODE_H / 2
-
   if (tx >= sx) {
     const midX = (sx + tx) / 2
     return `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`
-  } else {
-    const offsetSide = 24
-    return `M ${sx} ${sy} L ${sx + offsetSide} ${sy} L ${sx + offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${ty} L ${tx} ${ty}`
   }
+  const offsetSide = 24
+  return `M ${sx} ${sy} L ${sx + offsetSide} ${sy} L ${sx + offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${ty} L ${tx} ${ty}`
+}
+
+function edgePath(e: { source: string; target: string; edgeType: string }) {
+  const s = nodeMap.value.get(e.source)
+  const t = nodeMap.value.get(e.target)
+  if (!s || !t) return ''
+  return isVerticalEdge(e) ? verticalEdgePath(s, t) : citationEdgePath(s, t)
+}
+
+function verticalArrowPoint(t: ChatMapNode) {
+  const tx = t.x + NODE_W / 2
+  const ty = t.y
+  return `${tx - 5},${ty - 8} ${tx + 5},${ty - 8} ${tx},${ty}`
+}
+
+function citationArrowPoint(t: ChatMapNode) {
+  const tx = t.x
+  const ty = t.y + NODE_H / 2
+  return `${tx - 8},${ty - 4} ${tx - 8},${ty + 4} ${tx},${ty}`
 }
 
 function arrowPoint(e: { source: string; target: string; edgeType: string }): string {
   const s = nodeMap.value.get(e.source)
   const t = nodeMap.value.get(e.target)
   if (!s || !t) return ''
-
-  if (e.edgeType === 'QUESTION_ANSWER') {
-    const tx = t.x + NODE_W / 2
-    const ty = t.y
-    return `${tx - 5},${ty - 8} ${tx + 5},${ty - 8} ${tx},${ty}`
-  }
-
-  // CITATION: 箭头指向引用方左侧中点，方向向右
-  const tx = t.x
-  const ty = t.y + NODE_H / 2
-  return `${tx - 8},${ty - 4} ${tx - 8},${ty + 4} ${tx},${ty}`
+  return isVerticalEdge(e) ? verticalArrowPoint(t) : citationArrowPoint(t)
 }
 
 function isEdgeSelected(e: { source: string; target: string; edgeType: string }) {
@@ -123,7 +129,7 @@ function getEdgeStroke(e: { source: string; target: string; edgeType: string }) 
     }
     return 'rgba(160, 175, 195, 0.2)' // 未选中连线淡化
   }
-  if (e.edgeType === 'CITATION') {
+  if (e.edgeType === 'CITATION' || e.edgeType === 'FOLLOW_UP') {
     return '#3b82f6'
   }
   return 'rgba(120, 130, 150, 0.45)'
@@ -136,7 +142,7 @@ function getEdgeStrokeWidth(e: { source: string; target: string; edgeType: strin
 }
 
 function getEdgeDashArray(e: { source: string; target: string; edgeType: string }) {
-  if (e.edgeType === 'CITATION') {
+  if (e.edgeType === 'CITATION' || e.edgeType === 'FOLLOW_UP') {
     return isEdgeSelected(e) || isEdgeHighlightedByNode(e) ? 'none' : '5 3'
   }
   return 'none'

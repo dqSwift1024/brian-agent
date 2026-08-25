@@ -85,6 +85,9 @@ import {
   DEFAULT_MAX_NODES_PER_GRAPH,
   DEFAULT_MESSAGE_SUMMARY_LENGTH,
   DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
+  QUESTION_ANSWER_EDGE_TYPE,
+  CITATION_EDGE_TYPE,
+  FOLLOW_UP_EDGE_TYPE,
 } from '../domain/types';
 
 interface VisualizationConfigRow {
@@ -475,36 +478,62 @@ export class VisualizationService {
   ): Promise<boolean> {
     const config = await this.getConfig();
     const maxNodes = input.max_nodes ?? config.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH;
-    const includeQA = input.include_question_answer_edges ?? true;
-    const includeCitation = input.include_citation_edges ?? true;
-
-    let rawRows: Array<Record<string, unknown>> = [];
-    try {
-      rawRows = await this.relationDb.select(INFO_RAW_TABLE, {
-        conditions: [
-          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-        ],
-        order_by: [{ field: 'created', direction: 'DESC' as const }],
-        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin', 'trace_id', 'handle_result_type'],
-      });
-    } catch (err) {
-      this.logWarn('query info_raw failed', err);
+    const rawRows = await this.queryMessageRows(input);
+    if (rawRows === null) {
       output.session_id = input.session_id;
       output.graph = { nodes: [], edges: [] };
       output.metadata = { error: 'query info_raw failed' };
       return true;
     }
 
+    const nodes = await this.buildMessageNodes(rawRows, maxNodes);
+    const edges = await this.buildMessageEdges(rawRows, nodes, input);
+
+    output.session_id = input.session_id;
+    output.graph = { nodes, edges };
+    output.metadata = this.buildDagMetadata(rawRows, nodes, edges, maxNodes, input);
+    return true;
+  }
+
+  private async queryMessageRows(
+    input: GetVisualizedMessageDAGInput,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    let rawRows: Array<Record<string, unknown>> = [];
+    try {
+      rawRows = await this.relationDb.select(INFO_RAW_TABLE, {
+        conditions: [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }],
+        order_by: [{ field: 'created', direction: 'DESC' as const }],
+        fields: ['id', 'created', 'session_id', 'work_id', 'interact_id', 'info_id', 'info_type', 'info_creator_id', 'info_creator_role', 'info', 'info_length', 'pin', 'trace_id', 'handle_result_type'],
+      });
+    } catch (err) {
+      this.logWarn('query info_raw failed', err);
+      return null;
+    }
     if (input.work_id) {
       rawRows = rawRows.filter((r) => String(r.work_id ?? '') === input.work_id);
     }
+    return rawRows;
+  }
 
-    const summaryLength = config.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH;
+  private async buildMessageNodes(
+    rawRows: Array<Record<string, unknown>>,
+    maxNodes: number,
+  ): Promise<Array<Record<string, unknown>>> {
+    const nodeRows = this.collectNodeRows(rawRows, maxNodes);
+    const infoIds = nodeRows.map((r) => String(r.info_id ?? '')).filter(Boolean);
+    const [summaryMap, citationMap] = await Promise.all([
+      this.buildSummaryMap(infoIds),
+      this.buildCitationMap(infoIds, true),
+    ]);
+    return nodeRows.map((row) => this.buildMessageNode(row, summaryMap, citationMap));
+  }
 
-    const nodes: Array<Record<string, unknown>> = [];
+  private collectNodeRows(
+    rawRows: Array<Record<string, unknown>>,
+    maxNodes: number,
+  ): Array<Record<string, unknown>> {
     const nodeSet = new Set<string>();
     const nodeRows: Array<Record<string, unknown>> = [];
-
     for (const row of rawRows) {
       const infoId = String(row.info_id ?? '');
       if (!infoId || nodeSet.has(infoId)) continue;
@@ -512,174 +541,181 @@ export class VisualizationService {
       nodeRows.push(row);
       if (nodeRows.length >= maxNodes) break;
     }
+    return nodeRows;
+  }
 
-    const infoIds = nodeRows.map((r) => String(r.info_id ?? '')).filter(Boolean);
-    const summaryMap = await this.buildSummaryMap(infoIds);
+  private buildMessageNode(
+    row: Record<string, unknown>,
+    summaryMap: Map<string, string>,
+    citationMap: Map<string, CitationData>,
+  ): Record<string, unknown> {
+    const infoId = String(row.info_id ?? '');
+    const cite = citationMap.get(infoId);
+    return {
+      id: infoId,
+      label: infoId.slice(0, 16),
+      info_id: infoId,
+      work_id: String(row.work_id ?? ''),
+      interact_id: String(row.interact_id ?? ''),
+      info_type: String(row.info_type ?? ''),
+      info_creator_role: String(row.info_creator_role ?? ''),
+      trace_id: String(row.trace_id ?? ''),
+      handle_result_type: String(row.handle_result_type ?? ''),
+      info_summary: summaryMap.get(infoId) ?? '',
+      info: String(row.info ?? ''),
+      info_length: Number(row.info_length ?? 0),
+      created: Number(row.created ?? 0),
+      pin: Number(row.pin ?? 0) === 1,
+      citing_count: cite?.citingCount ?? 0,
+      cited_count: cite?.citedCount ?? 0,
+      citing_info_ids: cite?.citingInfoIds ?? [],
+      cited_info_ids: cite?.citedInfoIds ?? [],
+    };
+  }
 
-    for (const row of nodeRows) {
-      const infoId = String(row.info_id ?? '');
-      const storedSummary = summaryMap.get(infoId);
-
-      nodes.push({
-        id: infoId,
-        label: infoId.slice(0, 16),
-        info_id: infoId,
-        work_id: String(row.work_id ?? ''),
-        interact_id: String(row.interact_id ?? ''),
-        info_type: String(row.info_type ?? ''),
-        info_creator_role: String(row.info_creator_role ?? ''),
-        trace_id: String(row.trace_id ?? ''),
-        handle_result_type: String(row.handle_result_type ?? ''),
-        // ===== 原始代码（保留作为参考） =====
-        // info_summary: this.truncate(String(row.info ?? ''), summaryLength),
-        // ===== 修改后的代码：使用 info_summary 表的完整摘要 =====
-        info_summary: storedSummary ?? '',
-        info: String(row.info ?? ''),
-        info_length: Number(row.info_length ?? 0),
-        created: Number(row.created ?? 0),
-        pin: Number(row.pin ?? 0) === 1,
-      });
-    }
-
-    // 补充引用/被引用关系（计数与 info_id 列表）
-    {
-      const infoIds = nodes.map((n) => String(n.info_id ?? '')).filter(Boolean);
-      const citationMap = await this.buildCitationMap(infoIds, true);
-      for (const node of nodes) {
-        const citeData = citationMap.get(String(node.info_id ?? ''));
-        node.citing_count = citeData?.citingCount ?? 0;
-        node.cited_count = citeData?.citedCount ?? 0;
-        node.citing_info_ids = citeData?.citingInfoIds ?? [];
-        node.cited_info_ids = citeData?.citedInfoIds ?? [];
-      }
-    }
-
+  private async buildMessageEdges(
+    rawRows: Array<Record<string, unknown>>,
+    nodes: Array<Record<string, unknown>>,
+    input: GetVisualizedMessageDAGInput,
+  ): Promise<Array<Record<string, unknown>>> {
     const edges: Array<Record<string, unknown>> = [];
-    const directionalEdgeSet = new Set<string>();
+    if (input.include_question_answer_edges ?? true) {
+      edges.push(...this.buildQuestionAnswerEdges(rawRows));
+    }
+    if (input.include_citation_edges ?? true) {
+      edges.push(...(await this.buildCitationEdges(nodes)));
+      this.appendFollowUpEdges(nodes, edges);
+    }
+    return this.dedupeEdges(edges);
+  }
 
-    if (includeQA) {
-      const workGroups = new Map<string, Array<Record<string, unknown>>>();
-      for (const row of rawRows) {
-        const workId = String(row.work_id ?? '');
-        if (!workId) continue;
-        if (!workGroups.has(workId)) workGroups.set(workId, []);
-        workGroups.get(workId)!.push(row);
+  private buildQuestionAnswerEdges(
+    rawRows: Array<Record<string, unknown>>,
+  ): Array<Record<string, unknown>> {
+    const edges: Array<Record<string, unknown>> = [];
+    for (const [reqId, respId, workId] of this.iterQuestionAnswerPairs(rawRows)) {
+      const dirKey = `${reqId}->${respId}`;
+      edges.push({ id: `qa_${dirKey}`, from: reqId, to: respId, edge_type: QUESTION_ANSWER_EDGE_TYPE, work_id: workId });
+    }
+    return edges;
+  }
+
+  private *iterQuestionAnswerPairs(
+    rawRows: Array<Record<string, unknown>>,
+  ): Generator<[string, string, string]> {
+    for (const [workId, rows] of this.groupRowsByWork(rawRows)) {
+      const reqIds: string[] = [];
+      const respIds: string[] = [];
+      for (const row of rows) {
+        const id = String(row.info_id ?? '');
+        if (!id) continue;
+        const isRequest = String(row.info_type ?? '').toUpperCase() === InfoType.REQUEST;
+        (isRequest ? reqIds : respIds).push(id);
       }
-
-      for (const [, group] of workGroups) {
-        group.sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0));
-        const requests: Array<Record<string, unknown>> = [];
-        const responses: Array<Record<string, unknown>> = [];
-
-        for (const row of group) {
-          const type = String(row.info_type ?? '').toUpperCase();
-          if (type === InfoType.REQUEST) {
-            requests.push(row);
-          } else {
-            responses.push(row);
-          }
-        }
-
-        for (const req of requests) {
-          for (const resp of responses) {
-            const reqId = String(req.info_id ?? '');
-            const respId = String(resp.info_id ?? '');
-            if (!reqId || !respId || reqId === respId) continue;
-            const dirKey = `${reqId}->${respId}`;
-            if (directionalEdgeSet.has(dirKey)) continue;
-            directionalEdgeSet.add(dirKey);
-            edges.push({
-              id: `qa_${dirKey}`,
-              from: reqId,
-              to: respId,
-              edge_type: 'QUESTION_ANSWER',
-              work_id: String(req.work_id ?? ''),
-            });
-          }
+      for (const req of reqIds) {
+        for (const resp of respIds) {
+          if (req !== resp) yield [req, resp, workId];
         }
       }
     }
+  }
 
-    if (includeCitation) {
-      const allInfoIds = nodes.map((n) => String(n.info_id));
-      const allInfoIdSet = new Set(allInfoIds);
-      try {
-        const citeOut = new SoCitationEdgesOutput();
-        await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
-        for (const e of citeOut.edges) {
-          if (!allInfoIdSet.has(e.citing_info_id)) continue;
-          const fromId = e.cited_info_id;
-          const toId = e.citing_info_id;
-          if (!fromId || !toId || fromId === toId) continue;
-          const dirKey = `${fromId}->${toId}`;
-          if (directionalEdgeSet.has(dirKey)) continue; // 两个消息框之间同一方向不重复连线
-          directionalEdgeSet.add(dirKey);
-          edges.push({
-            id: `cite_${fromId}_${toId}`,
-            from: fromId,
-            to: toId,
-            edge_type: 'CITATION',
-          });
-        }
-      } catch (err) {
-        this.logWarn('query GraphDB citations failed', err);
-      }
+  private groupRowsByWork(
+    rawRows: Array<Record<string, unknown>>,
+  ): Map<string, Array<Record<string, unknown>>> {
+    const groups = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of rawRows) {
+      const workId = String(row.work_id ?? '');
+      if (!workId) continue;
+      if (!groups.has(workId)) groups.set(workId, []);
+      groups.get(workId)!.push(row);
+    }
+    for (const rows of groups.values()) {
+      rows.sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0));
+    }
+    return groups;
+  }
+
+  private async buildCitationEdges(
+    nodes: Array<Record<string, unknown>>,
+  ): Promise<Array<Record<string, unknown>>> {
+    const allInfoIds = new Set(nodes.map((n) => String(n.info_id)));
+    try {
+      const citeOut = new SoCitationEdgesOutput();
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      return citeOut.edges
+        .filter((e) => allInfoIds.has(e.citing_info_id) && e.cited_info_id && e.citing_info_id)
+        .map((e) => ({
+          id: `cite_${e.cited_info_id}_${e.citing_info_id}`,
+          from: e.cited_info_id,
+          to: e.citing_info_id,
+          edge_type: CITATION_EDGE_TYPE,
+        }));
+    } catch (err) {
+      this.logWarn('query GraphDB citations failed', err);
+      return [];
+    }
+  }
+
+  private appendFollowUpEdges(
+    nodes: Array<Record<string, unknown>>,
+    edges: Array<Record<string, unknown>>,
+  ): void {
+    const citingTargetIds = new Set<string>();
+    for (const e of edges) {
+      if (e.edge_type === CITATION_EDGE_TYPE) citingTargetIds.add(String(e.to));
     }
 
-    // ===== 追问关系（ChatMap）=====
-    // 未通过复选框选择上下文（即该 REQUEST 没有任何引用边把它作为引用方）的用户提问，
-    // 视为对上一轮回答的追问：建立「上一回答 → 本次提问」的 CITATION 边，
-    // 使 ChatMap 中第二次提问连线指向（引用）第一次回答。
-    if (includeCitation) {
-      // 已被某条 CITATION 边作为引用方（to = citing_info_id）的节点集合
-      const citingTargetIds = new Set<string>();
-      for (const e of edges) {
-        if (e.edge_type === 'CITATION') citingTargetIds.add(String(e.to));
-      }
-      // 按时间升序排列 REQUEST / RESPONSE 节点
-      const ordered = nodes
-        .filter((n) => {
-          const t = String(n.info_type ?? '').toUpperCase();
-          return t === InfoType.REQUEST || t === InfoType.RESPONSE;
-        })
-        .sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0));
+    const ordered = nodes
+      .filter((n) => {
+        const t = String(n.info_type ?? '').toUpperCase();
+        return t === InfoType.REQUEST || t === InfoType.RESPONSE;
+      })
+      .sort((a, b) => Number(a.created ?? 0) - Number(b.created ?? 0));
 
-      let lastResponseId: string | null = null;
-      for (const n of ordered) {
-        const infoId = String(n.info_id ?? '');
-        const type = String(n.info_type ?? '').toUpperCase();
-        if (type === InfoType.RESPONSE) {
-          lastResponseId = infoId;
-        } else if (type === InfoType.REQUEST) {
-          // 提问未被引用（未复选上下文）且存在上一回答时，补一条追问边
-          if (lastResponseId && !citingTargetIds.has(infoId)) {
-            const dirKey = `${lastResponseId}->${infoId}`;
-            if (!directionalEdgeSet.has(dirKey) && lastResponseId !== infoId) {
-              directionalEdgeSet.add(dirKey);
-              edges.push({
-                id: `followup_${dirKey}`,
-                from: lastResponseId,
-                to: infoId,
-                edge_type: 'CITATION',
-              });
-            }
-          }
-        }
+    let lastResponseId: string | null = null;
+    for (const n of ordered) {
+      const infoId = String(n.info_id ?? '');
+      const type = String(n.info_type ?? '').toUpperCase();
+      if (type === InfoType.RESPONSE) {
+        lastResponseId = infoId;
+      } else if (lastResponseId && lastResponseId !== infoId && !citingTargetIds.has(infoId)) {
+        edges.push({
+          id: `followup_${lastResponseId}->${infoId}`,
+          from: lastResponseId,
+          to: infoId,
+          edge_type: FOLLOW_UP_EDGE_TYPE,
+        });
       }
     }
+  }
 
-    output.session_id = input.session_id;
-    output.graph = { nodes, edges };
-    output.metadata = {
+  private dedupeEdges(edges: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const seen = new Set<string>();
+    return edges.filter((e) => {
+      const key = `${String(e.from)}->${String(e.to)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private buildDagMetadata(
+    rawRows: Array<Record<string, unknown>>,
+    nodes: Array<Record<string, unknown>>,
+    edges: Array<Record<string, unknown>>,
+    maxNodes: number,
+    input: GetVisualizedMessageDAGInput,
+  ): Record<string, unknown> {
+    return {
       total_nodes: rawRows.length,
       displayed_nodes: nodes.length,
       total_edges: edges.length,
       max_nodes_limit: maxNodes,
       truncated: rawRows.length > maxNodes,
-      include_question_answer: includeQA,
-      include_citation: includeCitation,
+      include_question_answer: input.include_question_answer_edges ?? true,
+      include_citation: input.include_citation_edges ?? true,
     };
-    return true;
   }
 
   async getResource(
