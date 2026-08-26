@@ -1009,11 +1009,11 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
   }
 
   const iterations = 250
-  const repulsion = 9000
-  const springLength = 140
+  const repulsion = 20000
+  const springLength = 180
   const springStrength = 0.035
-  const centerStrength = 0.02
-  const damping = 0.85
+  const centerStrength = 0.002
+  const damping = 0.9
   const maxDist = 420
 
   for (let iter = 0; iter < iterations; iter++) {
