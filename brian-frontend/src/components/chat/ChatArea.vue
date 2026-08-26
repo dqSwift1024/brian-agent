@@ -271,13 +271,99 @@ async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
     // 清理流式期间生成的临时文本段落 Block，避免与后端加载回来的 ChatMessage 重复展示
     sessionStore.cleanupTransientTextBlocks(botMsgId)
     sessionStore.clearSelection()
-    // 兜底：若后端未同步成功，本地用理解后的需求替换用户原始输入，保证界面即时一致
-    if (action === 'APPROVE' && conf.understood_requirement) {
-      sessionStore.replaceUserMessageContent(conf.original_query, conf.understood_requirement)
-    } else if (action === 'CANCEL') {
+    // 保留原始需求：后端已移除 rewriteRequestInfo，不再用理解后的需求替换用户原始输入
+    if (action === 'CANCEL') {
       // 取消：丢掉用户原始输入
       sessionStore.removeUserMessageByContent(conf.original_query)
     }
+  }
+}
+
+// 需求补充弹窗：各澄清问题的用户输入（与 clarificationRequest.clarifications 一一对应）
+const clarificationAnswers = ref<string[]>([])
+const submittingClarification = ref(false)
+
+async function handleClarificationSubmit() {
+  const req = sessionStore.clarificationRequest
+  if (!req || submittingClarification.value) return
+  submittingClarification.value = true
+  sessionStore.clearClarificationRequest()
+
+  const answers = req.clarifications.map((c, i) => ({
+    question: c.question,
+    answer: (clarificationAnswers.value[i] ?? '').trim(),
+  }))
+
+  const botMsgId = `msg-${Date.now()}-clarify`
+  textBlockId = null
+  sessionStore.setStreaming(true)
+  sessionStore.resetPlanning()
+  sessionStore.resetAgentStatus()
+
+  try {
+    const abortCtrl = new AbortController()
+    sessionStore.setCancelController(abortCtrl)
+
+    const res = await fetch('/api/chat/submit-clarification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: req.session_id,
+        work_id: req.work_id,
+        answers,
+      }),
+      signal: abortCtrl.signal,
+    })
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) { // eslint-disable-line no-constant-condition
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            handleStreamEvent(JSON.parse(line.slice(6)), botMsgId)
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name !== 'AbortError') {
+      const errBlock: Block = {
+        id: `block-err-${Date.now()}`,
+        msgId: botMsgId,
+        role: 'system',
+        type: 'ErrorFallback',
+        message: err instanceof Error ? err.message : '提交参数失败',
+        errorCode: 'SUBMIT_CLARIFICATION_FAILED',
+        retryAvailable: false,
+        meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
+      } as Block
+      sessionStore.addBlock(errBlock)
+    }
+  } finally {
+    submittingClarification.value = false
+    clarificationAnswers.value = []
+    sessionStore.finalizeBlocks(botMsgId)
+    sessionStore.setStreaming(false)
+    sessionStore.setCancelController(null)
+    const sid = sessionStore.currentSessionId
+    if (sid) {
+      await sessionStore.loadDag(sid, 'default-user')
+      await sessionStore.loadChatHistory(sid, 'default-user')
+    }
+    sessionStore.cleanupTransientTextBlocks(botMsgId)
+    sessionStore.clearSelection()
   }
 }
 
@@ -769,6 +855,15 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     case 'intent_confirmation_required': {
       // 需求理解得分低于阈值：弹出「需求确认」弹窗，由用户确认按理解执行 / 按原文执行 / 取消
       sessionStore.setIntentConfirmation({
+        ...payload,
+        session_id: sessionStore.currentSessionId,
+      })
+      break
+    }
+
+    case 'clarification_required': {
+      // Planner 识别出需用户补充参数才能执行的任务：在对话区弹出「需求补充」卡片
+      sessionStore.setClarificationRequest({
         ...payload,
         session_id: sessionStore.currentSessionId,
       })
@@ -1283,6 +1378,99 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
           <Loader2 :size="14" class="animate-spin" />
           <span>思考中...</span>
         </div>
+
+        <!-- 需求理解确认卡片（对话区内联，参考 Cursor 需求补充样式） -->
+        <div v-if="sessionStore.intentConfirmation" class="flex items-start gap-2 justify-end">
+          <div class="max-w-[85%] min-w-0">
+            <div class="rounded-2xl bg-white dark:bg-apple-gray-900 border border-apple-gray-200 dark:border-apple-gray-700 shadow-sm overflow-hidden">
+              <div class="px-4 py-3 border-b border-apple-gray-100 dark:border-apple-gray-800">
+                <p class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-100">确认需求理解</p>
+                <p class="text-xs text-apple-gray-400 mt-0.5">我理解你的需求如下，请确认</p>
+              </div>
+              <div class="px-4 py-3 space-y-3 text-sm">
+                <div>
+                  <p class="text-xs text-apple-gray-400 mb-1">原始输入</p>
+                  <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.original_query }}</p>
+                </div>
+                <div>
+                  <p class="text-xs text-apple-gray-400 mb-1">理解后的需求</p>
+                  <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.understood_requirement }}</p>
+                </div>
+                <div v-if="sessionStore.intentConfirmation.reasoning">
+                  <p class="text-xs text-apple-gray-400 mb-1">判断依据</p>
+                  <p class="text-apple-gray-600 dark:text-apple-gray-300">{{ sessionStore.intentConfirmation.reasoning }}</p>
+                </div>
+              </div>
+              <div class="px-4 py-3 border-t border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-end gap-2">
+                <button
+                  class="px-3 py-1.5 rounded-lg text-sm text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 disabled:opacity-50"
+                  :disabled="confirmingIntent"
+                  @click="handleIntentConfirm('CANCEL')"
+                >取消</button>
+                <button
+                  class="px-3 py-1.5 rounded-lg text-sm text-apple-gray-600 bg-apple-gray-100 hover:bg-apple-gray-200 dark:bg-apple-gray-800 dark:text-apple-gray-200 dark:hover:bg-apple-gray-700 disabled:opacity-50"
+                  :disabled="confirmingIntent"
+                  @click="handleIntentConfirm('KEEP')"
+                >按原文执行</button>
+                <button
+                  class="px-3 py-1.5 rounded-lg text-sm text-white bg-brian-blue hover:bg-brian-blue/90 disabled:opacity-50 flex items-center gap-1"
+                  :disabled="confirmingIntent"
+                  @click="handleIntentConfirm('APPROVE')"
+                >
+                  <Loader2 v-if="confirmingIntent" :size="14" class="animate-spin" />
+                  按理解执行
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 flex items-center justify-center mt-1">
+            <Brain :size="16" />
+          </div>
+        </div>
+
+        <!-- 需求补充卡片（对话区内联，样式与需求理解确认卡片一致） -->
+        <div v-if="sessionStore.clarificationRequest" class="flex items-start gap-2 justify-end">
+          <div class="max-w-[85%] min-w-0">
+            <div class="rounded-2xl bg-white dark:bg-apple-gray-900 border border-apple-gray-200 dark:border-apple-gray-700 shadow-sm overflow-hidden">
+              <div class="px-4 py-3 border-b border-apple-gray-100 dark:border-apple-gray-800">
+                <p class="text-sm font-semibold text-apple-gray-900 dark:text-apple-gray-100">需要补充信息</p>
+                <p class="text-xs text-apple-gray-400 mt-0.5">为了继续执行，请补充以下参数</p>
+              </div>
+              <div class="px-4 py-3 space-y-3">
+                <div v-for="(c, index) in sessionStore.clarificationRequest.clarifications" :key="index" class="text-sm">
+                  <p class="text-apple-gray-700 dark:text-apple-gray-200 mb-1">
+                    <span v-if="c.domain" class="inline-block mr-1 px-1.5 py-0.5 text-xs rounded bg-brian-blue/10 text-brian-blue">{{ c.domain }}</span>
+                    {{ c.question }}
+                  </p>
+                  <input
+                    v-model="clarificationAnswers[index]"
+                    type="text"
+                    class="w-full px-3 py-2 rounded-lg text-sm border border-apple-gray-200 dark:border-apple-gray-700 bg-apple-gray-50 dark:bg-apple-gray-800 text-apple-gray-900 dark:text-apple-gray-100 focus:outline-none focus:ring-1 focus:ring-brian-blue"
+                    :placeholder="c.question"
+                  />
+                </div>
+              </div>
+              <div class="px-4 py-3 border-t border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-end gap-2">
+                <button
+                  class="px-3 py-1.5 rounded-lg text-sm text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 disabled:opacity-50"
+                  :disabled="submittingClarification"
+                  @click="sessionStore.clearClarificationRequest()"
+                >取消</button>
+                <button
+                  class="px-3 py-1.5 rounded-lg text-sm text-white bg-brian-blue hover:bg-brian-blue/90 disabled:opacity-50 flex items-center gap-1"
+                  :disabled="submittingClarification"
+                  @click="handleClarificationSubmit()"
+                >
+                  <Loader2 v-if="submittingClarification" :size="14" class="animate-spin" />
+                  提交
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 flex items-center justify-center mt-1">
+            <Brain :size="16" />
+          </div>
+        </div>
       </div>
 
       <div class="flex-shrink-0 border-t border-apple-gray-100 dark:border-apple-gray-800">
@@ -1303,63 +1491,5 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
 
     <!-- 评估结果弹窗 -->
     <EvalResultModal />
-
-    <!-- 需求理解确认弹窗 -->
-    <div
-      v-if="sessionStore.intentConfirmation"
-      class="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-      @click.self="handleIntentConfirm('CANCEL')"
-    >
-      <div class="w-full max-w-lg mx-4 rounded-2xl bg-white dark:bg-apple-gray-900 shadow-2xl border border-apple-gray-200 dark:border-apple-gray-700 overflow-hidden">
-        <div class="px-6 py-4 border-b border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-between">
-          <h3 class="text-base font-semibold text-apple-gray-900 dark:text-apple-gray-100">确认需求理解</h3>
-          <button
-            class="text-apple-gray-400 hover:text-apple-gray-600 dark:hover:text-apple-gray-200"
-            @click="handleIntentConfirm('CANCEL')"
-          >✕</button>
-        </div>
-        <div class="px-6 py-4 space-y-3 text-sm">
-          <div>
-            <p class="text-xs text-apple-gray-400 mb-1">原始输入</p>
-            <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.original_query }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-apple-gray-400 mb-1">理解后的需求</p>
-            <p class="text-apple-gray-700 dark:text-apple-gray-200">{{ sessionStore.intentConfirmation.understood_requirement }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-apple-gray-400 mb-1">匹配度</p>
-            <p class="text-apple-gray-600 dark:text-apple-gray-300">
-              {{ sessionStore.intentConfirmation.match_score }} / 阈值 {{ sessionStore.intentConfirmation.threshold_score }}
-              <span class="ml-2 text-amber-500">（低于阈值，需确认）</span>
-            </p>
-          </div>
-          <div v-if="sessionStore.intentConfirmation.reasoning">
-            <p class="text-xs text-apple-gray-400 mb-1">判断依据</p>
-            <p class="text-apple-gray-600 dark:text-apple-gray-300">{{ sessionStore.intentConfirmation.reasoning }}</p>
-          </div>
-        </div>
-        <div class="px-6 py-4 border-t border-apple-gray-100 dark:border-apple-gray-800 flex items-center justify-end gap-2">
-          <button
-            class="px-4 py-2 rounded-lg text-sm text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800 disabled:opacity-50"
-            :disabled="confirmingIntent"
-            @click="handleIntentConfirm('CANCEL')"
-          >取消</button>
-          <button
-            class="px-4 py-2 rounded-lg text-sm text-apple-gray-600 bg-apple-gray-100 hover:bg-apple-gray-200 dark:bg-apple-gray-800 dark:text-apple-gray-200 dark:hover:bg-apple-gray-700 disabled:opacity-50"
-            :disabled="confirmingIntent"
-            @click="handleIntentConfirm('KEEP')"
-          >按原文执行</button>
-          <button
-            class="px-4 py-2 rounded-lg text-sm text-white bg-brian-blue hover:bg-brian-blue/90 disabled:opacity-50 flex items-center gap-1"
-            :disabled="confirmingIntent"
-            @click="handleIntentConfirm('APPROVE')"
-          >
-            <Loader2 v-if="confirmingIntent" :size="14" class="animate-spin" />
-            按理解执行
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>

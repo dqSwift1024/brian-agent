@@ -20,6 +20,7 @@ import {
   GetMessageGraphInput, GetMessageGraphOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   SSEEvent,
@@ -118,6 +119,12 @@ export class ChatAccess {
     i: ConfirmIntentInput, c: ChatContext, o: ConfirmIntentOutput,
   ): Promise<boolean> {
     return this.service.confirmIntent(i, c, o);
+  }
+
+  async submitClarification(
+    i: SubmitClarificationInput, c: ChatContext, o: SubmitClarificationOutput,
+  ): Promise<boolean> {
+    return this.service.submitClarification(i, c, o);
   }
 
   async openChatStream(

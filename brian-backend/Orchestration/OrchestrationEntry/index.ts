@@ -8,5 +8,6 @@ export {
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from './domain/types';

@@ -96,6 +96,10 @@ export class OrchestrationStrategyService {
       output.error = String(execOutput.shared_data._error);
       output.error_code = 'ORCHESTRATION_NODE_FAILED';
     }
+    if (execOutput.shared_data._paused) {
+      output.paused = true;
+      output.clarifications = (execOutput.shared_data._clarifications as Array<{ question: string; domain?: string }>) ?? [];
+    }
     return true;
   }
 

@@ -88,6 +88,43 @@ export const useSessionStore = defineStore('session', () => {
     intentConfirmation.value = null
   }
 
+  // 需求补充弹窗：Planner 识别出需用户补充参数才能执行的任务时，由 clarification_required 事件驱动
+  interface ClarificationRequest {
+    session_id: string
+    work_id: string
+    interact_id: string
+    original_query: string
+    clarifications: Array<{ question: string; domain?: string }>
+  }
+  const clarificationRequest = ref<ClarificationRequest | null>(null)
+
+  function setClarificationRequest(data: Record<string, unknown> | null) {
+    if (!data) {
+      clarificationRequest.value = null
+      return
+    }
+    const raw = Array.isArray(data.clarifications) ? data.clarifications : []
+    clarificationRequest.value = {
+      session_id: String(data.session_id ?? ''),
+      work_id: String(data.work_id ?? ''),
+      interact_id: String(data.interact_id ?? ''),
+      original_query: String(data.original_query ?? ''),
+      clarifications: raw
+        .filter((c): c is Record<string, unknown> => Boolean(c && typeof c === 'object'))
+        .map((c) => ({
+          question: String((c as Record<string, unknown>).question ?? ''),
+          domain: (c as Record<string, unknown>).domain
+            ? String((c as Record<string, unknown>).domain)
+            : undefined,
+        }))
+        .filter((c) => c.question),
+    }
+  }
+
+  function clearClarificationRequest() {
+    clarificationRequest.value = null
+  }
+
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
     localStorage.setItem('chat-split-ratio', String(splitRatio.value))
@@ -645,6 +682,7 @@ export const useSessionStore = defineStore('session', () => {
     setAgentStatus, resetAgentStatus,
     evalResultVisible, evalResultLoading, evalResult, evalResultError, evalTraceId,
     openEvalResult, closeEvalResult,
-    intentConfirmation, setIntentConfirmation, clearIntentConfirmation
+    intentConfirmation, setIntentConfirmation, clearIntentConfirmation,
+    clarificationRequest, setClarificationRequest, clearClarificationRequest
   }
 })

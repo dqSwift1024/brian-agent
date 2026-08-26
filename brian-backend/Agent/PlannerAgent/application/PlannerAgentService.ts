@@ -24,7 +24,7 @@ import {
   ReplanInput, ReplanOutput,
   GetPlanInput, GetPlanOutput,
   ConfigPlannerAgentInput, ConfigPlannerAgentOutput,
-  type PlanTaskNode, type PlanTaskEdge, type PlanTaskDAG,
+  type PlanTaskNode, type PlanTaskEdge, type PlanTaskDAG, type PlanClarification,
 } from '../domain/types';
 import {
   BuildSystemAgentInput, BuildSystemAgentOutput, AgentBuilderContext,
@@ -43,6 +43,7 @@ const MAX_DECOMPOSE_DEPTH = 2;
 /** 单次拆解的完整上下文（LLM 绑定、阈值、上限等），供 plan / planHierarchical 复用 */
 interface PlanDecomposeContext {
   dag: TaskDag;
+  clarifications: PlanClarification[];
   threshold: number;
   maxSub: number;
   llmId: string;
@@ -79,6 +80,7 @@ export class PlannerAgentService {
     const planCtx = await this.decomposeOnce(input, ctx);
     output.plan_id = await this.persistPlan(planCtx.dag, input.work_id, input.interact_id, ctx, '');
     output.task_dag = planCtx.dag;
+    output.clarifications = planCtx.clarifications;
     return true;
   }
 
@@ -109,6 +111,7 @@ export class PlannerAgentService {
     this.validateDag(dag, planCtx.maxSub);
     output.plan_id = await this.persistPlan(dag, input.work_id, input.interact_id, ctx, '');
     output.task_dag = dag;
+    output.clarifications = planCtx.clarifications;
     return true;
   }
 
@@ -121,8 +124,8 @@ export class PlannerAgentService {
     const contextExtra = await this.buildPlanContext(ctx, input);
     const llmId = await this.resolvePlanLlmId(agent, config);
     const params = { llmId, soulId: agent?.soul_id || '', promptId: config?.plan_prompt_template_id || '', maxSub, threshold };
-    const dag = await this.decomposeTask(input.task_content, contextExtra, params);
-    return { dag, threshold, maxSub, llmId: params.llmId, soulId: params.soulId, promptId: params.promptId, contextExtra };
+    const { dag, clarifications } = await this.decomposeTask(input.task_content, contextExtra, params);
+    return { dag, clarifications, threshold, maxSub, llmId: params.llmId, soulId: params.soulId, promptId: params.promptId, contextExtra };
   }
 
   /** 构建 PlannerAgent（存在则复用）并返回其完整配置。 */
@@ -181,10 +184,10 @@ export class PlannerAgentService {
     task: string,
     contextExtra: string,
     params: { llmId: string; soulId: string; promptId: string; maxSub: number },
-  ): Promise<TaskDag> {
-    const dag = await this.llmPlan(params.llmId, params.soulId, params.promptId, task, contextExtra, params.maxSub);
-    if (dag) return dag;
-    return this.singleNodeDag(task, this.estimateComplexity(task));
+  ): Promise<{ dag: TaskDag; clarifications: PlanClarification[] }> {
+    const result = await this.llmPlan(params.llmId, params.soulId, params.promptId, task, contextExtra, params.maxSub);
+    if (result) return result;
+    return { dag: this.singleNodeDag(task, this.estimateComplexity(task)), clarifications: [] };
   }
 
   /** 落库规划并写 InfoCore 记录，返回 plan_id。 */
@@ -232,11 +235,12 @@ export class PlannerAgentService {
       nodes.push(node);
       return;
     }
-    const subDag = await this.llmPlan(planCtx.llmId, planCtx.soulId, planCtx.promptId, node.task_content, planCtx.contextExtra, planCtx.maxSub);
-    if (!subDag || subDag.nodes.length <= 1) {
+    const subResult = await this.llmPlan(planCtx.llmId, planCtx.soulId, planCtx.promptId, node.task_content, planCtx.contextExtra, planCtx.maxSub);
+    if (!subResult || subResult.dag.nodes.length <= 1) {
       nodes.push(node);
       return;
     }
+    const subDag = subResult.dag;
     const root = this.findRoot(subDag.nodes);
     const children = this.findChildren(subDag.nodes, root?.task_id);
     // 重置子任务的 dependencies：子任务在 subDag 内部的 dependencies 引用的是 subDag 内部 task_id，
@@ -500,7 +504,7 @@ export class PlannerAgentService {
     task: string,
     contextExtra: string,
     maxSub: number,
-  ): Promise<TaskDag | null> {
+  ): Promise<{ dag: TaskDag; clarifications: PlanClarification[] } | null> {
     try {
       const system = '';
       const prompt = await this.renderPrompt(
@@ -530,6 +534,7 @@ export class PlannerAgentService {
       if (!parsed) return null;
       const nodes = (parsed.nodes as TaskDag['nodes']) ?? [];
       const edges = (parsed.edges as TaskDag['edges']) ?? [];
+      const clarifications = this.parseClarifications(parsed.clarifications);
       if (!Array.isArray(nodes) || nodes.length === 0) return null;
       // 补全 task_id / parent_task_id / dependencies，保证后续层级与执行依赖计算稳定
       for (const n of nodes) {
@@ -537,10 +542,28 @@ export class PlannerAgentService {
         if (!n.dependencies) n.dependencies = [];
         if (n.parent_task_id === undefined || n.parent_task_id === null) n.parent_task_id = '';
       }
-      return { nodes, edges };
+      return { dag: { nodes, edges }, clarifications };
     } catch {
       return null;
     }
+  }
+
+  /** 解析 Planner 输出的 clarifications（需用户补充参数的任务澄清问题）。 */
+  private parseClarifications(raw: unknown): PlanClarification[] {
+    if (!Array.isArray(raw)) return [];
+    const result: PlanClarification[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const q = (item as { question?: unknown }).question;
+      const d = (item as { domain?: unknown }).domain;
+      const question = typeof q === 'string' ? q.trim() : '';
+      if (!question) continue;
+      result.push({
+        question,
+        domain: typeof d === 'string' && d.trim() ? d.trim() : undefined,
+      });
+    }
+    return result;
   }
 
   private singleNodeDag(task: string, complexity: number): TaskDag {

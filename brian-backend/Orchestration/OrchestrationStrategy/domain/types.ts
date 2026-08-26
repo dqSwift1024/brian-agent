@@ -22,6 +22,10 @@ export class StartOrchestrationInput extends Input {
 
 export class StartOrchestrationOutput extends Output {
   final_response = '';
+  /** 编排因需用户补充参数而暂停（Planner 识别出需澄清的任务），等待前端收集参数后重入 */
+  paused = false;
+  /** 需向用户收集的澄清问题（paused 为 true 时有值） */
+  clarifications: Array<{ question: string; domain?: string }> = [];
 }
 
 export class ExecuteSimpleStrategyInput extends Input {

@@ -381,6 +381,13 @@ export class JSONNodeService {
           await this.saveTrace(input.orchestration_id, traceEntry);
         }
 
+        // 需求澄清短路：节点将 sharedData._paused 置位（如 PLAN_WORK 识别到需用户补充参数），
+        // 终止后续节点执行，等待前端收集参数后重入编排。
+        if (sharedData._paused) {
+          currentNode = null;
+          continue;
+        }
+
         if (node.node_type === 'CONDITION') {
           const condResult = sharedData._condition_result as boolean;
           const nextId = condResult ? node.true_next : node.false_next;
@@ -984,6 +991,50 @@ export class JSONNodeService {
       Object.assign(new PlannerAgentContext(), { trace_id: (sharedData.trace_id as string) ?? '' }),
       planOutput,
     );
+
+    // ===== 需求澄清：Planner 识别出需用户补充参数才能执行的任务（不进入 DAG）=====
+    const clarifications = (planOutput.clarifications ?? []).filter(
+      (c) => c && typeof c.question === 'string' && c.question.trim(),
+    );
+    if (clarifications.length > 0) {
+      const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
+      const metadata = {
+        trace_id: (sharedData.trace_id as string) ?? '',
+        clarifications,
+      };
+      // 持久化澄清问题到 orchestration_work.metadata，供前端历史展示与重入编排读取
+      const updData: DataObject[] = [
+        { field: 'status', value: 'PAUSED_WAITING_INPUT' },
+        { field: 'task_count', value: 0 },
+        { field: 'updated', value: IdGenerator.now() },
+        { field: 'metadata', value: JSON.stringify(metadata) },
+      ];
+      await this.relationDb.updateDB(
+        Object.assign(new UpdateDBInput(), {
+          table: 'orchestration_work',
+          data: updData,
+          conditions: [
+            { field: 'work_id', operator: Operator.EQ, value: workId },
+          ] as Condition[],
+        }),
+        new DBContext(),
+        Object.assign(new UpdateDBOutput(), {}),
+      );
+
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
+        await this.streamAccess.pushEvent(sessionId, 'clarification_required', 'CONTROL', {
+          work_id: workId,
+          interact_id: interactId,
+          original_query: userQuery,
+          clarifications,
+        }, { work_id: workId, interact_id: interactId, node_id: 'PLAN_WORK' });
+      }
+
+      // 标记暂停，供 JSONNode 执行循环短路（不再进入 CONDITION / 后续执行节点）
+      sharedData._paused = true;
+      sharedData._clarifications = clarifications;
+      return;
+    }
 
     sharedData[savePlanKey] = {
       plan_id: planOutput.plan_id,

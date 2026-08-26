@@ -178,6 +178,19 @@ export class ConfirmIntentOutput extends Output {
   interact_id = '';
 }
 
+export class SubmitClarificationInput extends Input {
+  session_id!: string;
+  work_id!: string;
+  answers!: Array<{ question: string; answer: string }>;
+}
+
+export class SubmitClarificationOutput extends Output {
+  success = false;
+  final_response = '';
+  interact_id = '';
+  clarifications: Array<{ question: string; domain?: string }> = [];
+}
+
 export class ConfigChatInput extends Input {
   max_messages_per_session?: number;
   sse_heartbeat_interval_ms?: number;

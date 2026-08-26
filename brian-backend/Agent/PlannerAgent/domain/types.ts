@@ -64,6 +64,17 @@ export interface PlanTaskDAG {
   edges: PlanTaskEdge[];
 }
 
+/**
+ * 需用户补充参数才能执行的任务，拆解时从 DAG 中排除，转为澄清问题。
+ * 由编排层在拆解后暂停执行，通过前端弹窗收集答案后重入编排。
+ */
+export interface PlanClarification {
+  /** 向用户提出的澄清问题 */
+  question: string;
+  /** 该问题所属的任务域（如"交通预订"），用于展示与归组 */
+  domain?: string;
+}
+
 export class PlanInput extends Input {
   work_id!: string;
   interact_id!: string;
@@ -73,6 +84,8 @@ export class PlanInput extends Input {
 export class PlanOutput extends Output {
   plan_id = '';
   task_dag: PlanTaskDAG = { nodes: [], edges: [] };
+  /** 需用户补充参数才能执行的任务对应的澄清问题（不进入 DAG） */
+  clarifications: PlanClarification[] = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +103,8 @@ export class PlanHierarchicalInput extends Input {
 export class PlanHierarchicalOutput extends Output {
   plan_id = '';
   task_dag: PlanTaskDAG = { nodes: [], edges: [] };
+  /** 需用户补充参数才能执行的任务对应的澄清问题（不进入 DAG） */
+  clarifications: PlanClarification[] = [];
 }
 
 // ---------------------------------------------------------------------------

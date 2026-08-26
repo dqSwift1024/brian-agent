@@ -28,6 +28,7 @@ import {
   OrchestrationEntryContext, ReceiveWorkInput, ReceiveWorkOutput,
   CancelWorkInput as OrchCancelWorkInput, CancelWorkOutput as OrchCancelWorkOutput,
   ConfirmIntentInput as OrchConfirmIntentInput, ConfirmIntentOutput as OrchConfirmIntentOutput,
+  SubmitClarificationInput as OrchSubmitClarificationInput, SubmitClarificationOutput as OrchSubmitClarificationOutput,
 } from '@brian-agent/orchestration';
 import {
   ChatContext,
@@ -44,6 +45,7 @@ import {
   GetMessageGraphInput, GetMessageGraphOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   type SSEEvent,
@@ -1207,6 +1209,51 @@ export class ChatService {
     const finalResponse = output.final_response;
     if (input.action !== 'CANCEL') {
       if (this.streamAccess && typeof this.streamAccess.pushText === 'function' && finalResponse) {
+        await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
+          work_id: input.work_id,
+          interact_id: output.interact_id,
+          chunk_delay_ms: 0,
+        });
+      }
+      if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
+        await this.streamAccess.pushEvent(input.session_id, 'done', 'CONTROL', {
+          work_id: input.work_id,
+          interact_id: output.interact_id,
+          final_response: finalResponse,
+          paused: false,
+        }, { work_id: input.work_id, interact_id: output.interact_id });
+      }
+    }
+
+    return ok;
+  }
+
+  async submitClarification(
+    input: SubmitClarificationInput,
+    _context: ChatContext,
+    output: SubmitClarificationOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) throw new ValidationError('work_id is required');
+    if (!input.answers || input.answers.length === 0) throw new ValidationError('answers is required');
+
+    const subIn = Object.assign(new OrchSubmitClarificationInput(), {
+      session_id: input.session_id,
+      work_id: input.work_id,
+      answers: input.answers,
+    });
+    const subOut = new OrchSubmitClarificationOutput();
+    const subCtx = new OrchestrationEntryContext();
+
+    const ok = await this.orchestrationEntry.submitClarification(subIn, subCtx, subOut);
+    output.success = subOut.success;
+    output.final_response = subOut.final_response || '';
+    output.interact_id = subOut.interact_id || '';
+    output.clarifications = subOut.clarifications ?? [];
+
+    // 补充参数重入编排完成后，经 StreamAccess 流式回传最终回复与 done 事件
+    const finalResponse = output.final_response;
+    if (finalResponse) {
+      if (this.streamAccess && typeof this.streamAccess.pushText === 'function') {
         await this.streamAccess.pushText(input.session_id, 'text_chunk', finalResponse, {
           work_id: input.work_id,
           interact_id: output.interact_id,

@@ -179,6 +179,7 @@ import {
   PinMessageInput, PinMessageOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
   UpdateSessionTitleInput, UpdateSessionTitleOutput,
 } from './Application/Chat/domain/types';
@@ -258,12 +259,12 @@ function createLogger(logAccess?: LogAccess): any {
     } catch { /* ignore */ }
   };
   return {
-    // 调试日志（含 AOP 切面的 invoke/done）不写入数据库，避免非业务切面日志污染日志库
-    debug: () => {},
-    // 启动/定时任务等 INFO/WARN 日志直接写日志文件，不入库
-    info: (message: string, meta?: unknown) => writeFileLog('INFO', message, meta),
-    warn: (message: string, meta?: unknown) => writeFileLog('WARN', message, meta),
-    // 业务错误日志（含 AOP 切面的 failed）通过 LogProvider 持久化到 SQLite
+    // 所有日志点统一经 LogProvider 提交，由 LogProvider 依据配置的 min_level 决定是否入库。
+    // 不再在入口层分流：DEBUG/INFO/WARN/ERROR 一律走 LogProvider.addLog，
+    // 是否落库由 log_config.min_level 统一控制（默认 DEBUG，全量入库；调高后低级别自动丢弃）。
+    debug: (message: string, meta?: unknown) => write('DEBUG', message, meta),
+    info: (message: string, meta?: unknown) => write('INFO', message, meta),
+    warn: (message: string, meta?: unknown) => write('WARN', message, meta),
     error: (message: string, meta?: unknown) => write('ERROR', message, meta),
   };
 }
@@ -3070,6 +3071,72 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
             error_message: err?.message || 'Confirm intent failed',
             error_code: 'CONFIRM_INTENT_FAILED',
+          });
+        } finally {
+          await ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          );
+          if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+        }
+        return;
+
+      } else if (method === 'POST' && pathname === '/api/chat/submit-clarification') {
+        const sessionId = typeof body.session_id === 'string' ? body.session_id : (params.get('sessionId') || '');
+        const workId = typeof body.work_id === 'string' ? body.work_id : '';
+        const answers = Array.isArray(body.answers) ? body.answers : [];
+
+        if (!workId) { sendJson(res, 400, { error: 'work_id is required' }); return; }
+        if (answers.length === 0) { sendJson(res, 400, { error: 'answers is required' }); return; }
+
+        // 补充参数重入编排耗时较长，同样走 SSE 流式回传思考过程与系统回答
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+
+        let clientClosed = false;
+        req.on('close', () => {
+          clientClosed = true;
+          ctx.streamAccess.closeStream(
+            Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
+            new StreamContext(),
+            new CloseStreamOutput(),
+          ).catch(() => {});
+        });
+
+        await ctx.streamAccess.registerStream(
+          Object.assign(new RegisterStreamInput(), {
+            session_id: sessionId,
+            writer: (chunk: string) => {
+              if (clientClosed) return false;
+              try { res.write(chunk); return true; } catch { return false; }
+            },
+            onClose: () => {
+              if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
+            },
+          }),
+          new StreamContext(),
+          new RegisterStreamOutput(),
+        );
+
+        const input = Object.assign(new SubmitClarificationInput(), {
+          session_id: sessionId,
+          work_id: workId,
+          answers,
+        });
+        const output = new SubmitClarificationOutput();
+        const context = new ChatContext();
+
+        try {
+          await ctx.chatAccess.submitClarification(input, context, output);
+        } catch (err: any) {
+          await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
+            error_message: err?.message || 'Submit clarification failed',
+            error_code: 'SUBMIT_CLARIFICATION_FAILED',
           });
         } finally {
           await ctx.streamAccess.closeStream(

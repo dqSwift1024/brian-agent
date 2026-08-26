@@ -13,6 +13,8 @@ export {
   PinMessageInput, PinMessageOutput,
   GetMessageGraphInput, GetMessageGraphOutput,
   CancelWorkInput, CancelWorkOutput,
+  ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigChatInput, ConfigChatOutput,
   OpenChatStreamInput, OpenChatStreamOutput,
 } from './domain/types';

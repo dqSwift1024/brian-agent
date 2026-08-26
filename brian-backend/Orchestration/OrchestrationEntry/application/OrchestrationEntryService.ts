@@ -14,7 +14,7 @@ import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, Sa
 import type { WriterAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
 import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
-import type { StartOrchestrationInput, StartOrchestrationOutput } from '../../OrchestrationStrategy/domain/types';
+import { StartOrchestrationInput, StartOrchestrationOutput } from '../../OrchestrationStrategy/domain/types';
 import type { OrchestrationExecutionAccess } from '../../OrchestrationExecution/access/OrchestrationExecutionAccess';
 import {
   OrchestrationExecutionContext,
@@ -29,6 +29,7 @@ import {
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from '../domain/types';
 import { selectOrchestrationStrategy as sharedSelectStrategy } from '../../shared/strategySelector';
@@ -275,7 +276,7 @@ export class OrchestrationEntryService {
       info_creator_id: input.info_creator_id,
       info_creator_role: input.info_creator_role,
     };
-    const startOutput: StartOrchestrationOutput = { final_response: '' };
+    const startOutput = new StartOrchestrationOutput();
 
     try {
       await this.orchestrationStrategy.startOrchestration(startInput, startCtx, startOutput);
@@ -330,6 +331,17 @@ export class OrchestrationEntryService {
       output.error = errMsg;
       output.error_code = startOutput.error_code ?? 'ORCHESTRATION_NODE_FAILED';
       return false;
+    }
+
+    // Planner 识别出需用户补充参数的任务，编排暂停，等待前端收集参数后重入（submitClarification）
+    if (startOutput.paused) {
+      output.work_id = workId;
+      output.interact_id = interactId;
+      output.orchestration_strategy = strategy;
+      output.final_response = '';
+      output.paused = true;
+      output.clarifications = startOutput.clarifications ?? [];
+      return true;
     }
 
     const finalResponse = startOutput.final_response || '';
@@ -897,11 +909,10 @@ export class OrchestrationEntryService {
       finalQuery = input.understood_requirement || String(metadata.understood_requirement || record.user_query);
     }
 
-    // APPROVE 且需求被改写时，同步更新 info_raw 中已保存的 REQUEST 消息内容，
-    // 保证对话历史 / ChatMap 展示的是理解后的需求而非原始模糊输入。
-    if (input.action === 'APPROVE' && finalQuery !== String(record.user_query)) {
-      await this.rewriteRequestInfo(input.work_id, finalQuery);
-    }
+    // ===== 修改：保留原始需求 =====
+    // APPROVE 仅将理解后的需求作为重入编排的执行 query，不再覆盖 info_raw 中已保存的
+    // 原始 REQUEST 消息内容，保证对话历史 / ChatMap 始终展示用户原始输入（而非改写后的需求）。
+    // （原始逻辑会调用 rewriteRequestInfo 改写 REQUEST，现已移除，避免历史消息失真。）
 
     // ===== 修改：透传原 work 的 trace_id，保证确认流程（APPROVE/KEEP）重入编排时
     //      写出的 RESPONSE 消息 trace_id 与首次提交一致（否则刷新后复制 TraceId 按钮无值）。 =====
@@ -924,6 +935,90 @@ export class OrchestrationEntryService {
     output.next_status = 'PROCESSING';
     output.final_response = rwOutput.final_response || '';
     output.interact_id = rwOutput.interact_id || String(record.interact_id || '');
+    return ok;
+  }
+
+  /**
+   * 用户补充参数后重入编排：将澄清问题答案并入原始需求，重新执行完整编排流程。
+   * 与 confirmIntent 类似，但以「原始需求 + 用户补充参数」作为重入的 user_query，
+   * 并透传原 work_id / interact_id / trace_id 保证幂等与历史一致。
+   */
+  async submitClarification(
+    input: SubmitClarificationInput,
+    context: OrchestrationEntryContext,
+    output: SubmitClarificationOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) throw new ValidationError('work_id is required');
+    if (!input.answers || !Array.isArray(input.answers) || input.answers.length === 0) {
+      throw new ValidationError('answers is required');
+    }
+
+    const selectIn = Object.assign(new SelectOneDBInput(), {
+      query_param: {
+        table: 'orchestration_work',
+        conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+      },
+    });
+    const selectOut = new SelectOneDBOutput();
+    await this.relationDb.selectOneDB(selectIn, new DBContext(), selectOut);
+    if (!selectOut.row) throw new NotFoundError('orchestration_work', input.work_id);
+
+    const record = selectOut.row as Record<string, unknown>;
+    let metadata: Record<string, unknown> = {};
+    try {
+      metadata = JSON.parse(String(record.metadata ?? '{}'));
+    } catch {}
+
+    // 保留原始需求：user_query 仍为原始输入，用户补充参数作为附加约束一并交给 Planner 重新拆解
+    const answerLines = input.answers
+      .filter((a) => a && typeof a.answer === 'string' && a.answer.trim())
+      .map((a) => `- ${a.question ? `${a.question}：` : ''}${a.answer.trim()}`);
+    const supplement = answerLines.length > 0 ? `\n\n[用户补充的参数]\n${answerLines.join('\n')}` : '';
+    const finalQuery = `${String(record.user_query)}${supplement}`;
+
+    const rwInput = Object.assign(new ReceiveWorkInput(), {
+      session_id: String(record.session_id),
+      user_query: finalQuery,
+      skip_intent_check: true,
+      trace_id: String(metadata.trace_id ?? ''),
+    });
+    const rwOutput = new ReceiveWorkOutput();
+    const rwCtx = Object.assign(new OrchestrationEntryContext(), {
+      session_id: String(record.session_id),
+      work_id: input.work_id,
+      interact_id: String(record.interact_id),
+    });
+
+    const ok = await this.receiveWork(rwInput, rwCtx, rwOutput);
+    output.success = ok;
+    output.final_response = rwOutput.final_response || '';
+    output.interact_id = rwOutput.interact_id || String(record.interact_id || '');
+    output.clarifications = rwOutput.clarifications ?? [];
+
+    // 保存补充参数记录到 info_raw（USER ACT），用于对话历史与思考过程展示，
+    // 避免「用户补充了哪些参数」在流程结束后丢失。
+    try {
+      await this.infoCore.saveInfo(
+        Object.assign(new SaveInfoInput(), {
+          session_id: String(record.session_id),
+          work_id: input.work_id,
+          interact_id: String(record.interact_id || ''),
+          info_type: InfoType.ACT,
+          info_creator_role: 'USER',
+          info_creator_id: '',
+          info: JSON.stringify({ clarifications: input.answers }),
+          trace_id: String(metadata.trace_id ?? ''),
+        }),
+        new InfoCoreContext(),
+        new SaveInfoOutput(),
+      );
+    } catch (err) {
+      this.logger?.error?.('submitClarification: saveInfo (answers) failed', {
+        work_id: input.work_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     return ok;
   }
 

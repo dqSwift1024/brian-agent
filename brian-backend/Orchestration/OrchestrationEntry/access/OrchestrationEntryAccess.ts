@@ -15,6 +15,7 @@ import {
   GetWorkStatusInput, GetWorkStatusOutput,
   CancelWorkInput, CancelWorkOutput,
   ConfirmIntentInput, ConfirmIntentOutput,
+  SubmitClarificationInput, SubmitClarificationOutput,
   ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput,
 } from '../domain/types';
 
@@ -95,6 +96,13 @@ export class OrchestrationEntryAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.confirmIntent(i, c, o);
+  }
+
+  async submitClarification(
+    i: SubmitClarificationInput, c: OrchestrationEntryContext, o: SubmitClarificationOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.submitClarification(i, c, o);
   }
 
   async configOrchestrationEntry(
