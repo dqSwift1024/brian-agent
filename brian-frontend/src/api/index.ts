@@ -164,9 +164,9 @@ export const configApi = {
       request<void>('/config', { method: 'PUT', body: JSON.stringify({ config_key: configKey, value }) }),
   },
   graphVisualization: {
-    get: () => request<{ graph_repulsion: number; graph_spring_strength: number; graph_show_labels: boolean }>('/config/graph-visualization'),
-    save: (data: { graph_repulsion?: number; graph_spring_strength?: number; graph_show_labels?: boolean }) =>
-      request<void>('/config/graph-visualization', { method: 'PUT', body: JSON.stringify(data) }),
+    get: (graphType: string) => request<{ graph_repulsion: number; graph_spring_strength: number; graph_show_labels: boolean }>(`/config/graph-visualization?graph_type=${encodeURIComponent(graphType)}`),
+    save: (graphType: string, data: { graph_repulsion?: number; graph_spring_strength?: number; graph_show_labels?: boolean }) =>
+      request<void>(`/config/graph-visualization?graph_type=${encodeURIComponent(graphType)}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
   model: {
     list: () => request<ModelInfo[]>('/config/model'),

@@ -88,13 +88,16 @@ export class ConfigVisualizationInput extends Input {
   graph_repulsion?: number;
   graph_spring_strength?: number;
   graph_show_labels?: boolean;
+  graph_type?: string;
 }
 
 export class ConfigVisualizationOutput extends Output {
   config: Record<string, unknown> = {};
 }
 
-export class GraphVisualizationConfigInput extends Input {}
+export class GraphVisualizationConfigInput extends Input {
+  graph_type?: string;
+}
 export class GraphVisualizationConfigOutput extends Output {
   graph_repulsion = DEFAULT_GRAPH_REPULSION;
   graph_spring_strength = DEFAULT_GRAPH_SPRING_STRENGTH;

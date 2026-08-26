@@ -21,9 +21,12 @@ export class VisualizationSchemaInitializer {
         max_nodes_per_graph INTEGER DEFAULT ${DEFAULT_MAX_NODES_PER_GRAPH},
         default_message_summary_length INTEGER DEFAULT ${DEFAULT_MESSAGE_SUMMARY_LENGTH},
         resolve_content_by_default INTEGER DEFAULT ${DEFAULT_RESOLVE_CONTENT_BY_DEFAULT},
-        graph_repulsion INTEGER DEFAULT ${DEFAULT_GRAPH_REPULSION},
-        graph_spring_strength REAL DEFAULT ${DEFAULT_GRAPH_SPRING_STRENGTH},
-        graph_show_labels INTEGER DEFAULT 1
+        tag_graph_repulsion INTEGER DEFAULT ${DEFAULT_GRAPH_REPULSION},
+        tag_graph_spring_strength REAL DEFAULT ${DEFAULT_GRAPH_SPRING_STRENGTH},
+        tag_graph_show_labels INTEGER DEFAULT 1,
+        keyword_graph_repulsion INTEGER DEFAULT ${DEFAULT_GRAPH_REPULSION},
+        keyword_graph_spring_strength REAL DEFAULT ${DEFAULT_GRAPH_SPRING_STRENGTH},
+        keyword_graph_show_labels INTEGER DEFAULT 1
       )`,
     );
 
@@ -41,9 +44,12 @@ export class VisualizationSchemaInitializer {
       { field: 'max_nodes_per_graph', value: DEFAULT_MAX_NODES_PER_GRAPH },
       { field: 'default_message_summary_length', value: DEFAULT_MESSAGE_SUMMARY_LENGTH },
       { field: 'resolve_content_by_default', value: DEFAULT_RESOLVE_CONTENT_BY_DEFAULT },
-      { field: 'graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
-      { field: 'graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
-      { field: 'graph_show_labels', value: 1 },
+      { field: 'tag_graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
+      { field: 'tag_graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
+      { field: 'tag_graph_show_labels', value: 1 },
+      { field: 'keyword_graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
+      { field: 'keyword_graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
+      { field: 'keyword_graph_show_labels', value: 1 },
     ]);
   }
 }

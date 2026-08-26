@@ -1571,7 +1571,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
 
       } else if (method === 'GET' && pathname === '/api/config/graph-visualization') {
-        const i = Object.assign(new GraphVisualizationConfigInput(), {});
+        const graphType = params.get('graph_type') || 'tag';
+        const i = Object.assign(new GraphVisualizationConfigInput(), { graph_type: graphType });
         const o = new GraphVisualizationConfigOutput();
         const c = new VisualizationContext();
         await ctx.visualizationAccess.getGraphVisualizationConfig(i, c, o);
@@ -1582,10 +1583,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
 
       } else if (method === 'PUT' && pathname === '/api/config/graph-visualization') {
+        const graphType = params.get('graph_type') || 'tag';
         const i = Object.assign(new ConfigVisualizationInput(), {
           graph_repulsion: body.graph_repulsion,
           graph_spring_strength: body.graph_spring_strength,
           graph_show_labels: body.graph_show_labels,
+          graph_type: graphType,
         });
         const o = new ConfigVisualizationOutput();
         const c = new VisualizationContext();

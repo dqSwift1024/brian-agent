@@ -99,9 +99,12 @@ interface VisualizationConfigRow {
   max_nodes_per_graph: number;
   default_message_summary_length: number;
   resolve_content_by_default: number;
-  graph_repulsion: number;
-  graph_spring_strength: number;
-  graph_show_labels: number;
+  tag_graph_repulsion: number;
+  tag_graph_spring_strength: number;
+  tag_graph_show_labels: number;
+  keyword_graph_repulsion: number;
+  keyword_graph_spring_strength: number;
+  keyword_graph_show_labels: number;
 }
 
 interface CitationData {
@@ -872,9 +875,12 @@ export class VisualizationService {
         { field: 'max_nodes_per_graph', value: DEFAULT_MAX_NODES_PER_GRAPH },
         { field: 'default_message_summary_length', value: DEFAULT_MESSAGE_SUMMARY_LENGTH },
         { field: 'resolve_content_by_default', value: DEFAULT_RESOLVE_CONTENT_BY_DEFAULT },
-        { field: 'graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
-        { field: 'graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
-        { field: 'graph_show_labels', value: 1 },
+        { field: 'tag_graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
+        { field: 'tag_graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
+        { field: 'tag_graph_show_labels', value: 1 },
+        { field: 'keyword_graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
+        { field: 'keyword_graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
+        { field: 'keyword_graph_show_labels', value: 1 },
       ]);
       config = await this.getConfigFull();
     }
@@ -894,14 +900,15 @@ export class VisualizationService {
     if (input.resolve_content_by_default !== undefined) {
       data.push({ field: 'resolve_content_by_default', value: input.resolve_content_by_default ? 1 : 0 });
     }
+    const prefix = input.graph_type === 'keyword' ? 'keyword_graph' : 'tag_graph';
     if (input.graph_repulsion !== undefined) {
-      data.push({ field: 'graph_repulsion', value: input.graph_repulsion });
+      data.push({ field: `${prefix}_repulsion`, value: input.graph_repulsion });
     }
     if (input.graph_spring_strength !== undefined) {
-      data.push({ field: 'graph_spring_strength', value: input.graph_spring_strength });
+      data.push({ field: `${prefix}_spring_strength`, value: input.graph_spring_strength });
     }
     if (input.graph_show_labels !== undefined) {
-      data.push({ field: 'graph_show_labels', value: input.graph_show_labels ? 1 : 0 });
+      data.push({ field: `${prefix}_show_labels`, value: input.graph_show_labels ? 1 : 0 });
     }
 
     if (data.length > 0) {
@@ -916,22 +923,26 @@ export class VisualizationService {
       max_nodes_per_graph: latest?.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH,
       default_message_summary_length: latest?.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH,
       resolve_content_by_default: latest?.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-      graph_repulsion: latest?.graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
-      graph_spring_strength: latest?.graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
-      graph_show_labels: (latest?.graph_show_labels ?? 1) === 1,
+      tag_graph_repulsion: latest?.tag_graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
+      tag_graph_spring_strength: latest?.tag_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
+      tag_graph_show_labels: (latest?.tag_graph_show_labels ?? 1) === 1,
+      keyword_graph_repulsion: latest?.keyword_graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
+      keyword_graph_spring_strength: latest?.keyword_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
+      keyword_graph_show_labels: (latest?.keyword_graph_show_labels ?? 1) === 1,
     };
     return true;
   }
 
   async getGraphVisualizationConfig(
-    _input: GraphVisualizationConfigInput,
+    input: GraphVisualizationConfigInput,
     _ctx: VisualizationContext,
     output: GraphVisualizationConfigOutput,
   ): Promise<boolean> {
     const config = await this.getConfig();
-    output.graph_repulsion = config.graph_repulsion;
-    output.graph_spring_strength = config.graph_spring_strength;
-    output.graph_show_labels = config.graph_show_labels === 1;
+    const isKeyword = input.graph_type === 'keyword';
+    output.graph_repulsion = isKeyword ? config.keyword_graph_repulsion : config.tag_graph_repulsion;
+    output.graph_spring_strength = isKeyword ? config.keyword_graph_spring_strength : config.tag_graph_spring_strength;
+    output.graph_show_labels = (isKeyword ? config.keyword_graph_show_labels : config.tag_graph_show_labels) === 1;
     return true;
   }
 
@@ -942,9 +953,12 @@ export class VisualizationService {
       max_nodes_per_graph: full?.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH,
       default_message_summary_length: full?.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH,
       resolve_content_by_default: full?.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
-      graph_repulsion: full?.graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
-      graph_spring_strength: full?.graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
-      graph_show_labels: full?.graph_show_labels ?? 1,
+      tag_graph_repulsion: full?.tag_graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
+      tag_graph_spring_strength: full?.tag_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
+      tag_graph_show_labels: full?.tag_graph_show_labels ?? 1,
+      keyword_graph_repulsion: full?.keyword_graph_repulsion ?? DEFAULT_GRAPH_REPULSION,
+      keyword_graph_spring_strength: full?.keyword_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH,
+      keyword_graph_show_labels: full?.keyword_graph_show_labels ?? 1,
     };
   }
 
@@ -957,9 +971,12 @@ export class VisualizationService {
       max_nodes_per_graph: Number(row.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH),
       default_message_summary_length: Number(row.default_message_summary_length ?? DEFAULT_MESSAGE_SUMMARY_LENGTH),
       resolve_content_by_default: Number(row.resolve_content_by_default ?? DEFAULT_RESOLVE_CONTENT_BY_DEFAULT),
-      graph_repulsion: Number(row.graph_repulsion ?? DEFAULT_GRAPH_REPULSION),
-      graph_spring_strength: Number(row.graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH),
-      graph_show_labels: Number(row.graph_show_labels ?? 1),
+      tag_graph_repulsion: Number(row.tag_graph_repulsion ?? DEFAULT_GRAPH_REPULSION),
+      tag_graph_spring_strength: Number(row.tag_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH),
+      tag_graph_show_labels: Number(row.tag_graph_show_labels ?? 1),
+      keyword_graph_repulsion: Number(row.keyword_graph_repulsion ?? DEFAULT_GRAPH_REPULSION),
+      keyword_graph_spring_strength: Number(row.keyword_graph_spring_strength ?? DEFAULT_GRAPH_SPRING_STRENGTH),
+      keyword_graph_show_labels: Number(row.keyword_graph_show_labels ?? 1),
     };
   }
 

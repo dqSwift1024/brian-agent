@@ -996,28 +996,49 @@ const clearingTagGraph = ref(false)
 const keywordSearch = ref('')
 const clearingKeywordGraph = ref(false)
 
-const graphRepulsion = ref(2000)
-const graphSpringStrength = ref(0.2)
-const graphShowLabels = ref(true)
+const tagGraphRepulsion = ref(2000)
+const tagGraphSpringStrength = ref(0.2)
+const tagGraphShowLabels = ref(true)
+const keywordGraphRepulsion = ref(2000)
+const keywordGraphSpringStrength = ref(0.2)
+const keywordGraphShowLabels = ref(true)
 let rerunLayoutTimer: ReturnType<typeof setTimeout> | null = null
-let saveConfigTimer: ReturnType<typeof setTimeout> | null = null
+let saveTagConfigTimer: ReturnType<typeof setTimeout> | null = null
+let saveKeywordConfigTimer: ReturnType<typeof setTimeout> | null = null
 
-async function loadGraphConfig() {
+async function loadGraphConfigs() {
   try {
-    const cfg = await configApi.graphVisualization.get()
-    graphRepulsion.value = cfg.graph_repulsion ?? 2000
-    graphSpringStrength.value = cfg.graph_spring_strength ?? 0.2
-    graphShowLabels.value = cfg.graph_show_labels ?? true
+    const [tagCfg, kwCfg] = await Promise.all([
+      configApi.graphVisualization.get('tag'),
+      configApi.graphVisualization.get('keyword'),
+    ])
+    tagGraphRepulsion.value = tagCfg.graph_repulsion ?? 2000
+    tagGraphSpringStrength.value = tagCfg.graph_spring_strength ?? 0.2
+    tagGraphShowLabels.value = tagCfg.graph_show_labels ?? true
+    keywordGraphRepulsion.value = kwCfg.graph_repulsion ?? 2000
+    keywordGraphSpringStrength.value = kwCfg.graph_spring_strength ?? 0.2
+    keywordGraphShowLabels.value = kwCfg.graph_show_labels ?? true
   } catch { /* use defaults */ }
 }
 
-function saveGraphConfig() {
-  if (saveConfigTimer) clearTimeout(saveConfigTimer)
-  saveConfigTimer = setTimeout(() => {
-    configApi.graphVisualization.save({
-      graph_repulsion: graphRepulsion.value,
-      graph_spring_strength: graphSpringStrength.value,
-      graph_show_labels: graphShowLabels.value,
+function saveTagGraphConfig() {
+  if (saveTagConfigTimer) clearTimeout(saveTagConfigTimer)
+  saveTagConfigTimer = setTimeout(() => {
+    configApi.graphVisualization.save('tag', {
+      graph_repulsion: tagGraphRepulsion.value,
+      graph_spring_strength: tagGraphSpringStrength.value,
+      graph_show_labels: tagGraphShowLabels.value,
+    }).catch(() => {})
+  }, 500)
+}
+
+function saveKeywordGraphConfig() {
+  if (saveKeywordConfigTimer) clearTimeout(saveKeywordConfigTimer)
+  saveKeywordConfigTimer = setTimeout(() => {
+    configApi.graphVisualization.save('keyword', {
+      graph_repulsion: keywordGraphRepulsion.value,
+      graph_spring_strength: keywordGraphSpringStrength.value,
+      graph_show_labels: keywordGraphShowLabels.value,
     }).catch(() => {})
   }, 500)
 }
@@ -1026,16 +1047,18 @@ function rerunLayouts() {
   if (rerunLayoutTimer) clearTimeout(rerunLayoutTimer)
   rerunLayoutTimer = setTimeout(() => {
     if (graphNodes.value.length > 0) {
-      tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+      tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, tagGraphRepulsion.value, tagGraphSpringStrength.value)
     }
     if (keywordGraphNodes.value.length > 0) {
-      keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+      keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, keywordGraphRepulsion.value, keywordGraphSpringStrength.value)
     }
   }, 80)
 }
 
-watch([graphRepulsion, graphSpringStrength], () => { rerunLayouts(); saveGraphConfig() })
-watch(graphShowLabels, saveGraphConfig)
+watch([tagGraphRepulsion, tagGraphSpringStrength], () => { rerunLayouts(); saveTagGraphConfig() })
+watch(tagGraphShowLabels, saveTagGraphConfig)
+watch([keywordGraphRepulsion, keywordGraphSpringStrength], () => { rerunLayouts(); saveKeywordGraphConfig() })
+watch(keywordGraphShowLabels, saveKeywordGraphConfig)
 
 function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number, _repulsion = 2000, _springStrength = 0.2): TagLayoutNode[] {
   const cx = width / 2
@@ -1172,7 +1195,7 @@ async function loadTagGraph() {
     const data = await memoryApi.tagGraph()
     graphNodes.value = data.nodes || []
     graphEdges.value = data.edges || []
-    tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+    tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, tagGraphRepulsion.value, tagGraphSpringStrength.value)
   } catch { /* ignore */ }
   finally { loadingGraph.value = false }
 }
@@ -1285,7 +1308,7 @@ async function loadKeywordGraph() {
     const data = await memoryApi.keywordGraph()
     keywordGraphNodes.value = data.nodes || []
     keywordGraphEdges.value = data.edges || []
-    keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+    keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, keywordGraphRepulsion.value, keywordGraphSpringStrength.value)
   } catch { keywordGraphNodes.value = []; keywordGraphEdges.value = []; keywordLayoutNodes.value = [] }
   finally { loadingKeywordGraph.value = false }
 }
@@ -1427,7 +1450,7 @@ onMounted(async () => {
   loadHistory()
   loadMemory()
   loadLibraries()
-  await loadGraphConfig()
+  await loadGraphConfigs()
   loadTagGraph()
   loadKeywordGraph()
   loadHeatmap()
@@ -2045,16 +2068,16 @@ function searchMemoryByEnter() {
           <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetTagGraphView">重置视图</button>
           <span class="text-xs text-apple-gray-400">共 {{ graphNodes.length }} 节点</span>
           <div class="h-4 w-px bg-apple-gray-200 dark:bg-apple-gray-700" />
-          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="graphShowLabels = !graphShowLabels" :title="graphShowLabels ? '隐藏名称' : '显示名称'">
-            <component :is="graphShowLabels ? Eye : EyeOff" :size="13" />
+          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="tagGraphShowLabels = !tagGraphShowLabels" :title="tagGraphShowLabels ? '隐藏名称' : '显示名称'">
+            <component :is="tagGraphShowLabels ? Eye : EyeOff" :size="13" />
           </button>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
             <span class="shrink-0">斥力</span>
-            <input type="range" min="10" max="10000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="10" max="10000" step="100" v-model.number="tagGraphRepulsion" class="w-16 h-1 accent-brian-blue" />
           </label>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
             <span class="shrink-0">引力</span>
-            <input type="range" min="1" max="100" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="1" max="100" step="1" :value="Math.round(tagGraphSpringStrength * 100)" @input="tagGraphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
           </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingTagGraph" @click="clearTagGraph">
             <Trash2 :size="14" /> {{ clearingTagGraph ? '清理中...' : '一键清理' }}
@@ -2124,7 +2147,7 @@ function searchMemoryByEnter() {
                     :opacity="isTagNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="tagGraphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="hoveredTagId" pointer-events="none">
                   <template v-for="node in tagLayoutNodes.filter(n => n.id === hoveredTagId)" :key="'tooltip-' + node.id">
@@ -2163,16 +2186,16 @@ function searchMemoryByEnter() {
           <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetKeywordGraphView">重置视图</button>
           <span class="text-xs text-apple-gray-400">共 {{ keywordGraphNodes.length }} 节点</span>
           <div class="h-4 w-px bg-apple-gray-200 dark:bg-apple-gray-700" />
-          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="graphShowLabels = !graphShowLabels" :title="graphShowLabels ? '隐藏名称' : '显示名称'">
-            <component :is="graphShowLabels ? Eye : EyeOff" :size="13" />
+          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="keywordGraphShowLabels = !keywordGraphShowLabels" :title="keywordGraphShowLabels ? '隐藏名称' : '显示名称'">
+            <component :is="keywordGraphShowLabels ? Eye : EyeOff" :size="13" />
           </button>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
             <span class="shrink-0">斥力</span>
-            <input type="range" min="10" max="10000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="10" max="10000" step="100" v-model.number="keywordGraphRepulsion" class="w-16 h-1 accent-brian-blue" />
           </label>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
             <span class="shrink-0">引力</span>
-            <input type="range" min="1" max="100" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="1" max="100" step="1" :value="Math.round(keywordGraphSpringStrength * 100)" @input="keywordGraphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
           </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingKeywordGraph" @click="clearKeywordGraph">
             <Trash2 :size="14" /> {{ clearingKeywordGraph ? '清理中...' : '一键清理' }}
@@ -2244,7 +2267,7 @@ function searchMemoryByEnter() {
                     :opacity="isKeywordNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="keywordGraphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="keywordHoveredId" pointer-events="none">
                   <template v-for="node in keywordLayoutNodes.filter(n => n.id === keywordHoveredId)" :key="'kt-' + node.id">
