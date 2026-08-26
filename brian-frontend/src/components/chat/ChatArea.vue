@@ -75,6 +75,18 @@ watch(() => sessionStore.focusInfoId, async (id) => {
   listRef.value.scrollTop += elRect.top - listRect.top - listRect.height / 2 + elRect.height / 2
 })
 
+// 需求确认 / 需求补充卡片出现时滚动到底部，确保表单可见可交互
+watch(
+  () => [sessionStore.intentConfirmation, sessionStore.clarificationRequest],
+  async ([intent, clarify]) => {
+    if (!intent && !clarify) return
+    await nextTick()
+    if (listRef.value) {
+      listRef.value.scrollTop = listRef.value.scrollHeight
+    }
+  },
+)
+
 function scrollListTo(id: string) {
   sessionStore.triggerFocus(id)
 }
@@ -279,8 +291,7 @@ async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
   }
 }
 
-// 需求补充弹窗：各澄清问题的用户输入（与 clarificationRequest.clarifications 一一对应）
-const clarificationAnswers = ref<string[]>([])
+// 需求补充弹窗提交状态
 const submittingClarification = ref(false)
 
 async function handleClarificationSubmit() {
@@ -289,9 +300,9 @@ async function handleClarificationSubmit() {
   submittingClarification.value = true
   sessionStore.clearClarificationRequest()
 
-  const answers = req.clarifications.map((c, i) => ({
+  const answers = req.clarifications.map((c) => ({
     question: c.question,
-    answer: (clarificationAnswers.value[i] ?? '').trim(),
+    answer: (c.answer ?? '').trim(),
   }))
 
   const botMsgId = `msg-${Date.now()}-clarify`
@@ -353,7 +364,6 @@ async function handleClarificationSubmit() {
     }
   } finally {
     submittingClarification.value = false
-    clarificationAnswers.value = []
     sessionStore.finalizeBlocks(botMsgId)
     sessionStore.setStreaming(false)
     sessionStore.setCancelController(null)
@@ -1443,7 +1453,7 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
                     {{ c.question }}
                   </p>
                   <input
-                    v-model="clarificationAnswers[index]"
+                    v-model="c.answer"
                     type="text"
                     class="w-full px-3 py-2 rounded-lg text-sm border border-apple-gray-200 dark:border-apple-gray-700 bg-apple-gray-50 dark:bg-apple-gray-800 text-apple-gray-900 dark:text-apple-gray-100 focus:outline-none focus:ring-1 focus:ring-brian-blue"
                     :placeholder="c.question"

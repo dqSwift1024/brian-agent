@@ -94,7 +94,7 @@ export const useSessionStore = defineStore('session', () => {
     work_id: string
     interact_id: string
     original_query: string
-    clarifications: Array<{ question: string; domain?: string }>
+    clarifications: Array<{ question: string; domain?: string; answer: string }>
   }
   const clarificationRequest = ref<ClarificationRequest | null>(null)
 
@@ -116,6 +116,7 @@ export const useSessionStore = defineStore('session', () => {
           domain: (c as Record<string, unknown>).domain
             ? String((c as Record<string, unknown>).domain)
             : undefined,
+          answer: '',
         }))
         .filter((c) => c.question),
     }
