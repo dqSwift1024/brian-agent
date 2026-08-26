@@ -999,15 +999,15 @@ const clearingKeywordGraph = ref(false)
 function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): TagLayoutNode[] {
   const cx = width / 2
   const cy = height / 2
-  const radius = Math.min(width, height) * 0.38
   const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
   const degree = new Map<string, number>()
 
   for (let i = 0; i < nodes.length; i++) {
     const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2
+    const r = Math.min(width, height) * 0.38
     positions.set(nodes[i].id, {
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
       vx: 0, vy: 0,
     })
     degree.set(nodes[i].id, 0)
@@ -1017,19 +1017,18 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
     degree.set(e.target, (degree.get(e.target) || 0) + 1)
   }
 
-  const iterations = 500
-  const springLength = 160
-  const springStrength = 0.025
+  const iterations = 400
+  const springLength = 60
+  const springStrength = 0.06
+  const repulsion = 800
+  const repulsionCutoff = 300
+  const centerStrength = 0.004
+  const damping = 0.88
   const margin = 40
-  const maxVelocity = 60
-  const boundaryStrength = 0.15
+  const boundaryStrength = 0.1
+  const maxVelocity = 50
 
   for (let iter = 0; iter < iterations; iter++) {
-    const t = 1 - iter / iterations
-    const repulsion = 4000 * (1 + t * 3)
-    const centerStrength = 0.0005 + t * 0.0015
-    const damping = 0.85 + t * 0.13
-
     for (let i = 0; i < nodes.length; i++) {
       const a = positions.get(nodes[i].id)!
       for (let j = i + 1; j < nodes.length; j++) {
@@ -1037,6 +1036,7 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
         const dx = a.x - b.x
         const dy = a.y - b.y
         const distSq = dx * dx + dy * dy
+        if (distSq > repulsionCutoff * repulsionCutoff) continue
         const dist = Math.sqrt(distSq) || 1
         const force = repulsion / Math.max(distSq, 100)
         const fx = (dx / dist) * force
