@@ -996,8 +996,8 @@ const clearingTagGraph = ref(false)
 const keywordSearch = ref('')
 const clearingKeywordGraph = ref(false)
 
-const graphRepulsion = ref(1500)
-const graphSpringStrength = ref(0.06)
+const graphRepulsion = ref(2000)
+const graphSpringStrength = ref(0.2)
 const graphShowLabels = ref(true)
 let rerunLayoutTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1015,7 +1015,7 @@ function rerunLayouts() {
 
 watch([graphRepulsion, graphSpringStrength], rerunLayouts)
 
-function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number, _repulsion = 1500, _springStrength = 0.06): TagLayoutNode[] {
+function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number, _repulsion = 2000, _springStrength = 0.2): TagLayoutNode[] {
   const cx = width / 2
   const cy = height / 2
   const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
@@ -1108,7 +1108,7 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
       ...n,
       x: p.x,
       y: p.y,
-      r: 7 + (Math.min(d / maxDeg, 1)) * 10,
+      r: 5 + Math.sqrt(Math.min(d / Math.max(1, maxDeg), 1)) * 10,
       color: `hsl(${hue}, 75%, 52%)`,
     }
   })
@@ -2028,11 +2028,11 @@ function searchMemoryByEnter() {
           </button>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
             <span class="shrink-0">斥力</span>
-            <input type="range" min="100" max="5000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="10" max="10000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
           </label>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
             <span class="shrink-0">引力</span>
-            <input type="range" min="1" max="20" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="1" max="100" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
           </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingTagGraph" @click="clearTagGraph">
             <Trash2 :size="14" /> {{ clearingTagGraph ? '清理中...' : '一键清理' }}
@@ -2102,7 +2102,7 @@ function searchMemoryByEnter() {
                     :opacity="isTagNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[9px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="hoveredTagId" pointer-events="none">
                   <template v-for="node in tagLayoutNodes.filter(n => n.id === hoveredTagId)" :key="'tooltip-' + node.id">
@@ -2146,11 +2146,11 @@ function searchMemoryByEnter() {
           </button>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
             <span class="shrink-0">斥力</span>
-            <input type="range" min="100" max="5000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="10" max="10000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
           </label>
           <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
             <span class="shrink-0">引力</span>
-            <input type="range" min="1" max="20" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+            <input type="range" min="1" max="100" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
           </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingKeywordGraph" @click="clearKeywordGraph">
             <Trash2 :size="14" /> {{ clearingKeywordGraph ? '清理中...' : '一键清理' }}
@@ -2222,7 +2222,7 @@ function searchMemoryByEnter() {
                     :opacity="isKeywordNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[9px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[7px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="keywordHoveredId" pointer-events="none">
                   <template v-for="node in keywordLayoutNodes.filter(n => n.id === keywordHoveredId)" :key="'kt-' + node.id">
