@@ -1165,10 +1165,17 @@ export class AgentExecutionService {
     const thinkOut = new ThinkOutput();
     await this.think(this.buildThinkInput(env, history, iteration), env.ctx, thinkOut);
     this.pushThink(env, step.step, thinkOut, iteration);
-    const subSteps = this.extractSubSteps(parseJsonObject(thinkOut.next_action));
+    const nextAction = parseJsonObject(thinkOut.next_action);
+    const subSteps = this.extractSubSteps(nextAction);
+    // ===== 优化：think 判定无需外部工具（tool_type=NONE）时直接进入 Answer，跳过 Act+Reflect =====
+    // 对于「推荐/规划/问答」类任务，Think 一轮即可判定无需工具，此时 Reflect 空转（LLM 常把
+    // 答案写进 reflection 却仍返回 should_continue=true）是「执行慢」的主要来源。跳过 Reflect
+    // 可省掉一整轮 LLM 调用，直接产出最终回答。
+    const toolType = String(nextAction?.tool_type ?? 'NONE').toUpperCase();
+    const skipToAnswer = !toolType || toolType === 'NONE';
     return {
       history: `${history}\nThink: ${thinkOut.reasoning}\nNext: ${thinkOut.next_action}`,
-      jumpTarget: step.next ?? null,
+      jumpTarget: skipToAnswer ? 'Answer' : (step.next ?? null),
       subSteps,
       token_usage: thinkOut.token_usage,
       tracePiece: { think: buildThinkStep(thinkOut, this.thinkPromptRef(env, iteration)) },
