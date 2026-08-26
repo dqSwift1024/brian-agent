@@ -15,6 +15,8 @@
 - input：MatchSoulInput（继承 Input），包含以下字段：
   - agent_id：Agent ID
   - interact_id：交互 ID
+  - task_content：当前任务/工作内容（可选，用于 LLM 依据任务领域推荐最合适的 Soul）
+  - task_domain：当前任务领域（可选，由任务分析得出）
 - context：MatchSoulContext（继承 Context），会话上下文（session_id, work_id, interact_id 等）
 - output：MatchSoulOutput（继承 Output），承载返回内容：
   - soul_id：匹配的 Soul ID

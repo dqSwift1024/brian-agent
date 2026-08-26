@@ -68,6 +68,10 @@ export class MatchSoulInput extends Input {
   context_id!: string;
   /** 交互 ID */
   interact_id!: string;
+  /** 当前任务/工作内容（用于 LLM 依据任务领域推荐最合适的 Soul） */
+  task_content?: string;
+  /** 当前任务领域（由任务分析得出，如 general / coding / travel，可选） */
+  task_domain?: string;
 }
 
 /** matchSoul 出参 */

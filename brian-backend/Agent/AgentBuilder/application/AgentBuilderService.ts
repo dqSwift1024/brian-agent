@@ -181,6 +181,8 @@ export class AgentBuilderService {
         agent_id: agentId,
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
+        task_content: input.task_content,
+        task_domain: analysis.domain,
       }),
       new SoulCoreContext(),
       soulOut,

@@ -118,7 +118,7 @@ export class SoulCoreService {
     _context: SoulCoreContext,
     output: MatchSoulOutput,
   ): Promise<boolean> {
-    const { agent_id, context_id, interact_id } = input;
+    const { agent_id, context_id, interact_id, task_content, task_domain } = input;
     if (!agent_id) {
       throw new ValidationError('matchSoul 需要提供 agent_id');
     }
@@ -154,13 +154,13 @@ export class SoulCoreService {
     let selectedSoulId = '';
     if (availableSouls.length > 0) {
       selectedSoulId = await this.rankSoulsByLLM(
-        agent_id, context_id, interact_id, availableSouls, config,
+        agent_id, context_id, interact_id, task_content, task_domain, availableSouls, config,
       );
     }
 
     // ===== 第 3 层：自生成全新的 Persona (Soul) =====
     if (!selectedSoulId) {
-      selectedSoulId = await this.generateAndAddSoul(agent_id, context_id, interact_id);
+      selectedSoulId = await this.generateAndAddSoul(agent_id, context_id, interact_id, task_content, task_domain);
     }
 
     await clearMatchCache(this.relationDb, AGENT_SOUL_TABLE, agent_id);
@@ -559,6 +559,8 @@ export class SoulCoreService {
     agentId: string,
     contextId: string,
     interactId: string,
+    taskContent?: string,
+    taskDomain?: string,
   ): Promise<string> {
     const config = await this.getCoreConfig();
     const llmId = config?.llm_id || '';
@@ -569,7 +571,10 @@ export class SoulCoreService {
       `Agent ID: ${agentId}`,
       `Context ID: ${contextId}`,
       `Interaction ID: ${interactId}`,
+      `任务领域: ${taskDomain || '未指定'}`,
+      `当前任务内容: ${taskContent || '未指定'}`,
       '',
+      '请依据任务领域与内容，生成与该任务高度契合的角色设定（例如旅游规划任务应生成旅游顾问角色，而非通用编码助手）。',
       '请以 JSON 格式返回，包含以下字段：',
       '  - soul_brief: 简短的 Soul 名称/标题（一行）',
       '  - soul_content: 完整的 Soul 角色设定内容',
@@ -640,6 +645,8 @@ export class SoulCoreService {
     agentId: string,
     contextId: string,
     interactId: string,
+    taskContent: string | undefined,
+    taskDomain: string | undefined,
     availableSouls: Array<{ id: string; soul_brief: string; soul_usage?: string }>,
     config: SoulCoreConfigRecord | null,
   ): Promise<string> {
@@ -647,6 +654,8 @@ export class SoulCoreService {
       agent_id: agentId,
       context_id: contextId,
       interact_id: interactId,
+      task_content: taskContent || '',
+      task_domain: taskDomain || '',
       available_souls: availableSouls.map((s) => {
         const usage = s.soul_usage ?? '';
         return `- id: ${s.id}, brief: ${s.soul_brief}, usage: ${usage}`;
@@ -688,7 +697,7 @@ export class SoulCoreService {
       ok = false;
     }
     if (!ok || !execLLMOutput.result) {
-      return availableSouls[0].id;
+      return availableSouls[0]?.id ?? '';
     }
 
     return this.parseSoulSelectionResult(execLLMOutput.result, availableSouls);
@@ -707,6 +716,11 @@ export class SoulCoreService {
     availableSouls: Array<{ id: string; soul_brief: string }>,
   ): string {
     const trimmed = resultText.trim().replace(/^['"]+|['"]+$/g, '');
+
+    // LLM 判定无合适 Soul（如 "NONE" / "none" / 空）→ 返回空，触发第 3 层自生成
+    if (!trimmed || /^(none|n\/a|null|无|没有)$/i.test(trimmed)) {
+      return '';
+    }
 
     for (const soul of availableSouls) {
       if (trimmed === soul.id) {
