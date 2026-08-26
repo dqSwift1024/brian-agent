@@ -986,6 +986,10 @@ export class ConfigService {
       }
       const cfg = (out.config ?? {}) as Record<string, unknown>;
       const field = configKey.split('.').pop() ?? '';
+      // BOOLEAN 配置项从 INTEGER 存储值（0/1）还原为布尔
+      if (field === 'enable_planner') {
+        return Number(cfg[field] ?? 1) !== 0;
+      }
       return field ? (cfg[field] ?? null) : null;
     }
     if (configKey.startsWith('chat.')) {
@@ -1366,6 +1370,7 @@ export class ConfigService {
       if (prefix.startsWith('orchestration.entry.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith(PROMPT_SLOTS.STRATEGY_SELECTOR)) input.strategy_prompt_template_id = value as string;
       else if (prefix.startsWith('orchestration.entry.default_strategy')) input.default_strategy = value as string;
+      else if (prefix.startsWith('orchestration.entry.enable_planner')) input.enable_planner = Boolean(value);
       else if (prefix.startsWith('orchestration.entry.max_recent_works')) input.max_recent_works = value as number;
       else if (prefix.startsWith('orchestration.entry.async_worker_interval')) input.async_worker_interval = value as number;
       const output: any = {};

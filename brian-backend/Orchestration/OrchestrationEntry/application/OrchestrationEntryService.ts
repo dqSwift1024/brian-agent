@@ -830,6 +830,9 @@ export class OrchestrationEntryService {
       if (input.async_worker_interval <= 0) throw new ValidationError('async_worker_interval must be positive');
       data.push({ field: 'async_worker_interval', value: input.async_worker_interval });
     }
+    if (input.enable_planner !== undefined) {
+      data.push({ field: 'enable_planner', value: input.enable_planner ? 1 : 0 });
+    }
 
     if (data.length > 2) {
       const updInput = Object.assign(new UpdateDBInput(), {

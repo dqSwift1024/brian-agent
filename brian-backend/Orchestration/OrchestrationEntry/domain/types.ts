@@ -144,6 +144,8 @@ export class ConfigOrchestrationEntryInput extends Input {
   default_strategy?: string;
   max_recent_works?: number;
   async_worker_interval?: number;
+  /** 是否启用 Planner 任务拆解（PLANNING 策略）；false 时仅使用单 Agent（SIMPLE）执行 */
+  enable_planner?: boolean;
 }
 
 export class ConfigOrchestrationEntryOutput extends Output {

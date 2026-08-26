@@ -35,6 +35,12 @@ export async function selectOrchestrationStrategy(
   const templateId = (config.strategy_prompt_template_id as string) || DEFAULT_TEMPLATE_ID;
   const defaultStrategy = (config.default_strategy as string) === 'PLANNING' ? 'PLANNING' : 'SIMPLE';
 
+  // ===== Planner 开关：enable_planner=0 时强制单 Agent（SIMPLE），不进行任务拆解 =====
+  const enablePlanner = Number(config.enable_planner ?? 1) !== 0;
+  if (!enablePlanner) {
+    return { strategy: 'SIMPLE', complexity: 0, reason: 'planner_disabled' };
+  }
+
   if (!llmAccess) {
     logger?.error?.('selectOrchestrationStrategy: no LLM access, using default strategy', {});
     return { strategy: defaultStrategy, complexity: 0, reason: 'no_llm_available' };

@@ -57,11 +57,26 @@ export class OrchestrationEntrySchemaInitializer {
         max_execution_depth INTEGER NOT NULL DEFAULT 50,
         node_timeout_ms INTEGER NOT NULL DEFAULT 300000,
         trace_enabled INTEGER NOT NULL DEFAULT 1,
-        max_nodes_in_graph INTEGER NOT NULL DEFAULT 50
+        max_nodes_in_graph INTEGER NOT NULL DEFAULT 50,
+        enable_planner INTEGER NOT NULL DEFAULT 1
       )
     `);
 
     const now = Date.now();
+
+    // 迁移：新增单 Agent 执行超时列（幂等）—— 必须在 INSERT 之前执行，确保旧表结构兼容
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE orchestration_config ADD COLUMN agent_timeout_ms INTEGER NOT NULL DEFAULT 300000`,
+      );
+    } catch { /* 列已存在 */ }
+
+    // 迁移：新增 Planner 启用开关列（幂等）—— 必须在 INSERT 之前执行
+    try {
+      this.relationDb.executeRaw(
+        `ALTER TABLE orchestration_config ADD COLUMN enable_planner INTEGER NOT NULL DEFAULT 1`,
+      );
+    } catch { /* 列已存在 */ }
 
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS prompt_template (
@@ -81,12 +96,12 @@ export class OrchestrationEntrySchemaInitializer {
          default_strategy, max_recent_works, async_worker_interval, default_strategy_id,
          max_plan_retries, max_concurrent,
          dag_timeout_ms, max_execution_depth, node_timeout_ms, trace_enabled,
-         max_nodes_in_graph)
+         max_nodes_in_graph, enable_planner)
       VALUES
         ('orchestration_config_default', ${now}, ${now}, 50,
          '${STRATEGY_SELECTOR_PROMPT_TEMPLATE_ID}',
          'SIMPLE', 5, 1000, NULL,
-         2, 1, 300000, 50, 300000, 1, 50)
+         2, 1, 300000, 50, 300000, 1, 50, 1)
     `);
 
     this.relationDb.executeRaw(`
@@ -96,13 +111,6 @@ export class OrchestrationEntrySchemaInitializer {
       WHERE id = 'orchestration_config_default'
         AND (strategy_prompt_template_id = '' OR strategy_prompt_template_id IS NULL)
     `);
-
-    // 迁移：新增单 Agent 执行超时列（幂等）
-    try {
-      this.relationDb.executeRaw(
-        `ALTER TABLE orchestration_config ADD COLUMN agent_timeout_ms INTEGER NOT NULL DEFAULT 300000`,
-      );
-    } catch { /* 列已存在 */ }
 
     // 迁移：节点级超时收敛到合理区间（<=10 分钟），避免单点卡死放大到 20 分钟以上
     this.relationDb.executeRaw(`
