@@ -997,26 +997,38 @@ const keywordSearch = ref('')
 const clearingKeywordGraph = ref(false)
 
 function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): TagLayoutNode[] {
+  const cx = width / 2
+  const cy = height / 2
+  const radius = Math.min(width, height) * 0.38
   const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
   const degree = new Map<string, number>()
-  for (const n of nodes) {
-    positions.set(n.id, { x: width / 2 + (Math.random() - 0.5) * width * 0.5, y: height / 2 + (Math.random() - 0.5) * height * 0.5, vx: 0, vy: 0 })
-    degree.set(n.id, 0)
+
+  for (let i = 0; i < nodes.length; i++) {
+    const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2
+    positions.set(nodes[i].id, {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+      vx: 0, vy: 0,
+    })
+    degree.set(nodes[i].id, 0)
   }
   for (const e of edges) {
     degree.set(e.source, (degree.get(e.source) || 0) + 1)
     degree.set(e.target, (degree.get(e.target) || 0) + 1)
   }
 
-  const iterations = 250
-  const repulsion = 20000
-  const springLength = 180
-  const springStrength = 0.035
-  const centerStrength = 0.002
-  const damping = 0.9
-  const maxDist = 420
+  const iterations = 500
+  const springLength = 160
+  const springStrength = 0.025
+  const padding = 30
+  const maxVelocity = 60
 
   for (let iter = 0; iter < iterations; iter++) {
+    const t = 1 - iter / iterations
+    const repulsion = 4000 * (1 + t * 3)
+    const centerStrength = 0.0005 + t * 0.0015
+    const damping = 0.85 + t * 0.13
+
     for (let i = 0; i < nodes.length; i++) {
       const a = positions.get(nodes[i].id)!
       for (let j = i + 1; j < nodes.length; j++) {
@@ -1024,9 +1036,8 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
         const dx = a.x - b.x
         const dy = a.y - b.y
         const distSq = dx * dx + dy * dy
-        if (distSq > maxDist * maxDist) continue
         const dist = Math.sqrt(distSq) || 1
-        const force = repulsion / distSq
+        const force = repulsion / Math.max(distSq, 100)
         const fx = (dx / dist) * force
         const fy = (dy / dist) * force
         a.vx += fx; a.vy += fy
@@ -1048,13 +1059,17 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
     }
     for (const n of nodes) {
       const p = positions.get(n.id)!
-      p.vx += (width / 2 - p.x) * centerStrength
-      p.vy += (height / 2 - p.y) * centerStrength
+      p.vx += (cx - p.x) * centerStrength
+      p.vy += (cy - p.y) * centerStrength
     }
     for (const n of nodes) {
       const p = positions.get(n.id)!
+      if (Math.abs(p.vx) > maxVelocity) p.vx = Math.sign(p.vx) * maxVelocity
+      if (Math.abs(p.vy) > maxVelocity) p.vy = Math.sign(p.vy) * maxVelocity
       p.x += p.vx
       p.y += p.vy
+      p.x = Math.max(padding, Math.min(width - padding, p.x))
+      p.y = Math.max(padding, Math.min(height - padding, p.y))
       p.vx *= damping
       p.vy *= damping
     }
