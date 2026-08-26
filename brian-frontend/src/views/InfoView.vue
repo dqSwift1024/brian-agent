@@ -8,7 +8,7 @@ import {
   Search, Trash2, Plus, ChevronRight, ChevronLeft, ArrowLeft,
   Folder, X, CheckSquare, Square, FileText,
   UserRound, History, RefreshCw, Sparkles, Loader2,
-  Tag,
+  Tag, Eye, EyeOff,
 } from '@lucide/vue'
 import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
 import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
@@ -996,7 +996,26 @@ const clearingTagGraph = ref(false)
 const keywordSearch = ref('')
 const clearingKeywordGraph = ref(false)
 
-function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): TagLayoutNode[] {
+const graphRepulsion = ref(1500)
+const graphSpringStrength = ref(0.06)
+const graphShowLabels = ref(true)
+let rerunLayoutTimer: ReturnType<typeof setTimeout> | null = null
+
+function rerunLayouts() {
+  if (rerunLayoutTimer) clearTimeout(rerunLayoutTimer)
+  rerunLayoutTimer = setTimeout(() => {
+    if (graphNodes.value.length > 0) {
+      tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+    }
+    if (keywordGraphNodes.value.length > 0) {
+      keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
+    }
+  }, 80)
+}
+
+watch([graphRepulsion, graphSpringStrength], rerunLayouts)
+
+function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number, _repulsion = 1500, _springStrength = 0.06): TagLayoutNode[] {
   const cx = width / 2
   const cy = height / 2
   const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
@@ -1019,8 +1038,8 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
 
   const iterations = 400
   const springLength = 60
-  const springStrength = 0.06
-  const repulsion = 800
+  const springStrength = _springStrength
+  const repulsion = _repulsion
   const repulsionCutoff = 300
   const centerStrength = 0.004
   const damping = 0.88
@@ -1132,7 +1151,7 @@ async function loadTagGraph() {
     const data = await memoryApi.tagGraph()
     graphNodes.value = data.nodes || []
     graphEdges.value = data.edges || []
-    tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700)
+    tagLayoutNodes.value = forceDirectedLayout(graphNodes.value, graphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
   } catch { /* ignore */ }
   finally { loadingGraph.value = false }
 }
@@ -1245,7 +1264,7 @@ async function loadKeywordGraph() {
     const data = await memoryApi.keywordGraph()
     keywordGraphNodes.value = data.nodes || []
     keywordGraphEdges.value = data.edges || []
-    keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700)
+    keywordLayoutNodes.value = forceDirectedLayout(keywordGraphNodes.value, keywordGraphEdges.value, 700, 700, graphRepulsion.value, graphSpringStrength.value)
   } catch { keywordGraphNodes.value = []; keywordGraphEdges.value = []; keywordLayoutNodes.value = [] }
   finally { loadingKeywordGraph.value = false }
 }
@@ -1995,14 +2014,26 @@ function searchMemoryByEnter() {
 
       <!-- Tag graph tab -->
       <div v-if="activeTab === 'tagGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
-        <div class="flex items-center gap-2 mb-3">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
           <div class="relative">
             <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-            <input v-model="tagSearch" placeholder="搜索标签并定位..." class="pl-8 pr-3 py-1.5 w-60 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusTagNode" />
+            <input v-model="tagSearch" placeholder="搜索标签并定位..." class="pl-8 pr-3 py-1.5 w-44 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusTagNode" />
           </div>
           <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="focusTagNode">定位</button>
           <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetTagGraphView">重置视图</button>
-          <span class="text-xs text-apple-gray-400 ml-1">共 {{ graphNodes.length }} 节点</span>
+          <span class="text-xs text-apple-gray-400">共 {{ graphNodes.length }} 节点</span>
+          <div class="h-4 w-px bg-apple-gray-200 dark:bg-apple-gray-700" />
+          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="graphShowLabels = !graphShowLabels" :title="graphShowLabels ? '隐藏名称' : '显示名称'">
+            <component :is="graphShowLabels ? Eye : EyeOff" :size="13" />
+          </button>
+          <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
+            <span class="shrink-0">斥力</span>
+            <input type="range" min="100" max="5000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+          </label>
+          <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
+            <span class="shrink-0">引力</span>
+            <input type="range" min="1" max="20" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+          </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingTagGraph" @click="clearTagGraph">
             <Trash2 :size="14" /> {{ clearingTagGraph ? '清理中...' : '一键清理' }}
           </button>
@@ -2071,7 +2102,7 @@ function searchMemoryByEnter() {
                     :opacity="isTagNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 12" text-anchor="middle" class="text-[11px] font-medium pointer-events-none" fill="#6e6e73">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[9px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="hoveredTagId" pointer-events="none">
                   <template v-for="node in tagLayoutNodes.filter(n => n.id === hoveredTagId)" :key="'tooltip-' + node.id">
@@ -2101,14 +2132,26 @@ function searchMemoryByEnter() {
 
       <!-- Keyword graph tab -->
       <div v-if="activeTab === 'keywordGraph'" class="px-6 pb-8 flex flex-col" :style="{ height: 'calc(100vh - 200px)' }">
-        <div class="flex items-center gap-2 mb-3">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
           <div class="relative">
             <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-            <input v-model="keywordSearch" placeholder="搜索关键词并定位..." class="pl-8 pr-3 py-1.5 w-60 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusKeywordNode" />
+            <input v-model="keywordSearch" placeholder="搜索关键词并定位..." class="pl-8 pr-3 py-1.5 w-44 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="focusKeywordNode" />
           </div>
           <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="focusKeywordNode">定位</button>
           <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="resetKeywordGraphView">重置视图</button>
-          <span class="text-xs text-apple-gray-400 ml-1">共 {{ keywordGraphNodes.length }} 节点</span>
+          <span class="text-xs text-apple-gray-400">共 {{ keywordGraphNodes.length }} 节点</span>
+          <div class="h-4 w-px bg-apple-gray-200 dark:bg-apple-gray-700" />
+          <button class="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="graphShowLabels = !graphShowLabels" :title="graphShowLabels ? '隐藏名称' : '显示名称'">
+            <component :is="graphShowLabels ? Eye : EyeOff" :size="13" />
+          </button>
+          <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="排斥力">
+            <span class="shrink-0">斥力</span>
+            <input type="range" min="100" max="5000" step="100" v-model.number="graphRepulsion" class="w-16 h-1 accent-brian-blue" />
+          </label>
+          <label class="flex items-center gap-1 text-xs text-apple-gray-500" title="引力">
+            <span class="shrink-0">引力</span>
+            <input type="range" min="1" max="20" step="1" :value="Math.round(graphSpringStrength * 100)" @input="graphSpringStrength = Number(($event.target as HTMLInputElement).value) / 100" class="w-16 h-1 accent-brian-blue" />
+          </label>
           <button class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg text-error-red hover:bg-error-red/10 border border-error-red/30" :disabled="clearingKeywordGraph" @click="clearKeywordGraph">
             <Trash2 :size="14" /> {{ clearingKeywordGraph ? '清理中...' : '一键清理' }}
           </button>
@@ -2179,7 +2222,7 @@ function searchMemoryByEnter() {
                     :opacity="isKeywordNodeDimmed(node.id) ? 0.12 : 0.9"
                     class="transition-opacity"
                   />
-                  <text :x="node.x" :y="node.y + node.r + 12" text-anchor="middle" class="text-[11px] font-medium pointer-events-none" fill="#6e6e73">{{ node.name }}</text>
+                  <text :x="node.x" :y="node.y + node.r + 10" text-anchor="middle" class="text-[9px] font-medium pointer-events-none" fill="#6e6e73" v-if="graphShowLabels">{{ node.name }}</text>
                 </g>
                 <g v-if="keywordHoveredId" pointer-events="none">
                   <template v-for="node in keywordLayoutNodes.filter(n => n.id === keywordHoveredId)" :key="'kt-' + node.id">
