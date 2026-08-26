@@ -38,6 +38,8 @@ import {
   GetResourceOutput,
   ConfigVisualizationInput,
   ConfigVisualizationOutput,
+  GraphVisualizationConfigInput,
+  GraphVisualizationConfigOutput,
 } from '../domain/types';
 
 export class VisualizationAccess {
@@ -156,5 +158,14 @@ export class VisualizationAccess {
   ): Promise<boolean> {
     await this.initPromise;
     return this.service.configVisualization(i, c, o);
+  }
+
+  async getGraphVisualizationConfig(
+    i: GraphVisualizationConfigInput,
+    c: VisualizationContext,
+    o: GraphVisualizationConfigOutput,
+  ): Promise<boolean> {
+    await this.initPromise;
+    return this.service.getGraphVisualizationConfig(i, c, o);
   }
 }

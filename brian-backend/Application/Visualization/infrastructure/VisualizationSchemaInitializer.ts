@@ -5,6 +5,8 @@ import {
   DEFAULT_MAX_NODES_PER_GRAPH,
   DEFAULT_MESSAGE_SUMMARY_LENGTH,
   DEFAULT_RESOLVE_CONTENT_BY_DEFAULT,
+  DEFAULT_GRAPH_REPULSION,
+  DEFAULT_GRAPH_SPRING_STRENGTH,
 } from '../domain/types';
 
 export class VisualizationSchemaInitializer {
@@ -18,7 +20,10 @@ export class VisualizationSchemaInitializer {
         updated INTEGER NOT NULL,
         max_nodes_per_graph INTEGER DEFAULT ${DEFAULT_MAX_NODES_PER_GRAPH},
         default_message_summary_length INTEGER DEFAULT ${DEFAULT_MESSAGE_SUMMARY_LENGTH},
-        resolve_content_by_default INTEGER DEFAULT ${DEFAULT_RESOLVE_CONTENT_BY_DEFAULT}
+        resolve_content_by_default INTEGER DEFAULT ${DEFAULT_RESOLVE_CONTENT_BY_DEFAULT},
+        graph_repulsion INTEGER DEFAULT ${DEFAULT_GRAPH_REPULSION},
+        graph_spring_strength REAL DEFAULT ${DEFAULT_GRAPH_SPRING_STRENGTH},
+        graph_show_labels INTEGER DEFAULT 1
       )`,
     );
 
@@ -36,6 +41,9 @@ export class VisualizationSchemaInitializer {
       { field: 'max_nodes_per_graph', value: DEFAULT_MAX_NODES_PER_GRAPH },
       { field: 'default_message_summary_length', value: DEFAULT_MESSAGE_SUMMARY_LENGTH },
       { field: 'resolve_content_by_default', value: DEFAULT_RESOLVE_CONTENT_BY_DEFAULT },
+      { field: 'graph_repulsion', value: DEFAULT_GRAPH_REPULSION },
+      { field: 'graph_spring_strength', value: DEFAULT_GRAPH_SPRING_STRENGTH },
+      { field: 'graph_show_labels', value: 1 },
     ]);
   }
 }

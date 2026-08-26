@@ -85,10 +85,20 @@ export class ConfigVisualizationInput extends Input {
   max_nodes_per_graph?: number;
   default_message_summary_length?: number;
   resolve_content_by_default?: boolean;
+  graph_repulsion?: number;
+  graph_spring_strength?: number;
+  graph_show_labels?: boolean;
 }
 
 export class ConfigVisualizationOutput extends Output {
   config: Record<string, unknown> = {};
+}
+
+export class GraphVisualizationConfigInput extends Input {}
+export class GraphVisualizationConfigOutput extends Output {
+  graph_repulsion = DEFAULT_GRAPH_REPULSION;
+  graph_spring_strength = DEFAULT_GRAPH_SPRING_STRENGTH;
+  graph_show_labels = true;
 }
 
 export const VISUALIZATION_CONFIG_TABLE = 'visualization_config';
@@ -105,3 +115,5 @@ export const FOLLOW_UP_EDGE_TYPE = 'FOLLOW_UP';
 export const DEFAULT_MAX_NODES_PER_GRAPH = 200;
 export const DEFAULT_MESSAGE_SUMMARY_LENGTH = 50;
 export const DEFAULT_RESOLVE_CONTENT_BY_DEFAULT = 1;
+export const DEFAULT_GRAPH_REPULSION = 2000;
+export const DEFAULT_GRAPH_SPRING_STRENGTH = 0.2;

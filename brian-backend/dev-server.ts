@@ -114,6 +114,8 @@ import {
   GetAgentTraceInput, GetAgentTraceOutput,
   GetVisualizedMessageDAGInput, GetVisualizedMessageDAGOutput,
   GetResourceInput, GetResourceOutput,
+  GraphVisualizationConfigInput, GraphVisualizationConfigOutput,
+  ConfigVisualizationInput, ConfigVisualizationOutput,
 } from './Application/Visualization/domain/types';
 
 // Config types
@@ -1566,6 +1568,28 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new UpdateConfigOutput();
         const context = new ConfigContext();
         await ctx.configAccess.updateConfig(input, context, output);
+        sendJson(res, 200, { success: true });
+
+      } else if (method === 'GET' && pathname === '/api/config/graph-visualization') {
+        const i = Object.assign(new GraphVisualizationConfigInput(), {});
+        const o = new GraphVisualizationConfigOutput();
+        const c = new VisualizationContext();
+        await ctx.visualizationAccess.getGraphVisualizationConfig(i, c, o);
+        sendJson(res, 200, {
+          graph_repulsion: o.graph_repulsion,
+          graph_spring_strength: o.graph_spring_strength,
+          graph_show_labels: o.graph_show_labels,
+        });
+
+      } else if (method === 'PUT' && pathname === '/api/config/graph-visualization') {
+        const i = Object.assign(new ConfigVisualizationInput(), {
+          graph_repulsion: body.graph_repulsion,
+          graph_spring_strength: body.graph_spring_strength,
+          graph_show_labels: body.graph_show_labels,
+        });
+        const o = new ConfigVisualizationOutput();
+        const c = new VisualizationContext();
+        await ctx.visualizationAccess.configVisualization(i, c, o);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'GET' && pathname.startsWith('/api/config/item/')) {

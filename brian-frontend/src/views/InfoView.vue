@@ -10,7 +10,7 @@ import {
   UserRound, History, RefreshCw, Sparkles, Loader2,
   Tag, Eye, EyeOff,
 } from '@lucide/vue'
-import { chatApi, memoryApi, libraryApi, userProfileApi } from '@/api'
+import { chatApi, memoryApi, libraryApi, userProfileApi, configApi } from '@/api'
 import type { ChatSession, MemoryItem, GraphNode, GraphEdge, LibraryPath, LibraryFileEntry, LibraryTreeNode, UserProfileData, ProfileHistoryItem, ProfileVersionData } from '@/api/types'
 import Header from '@/components/layout/Header.vue'
 import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
@@ -1000,6 +1000,27 @@ const graphRepulsion = ref(2000)
 const graphSpringStrength = ref(0.2)
 const graphShowLabels = ref(true)
 let rerunLayoutTimer: ReturnType<typeof setTimeout> | null = null
+let saveConfigTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadGraphConfig() {
+  try {
+    const cfg = await configApi.graphVisualization.get()
+    graphRepulsion.value = cfg.graph_repulsion ?? 2000
+    graphSpringStrength.value = cfg.graph_spring_strength ?? 0.2
+    graphShowLabels.value = cfg.graph_show_labels ?? true
+  } catch { /* use defaults */ }
+}
+
+function saveGraphConfig() {
+  if (saveConfigTimer) clearTimeout(saveConfigTimer)
+  saveConfigTimer = setTimeout(() => {
+    configApi.graphVisualization.save({
+      graph_repulsion: graphRepulsion.value,
+      graph_spring_strength: graphSpringStrength.value,
+      graph_show_labels: graphShowLabels.value,
+    }).catch(() => {})
+  }, 500)
+}
 
 function rerunLayouts() {
   if (rerunLayoutTimer) clearTimeout(rerunLayoutTimer)
@@ -1013,7 +1034,8 @@ function rerunLayouts() {
   }, 80)
 }
 
-watch([graphRepulsion, graphSpringStrength], rerunLayouts)
+watch([graphRepulsion, graphSpringStrength], () => { rerunLayouts(); saveGraphConfig() })
+watch(graphShowLabels, saveGraphConfig)
 
 function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number, _repulsion = 2000, _springStrength = 0.2): TagLayoutNode[] {
   const cx = width / 2
@@ -1097,7 +1119,6 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
     }
   }
 
-  const maxDeg = Math.max(1, ...degree.values())
   const maxWeight = Math.max(1, ...nodes.map((n) => n.weight || 0))
   return nodes.map((n) => {
     const p = positions.get(n.id)!
@@ -1108,7 +1129,7 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
       ...n,
       x: p.x,
       y: p.y,
-      r: 5 + Math.sqrt(Math.min(d / Math.max(1, maxDeg), 1)) * 10,
+      r: 3 + Math.min(Math.floor(Math.log10(Math.max(d, 1))) + 1, 4),
       color: `hsl(${hue}, 75%, 52%)`,
     }
   })
@@ -1402,10 +1423,11 @@ function resetKeywordGraphView() {
   keywordTy.value = 0
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadHistory()
   loadMemory()
   loadLibraries()
+  await loadGraphConfig()
   loadTagGraph()
   loadKeywordGraph()
   loadHeatmap()
