@@ -1020,8 +1020,9 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
   const iterations = 500
   const springLength = 160
   const springStrength = 0.025
-  const padding = 30
+  const margin = 40
   const maxVelocity = 60
+  const boundaryStrength = 0.15
 
   for (let iter = 0; iter < iterations; iter++) {
     const t = 1 - iter / iterations
@@ -1061,6 +1062,10 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
       const p = positions.get(n.id)!
       p.vx += (cx - p.x) * centerStrength
       p.vy += (cy - p.y) * centerStrength
+      if (p.x < margin) p.vx += boundaryStrength * (margin - p.x)
+      if (p.x > width - margin) p.vx -= boundaryStrength * (p.x - (width - margin))
+      if (p.y < margin) p.vy += boundaryStrength * (margin - p.y)
+      if (p.y > height - margin) p.vy -= boundaryStrength * (p.y - (height - margin))
     }
     for (const n of nodes) {
       const p = positions.get(n.id)!
@@ -1068,8 +1073,6 @@ function forceDirectedLayout(nodes: GraphNode[], edges: GraphEdge[], width: numb
       if (Math.abs(p.vy) > maxVelocity) p.vy = Math.sign(p.vy) * maxVelocity
       p.x += p.vx
       p.y += p.vy
-      p.x = Math.max(padding, Math.min(width - padding, p.x))
-      p.y = Math.max(padding, Math.min(height - padding, p.y))
       p.vx *= damping
       p.vy *= damping
     }
