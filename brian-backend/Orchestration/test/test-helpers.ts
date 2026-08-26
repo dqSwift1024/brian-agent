@@ -421,6 +421,7 @@ export function createMockInfoCore() {
     graphInfo: vi.fn().mockResolvedValue(true),
     delInfo: vi.fn().mockResolvedValue(true),
     updateInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.updated_count = 1; return true; }),
+    delInfoByWork: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.deleted_count = 1; return true; }),
     soInfoTagConfig: vi.fn().mockResolvedValue(true),
     updateInfoTagConfig: vi.fn().mockResolvedValue(true),
     soInfoSummaryConfig: vi.fn().mockResolvedValue(true),

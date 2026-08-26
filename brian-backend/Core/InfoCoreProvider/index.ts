@@ -72,6 +72,8 @@ export {
   DelInfoOutput,
   UpdateInfoInput,
   UpdateInfoOutput,
+  DelInfoByWorkInput,
+  DelInfoByWorkOutput,
   ExistInfoInput,
   ExistInfoOutput,
   INFO_RAW_TABLE,

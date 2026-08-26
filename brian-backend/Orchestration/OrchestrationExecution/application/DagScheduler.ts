@@ -249,6 +249,13 @@ export class DagScheduler {
     let timedOut = false;
     let failure: DagNodeFailureError | null = null;
 
+    // 快速失败信号：一旦有节点失败即 resolve，使调度立即收敛，不再等待正在执行
+    // 的并发节点（其在后台自行完成或超时），避免单个卡死节点拖垮整个 DAG 永久挂起。
+    let markFailure: (() => void) | null = null;
+    const failureSignal = new Promise<void>((resolve) => {
+      markFailure = resolve;
+    });
+
     const ready: AgentNode[] = [];
     const queued = new Set<string>();
     for (const node of nodes) {
@@ -298,6 +305,8 @@ export class DagScheduler {
               results.slice(),
             );
           }
+          // 触发快速失败信号，使调度立即收敛（不再等待其他正在执行的并发节点）
+          markFailure?.();
         }
         return;
       }
@@ -340,7 +349,12 @@ export class DagScheduler {
     };
 
     const runnerCount = Math.max(1, Math.min(concurrency, total));
-    await Promise.all(Array.from({ length: runnerCount }, () => runner()));
+    // 快速失败：一旦有节点失败，立即收敛（不再等待其他正在执行的并发节点），
+    // 其余仍在执行的节点在后台自行完成或超时，不影响本次 DAG 的失败收敛。
+    await Promise.race([
+      Promise.all(Array.from({ length: runnerCount }, () => runner())),
+      failureSignal,
+    ]);
 
     // 环兜底：就绪队列耗尽但仍有节点未执行（拓扑存在环），按确定性顺序打破环继续执行。
     while (!failure && !timedOut && completed + failedCount < total) {

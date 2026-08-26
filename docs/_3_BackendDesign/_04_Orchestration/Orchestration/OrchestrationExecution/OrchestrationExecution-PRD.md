@@ -529,3 +529,19 @@
 **可能存在的问题**：
 - 无（`ExecAgentInput.task_id` 为可选字段，Simple 策略或非 DAG 场景缺省为空字符串，前端回退按 agent_id 定位）。
 
+### [2026-08-26] DagScheduler 快速失败立即收敛，不再等待卡死的并发节点
+
+**变更原因**：并发执行（`max_concurrent > 1`）下，某个节点失败触发快速失败（`DagNodeFailureError`）后，`Promise.all` 仍会等待其他正在执行的并发节点完成；若这些节点因底层 LLM / 浏览器调用挂起（如 CDT `CDP WebSocket 连接已关闭` 后复用该 Agent 的后续任务卡死），整个 DAG 会永久卡在 `EXECUTING`，work 不收敛为 FAILED、也不写错误 RESPONSE，用户体感「无响应」（本次「我想去北京旅游」work 卡死约 2 小时）。
+
+**修改的方法**：
+- `DagScheduler.ts` — 新增快速失败信号 `failureSignal`，节点失败时立即 `resolve`；`run()` 用 `Promise.race([Promise.all(runners), failureSignal])` 取代 `Promise.all`，一旦失败立即收敛并抛出 `DagNodeFailureError`，不再等待正在执行的并发节点（其在后台自行完成或超时，落库 best-effort）。
+
+**新增测试用例**：
+- `Orchestration/test/dag-scheduler.test.ts` — 并发节点中一个失败、另一个挂起（永不返回）时应立即快速失败（远小于 `nodeTimeoutMs` 收敛），而非等待挂起节点超时。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— 并发 DAG 中任一节点失败后，work 立即收敛为 FAILED 并写错误 RESPONSE（经 JSONNode `HANDLE_ERROR` / `receiveWork` 兜底），不再卡在 `EXECUTING`。
+
+**可能存在的问题**：
+- 快速失败后，正在执行的节点在后台继续运行直至自行失败（`nodeTimeoutMs` / HTTP 超时兜底），其后续 `orchestration_agent_execution` 落库与 `agent_error` 推送为 best-effort，不影响 work 已收敛的 FAILED 状态。
+

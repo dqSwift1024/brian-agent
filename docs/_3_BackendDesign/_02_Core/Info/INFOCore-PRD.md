@@ -417,8 +417,11 @@
 
 1. 调用 nodejieba 对入参中的 info 文本内容进行分词，去除停用词，得到关键词列表；
 2. 使用 SQLite FTS5 MATCH 语法，根据关键词列表通过 RelationDBProvider 在 `info_keyword` 虚拟表中执行全文搜索，得到匹配的 info_id 列表（按 FTS5 内置的相关性评分 bm25 排序）；
-3. 根据 info_id 列表调用 `lastNInfo` 接口获取每条信息的实际内容；
-4. 返回信息内容列表（按 FTS5 相关性评分降序），写入 output 返回；
+3. 按 info_id 聚合（每条 info 的每个关键词占一行，取最小/最优 bm25 作为该 info 的相关度），并将 bm25 做 min-max 全量归一化到 0-100（本次命中集合的 bm25 值域线性映射，最优命中为 100、最差命中为 0），附上 `keyword_score` 与 `keyword_match_count`；
+4. 根据 info_id 列表调用 `getInfoByInfoId` 获取每条信息的实际内容；
+5. 返回信息内容列表（按 bm25 归一化评分降序），写入 output 返回；
+
+> 说明：`keyword_score` 为 0-100 的 min-max 全量归一化评分（本次命中集合的 bm25 值域线性映射到 [100, 0]，最优命中 = 100、最差命中 = 0）。上层上下文构建（`context`）据此按 `keyword_score_threshold`（默认 95）截断低相关命中，仅保留评分不低于阈值的消息。
 
 ### 2.5.5. 相关性搜索信息（relationKInfo）
 
@@ -504,11 +507,11 @@
    - 若提供 `selected_msg_ids` / `custom_info_ids`：复选消息**替换**时间线，逐条反查消息记录（会话内校验），标记为 `CITING`，不再并行采集时间线；
    - 否则：查询当前 session 下最近 `base_timeline_count` 条消息（按 created 倒序），标记为 `TIMELINE`；
 4. **当前消息拆分**：最新一条消息（即本次问答输入）单独拆出，标记为 `CURRENT`，不参与时间线上下文拼接，并从弱相关维度（标签/向量相似/关键词/随机）候选中剔除，避免与任务内容重复出现；复选模式下当前输入不在复选列表内，单独取最新一条用于 CURRENT 标注与弱相关剔除；
-5. **动态收缩**：除钉住消息外，各弱相关维度（标签 / 向量相似 / 关键词 / 随机）限额按基础上下文（钉住 + 复选/时间线）占比收缩，收缩因子 `shrinkFactor = max(0, 1 - baseContextCount / total)`；基础上下文越多，弱相关维度越少，把预算让给更明确的上下文；
+5. **数量与比例双控制 + 动态收缩**：除钉住消息外，各弱相关维度（标签 / 向量相似 / 关键词 / 随机）限额先取「基础数量」与「`total` × 上限百分比」的较小值，再按基础上下文（钉住 + 复选/时间线）占比收缩，收缩因子 `shrinkFactor = max(0, 1 - baseContextCount / total)`；基础上下文越多，弱相关维度越少，把预算让给更明确的上下文；
 6. 按收缩后的限额依次收集各弱相关维度候选消息：
    - **标签相关性消息（全系统）**：根据参考消息通过 `relationKInfo` 检索（按 similarTo 边 weight 相关度降序）；
    - **向量相似度消息（全系统）**：根据参考消息通过 `similarKInfo` 检索（按相似度分数降序）；
-   - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索（按关键词命中次数降序）；
+   - **关键词相关性消息（全系统）**：根据参考消息通过 `keywordKInfo` 检索（按 bm25 归一化评分降序），仅保留 `keyword_score >= keyword_score_threshold`（默认 95/100）的高相关命中；
    - **随机关联消息（全系统）**：从会话内未选中消息（不足时从全局）随机抽样；
 7. 解析 `priority_order` 配置的维度优先级（默认：`PINNED > TIMELINE > TAG_RELATIVE > SIMILARITY > KEYWORD > RANDOM`）；`priority_order` 未列出的维度**不参与采集**（即以该列表为准，仅采集并排序已开启的维度）；
 8. 按优先级顺序依次遍历各维度候选池进行**全局去重**：当某条消息被多个维度同时命中时，优先保留高优先级维度的采集归属与属性；`CURRENT` 消息若已被钉住/引用等显式维度采集则不再重复标记；
@@ -601,6 +604,24 @@
 **设计说明**：老化清理仅清空原始内容以节省存储空间，向量、标签、关键词等索引数据全部保留。在构建上下文时，若通过语义相似度、关键词或标签匹配到已老化的信息，系统自动以 `[摘要] {summary}` 格式使用该信息的摘要内容替代原始内容。
 
 **调度方式**：`delInfo` 由服务入口（dev-server.ts）在**启动时**执行一次，并注册**每日午夜 0:00** 的定时任务（与 MQ 过期消息清理同一模式），使 `alive_max_days` 配置真正生效。
+
+### 2.6.3. 按 work 删除信息（delInfoByWork）
+
+**功能**：按 work_id 删除该次问答落库的全部信息及其派生数据，供需求确认「取消（CANCEL）」丢弃被取消的提问。
+**入参**：
+- input：DelInfoByWorkInput（继承 Input），包含字段：
+  - work_id：工作 ID（必选）
+- context：InfoCoreContext（继承 Context），会话上下文
+- output：DelInfoByWorkOutput（继承 Output），承载返回内容：
+  - deleted_count：删除的 info_raw 记录数量
+**处理流程**：
+
+1. 调用 RelationDBProvider.selectDB 查询 `info_raw` 表，按 work_id 收集所有 info_id；
+2. 若 info_id 非空，级联删除派生表：`info_tag` / `info_summary` / `info_keyword` / `info_vector`（按 info_id IN），并调用 `delInfoGraph(info_ids)` 删除 GraphDB 中该信息的引用节点与边（共享的标签/关键词文本节点不在此清理）；
+3. 调用 RelationDBProvider.deleteDB 删除 `info_raw` 中该 work 的记录，并删除 `info_context_source` 中该 work 的上下文快照关系；
+4. 将删除数量（deleted_count）写入 output 返回。
+
+**设计说明**：与 `delInfo`（老化清空内容、保留索引）相反，`delInfoByWork` 是「彻底删除」语义——被取消的提问不应在对话历史 / ChatMap 中留下任何痕迹，因此主表与派生索引一并删除。
 
 ## 重要内容
 
@@ -777,6 +798,11 @@
 | base_similarity_count | 基于语义相似度的信息加载数量 | INT | N | | 默认 150 |
 | base_keyword_count | 基于关键词搜索的信息加载数量 | INT | N | | 默认100 |
 | base_random_count | 随机联想的信息加载数量 | INT | N | | 默认50 |
+| random_max_percent | 随机消息采集数量上限百分比（占 total） | INT | N | | 默认20 |
+| tag_relative_max_percent | 标签关联消息采集数量上限百分比（占 total） | INT | N | | 默认20 |
+| similarity_max_percent | 语义相似消息采集数量上限百分比（占 total） | INT | N | | 默认15 |
+| keyword_max_percent | 关键词消息采集数量上限百分比（占 total） | INT | N | | 默认10 |
+| keyword_score_threshold | 关键词 bm25 归一化评分截断阈值（0-100） | INT | N | | 默认95，仅保留评分不低于该值的命中 |
 | total | 上下文总数 | INT | N | | 默认为1000 |
 | enable_snapshot_persistence | 启用上下文快照持久化 | INT | N | | 默认1 (true) |
 | priority_order | 维度优先级顺序 | TEXT | N | | 默认 PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM |
@@ -1020,3 +1046,39 @@ Tag 图与关键词图采用 **共现（co-occurrence）** 策略构建边：两
 **可能存在的问题**：
 - 存量已向量化的长文本不会自动重新分块，需重建向量表后重新向量化；
 - chunk 拆分后同一 info 的多个 chunk 命中会被聚合，`score` 取最高分。
+
+### [2026-08-26] keywordKInfo 改用 FTS5 MATCH + bm25，并新增 delInfoByWork
+
+**变更原因**：
+1. `keywordKInfo` 此前用 `word IN (...)` 等值匹配 + 命中次数排序，未按 PRD 2.5.4 使用 SQLite FTS5 MATCH 语法与 bm25 相关性评分，检索排序与构建逻辑不符；
+2. 需求确认「取消」需要彻底移除被取消提问已落库的信息，缺一个按 work_id 级联删除的入口。
+
+**修改的方法**：
+- `InfoCoreService.keywordKInfo` — 改为 `info_keyword` FTS5 虚拟表 `MATCH`（关键词 `word:"..." OR ...` 组合）检索，按 `bm25` 升序（相关性降序）返回；按 info_id 聚合取最小（最优）bm25，保留 `keyword_match_count`；FTS5 语法异常时降级为空结果；
+- `InfoCoreService.delInfoByWork` / `InfoCoreAccess.delInfoByWork` — 新增按 work_id 级联删除 `info_raw` 及 `info_tag` / `info_summary` / `info_keyword` / `info_vector` / `info_context_source` 派生表与 GraphDB 引用节点边的方法。
+
+**影响的端点**：
+- `InfoCore.keywordKInfo` — 返回按 bm25 相关性排序的匹配消息列表；
+- `InfoCore.delInfoByWork` — 供需求确认 CANCEL 流程删除已落库信息。
+
+**可能存在的问题**：
+- bm25 针对「每 info 每关键词一行」的行打分，经 info_id 聚合取最优值近似整条 info 的相关度，与按文档全文索引的 bm25 口径存在差异；`word` 列限制匹配避免误命中 `info_id` 列。
+
+### [2026-08-26] 弱相关维度数量+比例双控制 + 关键词 bm25 评分截断
+
+**变更原因**：
+1. 关键词 / 标签关联 / 语义相似三个弱相关维度仅有「基础数量」单一控制，缺少「占 total 上限百分比」的比例控制，弱相关维度可能挤占上下文预算（随机维度已有 `random_max_percent` 但重构后未实际生效）；
+2. 关键词匹配缺少 bm25 评分截断，低相关命中会混入上下文。
+
+**修改的方法**：
+- `InfoCoreService.context` — 弱相关维度限额改为「数量+比例双控制」：`min(base_xxx_count, floor(total × xxx_max_percent / 100)) × shrinkFactor`，其中 `random_max_percent` 重新生效，新增 `tag_relative_max_percent` / `similarity_max_percent` / `keyword_max_percent`；关键词维度按 `keyword_score_threshold` 截断；
+- `InfoCoreService.keywordKInfo` — bm25 归一化到 0-100（最优命中满分 100，其余按比例折算），输出项附 `keyword_score`；
+- `info_context_config` 表新增 `tag_relative_max_percent`（默认 20）/ `similarity_max_percent`（默认 15）/ `keyword_max_percent`（默认 10）/ `keyword_score_threshold`（默认 95）四列（含迁移），`UpdateInfoContextConfigInput` / `InfoContextConfigRecord` 同步扩展；
+- `configRegistrations` — 注册上述四个配置项。
+
+**影响的端点**：
+- `InfoCore.context` — 弱相关维度采集受数量+比例双控制约束；关键词维度仅保留评分 ≥ 阈值的命中；
+- 配置更新接口 / 配置页 — 支持四个新增配置项。
+
+**可能存在的问题**：
+- bm25 采用 min-max 全量归一化（本次命中集合的 bm25 值域线性映射到 0-100，最优=100、最差=0），不同查询间的绝对值不可直接比较；阈值 95 会保留位于命中集合前 5% 相关度的消息，若某次命中的 bm25 值域较窄（各命中相关度接近），可能截断过多或过少。

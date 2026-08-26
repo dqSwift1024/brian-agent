@@ -1,5 +1,55 @@
 # 代码变更记录 (CHANGELOG)
 
+## [2026-08-26] DagScheduler 快速失败立即收敛，修复并发 DAG 节点失败后 work 卡死
+
+**变更原因**：
+- 并发执行下，某节点失败触发快速失败后，`Promise.all` 仍等待其他正在执行的并发节点；若这些节点因底层 LLM / CDT 调用挂起（如 `CDP WebSocket 连接已关闭` 后复用该 Agent 的后续任务卡死），整个 DAG 永久卡在 `EXECUTING`，work 不收敛为 FAILED、也不写错误 RESPONSE（本次「我想去北京旅游」work 卡死约 2 小时）。
+
+**修改的方法与模块**：
+- `DagScheduler.ts` — 新增快速失败信号 `failureSignal`，节点失败即 resolve；`run()` 以 `Promise.race([Promise.all(runners), failureSignal])` 立即收敛并抛 `DagNodeFailureError`，不再等待卡死的并发节点。
+
+**影响的端点**：
+- `POST /api/chat/stream`（Planning 策略）— 并发 DAG 任一节点失败后 work 立即收敛为 FAILED 并写错误 RESPONSE。
+
+**可能存在的问题/风险点**：
+- 快速失败后正在执行的节点在后台继续直至自行失败，其落库与事件推送为 best-effort。
+
+## [2026-08-26] 上下文弱相关维度数量+比例双控制 + 关键词 bm25 评分截断
+
+**变更原因**：
+1. 关键词 / 标签关联 / 语义相似三个弱相关维度仅有「基础数量」单一控制，缺少「占 total 上限百分比」的比例控制；随机维度的 `random_max_percent` 在单模式重构后未实际生效；
+2. 关键词匹配缺少 bm25 评分截断，低相关命中混入上下文。
+
+**修改的方法与模块**：
+- `InfoCoreService.context` — 弱相关维度限额改为 `min(base_xxx_count, floor(total × xxx_max_percent / 100)) × shrinkFactor` 双控制；关键词维度按 `keyword_score_threshold` 截断；
+- `InfoCoreService.keywordKInfo` — bm25 做 min-max 全量归一化到 0-100（命中集合值域线性映射，最优=100、最差=0），输出项附 `keyword_score`；
+- `info_context_config` 新增 `tag_relative_max_percent`(20) / `similarity_max_percent`(15) / `keyword_max_percent`(10) / `keyword_score_threshold`(95) 四列（含迁移）与配置注册。
+
+**影响的端点**：
+- `InfoCore.context` — 弱相关维度受数量+比例双控制，关键词仅保留评分 ≥ 阈值的命中；
+- 配置页「Agent 上下文构建」— 支持四个新增配置项。
+
+**可能存在的问题/风险点**：
+- bm25 采用 min-max 全量归一化（命中集合值域线性映射到 0-100），不同查询间绝对值不可比较；阈值 95 保留位于命中集合前 5% 相关度的消息。
+
+## [2026-08-26] 修复需求确认取消后信息残留 + keywordKInfo 改 FTS5 MATCH
+
+**变更原因**：
+1. 需求确认「取消（CANCEL）」仅将 work 置为 `CANCELLED`、未删除 `info_raw` 中已保存的 REQUEST，前端本地移除刷新后重新出现（「我想去旅游」会话已取消提问残留）；
+2. `keywordKInfo` 用 `word IN (...)` 等值匹配 + 命中次数排序，未按 PRD 使用 FTS5 MATCH 语法与 bm25 相关性评分，关键词匹配不符合上下文构建逻辑。
+
+**修改的方法与模块**：
+- `InfoCoreService.keywordKInfo` — 改用 `info_keyword` FTS5 `MATCH`（`word:"..." OR ...`）检索，按 `bm25` 升序返回，info_id 聚合取最优 bm25，保留 `keyword_match_count`；
+- `InfoCoreService.delInfoByWork` / `InfoCoreAccess.delInfoByWork` — 新增按 work_id 级联删除信息及派生数据；
+- `OrchestrationEntryService.confirmIntent` — CANCEL 分支调用 `delInfoByWork` 删除已落库 REQUEST。
+
+**影响的端点**：
+- `POST /api/chat/confirm-intent`（action=CANCEL）— 取消后提问彻底移除，刷新不再出现；
+- `InfoCore.keywordKInfo` — 返回按 bm25 相关性排序的匹配消息。
+
+**可能存在的问题/风险点**：
+- 删除为 best-effort；bm25 针对「每 info 每关键词一行」打分，经聚合取最优值近似整条 info 相关度。
+
 ## [2026-08-24] 修复 LLM 代理请求超时挂起与编排层超时兜底
 
 **变更原因**：

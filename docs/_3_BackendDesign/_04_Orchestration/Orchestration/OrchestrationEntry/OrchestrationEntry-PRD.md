@@ -257,7 +257,8 @@
 1. 校验 work_id 与 action 非空；调用 RelationDBProvider.selectOneDB 根据 work_id 查询 `orchestration_work` 确认存在；
 2. 若 action = "CANCEL"：
    a. 调用 RelationDBProvider.updateDB 将 status 置为 "CANCELLED"，记录 cancel_reason；
-   b. 推送 `cancelled` SSE 事件；返回 success=true；
+   b. 调用 `InfoCore.delInfoByWork` 删除该 work 已落库的全部信息及派生数据（含已保存的 REQUEST 消息），使被取消的提问不再出现在对话历史 / ChatMap；
+   c. 推送 `cancelled` SSE 事件；返回 success=true；
 3. 若 action = "APPROVE"：finalQuery = understood_requirement（为空则回退 metadata.understood_requirement / user_query）；
     若 action = "KEEP"：finalQuery = 原始 user_query；
 4. **APPROVE 且需求被改写时**：调用 `InfoCore.updateInfo` 将 `info_raw` 中该 work 已落库的 REQUEST 消息内容改写为理解后的需求（同步替换，保证对话历史 / ChatMap 与前端展示一致）；
@@ -411,3 +412,17 @@
 
 **可能存在的问题**：
 - 存量库中刻意配置的 `node_timeout_ms > 600000` 会在下次启动被 clamp，属预期的「收敛到合理区间」行为。
+
+### [2026-08-26] confirmIntent CANCEL 级联删除已落库的 REQUEST 信息
+
+**变更原因**：需求确认「取消（CANCEL）」此前仅将 work 置为 `CANCELLED`，未删除 `info_raw` 中已保存的 REQUEST 消息；前端仅本地 `removeUserMessageByContent` 移除展示，刷新后历史 / ChatMap 重新出现被取消的提问（如「我想去旅游」会话中已取消的提问仍残留）。
+
+**修改的方法**：
+- `OrchestrationEntryService.confirmIntent` — CANCEL 分支调用新增的 `InfoCore.delInfoByWork(work_id)`，删除该 work 落库的 `info_raw` 消息及派生数据（`info_tag` / `info_summary` / `info_keyword` / `info_vector` / `info_context_source`）与 GraphDB 引用节点边；
+- `InfoCoreService.delInfoByWork` / `InfoCoreAccess.delInfoByWork` — 新增按 work_id 级联删除信息的方法。
+
+**影响的端点**：
+- `POST /api/chat/confirm-intent`（action=CANCEL）— 取消后该次提问彻底从历史 / ChatMap 移除，刷新后不再出现。
+
+**可能存在的问题**：
+- 删除为 best-effort（派生表删除失败不影响主流程）；前端 `removeUserMessageByContent` 保留为即时兜底，与后端删除叠加不冲突。

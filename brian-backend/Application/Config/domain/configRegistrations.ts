@@ -203,6 +203,10 @@ export const ALL_CONFIG_REGISTRATIONS: ConfigRegistration[] = [
   // core('info_core', 'context_config', 'context_config.random_max_percent', '随机消息最大百分比', 'INT', 20, '会话内随机消息采集数量上限百分比 (1-100%)'),
   // ===== 修改后的代码 =====
   core('info_core', 'context_config', 'context_config.random_max_percent', '随机消息最大百分比', 'INT', 20, '随机消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
+  core('info_core', 'context_config', 'context_config.tag_relative_max_percent', '标签关联消息最大百分比', 'INT', 20, '标签关联消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
+  core('info_core', 'context_config', 'context_config.similarity_max_percent', '相似度消息最大百分比', 'INT', 15, '语义相似消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
+  core('info_core', 'context_config', 'context_config.keyword_max_percent', '关键词消息最大百分比', 'INT', 10, '关键词相关消息采集数量相对于配置的最大消息总量的上限百分比 (1-100%)'),
+  core('info_core', 'context_config', 'context_config.keyword_score_threshold', '关键词评分阈值', 'INT', 95, 'bm25 归一化评分（0-100）截断阈值，仅保留评分不低于该值的关键词命中'),
   core('info_core', 'context_config', 'context_config.total', '上下文总数', 'INT', 1000),
   core('info_core', 'context_config', 'context_config.enable_snapshot_persistence', '启用上下文快照持久化', 'BOOLEAN', true, '是否持久化上下文构建元数据快照'),
   // ===== 原始代码（保留作为参考）=====

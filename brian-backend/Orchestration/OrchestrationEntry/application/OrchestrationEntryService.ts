@@ -10,7 +10,7 @@ import {
   type PromptsAccess, type LLMAccess, type Logger, type Condition,
 } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
-import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput, UpdateInfoInput, UpdateInfoOutput } from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, SaveInfoInput, SaveInfoOutput, UpdateInfoInput, UpdateInfoOutput, DelInfoByWorkInput, DelInfoByWorkOutput } from '@brian-agent/core';
 import type { WriterAgentAccess, IntentAgentAccess } from '@brian-agent/agent';
 import { GetUserProfileInput, GetUserProfileOutput, WriterAgentContext, UnderstandRequirementInput, UnderstandRequirementOutput, IntentAgentContext } from '@brian-agent/agent';
 import type { OrchestrationStrategyAccess } from '../../OrchestrationStrategy/access/OrchestrationStrategyAccess';
@@ -872,6 +872,13 @@ export class OrchestrationEntryService {
         }),
         new DBContext(),
         new UpdateDBOutput(),
+      );
+      // 取消时丢弃本次提问已落库的 REQUEST 消息及其派生数据，
+      // 避免刷新后历史 / ChatMap 重新展示已取消的提问。
+      await this.infoCore.delInfoByWork(
+        Object.assign(new DelInfoByWorkInput(), { work_id: input.work_id }),
+        new InfoCoreContext(),
+        new DelInfoByWorkOutput(),
       );
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
         await this.streamAccess.pushEvent(String(record.session_id), 'cancelled', 'CONTROL', {

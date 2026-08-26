@@ -82,6 +82,8 @@ import {
   DelInfoOutput,
   UpdateInfoInput,
   UpdateInfoOutput,
+  DelInfoByWorkInput,
+  DelInfoByWorkOutput,
   ExistInfoInput,
   ExistInfoOutput,
 } from '../domain/types';
@@ -449,6 +451,15 @@ export class InfoCoreAccess {
     output: UpdateInfoOutput,
   ): Promise<boolean> {
     return this.service.updateInfo(input, context, output);
+  }
+
+  /** 删除指定 work 落库的全部信息及派生数据（如需求确认 CANCEL 丢弃本次提问）。 */
+  async delInfoByWork(
+    input: DelInfoByWorkInput,
+    context: InfoCoreContext,
+    output: DelInfoByWorkOutput,
+  ): Promise<boolean> {
+    return this.service.delInfoByWork(input, context, output);
   }
 
   // -------------------------------------------------------------------------

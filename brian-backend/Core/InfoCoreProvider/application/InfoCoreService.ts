@@ -100,10 +100,13 @@ import {
   DelInfoOutput,
   UpdateInfoInput,
   UpdateInfoOutput,
+  DelInfoByWorkInput,
+  DelInfoByWorkOutput,
   ExistInfoInput,
   ExistInfoOutput,
   INFO_RAW_TABLE,
   INFO_CONTEXT_SOURCE_TABLE,
+  INFO_VECTOR_TABLE,
   INFO_TAG_TABLE,
   INFO_SUMMARY_TABLE,
   INFO_KEYWORD_TABLE,
@@ -909,6 +912,9 @@ export class InfoCoreService {
 
   /**
    * 关键词搜索：从 FTS5 表检索匹配的关键词。
+   *
+   * PRD 2.5.4：nodejieba 分词得到关键词列表后，使用 SQLite FTS5 MATCH 语法在
+   * info_keyword 虚拟表中执行全文搜索，按 bm25 相关性评分降序返回匹配信息。
    */
   async keywordKInfo(
     input: KeywordKInfoInput,
@@ -925,30 +931,66 @@ export class InfoCoreService {
       return true;
     }
 
-    const keywordRows = await this.relationDb.select(INFO_KEYWORD_TABLE, {
-      conditions: [{ field: 'word', operator: Operator.IN, value: keywords }],
-    });
+    // FTS5 MATCH：关键词列表以 OR 组合做全文搜索（每个关键词按词条整体匹配，
+    // 避免拆分为子 token），仅检索 word 列，避免命中 info_id 列产生误召回。
+    const matchExpr = keywords
+      .map((k) => `word:"${k.replace(/"/g, '""')}"`)
+      .join(' OR ');
+
+    let keywordRows: Array<{ info_id: string; rank: number }>;
+    try {
+      keywordRows = this.relationDb.queryRaw<{ info_id: string; rank: number }>(
+        `SELECT "info_id", bm25("${INFO_KEYWORD_TABLE}") AS "rank" FROM "${INFO_KEYWORD_TABLE}" WHERE "${INFO_KEYWORD_TABLE}" MATCH ? ORDER BY "rank" ASC`,
+        [matchExpr],
+      );
+    } catch {
+      // FTS5 MATCH 语法异常（极端关键词含特殊字符）时降级为空结果，不影响上层上下文构建
+      keywordRows = [];
+    }
 
     if (keywordRows.length === 0) {
       output.list = [];
       return true;
     }
 
+    // bm25 越小相关性越高；每条 info 的每个关键词占一行，故按 info_id 聚合：
+    // 取最小（最优）bm25 作为该 info 的相关度，命中关键词次数作为次要信息。
+    const bestRankMap = new Map<string, number>();
     const matchCountMap = new Map<string, number>();
     for (const row of keywordRows) {
-      const iid = row['info_id'] as string;
+      const iid = row.info_id;
+      const rank = Number(row.rank);
+      const prev = bestRankMap.get(iid);
+      if (prev === undefined || rank < prev) bestRankMap.set(iid, rank);
       matchCountMap.set(iid, (matchCountMap.get(iid) || 0) + 1);
     }
 
-    const sortedIds = [...matchCountMap.entries()]
-      .sort((a, b) => b[1] - a[1])
+    // bm25 归一化到 0-100（min-max 全量归一化）：将本次命中集合的 bm25 值域
+    // [minRank, maxRank] 线性映射到 [100, 0]（最优命中 = 100，最差命中 = 0）。
+    // 供上层（如 context）按 keyword_score 阈值截断低相关命中。
+    const ranks = [...bestRankMap.values()];
+    const minRank = Math.min(...ranks);
+    const maxRank = Math.max(...ranks);
+    const span = maxRank - minRank;
+    const normalizeScore = (rank: number): number => {
+      if (span <= 0) return 100; // 仅单一命中或 bm25 完全一致时等权视为满分
+      const s = (100 * (maxRank - rank)) / span;
+      return Math.max(0, Math.min(100, Math.round(s)));
+    };
+
+    const sortedIds = [...bestRankMap.entries()]
+      .sort((a, b) => a[1] - b[1])
       .map((e) => e[0]);
 
-    const results: Array<InfoRawRecord & { keyword_match_count?: number }> = [];
+    const results: Array<InfoRawRecord & { keyword_match_count?: number; keyword_score?: number }> = [];
     for (const infoId of sortedIds) {
       const infoRow = await this.getInfoByInfoId(infoId);
       if (infoRow) {
-        results.push({ ...infoRow, keyword_match_count: matchCountMap.get(infoId) });
+        results.push({
+          ...infoRow,
+          keyword_match_count: matchCountMap.get(infoId),
+          keyword_score: normalizeScore(bestRankMap.get(infoId) ?? 0),
+        });
       }
     }
 
@@ -1901,14 +1943,20 @@ export class InfoCoreService {
       currentCandidate = latest[0] ?? null;
     }
 
-    // 2.3 动态收缩：除钉住消息外，各弱相关维度限额按基础上下文（钉住 + 复选/时间线）占比收缩。
+    // 2.3 数量与比例双控制 + 动态收缩：除钉住消息外，各弱相关维度限额先取
+    //     「基础数量」与「total × 上限百分比」的较小值，再按基础上下文占比收缩。
     //     基础上下文越多，弱相关维度越少，把预算让给更明确的上下文，避免无关信息挤占。
     const baseContextCount = pinnedCandidates.length + citingCandidates.length + timelineCandidates.length;
     const shrinkFactor = maxTotal > 0 ? Math.max(0, 1 - baseContextCount / maxTotal) : 1;
-    const tagLimit = Math.floor((contextConfig?.base_tag_relative_count ?? 200) * shrinkFactor);
-    const simLimit = Math.floor((contextConfig?.base_similarity_count ?? 150) * shrinkFactor);
-    const kwLimit = Math.floor((contextConfig?.base_keyword_count ?? 100) * shrinkFactor);
-    const randLimit = Math.floor((contextConfig?.base_random_count ?? 50) * shrinkFactor);
+    const capByPercent = (base: number, percent: number): number => {
+      const byPercent = maxTotal > 0 ? Math.floor((maxTotal * percent) / 100) : 0;
+      return Math.floor(Math.min(base, byPercent) * shrinkFactor);
+    };
+    const tagLimit = capByPercent(contextConfig?.base_tag_relative_count ?? 200, contextConfig?.tag_relative_max_percent ?? 20);
+    const simLimit = capByPercent(contextConfig?.base_similarity_count ?? 150, contextConfig?.similarity_max_percent ?? 15);
+    const kwLimit = capByPercent(contextConfig?.base_keyword_count ?? 100, contextConfig?.keyword_max_percent ?? 10);
+    const randLimit = capByPercent(contextConfig?.base_random_count ?? 50, contextConfig?.random_max_percent ?? 20);
+    const kwScoreThreshold = contextConfig?.keyword_score_threshold ?? 95;
 
     // 获取参考文本：优先使用 input.info（当前用户提问文本），其次查找 input.info_id 记录，最后从 CITING/TIMELINE 中提取
     let refText = input.info || '';
@@ -1966,9 +2014,13 @@ export class InfoCoreService {
         kwInput.info = refText;
         const kwOutput = new KeywordKInfoOutput();
         await this.keywordKInfo(kwInput, _context, kwOutput);
-        for (const item of kwOutput.list.slice(0, kwLimit)) {
+        // bm25 归一化评分截断：仅保留 keyword_score >= 阈值（默认 95/100）的高相关命中；
+        // 列表已按相关性降序，达到 kwLimit 即可停止。
+        for (const item of kwOutput.list) {
           if (!this.isCorrectInfo(item)) continue;
+          if ((item.keyword_score ?? 0) < kwScoreThreshold) continue;
           kwCandidates.push(item);
+          if (kwCandidates.length >= kwLimit) break;
         }
       } catch { /* ignore */ }
     }
@@ -2413,6 +2465,10 @@ const rawPriority = priorityOrderStr
     assertNonNegativeInt(input.base_keyword_count, 'base_keyword_count');
     assertNonNegativeInt(input.base_random_count, 'base_random_count');
     assertNonNegativeInt(input.random_max_percent, 'random_max_percent');
+    assertNonNegativeInt(input.tag_relative_max_percent, 'tag_relative_max_percent');
+    assertNonNegativeInt(input.similarity_max_percent, 'similarity_max_percent');
+    assertNonNegativeInt(input.keyword_max_percent, 'keyword_max_percent');
+    assertNonNegativeInt(input.keyword_score_threshold, 'keyword_score_threshold');
     if (input.total !== undefined && (!Number.isInteger(input.total) || input.total < 1)) {
       throw new ValidationError('total 必须为 >= 1 的整数');
     }
@@ -2431,6 +2487,10 @@ const rawPriority = priorityOrderStr
         base_keyword_count: 100,
         base_random_count: 50,
         random_max_percent: 20,
+        tag_relative_max_percent: 20,
+        similarity_max_percent: 15,
+        keyword_max_percent: 10,
+        keyword_score_threshold: 95,
         total: 1000,
         enable_snapshot_persistence: 1,
         priority_order: 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM',
@@ -2543,6 +2603,42 @@ const rawPriority = priorityOrderStr
       ],
     );
     output.updated_count = affected;
+    return true;
+  }
+
+  /**
+   * 删除指定 work 落库的全部信息及派生数据（如需求确认 CANCEL 时丢弃本次提问）。
+   *
+   * 级联清理 info_raw 主表与 info_tag / info_summary / info_keyword / info_vector
+   * 派生表，并删除 GraphDB 中该信息的引用节点与边（共享的标签/关键词文本节点不在此清理）。
+   */
+  async delInfoByWork(
+    input: DelInfoByWorkInput,
+    _context: InfoCoreContext,
+    output: DelInfoByWorkOutput,
+  ): Promise<boolean> {
+    if (!input.work_id) {
+      throw new ValidationError('delInfoByWork 需要提供 work_id');
+    }
+
+    const rows = await this.relationDb.select(INFO_RAW_TABLE, {
+      conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
+      fields: ['info_id'],
+    });
+    const infoIds = rows.map((r) => String(r['info_id'] ?? '')).filter(Boolean);
+
+    if (infoIds.length > 0) {
+      await this.relationDb.delete(INFO_TAG_TABLE, [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+      await this.relationDb.delete(INFO_SUMMARY_TABLE, [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+      await this.relationDb.delete(INFO_KEYWORD_TABLE, [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+      await this.relationDb.delete(INFO_VECTOR_TABLE, [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
+      await this.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), _context, new DelInfoGraphOutput());
+    }
+
+    const affected = await this.relationDb.delete(INFO_RAW_TABLE, [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }]);
+    await this.relationDb.delete(INFO_CONTEXT_SOURCE_TABLE, [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }]);
+
+    output.deleted_count = affected;
     return true;
   }
 
@@ -3640,6 +3736,10 @@ const rawPriority = priorityOrderStr
       base_keyword_count: Number(raw['base_keyword_count'] ?? 100),
       base_random_count: Number(raw['base_random_count'] ?? 50),
       random_max_percent: Number(raw['random_max_percent'] ?? 20),
+      tag_relative_max_percent: Number(raw['tag_relative_max_percent'] ?? 20),
+      similarity_max_percent: Number(raw['similarity_max_percent'] ?? 15),
+      keyword_max_percent: Number(raw['keyword_max_percent'] ?? 10),
+      keyword_score_threshold: Number(raw['keyword_score_threshold'] ?? 95),
       total: Number(raw['total'] ?? 1000),
       enable_snapshot_persistence: Number(raw['enable_snapshot_persistence'] ?? 1),
       priority_order: String(raw['priority_order'] ?? 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM'),

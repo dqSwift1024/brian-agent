@@ -150,6 +150,10 @@ export interface InfoContextConfigRecord {
   base_keyword_count: number;
   base_random_count: number;
   random_max_percent: number;
+  tag_relative_max_percent: number;
+  similarity_max_percent: number;
+  keyword_max_percent: number;
+  keyword_score_threshold: number;
   total: number;
   enable_snapshot_persistence: number;
   priority_order: string;
@@ -318,7 +322,7 @@ export class KeywordKInfoInput extends Input {
 
 /** keywordKInfo 出参 */
 export class KeywordKInfoOutput extends Output {
-  list: Array<InfoRawRecord & { keyword_match_count?: number }> = [];
+  list: Array<InfoRawRecord & { keyword_match_count?: number; keyword_score?: number }> = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -642,6 +646,10 @@ export class UpdateInfoContextConfigInput extends Input {
   base_keyword_count?: number;
   base_random_count?: number;
   random_max_percent?: number;
+  tag_relative_max_percent?: number;
+  similarity_max_percent?: number;
+  keyword_max_percent?: number;
+  keyword_score_threshold?: number;
   total?: number;
   enable_snapshot_persistence?: number | boolean;
   priority_order?: string;
@@ -675,6 +683,20 @@ export class UpdateInfoInput extends Input {
 /** updateInfo 出参 */
 export class UpdateInfoOutput extends Output {
   updated_count = 0;
+}
+
+// ---------------------------------------------------------------------------
+// delInfoByWork (delete all info of a work, e.g. intent confirmation CANCEL)
+// ---------------------------------------------------------------------------
+
+/** delInfoByWork 入参：按 work_id 删除该工作落库的全部信息及派生数据 */
+export class DelInfoByWorkInput extends Input {
+  work_id!: string;
+}
+
+/** delInfoByWork 出参 */
+export class DelInfoByWorkOutput extends Output {
+  deleted_count = 0;
 }
 
 // ---------------------------------------------------------------------------

@@ -57,4 +57,23 @@ describe('DagScheduler 节点超时', () => {
     );
     expect(out.results).toHaveLength(1);
   });
+
+  it('并发节点中一个失败、另一个挂起时应立即快速失败（不等挂起节点）', async () => {
+    const scheduler = new DagScheduler();
+    const nodes = [makeNode('a1', 't1'), makeNode('a2', 't2')];
+    const edges: AgentEdge[] = [];
+    const executor: DagNodeExecutor = async (node) => {
+      if (node.task_id === 't1') {
+        throw new DagNodeFailureError('a1', 't1', 'boom', 1, []);
+      }
+      // t2 永不返回，模拟执行中的并发节点卡死
+      return new Promise(() => { /* 永不返回 */ });
+    };
+    const startedAt = Date.now();
+    await expect(
+      scheduler.run(nodes, edges, executor, { concurrency: 2, timeoutMs: 0, nodeTimeoutMs: 10000 }),
+    ).rejects.toThrow(DagNodeFailureError);
+    // 快速失败：应在远小于 nodeTimeoutMs 的时间内收敛，而非等待挂起节点超时
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+  });
 });
