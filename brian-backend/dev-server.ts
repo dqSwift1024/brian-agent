@@ -3483,6 +3483,19 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
         sendJson(res, 200, { year, month, days });
 
+      } else if (method === 'GET' && pathname === '/api/memory/date-counts') {
+        const rows = ctx.relationDb.queryRaw<{ day_num: number; cnt: number }>(
+          'SELECT CAST("created" / 86400000 AS INTEGER) AS day_num, COUNT(*) AS cnt FROM "info_raw" GROUP BY day_num',
+          [],
+        );
+        const dates: Record<string, number> = {};
+        for (const r of rows) {
+          const d = new Date(r.day_num * 86400000);
+          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+          dates[key] = r.cnt;
+        }
+        sendJson(res, 200, { dates });
+
       // ===== Learning Routes =====
       } else if (method === 'POST' && pathname === '/api/learning/start') {
         // 手动触发指定学习模式；未传 mode 时读取存储的当前模式
@@ -3946,14 +3959,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const tables = ctx.relationDb.queryRaw<{ name: string }>(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
           );
-          let recordCount = 0;
-          for (const t of tables) {
-            const c = ctx.relationDb.queryRaw<{ c: number }>(`SELECT COUNT(*) AS "c" FROM "${t.name}"`)[0];
-            recordCount += Number(c?.c) || 0;
-          }
           components.push({
             name: 'RelationDB', status: 'healthy', message: `${Date.now() - start}ms`,
-            details: { '数据表': tables.length, '记录总数': recordCount },
+            details: { '数据表': tables.length },
           });
         } catch (e: any) {
           components.push({ name: 'RelationDB', status: 'unhealthy', message: e?.message || '连接失败' });

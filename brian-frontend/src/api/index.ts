@@ -125,8 +125,10 @@ export const memoryApi = {
     request<{ deleted_nodes: number }>('/memory/keyword-graph', { method: 'DELETE' }),
   stats: (userId: string) =>
     request<{ totalMemories: number; byType: Record<string, number> }>(`/memory/stats/${encodeURIComponent(userId)}`),
-  heatmap: (year: number, month: number) =>
-    request<{ year: number; month: number; days: Record<string, number> }>(`/memory/heatmap?year=${year}&month=${month}`)
+heatmap: (year: number, month: number) =>
+    request<{ year: number; month: number; days: Record<string, number> }>(`/memory/heatmap?year=${year}&month=${month}`),
+  dateCounts: () =>
+    request<{ dates: Record<string, number> }>('/memory/date-counts'),
 }
 
 export interface GraphSearchNode { id: string; tag: string; info_ids: string[]; depth: number }

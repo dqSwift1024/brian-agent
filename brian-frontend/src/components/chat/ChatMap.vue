@@ -16,10 +16,28 @@ const panStart = ref({ x: 0, y: 0 })
 // 选中状态：activeNodeId 选中消息展示框，activeEdgeId 选中单条连线
 const activeNodeId = ref<string | null>(null)
 const activeEdgeId = ref<string | null>(null)
+const hoveredNodeId = ref<string | null>(null)
 
 // 消息框尺寸：宽/高在原始基础上放大为 1.5 倍（220→330，108→162）
 const NODE_W = 330
 const NODE_H = 162
+
+// 对齐吸附阈值（像素）
+const SNAP_THRESHOLD = 8
+
+// 拖动状态
+const draggingNodeId = ref<string | null>(null)
+const dragOffset = ref({ x: 0, y: 0 })
+const dragStartPos = ref({ x: 0, y: 0 })
+
+// 对齐吸附引导线
+interface SnapGuide {
+  type: 'vertical' | 'horizontal'
+  position: number
+  start: number
+  end: number
+}
+const snapGuides = ref<SnapGuide[]>([])
 
 const nodes = computed(() => sessionStore.chatMapNodes)
 const edges = computed(() => sessionStore.chatMapEdges)
@@ -33,50 +51,112 @@ const nodeMap = computed(() => {
 const worldWidth = computed(() => {
   let maxX = 0
   for (const n of nodes.value) maxX = Math.max(maxX, n.x)
-  return maxX + NODE_W + 160
+  return maxX + NODE_W + 200
 })
 
 const worldHeight = computed(() => {
   let maxY = 0
   for (const n of nodes.value) maxY = Math.max(maxY, n.y)
-  return maxY + NODE_H + 160
+  return maxY + NODE_H + 200
 })
 
+// ===== 原始 nodeStyle（保留作为参考） =====
+// function nodeStyle(n: ChatMapNode) {
+//   return {
+//     left: `${n.x}px`,
+//     top: `${n.y}px`,
+//     width: `${NODE_W}px`,
+//     minHeight: `${NODE_H}px`,
+//     zIndex: draggingNodeId.value === n.id ? 10 : 1,
+//   }
+// }
+
+// ===== 修改后：基于位置和状态的 z-index 分层，避免遮挡 =====
 function nodeStyle(n: ChatMapNode) {
-  return { left: `${n.x}px`, top: `${n.y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }
+  let z = 1
+  if (draggingNodeId.value === n.id) {
+    z = 100
+  } else if (hoveredNodeId.value === n.id || activeNodeId.value === n.id) {
+    z = 50
+  } else {
+    // 右下方的节点 z-index 更高，避免重叠时上方节点遮挡下方
+    z = Math.round(n.y / 100) * 10 + Math.round(n.x / 100)
+  }
+  return {
+    left: `${n.x}px`,
+    top: `${n.y}px`,
+    width: `${NODE_W}px`,
+    minHeight: `${NODE_H}px`,
+    zIndex: z,
+  }
 }
 
 function edgeKey(e: { source: string; target: string; edgeType: string }) {
   return `${e.edgeType}-${e.source}-${e.target}`
 }
 
-// 连线路径：
-// 1. QUESTION_ANSWER / FOLLOW_UP（纵向）：从提问方 (REQUEST) 下边中点指向回答方 (RESPONSE) 上边中点（向下箭头）
-// 2. CITATION（横向）：从被引用方 (s) 右边中点指向引用方 (t) 左边中点（向右箭头）
+// ===== 连线路径：使用贝塞尔曲线使连线更美观 =====
 function isVerticalEdge(e: { edgeType: string }) {
   return e.edgeType === 'QUESTION_ANSWER' || e.edgeType === 'FOLLOW_UP'
 }
 
+// ===== 原始 verticalEdgePath（保留作为参考）=====
+// function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
+//   const sx = s.x + NODE_W / 2
+//   const sy = s.y + NODE_H
+//   const tx = t.x + NODE_W / 2
+//   const ty = t.y
+//   const midY = (sy + ty) / 2
+//   return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
+// }
+
+// ===== 修改后：纵向连线使用平滑贝塞尔曲线 =====
 function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
   const sx = s.x + NODE_W / 2
   const sy = s.y + NODE_H
   const tx = t.x + NODE_W / 2
   const ty = t.y
+  const dx = Math.abs(tx - sx)
+  const dy = Math.abs(ty - sy)
+  const cpOffset = Math.min(dy * 0.4, 80)
+  if (dx < 5) {
+    // 几乎同列：直接用竖直贝塞尔
+    return `M ${sx} ${sy} C ${sx} ${sy + cpOffset}, ${tx} ${ty - cpOffset}, ${tx} ${ty}`
+  }
+  // 不同列：弯折贝塞尔
   const midY = (sy + ty) / 2
-  return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
+  return `M ${sx} ${sy} C ${sx} ${sy + cpOffset}, ${sx} ${midY}, ${(sx + tx) / 2} ${midY} S ${tx} ${ty - cpOffset}, ${tx} ${ty}`
 }
 
+// ===== 原始 citationEdgePath（保留作为参考）=====
+// function citationEdgePath(s: ChatMapNode, t: ChatMapNode) {
+//   const sx = s.x + NODE_W
+//   const sy = s.y + NODE_H / 2
+//   const tx = t.x
+//   const ty = t.y + NODE_H / 2
+//   if (tx >= sx) {
+//     const midX = (sx + tx) / 2
+//     return `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`
+//   }
+//   const offsetSide = 24
+//   return `M ${sx} ${sy} L ${sx + offsetSide} ${sy} L ${sx + offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${ty} L ${tx} ${ty}`
+// }
+
+// ===== 修改后：引用连线使用平滑贝塞尔曲线 =====
 function citationEdgePath(s: ChatMapNode, t: ChatMapNode) {
   const sx = s.x + NODE_W
   const sy = s.y + NODE_H / 2
   const tx = t.x
   const ty = t.y + NODE_H / 2
+  const dx = Math.abs(tx - sx)
   if (tx >= sx) {
-    const midX = (sx + tx) / 2
-    return `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`
+    const cpOffset = Math.min(dx * 0.4, 80)
+    return `M ${sx} ${sy} C ${sx + cpOffset} ${sy}, ${tx - cpOffset} ${ty}, ${tx} ${ty}`
   }
-  const offsetSide = 24
-  return `M ${sx} ${sy} L ${sx + offsetSide} ${sy} L ${sx + offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${ty} L ${tx} ${ty}`
+  // 引用节点在左侧：弧形绕行
+  const offsetSide = Math.min(40, dx * 0.3)
+  const midY = (sy + ty) / 2
+  return `M ${sx} ${sy} C ${sx + offsetSide} ${sy}, ${sx + offsetSide} ${midY}, ${(sx + tx) / 2} ${midY} S ${tx - offsetSide} ${ty}, ${tx} ${ty}`
 }
 
 function edgePath(e: { source: string; target: string; edgeType: string }) {
@@ -116,18 +196,16 @@ function isEdgeHighlightedByNode(e: { source: string; target: string; edgeType: 
 
 function getEdgeStroke(e: { source: string; target: string; edgeType: string }) {
   if (isEdgeSelected(e)) {
-    return '#2563eb' // 单选连线高亮
+    return '#2563eb'
   }
   if (activeNodeId.value) {
     if (e.source === activeNodeId.value) {
-      // 当前节点是被引用方（被引用的连线发向别处）
-      return '#8b5cf6' // 紫色高亮
+      return '#8b5cf6'
     }
     if (e.target === activeNodeId.value) {
-      // 当前节点是引用方（引用的连线来自别处）
-      return '#0284c7' // 天蓝色高亮
+      return '#0284c7'
     }
-    return 'rgba(160, 175, 195, 0.2)' // 未选中连线淡化
+    return 'rgba(160, 175, 195, 0.2)'
   }
   if (e.edgeType === 'CITATION' || e.edgeType === 'FOLLOW_UP') {
     return '#3b82f6'
@@ -158,18 +236,196 @@ function onWheel(e: WheelEvent) {
   scale.value = Math.max(0.2, Math.min(2.5, scale.value * delta))
 }
 
+// ===== 坐标转换：屏幕坐标 → 世界坐标（考虑缩放和偏移） =====
+function screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
+  if (!containerRef.value) return { x: 0, y: 0 }
+  const rect = containerRef.value.getBoundingClientRect()
+  const sx = (clientX - rect.left - offset.value.x) / scale.value
+  const sy = (clientY - rect.top - offset.value.y) / scale.value
+  return { x: sx, y: sy }
+}
+
 function onMouseDown(e: MouseEvent) {
-  if ((e.target as HTMLElement).closest('.chat-map-node') || (e.target as HTMLElement).closest('.chat-map-edge')) return
+  const nodeEl = (e.target as HTMLElement).closest('.chat-map-node') as HTMLElement | null
+  if (nodeEl) {
+    const nodeId = nodeEl.dataset.nodeId
+    if (nodeId) {
+      startDrag(nodeId, e)
+    }
+    return
+  }
+  if ((e.target as HTMLElement).closest('.chat-map-edge')) return
   isPanning.value = true
   panStart.value = { x: e.clientX - offset.value.x, y: e.clientY - offset.value.y }
 }
 
+function startDrag(nodeId: string, e: MouseEvent) {
+  const node = nodeMap.value.get(nodeId)
+  if (!node) return
+  draggingNodeId.value = nodeId
+  const world = screenToWorld(e.clientX, e.clientY)
+  dragOffset.value = { x: world.x - node.x, y: world.y - node.y }
+  dragStartPos.value = { x: node.x, y: node.y }
+  isPanning.value = false
+}
+
 function onMouseMove(e: MouseEvent) {
+  if (draggingNodeId.value) {
+    handleDrag(e)
+    return
+  }
   if (!isPanning.value) return
   offset.value = { x: e.clientX - panStart.value.x, y: e.clientY - panStart.value.y }
 }
 
+// ===== 碰撞检测：两个矩形是否重叠 =====
+function rectsOverlap(ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number): boolean {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+}
+
+// ===== 碰撞推离：将拖动节点从重叠的其他节点中完全推出 =====
+function pushOutOfOverlap(
+  dragX: number, dragY: number, dragW: number, dragH: number,
+  otherNodes: ChatMapNode[], excludeId: string,
+): { x: number; y: number } {
+  let x = dragX
+  let y = dragY
+  let hasOverlap = true
+  let iterations = 0
+  const maxIterations = 10
+
+  while (hasOverlap && iterations < maxIterations) {
+    hasOverlap = false
+    iterations++
+    for (const other of otherNodes) {
+      if (other.id === excludeId) continue
+      if (!rectsOverlap(x, y, dragW, dragH, other.x, other.y, NODE_W, NODE_H)) continue
+      hasOverlap = true
+
+      const overlapRight = (x + dragW) - other.x
+      const overlapLeft = (other.x + NODE_W) - x
+      const overlapBottom = (y + dragH) - other.y
+      const overlapTop = (other.y + NODE_H) - y
+      const minOverlap = Math.min(overlapRight, overlapLeft, overlapBottom, overlapTop)
+
+      if (minOverlap === overlapRight) {
+        x = other.x - dragW - 8
+      } else if (minOverlap === overlapLeft) {
+        x = other.x + NODE_W + 8
+      } else if (minOverlap === overlapBottom) {
+        y = other.y - dragH - 8
+      } else {
+        y = other.y + NODE_H + 8
+      }
+    }
+  }
+  return { x, y }
+}
+
+// ===== 对齐吸附计算 + 碰撞避免 =====
+function handleDrag(e: MouseEvent) {
+  const nodeId = draggingNodeId.value
+  if (!nodeId) return
+  const node = nodeMap.value.get(nodeId)
+  if (!node) return
+
+  const world = screenToWorld(e.clientX, e.clientY)
+  let newX = world.x - dragOffset.value.x
+  let newY = world.y - dragOffset.value.y
+
+  const otherNodes = nodes.value.filter((n) => n.id !== nodeId)
+
+  // 第一步：碰撞推离，确保不重叠
+  const pushed = pushOutOfOverlap(newX, newY, NODE_W, NODE_H, otherNodes, nodeId)
+  newX = pushed.x
+  newY = pushed.y
+
+  // 第二步：对齐吸附
+  const dragLeft = newX
+  const dragRight = newX + NODE_W
+  const dragTop = newY
+  const dragBottom = newY + NODE_H
+  const dragCenterX = newX + NODE_W / 2
+  const dragCenterY = newY + NODE_H / 2
+
+  const guides: SnapGuide[] = []
+  let bestSnapX = newX
+  let bestSnapY = newY
+  let bestSnapDistX = SNAP_THRESHOLD + 1
+  let bestSnapDistY = SNAP_THRESHOLD + 1
+
+  for (const other of otherNodes) {
+    const oLeft = other.x
+    const oRight = other.x + NODE_W
+    const oTop = other.y
+    const oBottom = other.y + NODE_H
+    const oCenterX = other.x + NODE_W / 2
+    const oCenterY = other.y + NODE_H / 2
+
+    const xCandidates = [
+      { dragEdge: dragLeft, otherEdge: oLeft, snapX: oLeft },
+      { dragEdge: dragLeft, otherEdge: oRight, snapX: oRight },
+      { dragEdge: dragRight, otherEdge: oLeft, snapX: oLeft - NODE_W },
+      { dragEdge: dragRight, otherEdge: oRight, snapX: oRight - NODE_W },
+      { dragEdge: dragCenterX, otherEdge: oCenterX, snapX: oCenterX - NODE_W / 2 },
+    ]
+
+    for (const c of xCandidates) {
+      const dist = Math.abs(c.dragEdge - c.otherEdge)
+      if (dist < bestSnapDistX) {
+        bestSnapDistX = dist
+        bestSnapX = c.snapX
+      }
+    }
+
+    const yCandidates = [
+      { dragEdge: dragTop, otherEdge: oTop, snapY: oTop },
+      { dragEdge: dragTop, otherEdge: oBottom, snapY: oBottom },
+      { dragEdge: dragBottom, otherEdge: oTop, snapY: oTop - NODE_H },
+      { dragEdge: dragBottom, otherEdge: oBottom, snapY: oBottom - NODE_H },
+      { dragEdge: dragCenterY, otherEdge: oCenterY, snapY: oCenterY - NODE_H / 2 },
+    ]
+
+    for (const c of yCandidates) {
+      const dist = Math.abs(c.dragEdge - c.otherEdge)
+      if (dist < bestSnapDistY) {
+        bestSnapDistY = dist
+        bestSnapY = c.snapY
+      }
+    }
+  }
+
+  if (bestSnapDistX <= SNAP_THRESHOLD) {
+    newX = bestSnapX
+    const guideYStart = Math.min(newY, ...otherNodes.map((n) => n.y))
+    const guideYEnd = Math.max(newY + NODE_H, ...otherNodes.map((n) => n.y + NODE_H))
+    guides.push({ type: 'vertical', position: newX, start: guideYStart, end: guideYEnd })
+    guides.push({ type: 'vertical', position: newX + NODE_W / 2, start: guideYStart, end: guideYEnd })
+  }
+
+  if (bestSnapDistY <= SNAP_THRESHOLD) {
+    newY = bestSnapY
+    const guideXStart = Math.min(newX, ...otherNodes.map((n) => n.x))
+    const guideXEnd = Math.max(newX + NODE_W, ...otherNodes.map((n) => n.x + NODE_W))
+    guides.push({ type: 'horizontal', position: newY, start: guideXStart, end: guideXEnd })
+    guides.push({ type: 'horizontal', position: newY + NODE_H / 2, start: guideXStart, end: guideXEnd })
+  }
+
+  // 第三步：吸附后再次碰撞推离，确保吸附没有导致重叠
+  const pushed2 = pushOutOfOverlap(newX, newY, NODE_W, NODE_H, otherNodes, nodeId)
+  newX = pushed2.x
+  newY = pushed2.y
+
+  snapGuides.value = guides
+  node.x = newX
+  node.y = newY
+}
+
 function onMouseUp() {
+  if (draggingNodeId.value) {
+    snapGuides.value = []
+    draggingNodeId.value = null
+  }
   isPanning.value = false
 }
 
@@ -248,7 +504,7 @@ watch(() => sessionStore.centerInfoId, async (id) => {
   <div
     ref="containerRef"
     class="relative w-full h-full overflow-hidden select-none"
-    :class="{ 'cursor-grabbing': isPanning, 'cursor-grab': !isPanning }"
+    :class="{ 'cursor-grabbing': isPanning || draggingNodeId, 'cursor-grab': !isPanning && !draggingNodeId }"
     @wheel="onWheel"
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
@@ -271,6 +527,22 @@ watch(() => sessionStore.centerInfoId, async (id) => {
     >
       <!-- 连线 -->
       <svg :width="worldWidth" :height="worldHeight" class="absolute top-0 left-0 pointer-events-none">
+        <!-- 对齐吸附引导线 -->
+        <g v-if="snapGuides.length > 0">
+          <line
+            v-for="(guide, i) in snapGuides"
+            :key="`guide-${i}`"
+            :x1="guide.type === 'vertical' ? guide.position : guide.start"
+            :y1="guide.type === 'vertical' ? guide.start : guide.position"
+            :x2="guide.type === 'vertical' ? guide.position : guide.end"
+            :y2="guide.type === 'vertical' ? guide.end : guide.position"
+            stroke="#2563eb"
+            stroke-width="1"
+            stroke-dasharray="4 4"
+            opacity="0.6"
+          />
+        </g>
+
         <g
           v-for="e in edges"
           :key="edgeKey(e)"
@@ -307,7 +579,10 @@ watch(() => sessionStore.centerInfoId, async (id) => {
         v-for="n in nodes"
         :key="n.id"
         class="chat-map-node absolute"
+        :data-node-id="n.id"
         :style="nodeStyle(n)"
+        @mouseenter="hoveredNodeId = n.id"
+        @mouseleave="hoveredNodeId = null"
       >
         <MessageCard
           :id="n.id"

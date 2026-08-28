@@ -327,20 +327,46 @@ export class SelfLearningService {
     const selOutput = Object.assign(new SelectDBOutput(), {});
     await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
 
+    // ===== 原始方法（保留作为参考）=====
+    // const libraries: Array<Record<string, unknown>> = [];
+    // for (const row of selOutput.rows) {
+    //   const libId = row.library_id as string;
+    //   const totalFiles = await this.relationDb.count('self_learning_file', [
+    //     { field: 'library_id', operator: Operator.EQ, value: libId },
+    //   ]);
+    //   const learnedFiles = await this.relationDb.count('self_learning_file', [
+    //     { field: 'library_id', operator: Operator.EQ, value: libId },
+    //     { field: 'status', operator: Operator.EQ, value: 'COMPLETED' },
+    //   ]);
+    //   libraries.push({
+    //     ...row,
+    //     total_files: totalFiles,
+    //     learned_files: learnedFiles,
+    //   });
+    // }
+
+    // ===== 修改后的方法：单次 GROUP BY 查询替代 N+1 count =====
+    const libraryIds = selOutput.rows.map(r => r.library_id as string);
+    const statsMap = new Map<string, { total_files: number; learned_files: number }>();
+    if (libraryIds.length > 0) {
+      const placeholders = libraryIds.map(() => '?').join(',');
+      const statsRows = this.relationDb.queryRaw<{ library_id: string; total_files: number; learned_files: number }>(
+        `SELECT "library_id", COUNT(*) AS "total_files", SUM(CASE WHEN "status" = 'COMPLETED' THEN 1 ELSE 0 END) AS "learned_files" FROM "self_learning_file" WHERE "library_id" IN (${placeholders}) GROUP BY "library_id"`,
+        libraryIds,
+      );
+      for (const s of statsRows) {
+        statsMap.set(s.library_id, { total_files: s.total_files, learned_files: s.learned_files });
+      }
+    }
+
     const libraries: Array<Record<string, unknown>> = [];
     for (const row of selOutput.rows) {
       const libId = row.library_id as string;
-      const totalFiles = await this.relationDb.count('self_learning_file', [
-        { field: 'library_id', operator: Operator.EQ, value: libId },
-      ]);
-      const learnedFiles = await this.relationDb.count('self_learning_file', [
-        { field: 'library_id', operator: Operator.EQ, value: libId },
-        { field: 'status', operator: Operator.EQ, value: 'COMPLETED' },
-      ]);
+      const stats = statsMap.get(libId) || { total_files: 0, learned_files: 0 };
       libraries.push({
         ...row,
-        total_files: totalFiles,
-        learned_files: learnedFiles,
+        total_files: stats.total_files,
+        learned_files: stats.learned_files,
       });
     }
 
@@ -389,7 +415,12 @@ export class SelfLearningService {
       // 旧 offset 分页（兼容既有调用与测试）
       const pageSize = input.page_size;
       const offset = (input.page_current - 1) * pageSize;
-      const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
+      // ===== 原始（SELECT *）=====
+      // const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
+
+      // ===== 修改后：明确列名，排除 error_message 大字段 =====
+      const fileColumns = '"id","created","updated","library_id","file_id","file_name","file_path","relative_path","parent_path","is_directory","file_size","status","learned_at"';
+      const sql = `SELECT ${fileColumns} FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
       output.files = this.relationDb.queryRaw<Record<string, unknown>>(sql, args);
       output.has_more = false;
       output.next_cursor = null;
@@ -406,7 +437,12 @@ export class SelfLearningService {
         args.push(cCreated, cCreated, cId);
       }
     }
-    const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
+    // ===== 原始（SELECT *）=====
+    // const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
+
+    // ===== 修改后：明确列名，排除 error_message 大字段 =====
+    const fileColumns = '"id","created","updated","library_id","file_id","file_name","file_path","relative_path","parent_path","is_directory","file_size","status","learned_at"';
+    const sql = `SELECT ${fileColumns} FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
     const rows = this.relationDb.queryRaw<Record<string, unknown>>(sql, args);
 
     const hasMore = rows.length > limit;
@@ -427,8 +463,16 @@ export class SelfLearningService {
     _context: SelfLearningContext,
     output: GetLibraryTreeOutput,
   ): Promise<boolean> {
+    // ===== 原始（无 LIMIT）=====
+    // const rows = this.relationDb.queryRaw<Record<string, unknown>>(
+    //   `SELECT "file_id", "file_name", "relative_path", "parent_path", "is_directory" FROM "self_learning_file" WHERE "library_id" = ? ORDER BY "is_directory" DESC, "file_name" ASC`,
+    //   [input.library_id],
+    // );
+
+    // ===== 修改后：添加 LIMIT 防止大库全量加载 =====
+    const treeLimit = 5000;
     const rows = this.relationDb.queryRaw<Record<string, unknown>>(
-      `SELECT "file_id", "file_name", "relative_path", "parent_path", "is_directory" FROM "self_learning_file" WHERE "library_id" = ? ORDER BY "is_directory" DESC, "file_name" ASC`,
+      `SELECT "file_id", "file_name", "relative_path", "parent_path", "is_directory" FROM "self_learning_file" WHERE "library_id" = ? ORDER BY "is_directory" DESC, "file_name" ASC LIMIT ${treeLimit}`,
       [input.library_id],
     );
 

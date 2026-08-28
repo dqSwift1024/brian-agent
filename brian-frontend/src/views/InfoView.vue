@@ -399,9 +399,7 @@ function scrollMemoryNavToActive(dateKey: string) {
 }
 
 function scrollToMemoryDate(dateKey: string) {
-  activeMemoryDate.value = dateKey
-  scrollMemoryNavToActive(dateKey)
-  document.getElementById(`memory-group-${dateKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  clickDateNav(dateKey)
 }
 
 function onMemoryScroll() {
@@ -420,10 +418,112 @@ function onMemoryScroll() {
   }
 }
 
-// Memory heatmap（时间导航底部的月度热力图）
+// Date navigation (all dates from cache, sorted desc) — drives both left nav & heatmap
+const dateNavTimeline = computed(() => {
+  return Object.entries(dateCountCache.value)
+    .filter(([, count]) => count > 0)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([dateKey, count]) => {
+      const [y, m, d] = dateKey.split('-').map(Number)
+      const date = new Date(y, m, d)
+      const today = new Date()
+      const yesterday = new Date(today.getTime() - 86400000)
+      let label: string
+      if (date.toDateString() === today.toDateString()) label = '今天'
+      else if (date.toDateString() === yesterday.toDateString()) label = '昨天'
+      else label = `${m + 1}月${d}日`
+      return { dateKey, label, count }
+    })
+})
+
+const memoryDateFilter = ref<string | null>(null)
+
+function dateKeyToRange(dateKey: string): { start: number; end: number } {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  const start = new Date(y, m, d).getTime()
+  const end = new Date(y, m, d + 1).getTime()
+  return { start, end }
+}
+
+function clickDateNav(dateKey: string) {
+  if (memoryDateFilter.value === dateKey) {
+    memoryDateFilter.value = null
+    memoryStartTime.value = ''
+    memoryEndTime.value = ''
+    if (memorySearchTimer) clearTimeout(memorySearchTimer)
+    loadMemory()
+  } else {
+    memoryDateFilter.value = dateKey
+    const { start, end } = dateKeyToRange(dateKey)
+    memoryStartTime.value = new Date(start).toISOString().slice(0, 16)
+    memoryEndTime.value = new Date(end - 1).toISOString().slice(0, 16)
+    if (memorySearchTimer) clearTimeout(memorySearchTimer)
+    loadMemory()
+  }
+  activeMemoryDate.value = dateKey
+  scrollMemoryNavToActive(dateKey)
+  const [y, m] = dateKey.split('-').map(Number)
+  heatmapYear.value = y
+  heatmapMonth.value = m + 1
+  nextTick(() => {
+    document.getElementById(`memory-group-${dateKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+// Memory heatmap & date count cache（全量日期计数，历史永久缓存，当天1分钟刷新）
+const dateCountCache = ref<Record<string, number>>({})
+let dateCountRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+const todayDateKey = computed(() => {
+  const now = new Date()
+  return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`
+})
+
+async function loadAllDateCounts() {
+  try {
+    const data = await memoryApi.dateCounts()
+    dateCountCache.value = data.dates
+  } catch { /* ignore */ }
+}
+
+function startDateCountRefresh() {
+  stopDateCountRefresh()
+  dateCountRefreshTimer = setInterval(async () => {
+    const now = new Date()
+    try {
+      const data = await memoryApi.heatmap(now.getFullYear(), now.getMonth() + 1)
+      const todayDay = String(now.getDate())
+      dateCountCache.value = {
+        ...dateCountCache.value,
+        [todayDateKey.value]: data.days[todayDay] || 0,
+      }
+    } catch { /* ignore */ }
+  }, 60_000)
+}
+
+function stopDateCountRefresh() {
+  if (dateCountRefreshTimer) {
+    clearInterval(dateCountRefreshTimer)
+    dateCountRefreshTimer = null
+  }
+}
+
+function getDateCount(dateKey: string): number {
+  return dateCountCache.value[dateKey] ?? 0
+}
+
 const heatmapYear = ref(new Date().getFullYear())
 const heatmapMonth = ref(new Date().getMonth() + 1)
-const heatmapDays = ref<Record<string, number>>({})
+
+const heatmapDays = computed(() => {
+  const days: Record<string, number> = {}
+  const daysInMonth = new Date(heatmapYear.value, heatmapMonth.value, 0).getDate()
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${heatmapYear.value}-${heatmapMonth.value - 1}-${d}`
+    days[String(d)] = dateCountCache.value[key] || 0
+  }
+  return days
+})
 
 const heatmapCells = computed(() => {
   const daysInMonth = new Date(heatmapYear.value, heatmapMonth.value, 0).getDate()
@@ -450,25 +550,15 @@ function isCurrentHeatmapMonth(): boolean {
   return heatmapYear.value === now.getFullYear() && heatmapMonth.value === now.getMonth() + 1
 }
 
-async function loadHeatmap() {
-  try {
-    const data = await memoryApi.heatmap(heatmapYear.value, heatmapMonth.value)
-    heatmapDays.value = data.days || {}
-  }
-  catch { heatmapDays.value = {} }
-}
-
 function prevHeatmapMonth() {
   if (heatmapMonth.value === 1) { heatmapMonth.value = 12; heatmapYear.value -= 1 }
   else heatmapMonth.value -= 1
-  loadHeatmap()
 }
 
 function nextHeatmapMonth() {
   if (isCurrentHeatmapMonth()) return
   if (heatmapMonth.value === 12) { heatmapMonth.value = 1; heatmapYear.value += 1 }
   else heatmapMonth.value += 1
-  loadHeatmap()
 }
 
 function heatmapDateKey(day: number): string {
@@ -481,7 +571,7 @@ function isHeatmapCellActive(day: number): boolean {
 
 function clickHeatmapDay(day: number | null) {
   if (!day) return
-  scrollToMemoryDate(heatmapDateKey(day))
+  clickDateNav(heatmapDateKey(day))
 }
 
 // Library tab
@@ -560,8 +650,7 @@ function openLibraryDetail(lib: LibraryPath) {
   selectedFile.value = null
   annotations.value = []
   annotationLines.value = []
-  loadLibraryFiles(true)
-  loadLibraryTree()
+  Promise.all([loadLibraryFiles(true), loadLibraryTree()])
 }
 
 async function loadLibraryFiles(reset = true) {
@@ -616,18 +705,23 @@ async function openFile(file: LibraryFileEntry) {
   selectedFileLoading.value = true
   annotations.value = []
   annotationLines.value = []
-  try {
-    const data = await libraryApi.fileContent(file.id)
-    selectedFile.value = { fileId: file.id, name: data.fileName, content: data.content }
-  } catch { selectedFile.value = { fileId: file.id, name: file.name, content: '文件内容读取失败' } }
-  selectedFileLoading.value = false
-  await nextTick()
-  await loadAnnotations(file.id)
-}
 
-async function loadAnnotations(fileId: string) {
-  try {
-    const list = await libraryApi.fileAnnotations(fileId)
+  const [contentResult, annotationsResult] = await Promise.allSettled([
+    libraryApi.fileContent(file.id),
+    libraryApi.fileAnnotations(file.id),
+  ])
+
+  if (contentResult.status === 'fulfilled') {
+    selectedFile.value = { fileId: file.id, name: contentResult.value.fileName, content: contentResult.value.content }
+  } else {
+    selectedFile.value = { fileId: file.id, name: file.name, content: '文件内容读取失败' }
+  }
+  selectedFileLoading.value = false
+
+  await nextTick()
+
+  if (annotationsResult.status === 'fulfilled') {
+    const list = annotationsResult.value
     for (const a of list) {
       annotations.value.push({
         id: a.id,
@@ -641,7 +735,7 @@ async function loadAnnotations(fileId: string) {
       restoreMark(a.selection_text, a.id)
     }
     recomputeLines()
-  } catch { /* ignore */ }
+  }
 }
 
 function restoreMark(text: string, id: string) {
@@ -1446,14 +1540,37 @@ function resetKeywordGraphView() {
   keywordTy.value = 0
 }
 
-onMounted(async () => {
-  loadHistory()
-  loadMemory()
-  loadLibraries()
-  await loadGraphConfigs()
-  loadTagGraph()
-  loadKeywordGraph()
-  loadHeatmap()
+// Track which tabs have been loaded (lazy-load on first activation)
+const loadedTabs = ref<Set<string>>(new Set())
+
+function loadTabData(tab: InfoTabKey) {
+  if (loadedTabs.value.has(tab)) return
+  loadedTabs.value = new Set([...loadedTabs.value, tab])
+  switch (tab) {
+    case 'history':
+      loadHistory()
+      break
+    case 'memory':
+      loadMemory()
+      loadAllDateCounts().then(() => startDateCountRefresh())
+      break
+    case 'library':
+      loadLibraries()
+      break
+    case 'tagGraph':
+      loadGraphConfigs().then(() => loadTagGraph())
+      break
+    case 'keywordGraph':
+      loadGraphConfigs().then(() => loadKeywordGraph())
+      break
+    case 'profile':
+      loadProfile()
+      break
+  }
+}
+
+onMounted(() => {
+  loadTabData(activeTab.value)
   window.addEventListener('scroll', onMemoryScroll, { passive: true })
   document.addEventListener('click', closeContextMenu)
 })
@@ -1465,12 +1582,13 @@ onBeforeUnmount(() => {
   memoryObserver = null
   libraryFileObserver?.disconnect()
   libraryFileObserver = null
+  stopDateCountRefresh()
 })
 
 watch(activeTab, (val) => {
   localStorage.setItem('brian-info-active-tab', val)
-  if (val === 'profile') loadProfile()
-}, { immediate: true })
+  loadTabData(val)
+})
 
 let historySearchTimer: ReturnType<typeof setTimeout> | null = null
 watch([historySearch, historyStartTime, historyEndTime], () => {
@@ -1677,25 +1795,29 @@ function searchMemoryByEnter() {
       <!-- Memory tab -->
       <div v-if="activeTab === 'memory'" class="px-6 pb-8 space-y-4">
         <div v-if="loadingMemory" class="text-center py-8 text-apple-gray-400">加载中...</div>
-        <div v-else-if="memoryTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
+        <div v-else-if="dateNavTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
         <div v-else class="flex gap-6">
           <div class="w-40 flex-shrink-0">
             <div class="sticky top-[160px] space-y-1 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
               <button
-                v-for="group in memoryTimeline"
-                :key="group.dateKey"
-                :id="`memory-nav-${group.dateKey}`"
+                v-for="item in dateNavTimeline"
+                :key="item.dateKey"
+                :id="`memory-nav-${item.dateKey}`"
                 class="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                :class="activeMemoryDate === group.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
-                @click="scrollToMemoryDate(group.dateKey)"
+                :class="activeMemoryDate === item.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
+                @click="clickDateNav(item.dateKey)"
               >
-                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeMemoryDate === group.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
-                <span>{{ group.label }}</span>
-                <span class="ml-auto text-apple-gray-300">{{ group.items.length }}</span>
+                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeMemoryDate === item.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
+                <span>{{ item.label }}</span>
+                <span class="ml-auto text-apple-gray-300">{{ item.count }}</span>
               </button>
             </div>
           </div>
           <div class="flex-1 min-w-0 space-y-4">
+            <div v-if="memoryDateFilter" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-brian-blue/5 text-sm text-brian-blue">
+              <span>已筛选: {{ dateNavTimeline.find(i => i.dateKey === memoryDateFilter)?.label || memoryDateFilter }}</span>
+              <button class="ml-auto px-2 py-0.5 text-xs rounded bg-brian-blue/10 hover:bg-brian-blue/20 transition-colors" @click="clickDateNav(memoryDateFilter)">清除筛选</button>
+            </div>
             <div class="sticky top-[160px] z-20 flex items-center gap-3 flex-wrap bg-white dark:bg-apple-dark-bg py-2 -mx-1 px-1 border-b border-apple-gray-200/60 dark:border-apple-gray-700/60">
               <div class="relative flex-1 max-w-md">
                 <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
@@ -1727,7 +1849,7 @@ function searchMemoryByEnter() {
               <template v-for="group in memoryTimeline" :key="group.dateKey">
                 <div :id="`memory-group-${group.dateKey}`" :data-memory-date="group.dateKey" class="flex items-center gap-2 pt-1 scroll-mt-[210px]">
                   <span class="text-sm font-semibold">{{ group.label }}</span>
-                  <span class="text-xs text-apple-gray-400">({{ group.items.length }})</span>
+                  <span class="text-xs text-apple-gray-400">({{ getDateCount(group.dateKey) }})</span>
                 </div>
                 <div
                   v-for="mem in group.items"
@@ -1765,14 +1887,15 @@ function searchMemoryByEnter() {
                   </div>
                 </div>
               </template>
-              <div ref="memorySentinel" v-if="hasMoreMemory || loadingMoreMemory" class="text-center py-4 text-xs text-apple-gray-400">
+              <div v-if="memoryDateFilter && memoryTimeline.length === 0 && !loadingMemory" class="text-center py-8 text-apple-gray-400">该日期暂无记忆</div>
+              <div ref="memorySentinel" v-if="!memoryDateFilter && (hasMoreMemory || loadingMoreMemory)" class="text-center py-4 text-xs text-apple-gray-400">
                 {{ loadingMoreMemory ? '加载中...' : '继续上滑加载更多' }}
               </div>
             </div>
           </div>
         </div>
-        <div v-if="memoryTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-40 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-2 shadow-sm">
-          <div class="grid grid-cols-7 gap-0.5">
+        <div v-if="dateNavTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-32 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-1.5 shadow-sm">
+          <div class="grid grid-cols-7 gap-1">
             <div
               v-for="(cell, i) in heatmapCells"
               :key="i"

@@ -81,6 +81,9 @@ export class SelfLearningSchemaInitializer {
     this.relationDb.executeRaw(
       'CREATE INDEX IF NOT EXISTS idx_sl_file_parent_path ON self_learning_file(parent_path)',
     );
+    this.relationDb.executeRaw(
+      'CREATE INDEX IF NOT EXISTS idx_sl_file_lib_parent_created ON self_learning_file(library_id, parent_path, created, file_id)',
+    );
 
     this.relationDb.executeRaw(`
       CREATE TABLE IF NOT EXISTS self_learning_task (

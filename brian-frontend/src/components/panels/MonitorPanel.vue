@@ -50,12 +50,29 @@ function buildLogQuery() {
   }
 }
 
+// ===== 原始方法（保留作为参考）=====
+// async function fetchAll() {
+//   try { health.value = await monitorApi.health() } catch { /* */ }
+//   try { resources.value = await monitorApi.resources() } catch { /* */ }
+//   try { tokenTrend.value = await monitorApi.tokenTrend() } catch { /* */ }
+//   try { modelDist.value = await monitorApi.modelDistribution() } catch { /* */ }
+//   try { logs.value = await monitorApi.logs(buildLogQuery()) } catch { /* */ }
+// }
+
+// ===== 修改后的方法：并行请求，减少加载时间 =====
 async function fetchAll() {
-  try { health.value = await monitorApi.health() } catch { /* */ }
-  try { resources.value = await monitorApi.resources() } catch { /* */ }
-  try { tokenTrend.value = await monitorApi.tokenTrend() } catch { /* */ }
-  try { modelDist.value = await monitorApi.modelDistribution() } catch { /* */ }
-  try { logs.value = await monitorApi.logs(buildLogQuery()) } catch { /* */ }
+  const [healthR, resourcesR, tokenTrendR, modelDistR, logsR] = await Promise.allSettled([
+    monitorApi.health(),
+    monitorApi.resources(),
+    monitorApi.tokenTrend(),
+    monitorApi.modelDistribution(),
+    monitorApi.logs(buildLogQuery()),
+  ])
+  if (healthR.status === 'fulfilled') health.value = healthR.value
+  if (resourcesR.status === 'fulfilled') resources.value = resourcesR.value
+  if (tokenTrendR.status === 'fulfilled') tokenTrend.value = tokenTrendR.value
+  if (modelDistR.status === 'fulfilled') modelDist.value = modelDistR.value
+  if (logsR.status === 'fulfilled') logs.value = logsR.value
 }
 
 async function loadLogSources() {
@@ -486,7 +503,7 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
           <option value="">全部模块</option>
           <option v-for="s in logSources" :key="s" :value="s">{{ s }}</option>
         </select>
-        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none">
+        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
           <option v-for="o in LOG_SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
         <select v-model="logLevel" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none">
