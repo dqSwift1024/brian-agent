@@ -15,6 +15,8 @@
 
 import type { Interceptor, InterceptContext } from './Interceptor';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
+import { Metrics } from '../base/Metrics';
+import { Report } from '../base/Report';
 
 /**
  * 日志记录器接口，供调用方注入自定义 logger。
@@ -114,24 +116,53 @@ export class AopProxy {
             return fn.apply(obj, args);
           }
 
+          // 双模式参数识别：
+          // 新式 5 参 (Input, Output, Context, Metrics, Report)：args.length >= 4
+          // 旧式 3 参 (Input, Context, Output)：args.length <= 3
+          const isNewStyle = args.length >= 4;
+          const contextArg = isNewStyle ? args[2] : args[1];
+          const outputArg = isNewStyle ? args[1] : args[2];
+
           // trace_id 自动生成：traceId 独立于 work_id / interact_id / info_id 等业务 ID。
           // 有效 trace_id 优先级：入参 Input.trace_id（显式传播）→ Context.trace_id → 新生成。
           // 生成结果回填到 Context（供日志与后续读取），不回填 Input（避免污染查询类入参的 trace_id 过滤字段）。
           let effectiveTraceId = AopProxy.pickField(args[0], 'trace_id');
-          if (!effectiveTraceId) effectiveTraceId = AopProxy.pickField(args[1], 'trace_id');
+          if (!effectiveTraceId) effectiveTraceId = AopProxy.pickField(contextArg, 'trace_id');
           if (!effectiveTraceId) effectiveTraceId = IdGenerator.generate();
-          const contextArg = args[1];
           if (contextArg && typeof contextArg === 'object' && !Array.isArray(contextArg)) {
             (contextArg as { trace_id?: string }).trace_id = effectiveTraceId;
           }
 
+          // 新式调用：Metrics / Report 未传时自动创建默认实例（调用方无需手工构造）。
+          if (isNewStyle) {
+            if (!args[3]) {
+              args[3] = new Metrics(options?.logger, `${targetName}.${methodName}`, effectiveTraceId);
+            } else if (args[3] instanceof Metrics) {
+              const metrics = args[3] as Metrics;
+              if (!metrics.trace_id) metrics.trace_id = effectiveTraceId;
+              if (!metrics.category) metrics.category = `${targetName}.${methodName}`;
+            }
+            if (!args[4]) {
+              args[4] = new Report({
+                trace_id: effectiveTraceId,
+                session_id: AopProxy.pickField(args[0], 'session_id'),
+                interact_id: AopProxy.pickField(args[0], 'interact_id'),
+                work_id: AopProxy.pickField(args[0], 'work_id'),
+              });
+            }
+          }
+
           const startedAt = Date.now();
+          const metricsArg = isNewStyle ? (args[3] as Metrics | undefined) : undefined;
+          if (metricsArg) metricsArg.started_at = startedAt;
           const ctx: InterceptContext = {
             targetName,
             methodName,
             input: args[0],
-            context: args[1],
-            output: args[2],
+            context: contextArg,
+            output: outputArg,
+            metrics: metricsArg,
+            report: isNewStyle ? (args[4] as unknown) : undefined,
             startedAt,
             elapsedMs: 0,
           };
@@ -263,16 +294,20 @@ export class AopProxy {
   // -------------------------------------------------------------------------
 
   /**
-   * 将耗时写入第三个参数（Output）的 elapsed_ms 字段。
+   * 将耗时写入 Output（新式第 2 参 / 旧式第 3 参）与新式 Metrics 的 elapsed_ms 字段。
    */
   private static fillElapsed(args: unknown[], elapsed: number): void {
-    const output = args[2];
+    const isNewStyle = args.length >= 4;
+    const output = isNewStyle ? args[1] : args[2];
     if (
       output !== null &&
       typeof output === 'object' &&
       !Array.isArray(output)
     ) {
       (output as { elapsed_ms?: number }).elapsed_ms = elapsed;
+    }
+    if (isNewStyle && args[3] instanceof Metrics) {
+      (args[3] as Metrics).elapsed_ms = elapsed;
     }
   }
 

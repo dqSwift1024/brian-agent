@@ -28,6 +28,10 @@ export interface InterceptContext {
   context: unknown;
   /** 出参对象（Output） */
   output: unknown;
+  /** 衡量对象（Metrics，仅新式 5 参签名时存在） */
+  metrics?: unknown;
+  /** 上报对象（Report，仅新式 5 参签名时存在） */
+  report?: unknown;
   /** 方法开始执行的时间戳（毫秒） */
   startedAt: number;
   /** 方法执行耗时（毫秒），afterExecute 时已填充 */
