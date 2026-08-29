@@ -147,8 +147,6 @@ export class LLMService {
     outputTokens = 0,
   ): Promise<void> {
     const today = IdGenerator.today();
-    const now = IdGenerator.now();
-
     const existing = await this.relationDb.selectOne(LLM_USAGE_TABLE, [
       { field: 'llm_available_id', operator: Operator.EQ, value: llmEnableId },
       { field: 'usage_date', operator: Operator.EQ, value: today },

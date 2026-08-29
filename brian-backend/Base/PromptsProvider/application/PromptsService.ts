@@ -12,7 +12,6 @@ import { Metrics } from '../../shared/base/Metrics';
 import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
-import { stripEmptyConditionalBlocks } from '../../PromptCatalog/catalog';
 import {
   ComponentDisabledError,
   ValidationError,
