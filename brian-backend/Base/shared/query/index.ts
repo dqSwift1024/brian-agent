@@ -17,3 +17,4 @@ export type {
   QueryParam,
   Operation,
 } from './QueryObjects';
+export { ensureColumn, ensureIndex } from './SchemaHelpers';
