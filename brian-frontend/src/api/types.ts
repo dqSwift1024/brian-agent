@@ -692,3 +692,6 @@ export interface ComponentMatchConfig {
   similarity_threshold: number
   prompt_template_id?: string
 }
+
+/** 信息页页签标识 */
+export type InfoTabKey = 'history' | 'memory' | 'library' | 'tagGraph' | 'keywordGraph' | 'profile'
