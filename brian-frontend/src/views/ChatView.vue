@@ -109,11 +109,6 @@ async function handleSelectChat(sessionId: string) {
       setTimeout(() => { overflowWarning.value = false }, 5000)
     }
   } catch { /* ignore */ }
-  // ===== 原始代码（保留参考）：加载 exchanges 请求冗余且结果被丢弃，已移除 =====
-  // await Promise.all([
-  //   sessionStore.loadExchanges(sessionId, 'default-user'),
-  //   sessionStore.loadDag(sessionId, 'default-user'),
-  // ])
   await sessionStore.loadDag(sessionId, 'default-user')
   showSidebar.value = false
 }

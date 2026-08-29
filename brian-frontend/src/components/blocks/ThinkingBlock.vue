@@ -132,25 +132,6 @@ const renderedRawResponseHtml = computed(() => {
   }
 })
 
-// ===== 原始代码（保留参考）=====
-// const copiedPrompt = ref(false)
-// async function copyPromptText() {
-//   try {
-//     await navigator.clipboard.writeText(fullPrompt.value)
-//     copiedPrompt.value = true
-//     setTimeout(() => (copiedPrompt.value = false), 1800)
-//   } catch { /* ignore */ }
-// }
-// 
-// const copiedResponse = ref(false)
-// async function copyResponseText() {
-//   try {
-//     await navigator.clipboard.writeText(fullRawResponse.value)
-//     copiedResponse.value = true
-//     setTimeout(() => (copiedResponse.value = false), 1800)
-//   } catch { /* ignore */ }
-// }
-
 // ===== 修改后的代码：使用跨平台剪贴板工具函数 copyToClipboard =====
 const copiedPrompt = ref(false)
 async function copyPromptText() {

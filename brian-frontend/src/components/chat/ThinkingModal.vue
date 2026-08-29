@@ -7,10 +7,6 @@ import ThinkingContext from './ThinkingContext.vue'
 import TaskDagFlow from './TaskDagFlow.vue'
 import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingBlockView from '@/components/blocks/ThinkingBlock.vue'
-// ===== 原始导入（保留参考）：旧版通过 PlanningBreakdown 展示 Task/Agent DAG 与编排步骤，
-//      现改为按新顺序分区块展示（上下文 → TaskDAG → AgentDAG → 工作Agent → Writer） =====
-// import PlanningBreakdown from './PlanningBreakdown.vue'
-
 const sessionStore = useSessionStore()
 
 const visible = computed(() => sessionStore.thinkingModalVisible)
@@ -48,16 +44,6 @@ const planning = computed<PlanningData | null>(() => {
 
 const taskDag = computed(() => planning.value?.taskDag ?? null)
 const agentDag = computed(() => planning.value?.agentDag ?? null)
-
-// ===== 原始代码（保留参考）：按 Agent 类型分组的类型判断工具（改为「执行过程」聚合展示后不再使用） =====
-// function typeOf(b: ThinkingBlock): string {
-//   return (b.agentInfo?.type || 'WORKER').toUpperCase()
-// }
-
-// ===== 原始代码（保留参考）：按 Agent 类型分组为 工作 Agent / Writer / 系统 Agent 三个独立区块 =====
-// const workAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'WORKER'))
-// const writerAgent = computed<ThinkingBlock | null>(() => thinkingBlocks.value.find((b) => typeOf(b) === 'WRITER') ?? null)
-// const systemAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value.filter((b) => typeOf(b) === 'PLANNER' || typeOf(b) === 'EVOLUTOR' || typeOf(b) === 'INTENT'))
 
 // ===== 修改后：执行过程列表，按 Agent 执行顺序聚合所有 Agent（Intent / Planner / Worker / Writer / Evolutor） =====
 // thinkingBlocks 已按执行顺序返回（Intent 优先，其余按 orchestration_agent_execution.created ASC）

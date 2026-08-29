@@ -13,8 +13,6 @@ import ChatMap from './ChatMap.vue'
 import InputBox from './InputBox.vue'
 import MessageCard from './MessageCard.vue'
 import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
-// ===== 原始导入（保留参考）：对话区渲染 Planning 策略拆解（AgentDagFlow）时使用，现已在对话区移除 =====
-// import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingModal from './ThinkingModal.vue'
 import EvalResultModal from './EvalResultModal.vue'
 import { readSSE } from '../../composables/useSSE'
@@ -104,20 +102,6 @@ function jumpTo(id: string) {
   scrollListTo(id)
 }
 
-// ===== 原始 showThinking 实现（保留参考） =====
-/*
-async function showThinking(id: string) {
-  sessionStore.openThinkingModal(id)
-  try {
-    const res = await chatApi.thinking(id)
-    // 同时下发 Planning 策略拆解（Task DAG / Agent DAG）到弹窗
-    sessionStore.openThinkingModal(id, res.blocks, res.dag ?? null)
-  } catch {
-    sessionStore.openThinkingModal(id, [], null)
-  }
-}
-*/
-
 // ===== 修改后：思考过程独立按模块并发加载（DAG 与 ThinkingBlocks 独立加载与渐进式展示） =====
 async function showThinking(id: string) {
   // 1. 立即打开弹窗并展示"正在加载思考过程..."动态加载态，避免静态空白卡顿
@@ -158,46 +142,6 @@ function resolveAutoThinkingOrigin() {
 }
 
 const confirmingIntent = ref(false)
-
-// ===== 原始 handleIntentConfirm（保留参考）：弹窗关闭逻辑位于 finally，需等 confirm-intent 响应后才关闭 =====
-// async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
-//   const conf = sessionStore.intentConfirmation
-//   if (!conf) return
-//   confirmingIntent.value = true
-//   try {
-//     await chatApi.confirmIntent({
-//       session_id: conf.session_id,
-//       work_id: conf.work_id,
-//       action,
-//       understood_requirement: action === 'APPROVE' ? conf.understood_requirement : undefined,
-//     })
-//   } catch (err) {
-//     const errBlock: Block = {
-//       id: `block-err-${Date.now()}`,
-//       msgId: `msg-${Date.now()}`,
-//       role: 'system',
-//       type: 'ErrorFallback',
-//       message: err instanceof Error ? err.message : '确认需求失败',
-//       errorCode: 'CONFIRM_INTENT_FAILED',
-//       retryAvailable: false,
-//       meta: { status: 'error', createdAt: Date.now(), updatedAt: Date.now() },
-//     } as Block
-//     sessionStore.addBlock(errBlock)
-//   } finally {
-//     confirmingIntent.value = false
-//     sessionStore.clearIntentConfirmation()
-//     const sid = sessionStore.currentSessionId
-//     if (sid) {
-//       await sessionStore.loadDag(sid, 'default-user')
-//       await sessionStore.loadChatHistory(sid, 'default-user')
-//     }
-//     if (action === 'APPROVE' && conf.understood_requirement) {
-//       sessionStore.replaceUserMessageContent(conf.original_query, conf.understood_requirement)
-//     } else if (action === 'CANCEL') {
-//       sessionStore.removeUserMessageByContent(conf.original_query)
-//     }
-//   }
-// }
 
 // ===== 修改后：点击按钮立即关闭弹窗，confirm-intent 改为 SSE 流式完成后实时展示思考过程与系统回答，最后刷新历史 =====
 async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
@@ -342,25 +286,6 @@ type TimelineEntry =
   | { kind: 'message'; key: string; sort: number; message: ChatMessage }
   | { kind: 'block'; key: string; sort: number; block: Block }
 
-// ===== 原始 timeline 实现（保留参考） =====
-/*
-const timeline = computed<TimelineEntry[]>(() => {
-  const entries: TimelineEntry[] = []
-  for (const m of sessionStore.messages) {
-    entries.push({ kind: 'message', key: `m-${m.id}`, sort: m.timestamp, message: m })
-  }
-  for (const b of sessionStore.blocks) {
-    entries.push({ kind: 'block', key: `b-${b.id}`, sort: b.meta.createdAt, block: b })
-  }
-  entries.sort((a, b) => {
-    if (a.sort !== b.sort) return a.sort - b.sort
-    if (a.kind !== b.kind) return a.kind === 'message' ? -1 : 1
-    return a.key.localeCompare(b.key)
-  })
-  return entries
-})
-*/
-
 // ===== 修改后的 timeline 实现：确保思考 Blocks 严格按创建/执行先后顺序在用户提问之后、最终回复之前正确排列 =====
 const timeline = computed<TimelineEntry[]>(() => {
   const entries: TimelineEntry[] = []
@@ -405,17 +330,6 @@ function startResize(e: MouseEvent) {
 
 async function handleSend(content: string, citingIds: string[]) {
   if (!content.trim()) return
-
-  // ===== 原始实现（保留参考）：提前插入空 thinkingBlock，导致时序倒置与空卡片 =====
-  // const botMsgId = `msg-${Date.now()}-bot`
-  // const thinkingBlock: Block = {
-  //   id: `block-think-${Date.now()}`,
-  //   msgId: botMsgId,
-  //   role: 'assistant',
-  //   type: 'ThinkingChain',
-  //   meta: { status: 'streaming', createdAt: Date.now(), updatedAt: Date.now() },
-  // } as Block
-  // sessionStore.addBlock(thinkingBlock)
 
   // ===== 修改后：先在后端创建会话，再以返回的 session_id 发起流式对话 =====
   let sessionId: string
@@ -511,135 +425,6 @@ async function handleSend(content: string, citingIds: string[]) {
 let textBlockId: string | null = null
 let currentTraceId = ''
 
-// ===== 原始 handleStreamEvent 函数（保留作为参考） =====
-/*
-function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
-  const isStructured = 'msg_id' in data && 'event' in data
-  const event = String(isStructured ? data.event : (data.event || 'message'))
-  const payload = (isStructured ? (data.data as Record<string, unknown> ?? {}) : data) as Record<string, unknown>
-  const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
-  const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
-
-  switch (event) {
-    case 'connected':
-    case 'loading':
-      break
-
-    case 'agent_thinking':
-    case 'thinking': {
-      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
-      const thinkKey = agentId ? `block-think-${botMsgId}-${agentId}` : `block-think-${botMsgId}`
-      const existing = sessionStore.blocks.find(b => b.id === thinkKey)
-      if (!existing) {
-        const thinkingBlock: ThinkingBlock = {
-          id: thinkKey,
-          msgId: botMsgId,
-          role: 'assistant',
-          type: 'ThinkingChain',
-          content: chunk,
-          summary: '',
-          durationMs: 0,
-          agentInfo: agentId ? { name: agentId, type: 'WORKER' } : undefined,
-          meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
-        }
-        sessionStore.addBlock(thinkingBlock as Block)
-      } else {
-        sessionStore.appendBlockContent(thinkKey, chunk)
-      }
-      break
-    }
-
-    case 'text_chunk':
-    case 'text':
-    case 'agent_output': {
-      const chunk = typeof payload === 'string' ? payload : String(payload.chunk || '')
-      if (!textBlockId) {
-        textBlockId = `block-text-${botMsgId}`
-        const textBlock: Block = {
-          id: textBlockId,
-          msgId: botMsgId,
-          role: 'assistant',
-          type: 'TextParagraph',
-          content: chunk,
-          meta: { status: 'streaming', createdAt: serverTime, updatedAt: serverTime },
-        } as TextBlock
-        sessionStore.addBlock(textBlock)
-      } else {
-        sessionStore.appendBlockContent(textBlockId, chunk)
-      }
-      break
-    }
-
-    case 'agent_action':
-    case 'agent_status': {
-      const toolBlock: Block = {
-        id: `block-tool-${Date.now()}`,
-        msgId: botMsgId,
-        role: 'tool',
-        type: 'ToolInvocation',
-        toolName: String(payload.tool_name || payload.tool_type || 'Tool'),
-        params: (payload.params as Record<string, unknown>) || {},
-        result: payload.result,
-        meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: serverTime, updatedAt: serverTime },
-      } as Block
-      sessionStore.addBlock(toolBlock)
-      break
-    }
-
-    case 'agent_built': {
-      const agentName = String(payload.agent_name || payload.agent_id || '')
-      if (agentName && agentId) {
-        const thinkKey = `block-think-${botMsgId}-${agentId}`
-        const existing = sessionStore.blocks.find(b => b.id === thinkKey) as ThinkingBlock | undefined
-        if (existing) {
-          existing.agentInfo = { name: agentName, type: 'WORKER' }
-        }
-      }
-      break
-    }
-
-    case 'citation':
-      if (textBlockId) {
-        sessionStore.updateBlock(textBlockId, {
-          citingIds: payload.citing_ids as string[],
-        } as Partial<Block>)
-      }
-      break
-
-    case 'done': {
-      sessionStore.finalizeBlocks(botMsgId)
-      const feedbackBlock: Block = {
-        id: `block-fb-${Date.now()}`,
-        msgId: botMsgId,
-        role: 'assistant',
-        type: 'Feedback',
-        traceId: String(payload.trace_id || currentTraceId || ''),
-        meta: { status: 'done', createdAt: serverTime, updatedAt: serverTime },
-      } as Block
-      sessionStore.addBlock(feedbackBlock)
-      textBlockId = null
-      break
-    }
-
-    case 'error': {
-      const errBlock: Block = {
-        id: `block-err-${Date.now()}`,
-        msgId: botMsgId,
-        role: 'system',
-        type: 'ErrorFallback',
-        message: String(payload.error_message || '未知错误'),
-        errorCode: String(payload.error_code || ''),
-        retryAvailable: false,
-        traceId: String(payload.trace_id || currentTraceId || ''),
-        meta: { status: 'error', createdAt: serverTime, updatedAt: serverTime },
-      } as Block
-      sessionStore.addBlock(errBlock)
-      break
-    }
-  }
-}
-*/
-
 // ===== 修改后的 handleStreamEvent 函数：完整解析 Agent 基础信息、上下文、输入输出与思维链步骤 =====
 function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
   const isStructured = 'msg_id' in data && 'event' in data
@@ -711,23 +496,6 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
     }
     case 'loading':
       break
-
-    // ===== 原始代码（保留参考）=====
-    // case 'context_built': {
-    //   // 记录上下文 (User Profile, 引用的历史消息, 最近 Works)
-    //   const thinkBlock = getOrCreateThinkBlock(agentId)
-    //   const userProfile = (payload.user_profile as Record<string, unknown>) || undefined
-    //   const citingMessages = (payload.citations as unknown[]) || undefined
-    //   const recentWorks = (payload.recent_works as unknown[]) || undefined
-    //   thinkBlock.context = {
-    //     userProfile,
-    //     citingMessages,
-    //     recentWorks,
-    //     customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
-    //   }
-    //   sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
-    //   break
-    // }
 
     // ===== 修改后的代码：提取完整分类 Context 数据与 Category ID 映射 =====
     case 'context_built': {
@@ -1076,23 +844,6 @@ function handleStreamEvent(data: Record<string, unknown>, botMsgId: string) {
       sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
       break
     }
-
-    // ===== 原始代码（保留参考）=====
-    // case 'agent_output': {
-    //   const outputVal = payload.output || payload.result || payload.chunk || payload.answer
-    //   if (agentId) {
-    //     // 该 Agent 已完成产出（SUCCESS → 绿色），并回填 Token 用量与耗时
-    //     sessionStore.setAgentStatus(agentId, 'SUCCESS')
-    //     const thinkBlock = getOrCreateThinkBlock(agentId)
-    //     thinkBlock.output = outputVal as string | Record<string, unknown>
-    //     if (typeof payload.token_usage === 'number') thinkBlock.tokenUsage = payload.token_usage
-    //     if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
-    //     sessionStore.updateBlock(thinkBlock.id, {
-    //       output: thinkBlock.output,
-    //       tokenUsage: thinkBlock.tokenUsage,
-    //       durationMs: thinkBlock.durationMs,
-    //     })
-    //   }
 
     // ===== 修改后的代码：补全 inputTokens 与 outputTokens 分别透传 =====
     case 'agent_output': {

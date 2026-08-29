@@ -50,15 +50,6 @@ function buildLogQuery() {
   }
 }
 
-// ===== 原始方法（保留作为参考）=====
-// async function fetchAll() {
-//   try { health.value = await monitorApi.health() } catch { /* */ }
-//   try { resources.value = await monitorApi.resources() } catch { /* */ }
-//   try { tokenTrend.value = await monitorApi.tokenTrend() } catch { /* */ }
-//   try { modelDist.value = await monitorApi.modelDistribution() } catch { /* */ }
-//   try { logs.value = await monitorApi.logs(buildLogQuery()) } catch { /* */ }
-// }
-
 // ===== 修改后的方法：并行请求，减少加载时间 =====
 async function fetchAll() {
   const [healthR, resourcesR, tokenTrendR, modelDistR, logsR] = await Promise.allSettled([

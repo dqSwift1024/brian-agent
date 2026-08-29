@@ -47,16 +47,6 @@ export interface CodeBlock extends BlockBase {
   content: string
 }
 
-// ===== 原始 ThinkingBlock 定义（保留参考） =====
-// export interface ThinkingBlock extends BlockBase {
-//   type: 'ThinkingChain'
-//   content: string
-//   summary: string
-//   durationMs: number
-//   agentInfo?: { name: string; type: string }
-//   parentMsgId?: string
-// }
-
 // ===== 修改后的 ThinkingBlock 定义（支持完整 Agent 上下文、输入输出及步骤轨迹） =====
 export interface ThinkingStep {
   phase: 'THINK' | 'ACT' | 'REFLECT' | string

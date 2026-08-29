@@ -15,7 +15,7 @@ function walk(p, files = []) {
   if (st.isDirectory()) {
     if (/node_modules|dist|test|prebuilt|\/data\/|logs/.test(p)) return files;
     for (const f of fs.readdirSync(p)) walk(path.join(p, f), files);
-  } else if (/\.ts$/.test(p)) files.push(p);
+  } else if (/\.(ts|vue)$/.test(p)) files.push(p);
   return files;
 }
 

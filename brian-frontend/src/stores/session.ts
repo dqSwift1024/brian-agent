@@ -151,15 +151,6 @@ export const useSessionStore = defineStore('session', () => {
     return created.session_id
   }
 
-  // ===== 原始 loadChatHistory（保留参考） =====
-  /*
-  async function loadChatHistory(sessionId: string, userId: string) {
-    currentSessionId.value = sessionId
-    localStorage.setItem('chat-current-session-id', sessionId)
-    messages.value = await chatApi.history(sessionId, userId)
-  }
-  */
-
   // ===== 修改后的 loadChatHistory：加载历史消息并提取恢复各 Agent 的 ThinkingBlocks =====
   async function loadChatHistory(sessionId: string, userId: string) {
     currentSessionId.value = sessionId
@@ -175,31 +166,10 @@ export const useSessionStore = defineStore('session', () => {
           loadedBlocks.push(b)
         }
       }
-      // ===== 原始代码（保留参考）：blocks 为空时为 assistant 消息构造 TextParagraph 兜底块 =====
-      // 该兜底导致系统回复同时以 MessageCard（消息框）与 TextParagraph（纯文本段落）重复展示，
-      // 不符合「避免与官方 MessageCard 产生双份重复渲染」的要求，故移除。系统回复内容统一由
-      // messages 经 MessageCard 渲染，ThinkingChain 等思考块仅用于思考过程弹窗采集。
-      // else if (msg.role === 'assistant' && msg.content) {
-      //   loadedBlocks.push({
-      //     id: `block-text-${msg.id}`,
-      //     msgId: msg.id,
-      //     role: 'assistant',
-      //     type: 'TextParagraph',
-      //     content: msg.content,
-      //     meta: { status: 'done', createdAt: msg.timestamp || Date.now(), updatedAt: Date.now() },
-      //   } as Block)
-      // }
     }
     blocks.value = loadedBlocks
     triggerRef(blocks)
   }
-
-  // ===== 原始 loadExchanges（保留参考）：请求 /api/chat/exchanges 后丢弃结果，属冗余无实际用途的请求 =====
-  // async function loadExchanges(sessionId: string, userId: string) {
-  //   try {
-  //     await chatApi.exchanges(sessionId, userId)
-  //   } catch { /* ignore */ }
-  // }
 
   async function loadDag(sessionId: string, _userId: string) {
     try {
@@ -242,9 +212,6 @@ export const useSessionStore = defineStore('session', () => {
         infoId: String(n.info_id ?? n.id ?? ''),
         infoType: String(n.info_type ?? ''),
         role: String(n.info_creator_role ?? ''),
-        // ===== 原始代码（保留作为参考） =====
-        // summary: String(n.info_summary ?? '').slice(0, 20),
-        // ===== 修改后的代码：保留完整摘要（不做 20 字截断） =====
         summary: String(n.info_summary ?? ''),
         info: String(n.info ?? ''),
         infoLength: Number(n.info_length ?? 0),
@@ -434,40 +401,6 @@ export const useSessionStore = defineStore('session', () => {
     cancelToken.value = null
     isStreaming.value = false
   }
-
-  // ===== 原始 openThinkingModal / closeThinkingModal（保留参考） =====
-  /*
-  function openThinkingModal(msgId: string | null = null, blocks: Block[] = []) {
-    thinkingTargetMsgId.value = msgId
-    thinkingBlocks.value = blocks
-    thinkingModalVisible.value = true
-  }
-
-  function closeThinkingModal() {
-    thinkingModalVisible.value = false
-    thinkingTargetMsgId.value = null
-    thinkingBlocks.value = []
-  }
-  */
-
-  // ===== 原始 openThinkingModal / closeThinkingModal（保留参考） =====
-  /*
-  function openThinkingModal(msgId: string | null = null, blocks: Block[] = [], dag: AgentDagData | null = null) {
-    thinkingTargetMsgId.value = msgId
-    thinkingBlocks.value = blocks
-    thinkingDag.value = dag
-    thinkingModalVisible.value = true
-  }
-
-  function closeThinkingModal() {
-    thinkingModalVisible.value = false
-    thinkingTargetMsgId.value = null
-    thinkingBlocks.value = []
-    thinkingDag.value = null
-    resetPlanning()
-    resetAgentStatus()
-  }
-  */
 
   // ===== 修改后的 openThinkingModal 与独立模块加载状态管理 =====
   function setThinkingOrigin(rect: { left: number; top: number; width: number; height: number } | null) {

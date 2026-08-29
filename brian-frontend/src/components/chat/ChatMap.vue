@@ -60,17 +60,6 @@ const worldHeight = computed(() => {
   return maxY + NODE_H + 200
 })
 
-// ===== 原始 nodeStyle（保留作为参考） =====
-// function nodeStyle(n: ChatMapNode) {
-//   return {
-//     left: `${n.x}px`,
-//     top: `${n.y}px`,
-//     width: `${NODE_W}px`,
-//     minHeight: `${NODE_H}px`,
-//     zIndex: draggingNodeId.value === n.id ? 10 : 1,
-//   }
-// }
-
 // ===== 修改后：基于位置和状态的 z-index 分层，避免遮挡 =====
 function nodeStyle(n: ChatMapNode) {
   let z = 1
@@ -100,16 +89,6 @@ function isVerticalEdge(e: { edgeType: string }) {
   return e.edgeType === 'QUESTION_ANSWER' || e.edgeType === 'FOLLOW_UP'
 }
 
-// ===== 原始 verticalEdgePath（保留作为参考）=====
-// function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
-//   const sx = s.x + NODE_W / 2
-//   const sy = s.y + NODE_H
-//   const tx = t.x + NODE_W / 2
-//   const ty = t.y
-//   const midY = (sy + ty) / 2
-//   return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
-// }
-
 // ===== 修改后：纵向连线使用平滑贝塞尔曲线 =====
 function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
   const sx = s.x + NODE_W / 2
@@ -127,20 +106,6 @@ function verticalEdgePath(s: ChatMapNode, t: ChatMapNode) {
   const midY = (sy + ty) / 2
   return `M ${sx} ${sy} C ${sx} ${sy + cpOffset}, ${sx} ${midY}, ${(sx + tx) / 2} ${midY} S ${tx} ${ty - cpOffset}, ${tx} ${ty}`
 }
-
-// ===== 原始 citationEdgePath（保留作为参考）=====
-// function citationEdgePath(s: ChatMapNode, t: ChatMapNode) {
-//   const sx = s.x + NODE_W
-//   const sy = s.y + NODE_H / 2
-//   const tx = t.x
-//   const ty = t.y + NODE_H / 2
-//   if (tx >= sx) {
-//     const midX = (sx + tx) / 2
-//     return `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`
-//   }
-//   const offsetSide = 24
-//   return `M ${sx} ${sy} L ${sx + offsetSide} ${sy} L ${sx + offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${(sy + ty) / 2} L ${tx - offsetSide} ${ty} L ${tx} ${ty}`
-// }
 
 // ===== 修改后：引用连线使用平滑贝塞尔曲线 =====
 function citationEdgePath(s: ChatMapNode, t: ChatMapNode) {
@@ -454,19 +419,6 @@ function jumpTo(infoId: string) {
   activeNodeId.value = infoId
   sessionStore.triggerFocus(infoId)
 }
-
-// ===== 原始 showThinking 实现（保留参考） =====
-/*
-async function showThinking(infoId: string) {
-  sessionStore.openThinkingModal(infoId)
-  try {
-    const res = await chatApi.thinking(infoId)
-    sessionStore.openThinkingModal(infoId, res.blocks)
-  } catch {
-    sessionStore.openThinkingModal(infoId, [])
-  }
-}
-*/
 
 // ===== 修改后：思考过程独立按模块并发加载（DAG 与 ThinkingBlocks 独立加载与渐进式展示） =====
 async function showThinking(infoId: string) {
