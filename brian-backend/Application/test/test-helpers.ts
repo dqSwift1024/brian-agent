@@ -154,7 +154,7 @@ export function createMockOrchestrationEntry(overrides: Record<string, any> = {}
       o.work_id = 'mock-work-id';
       return true;
     }),
-    getWorkStatus: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soWorkStatus: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.status = 'COMPLETED';
       return true;
     }),
@@ -480,7 +480,7 @@ export function createMockOrchestrationExecution(overrides: Record<string, any> 
     execSingleAgent: vi.fn().mockResolvedValue(true),
     execDAG: vi.fn().mockResolvedValue(true),
     execDAGAsync: vi.fn().mockResolvedValue(true),
-    getDAGProgress: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soDAGProgress: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.progress = {};
       return true;
     }),
@@ -509,7 +509,7 @@ export function createMockOrchestrationVisualization(overrides: Record<string, a
       o.timeline = { phases: [] };
       return true;
     }),
-    getAgentNodeDetail: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgentNodeDetail: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.detail = {};
       return true;
     }),

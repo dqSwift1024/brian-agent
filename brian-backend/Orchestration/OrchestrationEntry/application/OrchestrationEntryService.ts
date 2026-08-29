@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, InsertDBOutput,
   SelectDBInput, SelectDBOutput,
@@ -50,10 +51,7 @@ export class OrchestrationEntryService {
     private readonly streamAccess?: any,
   ) {}
 
-  async receiveWork(
-    input: ReceiveWorkInput,
-    context: OrchestrationEntryContext,
-    output: ReceiveWorkOutput,
+  async receiveWork(input: ReceiveWorkInput, output: ReceiveWorkOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const workId = context.work_id || IdGenerator.generate();
     const interactId = context.interact_id || IdGenerator.generate();
@@ -87,7 +85,7 @@ export class OrchestrationEntryService {
       { field: 'work_id', operator: Operator.EQ, value: workId },
     ]);
     if (!existingWork) {
-      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+      await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     }
 
     // --- 需求理解 Agent (IntentAgent) 前置执行 ---
@@ -103,7 +101,7 @@ export class OrchestrationEntryService {
       });
       const intentOut = new UnderstandRequirementOutput();
       try {
-        await this.intentAgent.understandRequirement(intentIn, new IntentAgentContext(), intentOut);
+        await this.intentAgent.understandRequirement(intentIn, intentOut, new IntentAgentContext());
 
         // 推送 IntentAgent 需求理解结果到前端（"思考过程"弹窗展示）
         if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
@@ -147,8 +145,8 @@ export class OrchestrationEntryService {
             data: intentMetaData,
             conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }],
           }),
-          new DBContext(),
           new UpdateDBOutput(),
+          new DBContext(),
         );
 
         if (intentOut.should_modify_query) {
@@ -180,7 +178,7 @@ export class OrchestrationEntryService {
               parent_info_ids: citingIds,
               trace_id: input.trace_id ?? '',
             });
-            await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+            await this.infoCore.saveInfo(saveIn, new SaveInfoOutput(), new InfoCoreContext());
           } catch (err) {
             this.logger?.error?.('receiveWork: saveInfo (paused) failed', { work_id: workId, error: String(err) });
           }
@@ -210,8 +208,8 @@ export class OrchestrationEntryService {
               data: pauseData,
               conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }],
             }),
-            new DBContext(),
             new UpdateDBOutput(),
+            new DBContext(),
           );
           output.work_id = workId;
           output.interact_id = interactId;
@@ -233,7 +231,7 @@ export class OrchestrationEntryService {
         trace_id: input.trace_id ?? '',
       });
       const selOutput = new SelectOrchestrationStrategyOutput();
-      await this.selectOrchestrationStrategy(selInput, context, selOutput);
+      await this.selectOrchestrationStrategy(selInput, selOutput, context, metrics, report);
       strategy = selOutput.strategy || 'SIMPLE';
     }
 
@@ -249,7 +247,7 @@ export class OrchestrationEntryService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const buildCtxInput = Object.assign(new BuildWorkContextInput(), {
       session_id: input.session_id,
@@ -259,7 +257,7 @@ export class OrchestrationEntryService {
       trace_id: input.trace_id ?? '',
     });
     const buildCtxOutput = new BuildWorkContextOutput();
-    await this.buildWorkContext(buildCtxInput, context, buildCtxOutput);
+    await this.buildWorkContext(buildCtxInput, buildCtxOutput, context, metrics, report);
 
     const startCtx = { session_id: input.session_id, work_id: workId, interact_id: interactId };
     const startInput: StartOrchestrationInput = {
@@ -279,7 +277,7 @@ export class OrchestrationEntryService {
     const startOutput = new StartOrchestrationOutput();
 
     try {
-      await this.orchestrationStrategy.startOrchestration(startInput, startCtx, startOutput);
+      await this.orchestrationStrategy.startOrchestration(startInput, startOutput, startCtx, metrics, report);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger?.error?.('receiveWork: orchestration failed', { work_id: workId, trace_id: input.trace_id ?? '', error: errMsg });
@@ -308,7 +306,7 @@ export class OrchestrationEntryService {
           handle_result_type: HandleResultType.INTERNAL_ERROR,
           trace_id: input.trace_id ?? '',
         });
-        await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+        await this.infoCore.saveInfo(saveIn, new SaveInfoOutput(), new InfoCoreContext());
       } catch { /* best-effort */ }
 
       output.work_id = workId;
@@ -358,7 +356,7 @@ export class OrchestrationEntryService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(doneInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(doneInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     output.work_id = workId;
     output.interact_id = interactId;
@@ -367,10 +365,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async selectOrchestrationStrategy(
-    input: SelectOrchestrationStrategyInput,
-    _context: OrchestrationEntryContext,
-    output: SelectOrchestrationStrategyOutput,
+  async selectOrchestrationStrategy(input: SelectOrchestrationStrategyInput, output: SelectOrchestrationStrategyOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!this.llmAccess || !this.promptsAccess) {
       output.strategy = 'SIMPLE';
@@ -393,10 +388,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async receiveWorkAsync(
-    input: ReceiveWorkAsyncInput,
-    context: OrchestrationEntryContext,
-    output: ReceiveWorkAsyncOutput,
+  async receiveWorkAsync(input: ReceiveWorkAsyncInput, output: ReceiveWorkAsyncOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       return false;
@@ -429,7 +421,7 @@ export class OrchestrationEntryService {
       table: 'orchestration_work',
       data: workData,
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     output.work_id = workId;
     output.interact_id = interactId;
@@ -477,7 +469,7 @@ export class OrchestrationEntryService {
                     info_creator_role: payload.info_creator_role as string | undefined,
                   });
                   const rwOutput = new ReceiveWorkOutput();
-                  await this.receiveWork(rwInput, context, rwOutput);
+                  await this.receiveWork(rwInput, rwOutput, context, metrics, report);
 
                   if (payload.callback_queue && this.mqAccess) {
                     const cbInput = Object.assign({}, {
@@ -514,7 +506,7 @@ export class OrchestrationEntryService {
               info_creator_role: input.info_creator_role,
             });
             const rwOutput = new ReceiveWorkOutput();
-            await this.receiveWork(rwInput, context, rwOutput);
+            await this.receiveWork(rwInput, rwOutput, context, metrics, report);
           } catch (err2: unknown) {
             this.logger?.error?.('receiveWorkAsync: async processing failed', {
               work_id: workId,
@@ -535,7 +527,7 @@ export class OrchestrationEntryService {
             info_creator_role: input.info_creator_role,
           });
           const rwOutput = new ReceiveWorkOutput();
-          await this.receiveWork(rwInput, context, rwOutput);
+          await this.receiveWork(rwInput, rwOutput, context, metrics, report);
         } catch (err: unknown) {
           this.logger?.error?.('receiveWorkAsync: async processing failed', {
             work_id: workId,
@@ -563,7 +555,7 @@ export class OrchestrationEntryService {
   //       session_id: input.session_id,
   //     });
   //     const ctxInfoOutput = new ContextInfoOutput();
-  //     await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);
+  //     await this.infoCore.context(ctxInfoInput, ctxInfoOutput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext);
   //     sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
   //   } catch { /* degrade gracefully */ }
   //
@@ -573,7 +565,7 @@ export class OrchestrationEntryService {
   //       session_id: input.session_id,
   //     });
   //     const profileOutput = new GetUserProfileOutput();
-  //     await this.writerAgent.soUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
+  //     await this.writerAgent.soUserProfile(profileInput, profileOutput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext);
   //     userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
   //   } catch { /* degrade gracefully */ }
   //
@@ -610,10 +602,7 @@ export class OrchestrationEntryService {
   // }
 
   // ===== 修改后的方法 =====
-  async buildWorkContext(
-    input: BuildWorkContextInput,
-    _context: OrchestrationEntryContext,
-    output: BuildWorkContextOutput,
+  async buildWorkContext(input: BuildWorkContextInput, output: BuildWorkContextOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id || !input.work_id) {
       return false;
@@ -643,7 +632,7 @@ export class OrchestrationEntryService {
         persist_snapshot: false,
       });
       const ctxInfoOutput = new ContextInfoOutput();
-      await this.infoCore.context(ctxInfoInput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext, ctxInfoOutput);
+      await this.infoCore.context(ctxInfoInput, ctxInfoOutput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext);
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
       contextCategories = ctxInfoOutput.categories;
       contextCategoryIds = ctxInfoOutput.category_ids;
@@ -658,7 +647,7 @@ export class OrchestrationEntryService {
         session_id: input.session_id,
       });
       const profileOutput = new GetUserProfileOutput();
-      await this.writerAgent.soUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
+      await this.writerAgent.soUserProfile(profileInput, profileOutput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext);
       userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
     } catch { /* degrade gracefully */ }
 
@@ -674,7 +663,7 @@ export class OrchestrationEntryService {
       },
     });
     const recentSelOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(recentSelInput, new DBContext(), recentSelOutput);
+    await this.relationDb.selectDB(recentSelInput, recentSelOutput, new DBContext());
 
     const recentWorks = recentSelOutput.rows.map((row) => ({
       user_query: row.user_query,
@@ -700,10 +689,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async getWorkStatus(
-    input: GetWorkStatusInput,
-    _context: OrchestrationEntryContext,
-    output: GetWorkStatusOutput,
+  async soWorkStatus(input: GetWorkStatusInput, output: GetWorkStatusOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
     if (input.work_id) conditions.push({ field: 'work_id', operator: Operator.EQ, value: input.work_id });
@@ -718,7 +704,7 @@ export class OrchestrationEntryService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     output.works = selOutput.rows.map((row) => ({
       work_id: row.work_id as string ?? '',
@@ -737,10 +723,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async cancelWork(
-    input: CancelWorkInput,
-    _context: OrchestrationEntryContext,
-    output: CancelWorkOutput,
+  async cancelWork(input: CancelWorkInput, output: CancelWorkOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -751,7 +734,7 @@ export class OrchestrationEntryService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const work = selOutput.row;
     if (!work) {
@@ -770,8 +753,8 @@ export class OrchestrationEntryService {
     const cancelExecOutput = new CancelExecutionOutput();
     await this.orchestrationExecution.cancelExecution(
       cancelExecInput,
-      { session_id: ((work.session_id as string) ?? '') } as OrchestrationExecutionContext,
       cancelExecOutput,
+      { session_id: ((work.session_id as string) ?? '') } as OrchestrationExecutionContext,
     );
 
     const updData: DataObject[] = [
@@ -786,22 +769,19 @@ export class OrchestrationEntryService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     output.cancelled = true;
     return true;
   }
 
-  async configOrchestrationEntry(
-    input: ConfigOrchestrationEntryInput,
-    _context: OrchestrationEntryContext,
-    output: ConfigOrchestrationEntryOutput,
+  async configOrchestrationEntry(input: ConfigOrchestrationEntryInput, output: ConfigOrchestrationEntryOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
     const id = (current.id as string) || 'orchestration_config_default';
@@ -842,17 +822,14 @@ export class OrchestrationEntryService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     output.config = current;
     return true;
   }
 
-  async confirmIntent(
-    input: ConfirmIntentInput,
-    context: OrchestrationEntryContext,
-    output: ConfirmIntentOutput,
+  async confirmIntent(input: ConfirmIntentInput, output: ConfirmIntentOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.action) throw new ValidationError('action is required');
@@ -864,7 +841,7 @@ export class OrchestrationEntryService {
       },
     });
     const selectOut = new SelectOneDBOutput();
-    await this.relationDb.selectOneDB(selectIn, new DBContext(), selectOut);
+    await this.relationDb.selectOneDB(selectIn, selectOut, new DBContext());
     if (!selectOut.row) throw new NotFoundError('orchestration_work', input.work_id);
 
     const record = selectOut.row as Record<string, unknown>;
@@ -885,15 +862,15 @@ export class OrchestrationEntryService {
           data: updData,
           conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }],
         }),
-        new DBContext(),
         new UpdateDBOutput(),
+        new DBContext(),
       );
       // 取消时丢弃本次提问已落库的 REQUEST 消息及其派生数据，
       // 避免刷新后历史 / ChatMap 重新展示已取消的提问。
       await this.infoCore.delInfoByWork(
         Object.assign(new DelInfoByWorkInput(), { work_id: input.work_id }),
-        new InfoCoreContext(),
         new DelInfoByWorkOutput(),
+        new InfoCoreContext(),
       );
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function') {
         await this.streamAccess.pushEvent(String(record.session_id), 'cancelled', 'CONTROL', {
@@ -932,7 +909,7 @@ export class OrchestrationEntryService {
       interact_id: String(record.interact_id),
     });
 
-    const ok = await this.receiveWork(rwInput, rwCtx, rwOutput);
+    const ok = await this.receiveWork(rwInput, rwOutput, rwCtx, metrics, report);
     output.success = ok;
     output.action_applied = input.action;
     output.next_status = 'PROCESSING';
@@ -946,10 +923,7 @@ export class OrchestrationEntryService {
    * 与 confirmIntent 类似，但以「原始需求 + 用户补充参数」作为重入的 user_query，
    * 并透传原 work_id / interact_id / trace_id 保证幂等与历史一致。
    */
-  async submitClarification(
-    input: SubmitClarificationInput,
-    context: OrchestrationEntryContext,
-    output: SubmitClarificationOutput,
+  async submitClarification(input: SubmitClarificationInput, output: SubmitClarificationOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.answers || !Array.isArray(input.answers) || input.answers.length === 0) {
@@ -963,7 +937,7 @@ export class OrchestrationEntryService {
       },
     });
     const selectOut = new SelectOneDBOutput();
-    await this.relationDb.selectOneDB(selectIn, new DBContext(), selectOut);
+    await this.relationDb.selectOneDB(selectIn, selectOut, new DBContext());
     if (!selectOut.row) throw new NotFoundError('orchestration_work', input.work_id);
 
     const record = selectOut.row as Record<string, unknown>;
@@ -992,7 +966,7 @@ export class OrchestrationEntryService {
       interact_id: String(record.interact_id),
     });
 
-    const ok = await this.receiveWork(rwInput, rwCtx, rwOutput);
+    const ok = await this.receiveWork(rwInput, rwOutput, rwCtx, metrics, report);
     output.success = ok;
     output.final_response = rwOutput.final_response || '';
     output.interact_id = rwOutput.interact_id || String(record.interact_id || '');
@@ -1012,8 +986,8 @@ export class OrchestrationEntryService {
           info: JSON.stringify({ clarifications: input.answers }),
           trace_id: String(metadata.trace_id ?? ''),
         }),
-        new InfoCoreContext(),
         new SaveInfoOutput(),
+        new InfoCoreContext(),
       );
     } catch (err) {
       this.logger?.error?.('submitClarification: saveInfo (answers) failed', {
@@ -1038,7 +1012,7 @@ export class OrchestrationEntryService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   /**
@@ -1053,7 +1027,7 @@ export class OrchestrationEntryService {
         info_type: InfoType.REQUEST,
         info: newContent,
       });
-      await this.infoCore.updateInfo(updIn, new InfoCoreContext(), new UpdateInfoOutput());
+      await this.infoCore.updateInfo(updIn, new UpdateInfoOutput(), new InfoCoreContext());
     } catch (err) {
       this.logger?.error?.('rewriteRequestInfo: update REQUEST failed', {
         work_id: workId,
@@ -1068,7 +1042,7 @@ export class OrchestrationEntryService {
         query_param: { table: 'orchestration_config' },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       const row = selOutput.row as Record<string, unknown> | null;
       return (row?.[field] as number) ?? defaultValue;
     } catch {

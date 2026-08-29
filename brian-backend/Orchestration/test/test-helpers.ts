@@ -233,15 +233,15 @@ export function createMockAgentBuilder(opts?: { failBuild?: boolean; agentId?: s
   let agentSeq = 0;
   const baseAgentId = opts?.agentId ?? 'mock-agent-id';
   return {
-    buildAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    buildAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failBuild) { o.error = 'build failed'; return false; }
       agentSeq++;
       o.agent_id = `${baseAgentId}-${agentSeq}`;
       return true;
     }),
-    buildPlannerAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'mock-planner-id'; return true; }),
-    buildWriterAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'mock-writer-id'; return true; }),
-    buildEvolutorAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'mock-evolutor-id'; return true; }),
+    buildPlannerAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.agent_id = 'mock-planner-id'; return true; }),
+    buildWriterAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.agent_id = 'mock-writer-id'; return true; }),
+    buildEvolutorAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.agent_id = 'mock-evolutor-id'; return true; }),
     optimizeAgent: vi.fn().mockResolvedValue(true),
     configAgentBuilder: vi.fn().mockResolvedValue(true),
     initialize: vi.fn().mockResolvedValue(undefined),
@@ -251,7 +251,7 @@ export function createMockAgentBuilder(opts?: { failBuild?: boolean; agentId?: s
 export function createMockAgentExecution(opts?: { failExec?: boolean; answer?: string }) {
   const answer = opts?.answer ?? 'This is a mock agent answer.';
   return {
-    execAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failExec) { o.error = 'exec failed'; return false; }
       o.answer = answer;
       o.trace_id = 'mock-trace-id';
@@ -259,12 +259,12 @@ export function createMockAgentExecution(opts?: { failExec?: boolean; answer?: s
       o.elapsed_ms = 150;
       return true;
     }),
-    execAgentAsync: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.job_id = 'mock-job-id'; return true; }),
-    soTrace: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execAgentAsync: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.job_id = 'mock-job-id'; return true; }),
+    soTrace: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.trace = { trace_id: 'mock-trace-id', agent_id: 'mock-agent-id', start_time: 1700000000000, end_time: 1700000000150, total_elapsed_ms: 150, iterations: [], total_token_usage: 100 };
       return true;
     }),
-    getExecContext: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    getExecContext: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.pinned = { count: 0, info_ids: [] };
       o.timeline = { count: 0, info_ids: [] };
       o.tag_relative = { count: 0, info_ids: [] };
@@ -273,7 +273,7 @@ export function createMockAgentExecution(opts?: { failExec?: boolean; answer?: s
       o.random = { count: 0, info_ids: [] };
       return true;
     }),
-    getExecContextByAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    getExecContextByAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.pinned = { count: 0, info_ids: [] };
       o.timeline = { count: 0, info_ids: [] };
       o.tag_relative = { count: 0, info_ids: [] };
@@ -294,7 +294,7 @@ export function createMockAgentExecution(opts?: { failExec?: boolean; answer?: s
 
 export function createMockAgentLibrary(opts?: { hasAgent?: boolean }) {
   return {
-    soAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.hasAgent) {
         o.agents = [{ agent_id: 'mock-agent-id', agent_type: 'WORKER', agent_name: 'Test Agent', strategy_id: 'mock-strategy-id', llm_id: 'mock-llm-id', soul_id: 'mock-soul-id', task_signature: 'test-task', skill_ids: '[]', mcp_ids: '[]', prompt_template_ids: '[]' }];
       } else {
@@ -302,7 +302,7 @@ export function createMockAgentLibrary(opts?: { hasAgent?: boolean }) {
       }
       return true;
     }),
-    soAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agents = []; return true; }),
+    soAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.agents = []; return true; }),
     recordAgentUsage: vi.fn().mockResolvedValue(true),
     addAgent: vi.fn().mockResolvedValue(true),
     matchAgent: vi.fn().mockResolvedValue(true),
@@ -318,7 +318,7 @@ export function createMockAgentLibrary(opts?: { hasAgent?: boolean }) {
 export function createMockPlannerAgent(opts?: { failPlan?: boolean; taskCount?: number; planId?: string }) {
   const taskCount = opts?.taskCount ?? 3;
   const planId = opts?.planId ?? 'mock-plan-id';
-  const mockPlanImpl = async (_i: any, _c: any, o: any): Promise<boolean> => {
+  const mockPlanImpl = async (_i, o: any, _c: any): Promise<boolean> => {
     if (opts?.failPlan) { o.error = 'plan failed'; return false; }
     o.plan_id = planId;
     const nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }> = [];
@@ -337,12 +337,12 @@ export function createMockPlannerAgent(opts?: { failPlan?: boolean; taskCount?: 
   return {
     plan: vi.fn().mockImplementation(mockPlanImpl),
     planHierarchical: vi.fn().mockImplementation(mockPlanImpl),
-    replan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    replan: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.new_plan_id = 'mock-replan-id';
       o.task_dag = { nodes: [{ task_id: 'task-retry-1', task_content: 'Retry task content', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }], edges: [] };
       return true;
     }),
-    soPlan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soPlan: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.plan = { plan_id: planId, work_id: 'mock-work-id', interact_id: 'mock-interact-id', task_dag: JSON.stringify({ nodes: [], edges: [] }), parent_plan_id: '' };
       return true;
     }),
@@ -353,7 +353,7 @@ export function createMockPlannerAgent(opts?: { failPlan?: boolean; taskCount?: 
 
 export function createMockWriterAgent(opts?: { failWrite?: boolean; response?: string }) {
   return {
-    write: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execWrite: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failWrite) { o.error = 'write failed'; return false; }
       o.agent_id = 'mock-writer-id';
       o.response = opts?.response ?? 'This is a mock writer response.';
@@ -361,7 +361,7 @@ export function createMockWriterAgent(opts?: { failWrite?: boolean; response?: s
       o.token_usage = 50;
       return true;
     }),
-    soUserProfile: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soUserProfile: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.user_profile = { language: 'zh-CN', style: 'clear', depth: 'medium', format: 'MARKDOWN' };
       return true;
     }),
@@ -373,7 +373,7 @@ export function createMockWriterAgent(opts?: { failWrite?: boolean; response?: s
 
 export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
   return {
-    evalWorkAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    evalWorkAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failEval) { o.error = 'eval failed'; return false; }
       o.agent_id = 'mock-evolutor-id';
       o.eval_id = 'mock-eval-id';
@@ -382,7 +382,7 @@ export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
       o.need_optimize = false;
       return true;
     }),
-    evalWriterAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    evalWriterAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failEval) { o.error = 'eval failed'; return false; }
       o.agent_id = 'mock-evolutor-id';
       o.eval_id = 'mock-writer-eval-id';
@@ -393,7 +393,7 @@ export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
     }),
     startEvalSchedule: vi.fn().mockResolvedValue(true),
     stopEvalSchedule: vi.fn().mockResolvedValue(true),
-    soEvaluation: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soEvaluation: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.evaluations = [];
       return true;
     }),
@@ -405,9 +405,9 @@ export function createMockEvolutorAgent(opts?: { failEval?: boolean }) {
 
 export function createMockInfoCore() {
   return {
-    saveInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.info_id = 'mock-info-id'; return true; }),
-    context: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.list = []; return true; }),
-    lastNInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.list = []; return true; }),
+    saveInfo: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.info_id = 'mock-info-id'; return true; }),
+    context: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.list = []; return true; }),
+    lastNInfo: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.list = []; return true; }),
     pinInfo: vi.fn().mockResolvedValue(true),
     vectorInfo: vi.fn().mockResolvedValue(true),
     tagInfo: vi.fn().mockResolvedValue(true),
@@ -420,8 +420,8 @@ export function createMockInfoCore() {
     relationKInfo: vi.fn().mockResolvedValue(true),
     graphInfo: vi.fn().mockResolvedValue(true),
     delInfo: vi.fn().mockResolvedValue(true),
-    updateInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.updated_count = 1; return true; }),
-    delInfoByWork: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.deleted_count = 1; return true; }),
+    updateInfo: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.updated_count = 1; return true; }),
+    delInfoByWork: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.deleted_count = 1; return true; }),
     soInfoTagConfig: vi.fn().mockResolvedValue(true),
     updateInfoTagConfig: vi.fn().mockResolvedValue(true),
     soInfoSummaryConfig: vi.fn().mockResolvedValue(true),
@@ -441,10 +441,10 @@ export function createMockInfoCore() {
 
 export function createMockMQCore() {
   return {
-    startWorker: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.worker_id = 'test-worker'; return true; }),
+    startWorker: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.worker_id = 'test-worker'; return true; }),
     stopWorker: vi.fn().mockResolvedValue(true),
-    soWorker: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.workers = []; return true; }),
-    getWorker: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.worker = null; return true; }),
+    soWorker: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.workers = []; return true; }),
+    getWorker: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.worker = null; return true; }),
     initialize: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
@@ -452,7 +452,7 @@ export function createMockMQCore() {
 export function createMockMQAccess() {
   return {
     sendMQ: vi.fn().mockResolvedValue(true),
-    soQueueStats: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.stats = { pending: 0, processing: 0, completed: 0, failed: 0 }; return true; }),
+    soQueueStats: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.stats = { pending: 0, processing: 0, completed: 0, failed: 0 }; return true; }),
     consume: vi.fn().mockResolvedValue(true),
     ack: vi.fn().mockResolvedValue(true),
     nack: vi.fn().mockResolvedValue(true),
@@ -464,41 +464,41 @@ export function createMockMQAccess() {
 
 export function createMockStrategyAccess(opts?: { failStart?: boolean; finalResponse?: string }) {
   return {
-    startOrchestration: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    startOrchestration: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failStart) { o.error = 'start failed'; return false; }
       o.final_response = opts?.finalResponse ?? 'This is a mock final response.';
       return true;
     }),
-    executeSimpleStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    executeSimpleStrategy: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.agent_results = [{ agent_id: 'mock-agent-id', task_content: 'test', result: 'mock result', trace_id: 'mock-trace-id' }];
       o.plan_id = '';
       return true;
     }),
     executePlanningStrategy: vi.fn().mockResolvedValue(true),
-    executePostProcessing: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    executePostProcessing: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.final_response = 'Mock post-processed response.';
       o.eval_id = 'mock-eval-id';
       return true;
     }),
-    addStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.strategy_id = 'mock-strategy-id'; return true; }),
+    addStrategy: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.strategy_id = 'mock-strategy-id'; return true; }),
     handleDAGFailure: vi.fn().mockResolvedValue(true),
-    soStrategyById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.strategies = []; return true; }),
-    soStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.strategies = []; return true; }),
+    soStrategyById: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.strategies = []; return true; }),
+    soStrategy: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.strategies = []; return true; }),
     updateStrategy: vi.fn().mockResolvedValue(true),
-    configOrchestrationStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.config = {}; return true; }),
+    configOrchestrationStrategy: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.config = {}; return true; }),
     initialize: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
 
 export function createMockExecutionAccess(opts?: { failExec?: boolean; failBuild?: boolean }) {
   return {
-    buildAgentDAG: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    buildAgentDAG: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failBuild) { o.error = 'build failed'; return false; }
       o.agent_dag = { plan_id: 'mock-plan-id', total_agent_count: 1, agent_nodes: [], agent_edges: [] };
       o.task_agent_map = {};
       return true;
     }),
-    execSingleAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execSingleAgent: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       if (opts?.failExec) { o.error = 'exec failed'; return false; }
       o.answer = 'Mock agent answer.';
       o.trace_id = 'mock-trace-id';
@@ -506,28 +506,28 @@ export function createMockExecutionAccess(opts?: { failExec?: boolean; failBuild
       o.elapsed_ms = 150;
       return true;
     }),
-    execDAG: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execDAG: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.agent_results = [];
       o.total_elapsed_ms = 300;
       o.failed_count = 0;
       return true;
     }),
-    execDAGAsync: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.job_id = 'mock-job-id'; return true; }),
+    execDAGAsync: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.job_id = 'mock-job-id'; return true; }),
     recordSystemAgentExecution: vi.fn().mockResolvedValue(true),
-    getDAGProgress: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soDAGProgress: vi.fn().mockImplementation(async (_i, o: any, _c: any) => {
       o.progress = { work_id: 'mock-work-id', plan_id: '', total_tasks: 0, completed_tasks: 0, running_tasks: 0, failed_tasks: 0, pending_tasks: 0, node_details: [], total_elapsed_ms: 0 };
       return true;
     }),
-    cancelExecution: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.cancelled_count = 0; return true; }),
+    cancelExecution: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.cancelled_count = 0; return true; }),
     soExecQueueStatus: vi.fn().mockResolvedValue(true),
-    configOrchestrationExecution: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.config = {}; return true; }),
+    configOrchestrationExecution: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.config = {}; return true; }),
     initialize: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
 
 export function createMockLLMAccess() {
   return {
-    execLLM: vi.fn().mockImplementation(async (i: any, _c: any, o: any) => {
+    execLLM: vi.fn().mockImplementation(async (i, o: any, _c: any) => {
       const prompt = String((i?.prompt ?? ''));
 
       const complexIndicators = ['分析', '生成', '报告', '对比', '多步', '分解', '步骤', '数据', '处理'];
@@ -545,7 +545,7 @@ export function createMockLLMAccess() {
       return true;
     }),
     execLLMStream: vi.fn().mockResolvedValue(true),
-    model: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.models = []; return true; }),
+    model: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.models = []; return true; }),
     insertModel: vi.fn().mockResolvedValue(true),
     updateModel: vi.fn().mockResolvedValue(true),
     deleteModel: vi.fn().mockResolvedValue(true),
@@ -557,13 +557,13 @@ export function createMockLLMAccess() {
 
 export function createMockPromptsAccess() {
   return {
-    execPrompt: vi.fn().mockImplementation(async (i: any, _c: any, o: any) => {
+    execPrompt: vi.fn().mockImplementation(async (i, o: any, _c: any) => {
       const vars = (i?.variables ?? {}) as Record<string, unknown>;
       const userQuery = vars.task_content ?? vars.user_query ?? '';
       o.prompt = `You are a strategy selector. Analyze the complexity of the user query.\nUser query: ${String(userQuery)}\nThreshold: ${String(vars.threshold ?? 50)}`;
       return true;
     }),
-    soPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.prompts = []; return true; }),
+    soPrompt: vi.fn().mockImplementation(async (_i, o: any, _c: any) => { o.prompts = []; return true; }),
     insertPrompt: vi.fn().mockResolvedValue(true),
     updatePrompt: vi.fn().mockResolvedValue(true),
     deletePrompt: vi.fn().mockResolvedValue(true),

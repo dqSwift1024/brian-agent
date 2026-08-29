@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, InsertDBOutput,
   SelectDBInput, SelectDBOutput,
@@ -60,10 +61,7 @@ export class OrchestrationStrategyService {
     private readonly logger?: Logger,
   ) {}
 
-  async startOrchestration(
-    input: StartOrchestrationInput,
-    _context: OrchestrationStrategyContext,
-    output: StartOrchestrationOutput,
+  async startOrchestration(input: StartOrchestrationInput, output: StartOrchestrationOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const def = await this.resolveStrategyDef(input.strategy);
     if (!def) {
@@ -89,7 +87,7 @@ export class OrchestrationStrategyService {
       },
     });
     const execOutput = new ExecJSONNodeOutput();
-    await this.jsonNode.execJSONNode(execInput, new JSONNodeContext(), execOutput);
+    await this.jsonNode.execJSONNode(execInput, execOutput, new JSONNodeContext());
 
     output.final_response = (execOutput.shared_data.final_response as string) ?? '';
     if (execOutput.shared_data._error) {
@@ -103,10 +101,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async executeSimpleStrategy(
-    input: ExecuteSimpleStrategyInput,
-    context: OrchestrationStrategyContext,
-    output: ExecuteSimpleStrategyOutput,
+  async executeSimpleStrategy(input: ExecuteSimpleStrategyInput, output: ExecuteSimpleStrategyOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const executionId = IdGenerator.generate();
     const now = IdGenerator.now();
@@ -117,7 +112,7 @@ export class OrchestrationStrategyService {
       force_new: false,
     });
     const buildAgentOutput = new BuildAgentOutput();
-    const buildSuccess = await this.agentBuilder.buildAgent(buildAgentInput, context as unknown as AgentBuilderContext, buildAgentOutput);
+    const buildSuccess = await this.agentBuilder.buildAgent(buildAgentInput, buildAgentOutput, context as unknown as AgentBuilderContext);
     if (!buildSuccess) {
       const updFailData: DataObject[] = [
         { field: 'status', value: 'FAILED' },
@@ -131,7 +126,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       return false;
     }
     const agentId = buildAgentOutput.agent_id;
@@ -154,7 +149,7 @@ export class OrchestrationStrategyService {
       table: 'orchestration_strategy_execution',
       data: execData,
     });
-    await this.relationDb.insertDB(insExecInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insExecInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     const updData: DataObject[] = [
       { field: 'status', value: 'EXECUTING' },
@@ -167,7 +162,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const execSingleInput = Object.assign(new ExecSingleAgentInput(), {
       work_id: input.work_id,
@@ -179,8 +174,8 @@ export class OrchestrationStrategyService {
     const execSingleOutput = new ExecSingleAgentOutput();
     const execSuccess = await this.orchestrationExecution.execSingleAgent(
       execSingleInput,
-      context as unknown as OrchestrationExecutionContext,
       execSingleOutput,
+      context as unknown as OrchestrationExecutionContext,
     );
     if (!execSuccess) {
       const updFailData: DataObject[] = [
@@ -194,7 +189,7 @@ export class OrchestrationStrategyService {
           { field: 'execution_id', operator: Operator.EQ, value: executionId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       const updWorkFailData: DataObject[] = [
         { field: 'status', value: 'FAILED' },
         { field: 'error_message', value: (execSingleOutput as unknown as Record<string, unknown>).error as string ?? 'execSingleAgent failed' },
@@ -207,7 +202,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updWorkFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updWorkFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       return false;
     }
 
@@ -222,7 +217,7 @@ export class OrchestrationStrategyService {
         { field: 'execution_id', operator: Operator.EQ, value: executionId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updDoneInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updDoneInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     output.agent_results = [{
       agent_id: agentId,
@@ -235,10 +230,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async executePlanningStrategy(
-    input: ExecutePlanningStrategyInput,
-    context: OrchestrationStrategyContext,
-    output: ExecutePlanningStrategyOutput,
+  async executePlanningStrategy(input: ExecutePlanningStrategyInput, output: ExecutePlanningStrategyOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const executionId = IdGenerator.generate();
     const now = IdGenerator.now();
@@ -261,7 +253,7 @@ export class OrchestrationStrategyService {
       table: 'orchestration_strategy_execution',
       data: execData,
     });
-    await this.relationDb.insertDB(insExecInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insExecInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     const updPlanData: DataObject[] = [
       { field: 'status', value: 'PLANNING' },
@@ -274,7 +266,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updPlanInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updPlanInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const planInput = Object.assign(new PlanHierarchicalInput(), {
       work_id: input.work_id,
@@ -282,7 +274,7 @@ export class OrchestrationStrategyService {
       task_content: input.user_query,
     });
     const planOutput = new PlanHierarchicalOutput();
-    const planSuccess = await this.plannerAgent.planHierarchical(planInput, context as unknown as PlannerAgentContext, planOutput);
+    const planSuccess = await this.plannerAgent.planHierarchical(planInput, planOutput, context as unknown as PlannerAgentContext);
     if (!planSuccess) {
       const updFailData: DataObject[] = [
         { field: 'execution_status', value: 'FAILED' },
@@ -295,7 +287,7 @@ export class OrchestrationStrategyService {
           { field: 'execution_id', operator: Operator.EQ, value: executionId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       const updWorkFailData: DataObject[] = [
         { field: 'status', value: 'FAILED' },
         { field: 'error_message', value: (planOutput as unknown as Record<string, unknown>).error as string ?? 'plannerAgent.plan failed' },
@@ -308,7 +300,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updWorkFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updWorkFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       return false;
     }
     const planId = planOutput.plan_id;
@@ -325,7 +317,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updTaskCountInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updTaskCountInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const updExecPlanData: DataObject[] = [
       { field: 'plan_id', value: planId },
@@ -338,7 +330,7 @@ export class OrchestrationStrategyService {
         { field: 'execution_id', operator: Operator.EQ, value: executionId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updExecPlanInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updExecPlanInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const buildDagInput = Object.assign(new BuildAgentDAGInput(), {
       plan_id: planId,
@@ -348,8 +340,8 @@ export class OrchestrationStrategyService {
     const buildDagOutput = new BuildAgentDAGOutput();
     await this.orchestrationExecution.buildAgentDAG(
       buildDagInput,
-      context as unknown as OrchestrationExecutionContext,
       buildDagOutput,
+      context as unknown as OrchestrationExecutionContext,
     );
     const agentDag = buildDagOutput.agent_dag;
 
@@ -364,7 +356,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updExecInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const execDagInput = Object.assign(new ExecDAGInput(), {
       work_id: input.work_id,
@@ -375,8 +367,8 @@ export class OrchestrationStrategyService {
     try {
       await this.orchestrationExecution.execDAG(
         execDagInput,
-        context as unknown as OrchestrationExecutionContext,
         execDagOutput,
+        context as unknown as OrchestrationExecutionContext,
       );
     } catch (_err: unknown) {
       const failedInfo = (_err as Record<string, unknown> | null) ?? {};
@@ -395,7 +387,7 @@ export class OrchestrationStrategyService {
         agent_dag: agentDag as unknown as Record<string, unknown>,
       });
       const failureOutput = new HandleDAGFailureOutput();
-      await this.handleDAGFailure(failureInput, context, failureOutput);
+      await this.handleDAGFailure(failureInput, failureOutput, context, metrics, report);
 
       if (failureOutput.action === 'FAIL') {
         const updFailData: DataObject[] = [
@@ -410,7 +402,7 @@ export class OrchestrationStrategyService {
             { field: 'execution_id', operator: Operator.EQ, value: executionId },
           ] as Condition[],
         });
-        await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
         output.error = errMsg;
         return false;
       }
@@ -424,8 +416,8 @@ export class OrchestrationStrategyService {
         const replanDagOutput = new ExecDAGOutput();
         await this.orchestrationExecution.execDAG(
           replanDagInput,
-          context as unknown as OrchestrationExecutionContext,
           replanDagOutput,
+          context as unknown as OrchestrationExecutionContext,
         );
         Object.assign(execDagOutput, replanDagOutput);
       }
@@ -445,7 +437,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updCountInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updCountInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     const updDoneData: DataObject[] = [
@@ -459,7 +451,7 @@ export class OrchestrationStrategyService {
         { field: 'execution_id', operator: Operator.EQ, value: executionId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updDoneInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updDoneInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     output.agent_results = execDagOutput.agent_results.map((ar) => ({
       agent_id: ar.agent_id,
@@ -472,10 +464,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async executePostProcessing(
-    input: ExecutePostProcessingInput,
-    context: OrchestrationStrategyContext,
-    output: ExecutePostProcessingOutput,
+  async executePostProcessing(input: ExecutePostProcessingInput, output: ExecutePostProcessingOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const updWriteData: DataObject[] = [
       { field: 'status', value: 'WRITING' },
@@ -488,7 +477,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updWriteInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updWriteInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const writeInput = Object.assign(new WriteInput(), {
       work_id: input.work_id,
@@ -497,7 +486,7 @@ export class OrchestrationStrategyService {
       agent_results: input.agent_results,
     });
     const writeOutput = new WriteOutput();
-    const writeSuccess = await this.writerAgent.write(writeInput, context as unknown as WriterAgentContext, writeOutput);
+    const writeSuccess = await this.writerAgent.execWrite(writeInput, writeOutput, context as unknown as WriterAgentContext);
     if (!writeSuccess) {
       const updFailData: DataObject[] = [
         { field: 'status', value: 'FAILED' },
@@ -511,7 +500,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       return false;
     }
     const finalResponse = writeOutput.response;
@@ -530,7 +519,7 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updEvalInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updEvalInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     setImmediate(() => {
       const evalWriterInput = Object.assign(new EvalWriterAgentInput(), {
@@ -545,8 +534,8 @@ export class OrchestrationStrategyService {
       Promise.resolve(
         this.evolutorAgent.evalWriterAgent(
           evalWriterInput,
-          context as unknown as EvolutorAgentContext,
           evalWriterOutput,
+          context as unknown as EvolutorAgentContext,
         ),
       ).catch((err: unknown) => {
         this.logger?.error?.('executePostProcessing: evalWriterAgent failed', {
@@ -570,8 +559,8 @@ export class OrchestrationStrategyService {
         Promise.resolve(
           this.evolutorAgent.evalWorkAgent(
             evalWorkInput,
-            context as unknown as EvolutorAgentContext,
             evalWorkOutput,
+            context as unknown as EvolutorAgentContext,
           ),
         ).catch((err: unknown) => {
           this.logger?.error?.('executePostProcessing: evalWorkAgent failed', {
@@ -601,8 +590,8 @@ export class OrchestrationStrategyService {
           const startEvalOutput = new StartEvalScheduleOutput();
           await this.evolutorAgent.startEvalSchedule(
             startEvalInput,
-            context as unknown as EvolutorAgentContext,
             startEvalOutput,
+            context as unknown as EvolutorAgentContext,
           );
         }
       } catch (err: unknown) {
@@ -617,10 +606,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async addStrategy(
-    input: AddOrchestrationStrategyInput,
-    _context: OrchestrationStrategyContext,
-    output: AddOrchestrationStrategyOutput,
+  async addStrategy(input: AddOrchestrationStrategyInput, output: AddOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_label) {
       throw new ValidationError('strategy_label is required');
@@ -635,7 +621,7 @@ export class OrchestrationStrategyService {
       },
     });
     const existOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(existInput, new DBContext(), existOutput);
+    await this.relationDb.selectOneDB(existInput, existOutput, new DBContext());
     if (existOutput.row) {
       throw new ValidationError(`Strategy label "${input.strategy_label}" already exists`);
     }
@@ -651,7 +637,7 @@ export class OrchestrationStrategyService {
       jsonnode_definition: parsedDef,
     });
     const validateOutput = new ValidateJSONNodeOutput();
-    this.jsonNode.validate(validateInput, new JSONNodeContext(), validateOutput);
+    this.jsonNode.validate(validateInput, validateOutput, new JSONNodeContext());
     if (!validateOutput.valid) {
       throw new ValidationError(`Invalid jsonnode_definition: ${validateOutput.errors.join('; ')}`);
     }
@@ -672,16 +658,13 @@ export class OrchestrationStrategyService {
       table: 'orchestration_strategy',
       data,
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     output.strategy_id = strategyId;
     return true;
   }
 
-  async handleDAGFailure(
-    input: HandleDAGFailureInput,
-    context: OrchestrationStrategyContext,
-    output: HandleDAGFailureOutput,
+  async handleDAGFailure(input: HandleDAGFailureInput, output: HandleDAGFailureOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selWorkInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -692,7 +675,7 @@ export class OrchestrationStrategyService {
       },
     });
     const selWorkOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selWorkInput, new DBContext(), selWorkOutput);
+    await this.relationDb.selectOneDB(selWorkInput, selWorkOutput, new DBContext());
 
     const metadataStr = ((selWorkOutput.row?.metadata as string) ?? '{}');
     let metadata: Record<string, unknown> = {};
@@ -727,7 +710,7 @@ export class OrchestrationStrategyService {
         data: updMetaData,
         conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }] as Condition[],
       });
-      await this.relationDb.updateDB(updMetaInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updMetaInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       output.action = 'FAIL';
       output.max_retry_reached = true;
       return true;
@@ -746,7 +729,7 @@ export class OrchestrationStrategyService {
         data: updMetaData,
         conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }] as Condition[],
       });
-      await this.relationDb.updateDB(updMetaInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updMetaInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       output.action = 'FAIL';
       output.max_retry_reached = true;
       return true;
@@ -764,13 +747,13 @@ export class OrchestrationStrategyService {
         { field: 'work_id', operator: Operator.EQ, value: input.work_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updMetaInput0, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updMetaInput0, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const configSelInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },
     });
     const configSelOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(configSelInput, new DBContext(), configSelOutput);
+    await this.relationDb.selectOneDB(configSelInput, configSelOutput, new DBContext());
     const config = (configSelOutput.row ?? {}) as Record<string, unknown>;
     const maxPlanRetries = (config.max_plan_retries as number) ?? 2;
 
@@ -784,7 +767,7 @@ export class OrchestrationStrategyService {
       },
     });
     const execSelOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(execSelInput, new DBContext(), execSelOutput);
+    await this.relationDb.selectOneDB(execSelInput, execSelOutput, new DBContext());
     const planRetryCount = (execSelOutput.row?.plan_retry_count as number) ?? 0;
 
     if (planRetryCount >= maxPlanRetries) {
@@ -800,7 +783,7 @@ export class OrchestrationStrategyService {
           { field: 'work_id', operator: Operator.EQ, value: input.work_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
       output.action = 'FAIL';
       output.max_retry_reached = true;
@@ -814,7 +797,7 @@ export class OrchestrationStrategyService {
       completed_task_ids: input.completed_task_ids,
     });
     const replanOutput = new ReplanOutput();
-    await this.plannerAgent.replan(replanInput, context as unknown as PlannerAgentContext, replanOutput);
+    await this.plannerAgent.replan(replanInput, replanOutput, context as unknown as PlannerAgentContext);
     const newTaskDag = replanOutput.task_dag as unknown as TaskDAG;
 
     // replan 成功后推进全局计数器（仅在真正触发 PlannerAgent.replan 之后 +1，保证原有用例不受影响）
@@ -828,7 +811,7 @@ export class OrchestrationStrategyService {
       data: mdAfterData,
       conditions: [{ field: 'work_id', operator: Operator.EQ, value: input.work_id }] as Condition[],
     });
-    await this.relationDb.updateDB(mdAfterInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(mdAfterInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     const newBuildDagInput = Object.assign(new BuildAgentDAGInput(), {
       plan_id: input.plan_id,
@@ -838,8 +821,8 @@ export class OrchestrationStrategyService {
     const newBuildDagOutput = new BuildAgentDAGOutput();
     await this.orchestrationExecution.buildAgentDAG(
       newBuildDagInput,
-      context as unknown as OrchestrationExecutionContext,
       newBuildDagOutput,
+      context as unknown as OrchestrationExecutionContext,
     );
 
     const newRetryCount = planRetryCount + 1;
@@ -855,7 +838,7 @@ export class OrchestrationStrategyService {
         { field: 'plan_id', operator: Operator.EQ, value: input.plan_id },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updRetryInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updRetryInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
     output.action = 'REPLAN';
     output.new_agent_dag = newBuildDagOutput.agent_dag as unknown as Record<string, unknown>;
@@ -863,10 +846,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async soStrategyById(
-    input: GetOrchestrationStrategyInput,
-    _context: OrchestrationStrategyContext,
-    output: GetOrchestrationStrategyOutput,
+  async soStrategyById(input: GetOrchestrationStrategyInput, output: GetOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (input.strategy_id) {
       const selOneInput = Object.assign(new SelectOneDBInput(), {
@@ -878,7 +858,7 @@ export class OrchestrationStrategyService {
         },
       });
       const selOneOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selOneInput, new DBContext(), selOneOutput);
+      await this.relationDb.selectOneDB(selOneInput, selOneOutput, new DBContext());
       if (selOneOutput.row) {
         output.strategies = [selOneOutput.row];
       }
@@ -903,15 +883,12 @@ export class OrchestrationStrategyService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
     output.strategies = selOutput.rows;
     return true;
   }
 
-  async updateStrategy(
-    input: UpdateOrchestrationStrategyInput,
-    _context: OrchestrationStrategyContext,
-    output: UpdateOrchestrationStrategyOutput,
+  async updateStrategy(input: UpdateOrchestrationStrategyInput, output: UpdateOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -922,7 +899,7 @@ export class OrchestrationStrategyService {
       },
     });
     const existOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(existInput, new DBContext(), existOutput);
+    await this.relationDb.selectOneDB(existInput, existOutput, new DBContext());
     if (!existOutput.row) {
       throw new NotFoundError('OrchestrationStrategy', input.strategy_id);
     }
@@ -947,7 +924,7 @@ export class OrchestrationStrategyService {
         jsonnode_definition: parsedDef,
       });
       const validateOutput = new ValidateJSONNodeOutput();
-      this.jsonNode.validate(validateInput, new JSONNodeContext(), validateOutput);
+      this.jsonNode.validate(validateInput, validateOutput, new JSONNodeContext());
       if (!validateOutput.valid) {
         throw new ValidationError(`Invalid jsonnode_definition: ${validateOutput.errors.join('; ')}`);
       }
@@ -965,7 +942,7 @@ export class OrchestrationStrategyService {
           { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     return true;
@@ -981,7 +958,7 @@ export class OrchestrationStrategyService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
     const strategyId = ((selOutput.row?.strategy_id as string) ?? '');
     if (strategyId) return strategyId;
 
@@ -990,7 +967,7 @@ export class OrchestrationStrategyService {
       query_param: { table: 'orchestration_config' },
     });
     const cfgOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(cfgInput, new DBContext(), cfgOutput);
+    await this.relationDb.selectOneDB(cfgInput, cfgOutput, new DBContext());
     return (cfgOutput.row?.default_strategy_id as string) ?? '';
   }
 
@@ -1004,7 +981,7 @@ export class OrchestrationStrategyService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
     const row = selOutput.row as Record<string, unknown> | null;
     if (row?.jsonnode_definition) return row.jsonnode_definition as string;
 
@@ -1013,7 +990,7 @@ export class OrchestrationStrategyService {
       query_param: { table: 'orchestration_config' },
     });
     const cfgOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(cfgInput, new DBContext(), cfgOutput);
+    await this.relationDb.selectOneDB(cfgInput, cfgOutput, new DBContext());
     const defaultId = (cfgOutput.row?.default_strategy_id as string) ?? '';
     if (!defaultId) return null;
 
@@ -1026,21 +1003,18 @@ export class OrchestrationStrategyService {
       },
     });
     const byIdOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(byIdInput, new DBContext(), byIdOutput);
+    await this.relationDb.selectOneDB(byIdInput, byIdOutput, new DBContext());
     const byIdRow = byIdOutput.row as Record<string, unknown> | null;
     return byIdRow?.jsonnode_definition ? (byIdRow.jsonnode_definition as string) : null;
   }
 
-  async configOrchestrationStrategy(
-    input: ConfigOrchestrationStrategyInput,
-    _context: OrchestrationStrategyContext,
-    output: ConfigOrchestrationStrategyOutput,
+  async configOrchestrationStrategy(input: ConfigOrchestrationStrategyInput, output: ConfigOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
     const id = (current.id as string) || 'orchestration_config_default';
     const data: DataObject[] = [{ field: 'id', value: id }, { field: 'updated', value: IdGenerator.now() }];
@@ -1055,7 +1029,7 @@ export class OrchestrationStrategyService {
         },
       });
       const stratSelOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(stratSelInput, new DBContext(), stratSelOutput);
+      await this.relationDb.selectOneDB(stratSelInput, stratSelOutput, new DBContext());
       if (!stratSelOutput.row) {
         throw new NotFoundError('OrchestrationStrategy', input.default_strategy_id);
       }
@@ -1076,7 +1050,7 @@ export class OrchestrationStrategyService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     output.config = current;

@@ -187,7 +187,7 @@ export class ExecDAGAsyncOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getDAGProgress
+// soDAGProgress
 // ---------------------------------------------------------------------------
 
 export class GetDAGProgressInput extends Input {

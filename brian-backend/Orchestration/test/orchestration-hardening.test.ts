@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import {
   createTestDb, setupTestMocks, resetTestMocks,
@@ -124,18 +125,18 @@ describe('Orchestration Hardening', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupTestMocks();
-    agentExecution.execAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+    agentExecution.execAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.answer = 'This is a mock agent answer.';
       o.trace_id = 'mock-trace-id';
       o.iterations = 3;
       o.elapsed_ms = 150;
       return true;
     });
-    agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+    agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.agent_id = 'mock-agent-id';
       return true;
     });
-    plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
+    plannerAgent.planHierarchical.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.plan_id = 'mock-plan-id';
       const nodes: Array<{ task_id: string; task_content: string; task_complexity: number; task_domain: string; priority: number; dependencies: string[] }> = [];
       for (let i = 0; i < 3; i++) {
@@ -148,7 +149,7 @@ describe('Orchestration Hardening', () => {
       o.task_dag = { nodes, edges };
       return true;
     });
-    plannerAgent.replan.mockImplementation(async (_i: any, _c: any, o: any) => {
+    plannerAgent.replan.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.new_plan_id = 'mock-replan-id';
       o.task_dag = { nodes: [{ task_id: 'task-retry-1', task_content: 'Retry task content', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }], edges: [] };
       return true;
@@ -174,7 +175,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-a1' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(3);
 
@@ -204,7 +205,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-a2' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
 
       const t2Call = agentExecution.execAgent.mock.calls.find((c: any[]) => c[0].agent_id === 'a2');
@@ -224,7 +225,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-a3' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(3);
 
@@ -244,7 +245,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-a4' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(4);
 
@@ -264,7 +265,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-a5' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(4);
 
@@ -292,7 +293,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('REPLAN');
     });
@@ -301,7 +302,7 @@ describe('Orchestration Hardening', () => {
       await seedWork('w-b2', 's-b2', 'i-b2', 'PROCESSING');
       await seedStrategyExecution('w-b2', 'p-b2-4', 0);
 
-      plannerAgent.replan.mockImplementationOnce(async (_i: any, _c: any, o: any) => {
+      plannerAgent.replan.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => {
         throw new Error('REPLAN 递归深度超过上限');
       });
 
@@ -314,7 +315,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.handleDAGFailure(input, ctx, output)).rejects.toThrow('REPLAN 递归深度超过上限');
+      await expect(strategy.handleDAGFailure(input, output, ctx)).rejects.toThrow('REPLAN 递归深度超过上限');
     });
 
     it('TC-B-003: 首次失败 → REPLAN', async () => {
@@ -328,7 +329,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('REPLAN');
       expect(output.max_retry_reached).toBe(false);
@@ -336,7 +337,7 @@ describe('Orchestration Hardening', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-b3' }] as Condition[] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       const metadata = JSON.parse(selOutput.row!.metadata as string);
       expect(metadata.replan_total_count).toBe(1);
       expect(metadata.failure_history.length).toBe(1);
@@ -355,7 +356,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('FAIL');
       expect(output.max_retry_reached).toBe(true);
@@ -363,7 +364,7 @@ describe('Orchestration Hardening', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-b4' }] as Condition[] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       expect(selOutput.row!.status).toBe('FAILED');
       const metadata = JSON.parse(selOutput.row!.metadata as string);
       expect(metadata.replan_abort_reason).toBe('LOOP_DETECTED');
@@ -382,7 +383,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('REPLAN');
       expect(output.max_retry_reached).toBe(false);
@@ -402,7 +403,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('FAIL');
       expect(output.max_retry_reached).toBe(true);
@@ -410,7 +411,7 @@ describe('Orchestration Hardening', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-b6' }] as Condition[] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       const metadata = JSON.parse(selOutput.row!.metadata as string);
       expect(metadata.replan_abort_reason).toBe('MAX_GLOBAL_REPLAN_EXCEEDED');
       expect(selOutput.row!.status).toBe('FAILED');
@@ -421,7 +422,7 @@ describe('Orchestration Hardening', () => {
       await seedWork('w-b7', 's-b7', 'i-b7');
       await seedStrategyExecution('w-b7', 'p-b7', 0);
 
-      plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.plan_id = 'p-b7';
         o.task_dag = {
           nodes: [{ task_id: 't-fail', task_content: 'Failing task', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }],
@@ -429,15 +430,15 @@ describe('Orchestration Hardening', () => {
         };
         return true;
       });
-      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.agent_id = 'agent-b7';
         return true;
       });
-      agentExecution.execAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentExecution.execAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.error = 'exec failed';
         return false;
       });
-      plannerAgent.replan.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.replan.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         deleteDagRecord('p-b7');
         o.new_plan_id = 'p-replan-b7';
         o.task_dag = {
@@ -456,7 +457,7 @@ describe('Orchestration Hardening', () => {
 
       // The replan also fails, so the error propagates up
       await expect(
-        strategy.executePlanningStrategy(input, ctx, output),
+        strategy.executePlanningStrategy(input, output, ctx),
       ).rejects.toBeTruthy();
     });
 
@@ -471,7 +472,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('REPLAN');
     });
@@ -493,14 +494,14 @@ describe('Orchestration Hardening', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.cancelExecution(input, ctx, output);
+      const result = await exec.cancelExecution(input, output, ctx);
       expect(result).toBe(true);
       expect(output.cancelled_count).toBeGreaterThanOrEqual(1);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-c1' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
 
       const cancelledRows = selOutput.rows.filter((r: any) => r.status === 'CANCELLED');
       expect(cancelledRows.length).toBeGreaterThanOrEqual(1);
@@ -516,12 +517,12 @@ describe('Orchestration Hardening', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await exec.cancelExecution(input, ctx, output);
+      await exec.cancelExecution(input, output, ctx);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-c2' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
 
       const a1Row = selOutput.rows.find((r: any) => r.agent_id === 'a1');
       expect(a1Row).toBeDefined();
@@ -541,13 +542,13 @@ describe('Orchestration Hardening', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.cancelExecution(input, ctx, output);
+      const result = await exec.cancelExecution(input, output, ctx);
       expect(result).toBe(true);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-c3' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
 
       const cancelledRows = selOutput.rows.filter((r: any) => r.status === 'CANCELLED');
       expect(cancelledRows.length).toBeGreaterThanOrEqual(1);
@@ -569,13 +570,13 @@ describe('Orchestration Hardening', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.cancelExecution(input, ctx, output);
+      const result = await exec.cancelExecution(input, output, ctx);
       expect(result).toBe(true);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-c4' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
 
       const cancelledRows = selOutput.rows.filter((r: any) => r.status === 'CANCELLED');
       expect(cancelledRows.length).toBeGreaterThanOrEqual(1);
@@ -594,7 +595,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-c5' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(3);
       for (const r of output.agent_results) {
@@ -609,7 +610,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-c6' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results).toEqual([]);
     });
@@ -640,7 +641,7 @@ describe('Orchestration Hardening', () => {
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-d1' });
 
       try {
-        await exec.execDAG(input, ctx, output);
+        await exec.execDAG(input, output, ctx);
       } catch (_e: any) {
         // Expected: agent failure throws
       }
@@ -648,7 +649,7 @@ describe('Orchestration Hardening', () => {
       const selExecOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-d1' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selExecOutput);
+      }) as SelectDBInput, selExecOutput, new DBContext());
 
       const a1Row = selExecOutput.rows.find((r: any) => r.agent_id === 'a1');
       expect(a1Row).toBeDefined();
@@ -667,12 +668,12 @@ describe('Orchestration Hardening', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await exec.cancelExecution(input, ctx, output);
+      await exec.cancelExecution(input, output, ctx);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-d2' }] as Condition[] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
 
       const cancelledRows = selOutput.rows.filter((r: any) => r.status === 'CANCELLED');
       if (cancelledRows.length > 0) {
@@ -695,7 +696,7 @@ describe('Orchestration Hardening', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('FAIL');
     });
@@ -712,7 +713,7 @@ describe('Orchestration Hardening', () => {
       const output = new ExecDAGAsyncOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execDAGAsync(input, ctx, output);
+      const result = await exec.execDAGAsync(input, output, ctx);
       expect(result).toBe(true);
       expect(output.job_id).toBeTruthy();
     });
@@ -721,7 +722,7 @@ describe('Orchestration Hardening', () => {
       await seedWork('w-d5', 's-d5', 'i-d5');
       await seedStrategyExecution('w-d5', 'p-d5', 0);
 
-      plannerAgent.planHierarchical.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.plan_id = 'p-d5';
         o.task_dag = {
           nodes: [{ task_id: 't-fail', task_content: 'Failing task', task_complexity: 30, task_domain: 'general', priority: 1, dependencies: [] }],
@@ -729,15 +730,15 @@ describe('Orchestration Hardening', () => {
         };
         return true;
       });
-      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.agent_id = 'agent-d5';
         return true;
       });
-      agentExecution.execAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentExecution.execAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.error = 'exec failed';
         return false;
       });
-      plannerAgent.replan.mockImplementation(async (_i: any, _c: any, o: any) => {
+      plannerAgent.replan.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         deleteDagRecord('p-d5');
         o.new_plan_id = 'p-replan-d5';
         o.task_dag = {
@@ -756,14 +757,14 @@ describe('Orchestration Hardening', () => {
 
       // The replan also fails, error propagates
       await expect(
-        strategy.executePlanningStrategy(input, ctx, output),
+        strategy.executePlanningStrategy(input, output, ctx),
       ).rejects.toBeTruthy();
 
       // Verify that the strategy_execution record exists and was created
       const selExecOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_strategy_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w-d5' }] as Condition[] },
-      }) as SelectOneDBInput, new DBContext(), selExecOutput);
+      }) as SelectOneDBInput, selExecOutput, new DBContext());
       expect(selExecOutput.row).toBeTruthy();
     });
   });

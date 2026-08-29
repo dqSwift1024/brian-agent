@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb, setupTestMocks, resetTestMocks, createMockAgentLibrary, createMockAgentExecution, createMockLogger } from './test-helpers';
 import { RelationDBAccess, Operator, DBContext, SelectDBInput, SelectDBOutput, InsertDBInput, InsertDBOutput, DataObject, IdGenerator } from '@brian-agent/base';
@@ -55,7 +56,7 @@ describe('OrchestrationVisualization', () => {
       { field: 'final_response', value: 'Test response' },
       { field: 'metadata', value: '{}' },
     ];
-    await db.insertDB(Object.assign(new InsertDBInput(), { table: 'orchestration_work', data: workData }) as InsertDBInput, new DBContext(), new InsertDBOutput());
+    await db.insertDB(Object.assign(new InsertDBInput(), { table: 'orchestration_work', data: workData }) as InsertDBInput, new InsertDBOutput(), new DBContext());
   }
 
   async function seedTaskAgentData(planId: string, taskId: string, agentId: string): Promise<void> {
@@ -72,7 +73,7 @@ describe('OrchestrationVisualization', () => {
         { field: 'task_complexity', value: 30 },
         { field: 'task_domain', value: 'general' },
       ],
-    }) as InsertDBInput, new DBContext(), new InsertDBOutput());
+    }) as InsertDBInput, new InsertDBOutput(), new DBContext());
   }
 
   async function seedAgentDAGData(planId: string, fromAgentId: string, toAgentId: string): Promise<void> {
@@ -87,7 +88,7 @@ describe('OrchestrationVisualization', () => {
         { field: 'from_agent_id', value: fromAgentId },
         { field: 'to_agent_id', value: toAgentId },
       ],
-    }) as InsertDBInput, new DBContext(), new InsertDBOutput());
+    }) as InsertDBInput, new InsertDBOutput(), new DBContext());
   }
 
   async function seedExecutionData(workId: string, agentId: string, taskId: string, status: string): Promise<void> {
@@ -111,7 +112,7 @@ describe('OrchestrationVisualization', () => {
         { field: 'elapsed_ms', value: status === 'COMPLETED' ? 150 : undefined },
         { field: 'error_info', value: status === 'FAILED' ? 'Error occurred' : undefined },
       ],
-    }) as InsertDBInput, new DBContext(), new InsertDBOutput());
+    }) as InsertDBInput, new InsertDBOutput(), new DBContext());
   }
 
   // =========================================================================
@@ -134,7 +135,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeAgentDAG(input, ctx, output);
+      const result = await viz.visualizeAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       const structure = output.agent_dag_structure;
       expect(structure.work_id).toBe(workId);
@@ -151,7 +152,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeAgentDAG(input, ctx, output);
+      const result = await viz.visualizeAgentDAG(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -160,7 +161,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeAgentDAG(input, ctx, output);
+      const result = await viz.visualizeAgentDAG(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -173,7 +174,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeAgentDAG(input, ctx, output);
+      const result = await viz.visualizeAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_dag_structure.work_status).toBe('FAILED');
     });
@@ -191,7 +192,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeWorkFlowOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeWorkFlow(input, ctx, output);
+      const result = await viz.visualizeWorkFlow(input, output, ctx);
       expect(result).toBe(true);
       const timeline = output.workflow_timeline;
       expect(timeline.work_id).toBe(workId);
@@ -206,7 +207,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeWorkFlowOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeWorkFlow(input, ctx, output);
+      const result = await viz.visualizeWorkFlow(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -215,15 +216,15 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeWorkFlowOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.visualizeWorkFlow(input, ctx, output);
+      const result = await viz.visualizeWorkFlow(input, output, ctx);
       expect(result).toBe(false);
     });
   });
 
   // =========================================================================
-  // 3. getAgentNodeDetail
+  // 3. soAgentNodeDetail
   // =========================================================================
-  describe('getAgentNodeDetail', () => {
+  describe('soAgentNodeDetail', () => {
     it('TC-GAD-001: 获取完整节点详情', async () => {
       const workId = 'viz-w6';
       const agentId = 'a6';
@@ -235,7 +236,7 @@ describe('OrchestrationVisualization', () => {
       const output = new GetAgentNodeDetailOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.getAgentNodeDetail(input, ctx, output);
+      const result = await viz.soAgentNodeDetail(input, output, ctx);
       expect(result).toBe(true);
       const detail = output.agent_node_detail;
       expect(detail.agent_id).toBe(agentId);
@@ -247,7 +248,7 @@ describe('OrchestrationVisualization', () => {
       const output = new GetAgentNodeDetailOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.getAgentNodeDetail(input, ctx, output);
+      const result = await viz.soAgentNodeDetail(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -261,7 +262,7 @@ describe('OrchestrationVisualization', () => {
       const output = new ConfigOrchestrationVisualizationOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      const result = await viz.configOrchestrationVisualization(input, ctx, output);
+      const result = await viz.configOrchestrationVisualization(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -270,7 +271,7 @@ describe('OrchestrationVisualization', () => {
       const output = new ConfigOrchestrationVisualizationOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      await expect(viz.configOrchestrationVisualization(input, ctx, output)).rejects.toThrow();
+      await expect(viz.configOrchestrationVisualization(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -285,17 +286,17 @@ describe('OrchestrationVisualization', () => {
       const selBefore = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }] },
-      }) as SelectDBInput, new DBContext(), selBefore);
+      }) as SelectDBInput, selBefore, new DBContext());
 
       const input = Object.assign(new VisualizeAgentDAGInput(), { work_id: workId });
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
-      await viz.visualizeAgentDAG(input, ctx, output);
+      await viz.visualizeAgentDAG(input, output, ctx);
 
       const selAfter = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }] },
-      }) as SelectDBInput, new DBContext(), selAfter);
+      }) as SelectDBInput, selAfter, new DBContext());
 
       expect(selBefore.rows[0]).toEqual(selAfter.rows[0]);
     });
@@ -313,7 +314,7 @@ describe('OrchestrationVisualization', () => {
       const output = new VisualizeAgentDAGOutput();
       const ctx = new OrchestrationVisualizationContext();
 
-      await viz.visualizeAgentDAG(input, ctx, output);
+      await viz.visualizeAgentDAG(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });

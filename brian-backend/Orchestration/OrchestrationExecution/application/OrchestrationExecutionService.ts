@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, InsertDBOutput,
   SelectDBInput, SelectDBOutput,
@@ -88,8 +89,8 @@ export class OrchestrationExecutionService {
         Object.assign(new SelectOneDBInput(), {
           query_param: { table: ORCHESTRATION_CONFIG_TABLE },
         }),
-        new DBContext(),
         selOutput,
+        new DBContext(),
       );
       const current = (selOutput.row ?? {}) as Record<string, unknown>;
       if (current.max_concurrent !== undefined && current.max_concurrent !== null) {
@@ -111,10 +112,7 @@ export class OrchestrationExecutionService {
   // buildAgentDAG
   // -------------------------------------------------------------------------
 
-  async buildAgentDAG(
-    input: BuildAgentDAGInput,
-    context: OrchestrationExecutionContext,
-    output: BuildAgentDAGOutput,
+  async buildAgentDAG(input: BuildAgentDAGInput, output: BuildAgentDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.ensureConfigLoaded();
     const { plan_id, task_dag, interact_id, force_new } = input;
@@ -247,7 +245,7 @@ export class OrchestrationExecutionService {
           { field: 'to_agent_id', value: toAgentId },
         ] as DataObject[],
       });
-      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+      await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     }
 
     const agentDag: AgentDAG = {
@@ -270,7 +268,7 @@ export class OrchestrationExecutionService {
         { field: 'agent_dag_json', value: JSON.stringify(agentDag) },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insDagInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insDagInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     output.agent_dag = agentDag;
     output.task_agent_map = taskAgentMap;
@@ -307,7 +305,7 @@ export class OrchestrationExecutionService {
         { field: 'task_domain', value: taskNode.task_domain ?? null },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     return taskAgentRecordId;
   }
 
@@ -333,7 +331,7 @@ export class OrchestrationExecutionService {
         work_id: workId,
         interact_id: interactId,
       });
-      const ok = await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
+      const ok = await this.agentBuilder.buildAgent(buildInput, buildOutput, builderCtx);
       if (!ok || !buildOutput.agent_id) return { agentId: '', status: 'BUILD_FAILED' };
       return { agentId: buildOutput.agent_id, status: 'PENDING' };
     } catch (err: unknown) {
@@ -354,7 +352,7 @@ export class OrchestrationExecutionService {
       ] as DataObject[],
       conditions: [{ field: 'id', operator: Operator.EQ, value: recordId }] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   private buildAgentNode(taskNode: TaskNode, agentId: string, status: string, childMap: Map<string, number>): AgentNode {
@@ -385,10 +383,7 @@ export class OrchestrationExecutionService {
   // execSingleAgent
   // -------------------------------------------------------------------------
 
-  async execSingleAgent(
-    input: ExecSingleAgentInput,
-    context: OrchestrationExecutionContext,
-    output: ExecSingleAgentOutput,
+  async execSingleAgent(input: ExecSingleAgentInput, output: ExecSingleAgentOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { work_id, interact_id, agent_id, task_content, plan_id, task_id } = input;
 
@@ -423,7 +418,7 @@ export class OrchestrationExecutionService {
         { field: 'error_info', value: '' },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     const startedAt = Date.now();
 
@@ -443,7 +438,7 @@ export class OrchestrationExecutionService {
         interact_id,
         trace_id: input.trace_id,
       });
-      const execSuccess = await this.agentExecution.execAgent(execInput, agentCtx, execOutput);
+      const execSuccess = await this.agentExecution.execAgent(execInput, execOutput, agentCtx, metrics, report);
       if (!execSuccess) {
         const elapsed = Date.now() - startedAt;
         const errorMsg = (execOutput as unknown as Record<string, unknown>).error as string ?? 'execAgent returned false';
@@ -459,7 +454,7 @@ export class OrchestrationExecutionService {
             { field: 'id', operator: Operator.EQ, value: execRecordId },
           ] as Condition[],
         });
-        await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
         if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
           await this.streamAccess.pushEvent(context.session_id, 'agent_error', 'TRACE', {
             agent_id,
@@ -488,7 +483,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: execRecordId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
       const usageInput = Object.assign(new RecordAgentUsageInput(), {
         agent_id,
@@ -496,7 +491,7 @@ export class OrchestrationExecutionService {
         interact_id,
         usage_context: task_content.slice(0, 256),
       });
-      await this.agentLibrary.recordAgentUsage(usageInput, new AgentLibraryContext(), new RecordAgentUsageOutput());
+      await this.agentLibrary.recordAgentUsage(usageInput, new RecordAgentUsageOutput(), new AgentLibraryContext());
 
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: context.session_id ?? '',
@@ -507,7 +502,7 @@ export class OrchestrationExecutionService {
         info_creator_id: agent_id,
         info: `${task_content} → ${execOutput.answer}`,
       });
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await this.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       // Agent 执行完成事件：前端据此将对应 AgentDAG 节点 / 工作 Agent 标记为执行成功（绿色）
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
@@ -617,7 +612,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: execRecordId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
       this.logger?.error?.('execSingleAgent: execution failed', {
         agent_id,
@@ -646,10 +641,7 @@ export class OrchestrationExecutionService {
   // execSingleAgent 的 RUNNING→COMPLETED 生命周期；此处仅记录其完成态执行结果，
   // 写入与 execSingleAgent 相同的 orchestration_agent_execution 表，供
   // buildThinkingBlocksAndDag 统一采集展示，保证与其他 Agent 采集方式一致。
-  async recordSystemAgentExecution(
-    input: RecordSystemAgentExecutionInput,
-    _context: OrchestrationExecutionContext,
-    _output: RecordSystemAgentExecutionOutput,
+  async recordSystemAgentExecution(input: RecordSystemAgentExecutionInput, _output: RecordSystemAgentExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const now = IdGenerator.now();
     const insInput = Object.assign(new InsertDBInput(), {
@@ -672,7 +664,7 @@ export class OrchestrationExecutionService {
         { field: 'error_info', value: '' },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     return true;
   }
 
@@ -682,10 +674,7 @@ export class OrchestrationExecutionService {
 
   // ===== 原始 execDAG 方法（保留作为参考） =====
   /*
-  async originalExecDAG(
-    input: ExecDAGInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGOutput,
+  async originalExecDAG(input: ExecDAGInput, output: ExecDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
     const concurrency = max_concurrent ?? this.config.max_concurrent;
@@ -760,7 +749,7 @@ export class OrchestrationExecutionService {
         trace_id: input.trace_id,
       });
       const singleOutput = new ExecSingleAgentOutput();
-      const ok = await this.execSingleAgent(singleInput, context, singleOutput);
+      const ok = await this.execSingleAgent(singleInput, singleOutput, context, metrics, report);
 
       if (!ok) {
         failedCount++;
@@ -963,10 +952,7 @@ export class OrchestrationExecutionService {
   */
 
   // ===== 修改后的 execDAG 方法（重构：基于 DagScheduler 的任务级拓扑调度） =====
-  async execDAG(
-    input: ExecDAGInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGOutput,
+  async execDAG(input: ExecDAGInput, output: ExecDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
     const concurrency = max_concurrent ?? this.config.max_concurrent;
@@ -992,7 +978,7 @@ export class OrchestrationExecutionService {
         trace_id: input.trace_id,
       });
       const singleOutput = new ExecSingleAgentOutput();
-      const ok = await this.execSingleAgent(singleInput, context, singleOutput);
+      const ok = await this.execSingleAgent(singleInput, singleOutput, context, metrics, report);
       if (!ok) {
         throw new DagNodeFailureError(
           node.agent_id,
@@ -1030,8 +1016,8 @@ export class OrchestrationExecutionService {
                 { field: 'work_id', operator: Operator.EQ, value: work_id },
               ] as Condition[],
             }),
-            new DBContext(),
             Object.assign(new UpdateDBOutput(), {}),
+            new DBContext(),
           );
         } catch {
           // ignore
@@ -1054,8 +1040,8 @@ export class OrchestrationExecutionService {
                   { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
                 ] as Condition[],
               }),
-              new DBContext(),
               Object.assign(new UpdateDBOutput(), {}),
+              new DBContext(),
             );
           } catch {
             // ignore
@@ -1074,10 +1060,7 @@ export class OrchestrationExecutionService {
   // execDAGAsync
   // -------------------------------------------------------------------------
 
-  async execDAGAsync(
-    input: ExecDAGAsyncInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGAsyncOutput,
+  async execDAGAsync(input: ExecDAGAsyncInput, output: ExecDAGAsyncOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const jobId = IdGenerator.generate();
     output.job_id = jobId;
@@ -1116,7 +1099,7 @@ export class OrchestrationExecutionService {
                     max_concurrent: payload.max_concurrent as number | undefined,
                   });
                   const dagOutput = new ExecDAGOutput();
-                  await this.execDAG(dagInput, context, dagOutput);
+                  await this.execDAG(dagInput, dagOutput, context, metrics, report);
 
                   if (payload.callback_queue && this.mqAccess) {
                     const cbInput = Object.assign({}, {
@@ -1150,7 +1133,7 @@ export class OrchestrationExecutionService {
               max_concurrent: input.max_concurrent,
             });
             const dagOutput = new ExecDAGOutput();
-            await this.execDAG(dagInput, context, dagOutput);
+            await this.execDAG(dagInput, dagOutput, context, metrics, report);
             this.logger?.debug?.('execDAGAsync: DAG execution completed', {
               job_id: jobId, work_id: input.work_id, failed_count: dagOutput.failed_count,
             });
@@ -1172,7 +1155,7 @@ export class OrchestrationExecutionService {
             max_concurrent: input.max_concurrent,
           });
           const dagOutput = new ExecDAGOutput();
-          await this.execDAG(dagInput, context, dagOutput);
+          await this.execDAG(dagInput, dagOutput, context, metrics, report);
           this.logger?.debug?.('execDAGAsync: DAG execution completed', {
             job_id: jobId, work_id: input.work_id, failed_count: dagOutput.failed_count,
           });
@@ -1189,13 +1172,10 @@ export class OrchestrationExecutionService {
   }
 
   // -------------------------------------------------------------------------
-  // getDAGProgress
+  // soDAGProgress
   // -------------------------------------------------------------------------
 
-  async getDAGProgress(
-    input: GetDAGProgressInput,
-    _context: OrchestrationExecutionContext,
-    output: GetDAGProgressOutput,
+  async soDAGProgress(input: GetDAGProgressInput, output: GetDAGProgressOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selExecInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -1206,7 +1186,7 @@ export class OrchestrationExecutionService {
       },
     });
     const selExecOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selExecInput, new DBContext(), selExecOutput);
+    await this.relationDb.selectDB(selExecInput, selExecOutput, new DBContext());
 
     const records = selExecOutput.rows;
     const totalTasks = records.length;
@@ -1270,10 +1250,7 @@ export class OrchestrationExecutionService {
   // cancelExecution
   // -------------------------------------------------------------------------
 
-  async cancelExecution(
-    input: CancelExecutionInput,
-    _context: OrchestrationExecutionContext,
-    output: CancelExecutionOutput,
+  async cancelExecution(input: CancelExecutionInput, output: CancelExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (this.mqCore) {
       try {
@@ -1296,7 +1273,7 @@ export class OrchestrationExecutionService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     const records = selOutput.rows;
     let cancelledCount = 0;
@@ -1314,7 +1291,7 @@ export class OrchestrationExecutionService {
             { field: 'id', operator: Operator.EQ, value: rec.id },
           ] as Condition[],
         });
-        await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
         cancelledCount++;
       }
     }
@@ -1327,17 +1304,14 @@ export class OrchestrationExecutionService {
   // soExecQueueStatus
   // -------------------------------------------------------------------------
 
-  async soExecQueueStatus(
-    _input: GetOrchestrationExecQueueStatusInput,
-    _context: OrchestrationExecutionContext,
-    output: GetOrchestrationExecQueueStatusOutput,
+  async soExecQueueStatus(_input: GetOrchestrationExecQueueStatusInput, output: GetOrchestrationExecQueueStatusOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     try {
       const execSelInput = Object.assign(new SelectDBInput(), {
         query_param: { table: ORCHESTRATION_AGENT_EXECUTION_TABLE },
       });
       const execSelOutput = Object.assign(new SelectDBOutput(), {});
-      await this.relationDb.selectDB(execSelInput, new DBContext(), execSelOutput);
+      await this.relationDb.selectDB(execSelInput, execSelOutput, new DBContext());
 
       let pending = 0;
       let processing = 0;
@@ -1369,7 +1343,7 @@ export class OrchestrationExecutionService {
         },
       });
       const stratSelOutput = Object.assign(new SelectDBOutput(), {});
-      await this.relationDb.selectDB(stratSelInput, new DBContext(), stratSelOutput);
+      await this.relationDb.selectDB(stratSelInput, stratSelOutput, new DBContext());
       output.workers = stratSelOutput.rows.map((row) => ({
         work_id: (row.work_id as string) ?? '',
         execution_id: (row.execution_id as string) ?? '',
@@ -1406,10 +1380,7 @@ export class OrchestrationExecutionService {
   // configOrchestrationExecution
   // -------------------------------------------------------------------------
 
-  async configOrchestrationExecution(
-    input: ConfigOrchestrationExecutionInput,
-    _context: OrchestrationExecutionContext,
-    output: ConfigOrchestrationExecutionOutput,
+  async configOrchestrationExecution(input: ConfigOrchestrationExecutionInput, output: ConfigOrchestrationExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (input.max_concurrent !== undefined && input.max_concurrent <= 0) {
       throw new ValidationError('max_concurrent must be positive');
@@ -1425,7 +1396,7 @@ export class OrchestrationExecutionService {
       query_param: { table: ORCHESTRATION_CONFIG_TABLE },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
 
@@ -1461,7 +1432,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     output.config = { ...this.config };

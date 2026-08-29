@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, SelectDBInput,
   SelectOneDBInput, UpdateDBInput, Operator, DataObject,
@@ -259,7 +260,7 @@ export class JSONNodeService {
         query_param: { table: 'orchestration_config' },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       const current = (selOutput.row ?? {}) as Record<string, unknown>;
       if (current.max_execution_depth !== undefined && current.max_execution_depth !== null) {
         this.config.max_execution_depth = Number(current.max_execution_depth);
@@ -276,10 +277,7 @@ export class JSONNodeService {
   }
 
   // ===== 修改后的方法 =====
-  async execJSONNode(
-    input: ExecJSONNodeInput,
-    context: JSONNodeContext,
-    output: ExecJSONNodeOutput,
+  async execJSONNode(input: ExecJSONNodeInput, output: ExecJSONNodeOutput, context: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.ensureConfigLoaded();
     const def = input.jsonnode_definition;
@@ -441,10 +439,7 @@ export class JSONNodeService {
     return true;
   }
 
-  async getJSONNodeTrace(
-    input: GetJSONNodeTraceInput,
-    _context: JSONNodeContext,
-    output: GetJSONNodeTraceOutput,
+  async soJSONNodeTrace(input: GetJSONNodeTraceInput, output: GetJSONNodeTraceOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -455,15 +450,12 @@ export class JSONNodeService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
     output.trace = (selOutput.rows as unknown as NodeExecutionTrace[]) ?? [];
     return true;
   }
 
-  registerNodeType(
-    input: RegisterNodeTypeInput,
-    _context: JSONNodeContext,
-    output: RegisterNodeTypeOutput,
+  registerNodeType(input: RegisterNodeTypeInput, output: RegisterNodeTypeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): boolean {
     output.registered = false;
     if (!input.node_type) {
@@ -480,10 +472,7 @@ export class JSONNodeService {
     return true;
   }
 
-  validate(
-    input: ValidateJSONNodeInput,
-    _context: JSONNodeContext,
-    output: ValidateJSONNodeOutput,
+  validate(input: ValidateJSONNodeInput, output: ValidateJSONNodeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): boolean {
     const errors: string[] = [];
     const def = input.jsonnode_definition;
@@ -560,10 +549,7 @@ export class JSONNodeService {
     return true;
   }
 
-  async configJSONNode(
-    input: ConfigJSONNodeInput,
-    _context: JSONNodeContext,
-    output: ConfigJSONNodeOutput,
+  async configJSONNode(input: ConfigJSONNodeInput, output: ConfigJSONNodeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (input.max_execution_depth !== undefined && input.max_execution_depth <= 0) {
       throw new ValidationError('max_execution_depth must be positive');
@@ -576,7 +562,7 @@ export class JSONNodeService {
       query_param: { table: 'orchestration_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
 
@@ -612,7 +598,7 @@ export class JSONNodeService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     output.config = { ...this.config };
@@ -672,7 +658,7 @@ export class JSONNodeService {
     });
     const saveOut = new SaveInfoOutput();
     try {
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), saveOut);
+      await this.infoCore.saveInfo(saveInput, saveOut, new InfoCoreContext());
       sharedData.user_input_info_id = saveOut.info_id;
     } catch (err: unknown) {
       this.logger?.error?.('handleSaveUserInput: saveInfo failed', {
@@ -694,7 +680,7 @@ export class JSONNodeService {
           { field: 'work_id', operator: Operator.EQ, value: workId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
   }
 
@@ -735,7 +721,7 @@ export class JSONNodeService {
         persist_snapshot: true,
       });
       const ctxInfoOutput = new ContextInfoOutput();
-      await this.infoCore.context(ctxInfoInput, new InfoCoreContext(), ctxInfoOutput);
+      await this.infoCore.context(ctxInfoInput, ctxInfoOutput, new InfoCoreContext());
       sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
       contextCategories = ctxInfoOutput.categories;
       contextCategoryIds = ctxInfoOutput.category_ids;
@@ -749,7 +735,7 @@ export class JSONNodeService {
       try {
         const profileInput = Object.assign(new GetUserProfileInput(), { session_id: sessionId });
         const profileOutput = new GetUserProfileOutput();
-        await this.writerAgent.soUserProfile(profileInput, new WriterAgentContext(), profileOutput);
+        await this.writerAgent.soUserProfile(profileInput, profileOutput, new WriterAgentContext());
         userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
       } catch { /* degrade gracefully */ }
     }
@@ -765,7 +751,7 @@ export class JSONNodeService {
       },
     });
     const recentSelOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(recentSelInput, new DBContext(), recentSelOutput);
+    await this.relationDb.selectDB(recentSelInput, recentSelOutput, new DBContext());
     const recentWorks = recentSelOutput.rows.map((row) => ({
       user_query: row.user_query,
       response_summary: ((row.final_response as string) ?? '').slice(0, 200),
@@ -875,7 +861,7 @@ export class JSONNodeService {
       work_id: workId,
       interact_id: interactId,
     });
-    await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
+    await this.agentBuilder.buildAgent(buildInput, buildOutput, builderCtx);
     const agentId = buildOutput.agent_id;
 
     sharedData.current_agent_id = agentId;
@@ -909,8 +895,8 @@ export class JSONNodeService {
             { field: 'work_id', operator: Operator.EQ, value: workId },
           ] as Condition[],
         }),
-        new DBContext(),
         Object.assign(new UpdateDBOutput(), {}),
+        new DBContext(),
       );
     } catch (err: unknown) {
       this.logger?.error?.('handleExecAgent: failed to update work status', {
@@ -930,8 +916,8 @@ export class JSONNodeService {
     const execOutput = new ExecSingleAgentOutput();
     const execSuccess = await this.orchestrationExecution.execSingleAgent(
       execInput,
-      { session_id: context.session_id, work_id: workId, interact_id: interactId } as OrchestrationExecutionContext,
       execOutput,
+      { session_id: context.session_id, work_id: workId, interact_id: interactId } as OrchestrationExecutionContext,
     );
 
     const answer = execOutput.answer;
@@ -988,8 +974,8 @@ export class JSONNodeService {
     const planOutput = new PlanHierarchicalOutput();
     await this.plannerAgent.planHierarchical(
       planInput,
-      Object.assign(new PlannerAgentContext(), { trace_id: (sharedData.trace_id as string) ?? '' }),
       planOutput,
+      Object.assign(new PlannerAgentContext(), { trace_id: (sharedData.trace_id as string) ?? '' }),
     );
 
     // ===== 需求澄清：Planner 识别出需用户补充参数才能执行的任务（不进入 DAG）=====
@@ -1017,8 +1003,8 @@ export class JSONNodeService {
             { field: 'work_id', operator: Operator.EQ, value: workId },
           ] as Condition[],
         }),
-        new DBContext(),
         Object.assign(new UpdateDBOutput(), {}),
+        new DBContext(),
       );
 
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
@@ -1062,7 +1048,7 @@ export class JSONNodeService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   private async handleBuildAgentDAG(
@@ -1089,8 +1075,8 @@ export class JSONNodeService {
     const sessionId = (sharedData.session_id as string) ?? context.session_id ?? '';
     await this.orchestrationExecution.buildAgentDAG(
       buildInput,
-      { session_id: sessionId, work_id: workId, interact_id: interactId, trace_id: (sharedData.trace_id as string) ?? '' } as OrchestrationExecutionContext,
       buildOutput,
+      { session_id: sessionId, work_id: workId, interact_id: interactId, trace_id: (sharedData.trace_id as string) ?? '' } as OrchestrationExecutionContext,
     );
 
     sharedData[saveKey] = buildOutput.agent_dag;
@@ -1138,8 +1124,8 @@ export class JSONNodeService {
             { field: 'work_id', operator: Operator.EQ, value: workId },
           ] as Condition[],
         }),
-        new DBContext(),
         Object.assign(new UpdateDBOutput(), {}),
+        new DBContext(),
       );
     } catch (err: unknown) {
       this.logger?.error?.('handleExecDAG: failed to update work status', {
@@ -1158,8 +1144,8 @@ export class JSONNodeService {
     const execOutput = new ExecDAGOutput();
     await this.orchestrationExecution.execDAG(
       execInput,
-      { session_id: context.session_id, work_id: workId, interact_id: context.interact_id } as OrchestrationExecutionContext,
       execOutput,
+      { session_id: context.session_id, work_id: workId, interact_id: context.interact_id } as OrchestrationExecutionContext,
     );
 
     // 短路保护：DAG 全部 Work Agent 无有效输出时不进入 WRITE_RESULT / EVAL_RESULT 阶段
@@ -1188,7 +1174,7 @@ export class JSONNodeService {
     });
     const writeOutput = new WriteOutput();
     const writeStartedAt = Date.now();
-    await this.writerAgent.write(writeInput, new WriterAgentContext(), writeOutput);
+    await this.writerAgent.execWrite(writeInput, writeOutput, new WriterAgentContext());
     const writeElapsed = Date.now() - writeStartedAt;
 
     sharedData[saveKey] = writeOutput.response;
@@ -1218,7 +1204,7 @@ export class JSONNodeService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   // 与其他 Agent 采集方式保持一致：系统 Agent 执行结果统一写入 orchestration_agent_execution 表，
@@ -1244,8 +1230,8 @@ export class JSONNodeService {
           elapsed_ms: elapsedMs,
           trace_id: traceId ?? '',
         }),
-        new OrchestrationExecutionContext(),
         new RecordSystemAgentExecutionOutput(),
+        new OrchestrationExecutionContext(),
       );
     } catch {
       /* best-effort */
@@ -1275,7 +1261,7 @@ export class JSONNodeService {
     });
     const evalWriterOutput = new EvalWriterAgentOutput();
     const evalWriterStartedAt = Date.now();
-    await this.evolutorAgent.evalWriterAgent(evalWriterInput, new EvolutorAgentContext(), evalWriterOutput);
+    await this.evolutorAgent.evalWriterAgent(evalWriterInput, evalWriterOutput, new EvolutorAgentContext());
     const evalWriterElapsed = Date.now() - evalWriterStartedAt;
 
     await this.recordSystemAgentExecution(
@@ -1302,11 +1288,11 @@ export class JSONNodeService {
         trace_id: (ar.trace_id as string) ?? '',
         handle_result_type: (ar.handle_result_type as string) ?? '',
       });
-      await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvolutorAgentContext(), new EvalWorkAgentOutput());
+      await this.evolutorAgent.evalWorkAgent(evalWorkInput, new EvalWorkAgentOutput(), new EvolutorAgentContext());
     }
 
     const startEvalInput = Object.assign(new StartEvalScheduleInput(), {});
-    await this.evolutorAgent.startEvalSchedule(startEvalInput, new EvolutorAgentContext(), new StartEvalScheduleOutput());
+    await this.evolutorAgent.startEvalSchedule(startEvalInput, new StartEvalScheduleOutput(), new EvolutorAgentContext());
   }
 
   private async handleEvalResult(
@@ -1434,7 +1420,7 @@ export class JSONNodeService {
       trace_id: (sharedData.trace_id as string) ?? '',
     });
     try {
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await this.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
     } catch (err: unknown) {
       this.logger?.error?.('handleSaveResponse: saveInfo failed', {
         work_id: workId,
@@ -1455,7 +1441,7 @@ export class JSONNodeService {
         { field: 'work_id', operator: Operator.EQ, value: workId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   private async handleError(
@@ -1495,7 +1481,7 @@ export class JSONNodeService {
       trace_id: (sharedData.trace_id as string) ?? '',
     });
     try {
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await this.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
     } catch (err: unknown) {
       this.logger?.error?.('handleError: saveInfo failed', {
         work_id: workId,
@@ -1518,7 +1504,7 @@ export class JSONNodeService {
           { field: 'work_id', operator: Operator.EQ, value: workId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
   }
 
@@ -1534,8 +1520,8 @@ export class JSONNodeService {
       const out = new GenerateSummaryOutput();
       await this.summaryAgent.generateSummary(
         Object.assign(new GenerateSummaryInput(), { info_type: infoType, info }),
-        Object.assign(new SummaryAgentContext(), { session_id: sessionId, work_id: workId, interact_id: interactId }),
         out,
+        Object.assign(new SummaryAgentContext(), { session_id: sessionId, work_id: workId, interact_id: interactId }),
       );
       return out.summary || undefined;
     } catch {
@@ -1591,7 +1577,7 @@ export class JSONNodeService {
       table: 'orchestration_jsonnode_trace',
       data,
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
   }
 
   private evaluateCondition(

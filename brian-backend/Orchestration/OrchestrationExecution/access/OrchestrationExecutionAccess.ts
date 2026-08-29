@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, Logger, StreamAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { AgentBuilderAccess, AgentExecutionAccess, AgentLibraryAccess } from '@brian-agent/agent';
@@ -44,66 +45,57 @@ export class OrchestrationExecutionAccess {
     await this.initPromise;
   }
 
-  async buildAgentDAG(
-    i: BuildAgentDAGInput, c: OrchestrationExecutionContext, o: BuildAgentDAGOutput,
+  async buildAgentDAG(i: BuildAgentDAGInput, o: BuildAgentDAGOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.buildAgentDAG(i, c, o);
+    return this.service.buildAgentDAG(i, o, c, metrics, report);
   }
 
-  async execSingleAgent(
-    i: ExecSingleAgentInput, c: OrchestrationExecutionContext, o: ExecSingleAgentOutput,
+  async execSingleAgent(i: ExecSingleAgentInput, o: ExecSingleAgentOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execSingleAgent(i, c, o);
+    return this.service.execSingleAgent(i, o, c, metrics, report);
   }
 
-  async execDAG(
-    i: ExecDAGInput, c: OrchestrationExecutionContext, o: ExecDAGOutput,
+  async execDAG(i: ExecDAGInput, o: ExecDAGOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execDAG(i, c, o);
+    return this.service.execDAG(i, o, c, metrics, report);
   }
 
-  async recordSystemAgentExecution(
-    i: RecordSystemAgentExecutionInput, c: OrchestrationExecutionContext, o: RecordSystemAgentExecutionOutput,
+  async recordSystemAgentExecution(i: RecordSystemAgentExecutionInput, o: RecordSystemAgentExecutionOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.recordSystemAgentExecution(i, c, o);
+    return this.service.recordSystemAgentExecution(i, o, c, metrics, report);
   }
 
-  async execDAGAsync(
-    i: ExecDAGAsyncInput, c: OrchestrationExecutionContext, o: ExecDAGAsyncOutput,
+  async execDAGAsync(i: ExecDAGAsyncInput, o: ExecDAGAsyncOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execDAGAsync(i, c, o);
+    return this.service.execDAGAsync(i, o, c, metrics, report);
   }
 
-  async getDAGProgress(
-    i: GetDAGProgressInput, c: OrchestrationExecutionContext, o: GetDAGProgressOutput,
+  async soDAGProgress(i: GetDAGProgressInput, o: GetDAGProgressOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getDAGProgress(i, c, o);
+    return this.service.soDAGProgress(i, o, c, metrics, report);
   }
 
-  async cancelExecution(
-    i: CancelExecutionInput, c: OrchestrationExecutionContext, o: CancelExecutionOutput,
+  async cancelExecution(i: CancelExecutionInput, o: CancelExecutionOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.cancelExecution(i, c, o);
+    return this.service.cancelExecution(i, o, c, metrics, report);
   }
 
-  async soExecQueueStatus(
-    i: GetOrchestrationExecQueueStatusInput, c: OrchestrationExecutionContext, o: GetOrchestrationExecQueueStatusOutput,
+  async soExecQueueStatus(i: GetOrchestrationExecQueueStatusInput, o: GetOrchestrationExecQueueStatusOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.soExecQueueStatus(i, c, o);
+    return this.service.soExecQueueStatus(i, o, c, metrics, report);
   }
 
-  async configOrchestrationExecution(
-    i: ConfigOrchestrationExecutionInput, c: OrchestrationExecutionContext, o: ConfigOrchestrationExecutionOutput,
+  async configOrchestrationExecution(i: ConfigOrchestrationExecutionInput, o: ConfigOrchestrationExecutionOutput, c: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configOrchestrationExecution(i, c, o);
+    return this.service.configOrchestrationExecution(i, o, c, metrics, report);
   }
 }
