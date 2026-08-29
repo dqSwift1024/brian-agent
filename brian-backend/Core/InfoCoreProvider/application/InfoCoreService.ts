@@ -874,7 +874,9 @@ export class InfoCoreService {
     const result: Array<{ tag: string; weight: number }> = [];
     for (const edge of out.list as GraphEdgeRecord[]) {
       const other = edge.from_node_id === nodeId ? edge.to_node_id : edge.from_node_id;
-      const tag = await this.getGraphNodeTag(other);
+      const tagNodeOut = new GetGraphNodeOutput();
+      await this.graphDb.soGraphNode({ id: other } as GetGraphNodeInput, tagNodeOut, new GraphContext());
+      const tag = String(tagNodeOut.node?.content['tag'] ?? '');
       if (!tag) continue;
       const weight = Number(edge.weight ?? 0)
         || Number((edge.properties as Record<string, unknown> | null)?.['similarity'] ?? 0)
@@ -885,12 +887,6 @@ export class InfoCoreService {
     return result;
   }
 
-  /** 读取 GraphDB 节点内容中的 tag 文本。 */
-  private async getGraphNodeTag(nodeId: string): Promise<string> {
-    const out = new GetGraphNodeOutput();
-    await this.graphDb.soGraphNode({ id: nodeId } as GetGraphNodeInput, out, new GraphContext());
-    return String(out.node?.content['tag'] ?? '');
-  }
 
   /** 按关联标签反向查询 info_id 及其累计相关度权重（多标签命中同一 info 取最大权重）。 */
   private async findInfoWeightsByTags(

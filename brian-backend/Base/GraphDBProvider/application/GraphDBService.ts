@@ -1152,7 +1152,8 @@ export class GraphDBService {
 
     const now = IdGenerator.now();
     const windowStartMs = now - retentionDays * ONE_DAY_MS;
-    const windowStartDate = this.formatDate(new Date(windowStartMs));
+    const _d = new Date(windowStartMs);
+    const windowStartDate = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
 
     // 2. 扫描所有激活状态的边
     const activeEdges = await this.graphDb.queryAll(
@@ -1349,10 +1350,4 @@ export class GraphDBService {
    * @param date 日期对象
    * @returns 日期字符串，如 "2026-07-25"
    */
-  private formatDate(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
 }
