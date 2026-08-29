@@ -1,9 +1,9 @@
 ﻿import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { Metrics, Report } from '@brian-agent/base';
-import { IdGenerator, Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, SoPromptInput, SoPromptOutput, GetSoulInput, GetSoulOutput, SoulContext, HandleResultType, PROMPT_IDS, getBuiltinTemplate, renderTemplate, type DataObject } from '@brian-agent/base';
+import { IdGenerator, Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, PromptContext, SoPromptInput, SoPromptOutput, GetSoulInput, GetSoulOutput, SoulContext, HandleResultType, PROMPT_IDS, type DataObject } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
-import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, MatchLLMInput, MatchLLMOutput, LLMCoreContext } from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import {

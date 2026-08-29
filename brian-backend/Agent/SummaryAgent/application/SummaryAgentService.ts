@@ -2,10 +2,7 @@ import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import { Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, SoSoulOutput, AddSoulOutput, GetSoulInput, GetSoulOutput, SoulContext, PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
-import {
-  InfoCoreContext, SoInfoSummaryConfigInput, SoInfoSummaryConfigOutput,
-  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
-} from '@brian-agent/core';
+import { InfoCoreContext, SoInfoSummaryConfigInput, SoInfoSummaryConfigOutput } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import {
@@ -14,7 +11,7 @@ import {
 import {
   GetAgentInput, GetAgentOutput, UpdateAgentInput, UpdateAgentOutput, AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { renderPromptWithFallback, resolveAgentLlm } from '../../shared/AgentKit';
+import { resolveAgentLlm } from '../../shared/AgentKit';
 import {
   SummaryAgentContext,
   GenerateSummaryInput, GenerateSummaryOutput,
