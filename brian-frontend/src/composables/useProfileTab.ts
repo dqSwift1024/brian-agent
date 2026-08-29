@@ -4,7 +4,7 @@
  * 从 InfoView.vue 分离：画像加载、历史版本、方向编辑与重置。
  */
 
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { userProfileApi } from '../api'
 import type { ProfileHistoryItem, ProfileVersionData, UserProfileData } from '../api/types'
 

@@ -5,8 +5,8 @@
  * 勾选删除 / 展开 / 向量相似查询。
  */
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { memoryApi, chatApi } from '../api'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { memoryApi } from '../api'
 import type { MemoryItem } from '../api/types'
 
 /**

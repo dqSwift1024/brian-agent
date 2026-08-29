@@ -5,14 +5,14 @@
  * 文件阅读（分页 sentinel）/ 划词咨询（annotations）/ 右键菜单。
  */
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { LibraryFileEntry, LibraryPath, LibraryTreeNode } from '../api/types'
 import { libraryApi } from '../api'
 
 /**
  * 学习资料库页签状态与操作。
  */
-export function useLibraryTab(onMemoryRefresh: () => void) {
+export function useLibraryTab() {
 const loadingLibs = ref(false)
 const showAddLib = ref(false)
 const newLib = ref({ name: '', description: '', path: '' })

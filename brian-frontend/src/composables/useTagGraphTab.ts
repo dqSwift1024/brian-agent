@@ -4,8 +4,8 @@
  * 从 InfoView.vue 分离：图谱数据加载、力导向布局、画布交互与缩放、配置持久化。
  */
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
-import { chatApi, configApi, memoryApi } from '../api'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { configApi, memoryApi } from '../api'
 import type { GraphEdge, GraphNode, MemoryItem } from '../api/types'
 import type { InfoTabKey } from '../api/types'
 
