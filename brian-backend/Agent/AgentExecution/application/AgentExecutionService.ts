@@ -855,7 +855,7 @@ export class AgentExecutionService {
   ): Promise<boolean> {
     const statsOut = new GetQueueStatsOutput();
     try {
-      await this.mqAccess.getQueueStats(
+      await this.mqAccess.soQueueStats(
         Object.assign(new GetQueueStatsInput(), { queue: EXEC_QUEUE }),
         new MQContext(),
         statsOut,
@@ -1363,7 +1363,7 @@ export class AgentExecutionService {
     if (!soulId) return '';
     try {
       const out = new GetSoulOutput();
-      await this.soulAccess.getSoul(
+      await this.soulAccess.soSoulById(
         Object.assign(new GetSoulInput(), { id: soulId }),
         new SoulContext(),
         out,

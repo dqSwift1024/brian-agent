@@ -749,7 +749,7 @@ export class VisualizationService {
         }
         case 'llm': {
           const out = new GetLLMOutput();
-          await this.llmAccess.getLLM(
+          await this.llmAccess.soLLMById(
             Object.assign(new GetLLMInput(), { id: resource_id }),
             new LLMContext(),
             out,
@@ -759,7 +759,7 @@ export class VisualizationService {
         }
         case 'soul': {
           const out = new GetSoulOutput();
-          await this.soulAccess.getSoul(
+          await this.soulAccess.soSoulById(
             Object.assign(new GetSoulInput(), { id: resource_id }),
             new SoulContext(),
             out,
@@ -769,7 +769,7 @@ export class VisualizationService {
         }
         case 'skill': {
           const out = new GetSkillOutput();
-          await this.skillAccess.getSkill(
+          await this.skillAccess.soSkillById(
             Object.assign(new GetSkillInput(), { id: resource_id }),
             new SkillContext(),
             out,
@@ -779,7 +779,7 @@ export class VisualizationService {
         }
         case 'mcp': {
           const out = new GetMcpOutput();
-          await this.mcpAccess.getMcp(
+          await this.mcpAccess.soMcpById(
             Object.assign(new GetMcpInput(), { id: resource_id }),
             new McpContext(),
             out,
@@ -789,7 +789,7 @@ export class VisualizationService {
         }
         case 'prompt': {
           const out = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             Object.assign(new GetPromptInput(), { id: resource_id }),
             new PromptContext(),
             out,
@@ -1084,7 +1084,7 @@ export class VisualizationService {
     if (llmId) {
       try {
         const out = new GetLLMOutput();
-        await this.llmAccess.getLLM(
+        await this.llmAccess.soLLMById(
           Object.assign(new GetLLMInput(), { id: llmId }),
           new LLMContext(),
           out,
@@ -1100,7 +1100,7 @@ export class VisualizationService {
     if (soulId) {
       try {
         const out = new GetSoulOutput();
-        await this.soulAccess.getSoul(
+        await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: soulId }),
           new SoulContext(),
           out,
@@ -1207,20 +1207,20 @@ export class VisualizationService {
 
   private async resolveLLM(id: string): Promise<Record<string, unknown>> {
     const out = new GetLLMOutput();
-    await this.llmAccess.getLLM(Object.assign(new GetLLMInput(), { id }), new LLMContext(), out);
+    await this.llmAccess.soLLMById(Object.assign(new GetLLMInput(), { id }), new LLMContext(), out);
     return (out.llm ?? { id }) as unknown as Record<string, unknown>;
   }
 
   private async resolveSoul(id: string): Promise<Record<string, unknown>> {
     const out = new GetSoulOutput();
-    await this.soulAccess.getSoul(Object.assign(new GetSoulInput(), { id }), new SoulContext(), out);
+    await this.soulAccess.soSoulById(Object.assign(new GetSoulInput(), { id }), new SoulContext(), out);
     return (out.soul ?? { id }) as unknown as Record<string, unknown>;
   }
 
   private async resolveSkill(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetSkillOutput();
-      await this.skillAccess.getSkill(Object.assign(new GetSkillInput(), { id }), new SkillContext(), out);
+      await this.skillAccess.soSkillById(Object.assign(new GetSkillInput(), { id }), new SkillContext(), out);
       return (out.skill ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1230,7 +1230,7 @@ export class VisualizationService {
   private async resolveMcp(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetMcpOutput();
-      await this.mcpAccess.getMcp(Object.assign(new GetMcpInput(), { id }), new McpContext(), out);
+      await this.mcpAccess.soMcpById(Object.assign(new GetMcpInput(), { id }), new McpContext(), out);
       return (out.mcp ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1240,7 +1240,7 @@ export class VisualizationService {
   private async resolvePrompt(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetPromptOutput();
-      await this.promptsAccess.getPrompt(Object.assign(new GetPromptInput(), { id }), new PromptContext(), out);
+      await this.promptsAccess.soPromptById(Object.assign(new GetPromptInput(), { id }), new PromptContext(), out);
       return (out.prompt ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1398,7 +1398,7 @@ export class VisualizationService {
     try {
       if (toolType === 'skill') {
         const out = new GetSkillOutput();
-        await this.skillAccess.getSkill(
+        await this.skillAccess.soSkillById(
           Object.assign(new GetSkillInput(), { id }),
           new SkillContext(),
           out,
@@ -1408,7 +1408,7 @@ export class VisualizationService {
       }
       if (toolType === 'mcp') {
         const out = new GetMcpOutput();
-        await this.mcpAccess.getMcp(
+        await this.mcpAccess.soMcpById(
           Object.assign(new GetMcpInput(), { id }),
           new McpContext(),
           out,

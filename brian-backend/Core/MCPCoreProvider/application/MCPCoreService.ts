@@ -161,7 +161,7 @@ export class MCPCoreService {
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
           const getPromptOutput = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
             new PromptContext(),
             getPromptOutput,

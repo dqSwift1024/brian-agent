@@ -13,6 +13,8 @@
  * 通过 HttpAccess 统一发起 HTTP 请求（代理/超时由 ToolProvider 集中处理）。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { Logger } from '../../shared/aop/AopProxy';
 import type { PromptsAccess } from '../../PromptsProvider/access/PromptsAccess';
@@ -27,6 +29,7 @@ import {
   NotFoundError,
   DatabaseError,
 } from '../../shared/errors';
+import { ExecRequestInput, ExecRequestOutput, HttpContext } from '../../ToolProvider/domain/HttpTypes';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic, Direction } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
@@ -237,10 +240,7 @@ export class LLMService {
    *
    * PRD 3.1.1 条：向系统中新增一个 LLM 提供商。
    */
-  async addLLMProvider(
-    input: AddLLMProviderInput,
-    _context: LLMContext,
-    output: AddLLMProviderOutput,
+  async addLLMProvider(input: AddLLMProviderInput, output: AddLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -293,10 +293,7 @@ export class LLMService {
    * PRD 3.1.2 条：支持按 ID 或按条件更新。
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    */
-  async updateLLMProvider(
-    input: UpdateLLMProviderInput,
-    _context: LLMContext,
-    output: UpdateLLMProviderOutput,
+  async updateLLMProvider(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -360,10 +357,7 @@ export class LLMService {
    * PRD 3.1.3 条：支持按 ID 批量删除或按条件删除。
    * 级联清理该提供商下关联的 LLM 模型记录（llm_model 表）。
    */
-  async delLLMProvider(
-    input: DelLLMProviderInput,
-    _context: LLMContext,
-    output: DelLLMProviderOutput,
+  async delLLMProvider(input: DelLLMProviderInput, output: DelLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -423,10 +417,7 @@ export class LLMService {
    * PRD 3.1.4 条：支持关键词、条件过滤、排序、分页。
    * 关键词匹配 llm_provider_title。
    */
-  async soLLMProvider(
-    input: SoLLMProviderInput,
-    _context: LLMContext,
-    output: SoLLMProviderOutput,
+  async soLLMProvider(input: SoLLMProviderInput, output: SoLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -521,10 +512,7 @@ export class LLMService {
   // }
 
   // ===== 修改后的方法 =====
-  async testLLMProvider(
-    input: TestLLMProviderInput,
-    _context: LLMContext,
-    output: TestLLMProviderOutput,
+  async testLLMProvider(input: TestLLMProviderInput, output: TestLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -544,13 +532,16 @@ export class LLMService {
     const req = strategy.buildTestRequest(provider);
 
     try {
-      const res = await this.http.request({
+      const httpInput = Object.assign(new ExecRequestInput(), {
         url: req.url,
         method: req.method,
         headers: req.headers,
         body: req.body,
-        timeoutMs: TEST_TIMEOUT_MS,
+        timeout_ms: TEST_TIMEOUT_MS,
       });
+      const httpOutput = new ExecRequestOutput();
+      await this.http.execRequest(httpInput, httpOutput, new HttpContext());
+      const res = httpOutput.response;
       output.response_time_ms = Date.now() - start;
       output.status_code = res.status;
       // 只要收到 HTTP 响应即视为连通（即使状态码非 2xx）
@@ -720,10 +711,7 @@ export class LLMService {
    * 支持 OpenAI 兼容格式 (json.data) 与 Google / 统一格式 (json.models) 的动态解析。
    * 仅在请求成功时更新缓存时间戳。
    */
-  async listLLM(
-    input: ListLLMInput,
-    _context: LLMContext,
-    output: ListLLMOutput,
+  async listLLM(input: ListLLMInput, output: ListLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.llm_provider_id) {
@@ -765,13 +753,16 @@ export class LLMService {
     }> = [];
 
     try {
-      const res = await this.http.request({
+      const httpInput = Object.assign(new ExecRequestInput(), {
         url: req.url,
         method: req.method,
         headers: req.headers,
         body: req.body,
-        timeoutMs: LIST_TIMEOUT_MS,
+        timeout_ms: LIST_TIMEOUT_MS,
       });
+      const httpOutput = new ExecRequestOutput();
+      await this.http.execRequest(httpInput, httpOutput, new HttpContext());
+      const res = httpOutput.response;
       if (!res.ok) {
         let errDetail = `HTTP ${res.status}`;
         try {
@@ -907,10 +898,7 @@ export class LLMService {
    *
    * PRD 3.2.1 条：将一个 LLM 模型添加到启用列表（llm_enable 表）。
    */
-  async addLLM(
-    input: AddLLMInput,
-    _context: LLMContext,
-    output: AddLLMOutput,
+  async addLLM(input: AddLLMInput, output: AddLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -946,10 +934,7 @@ export class LLMService {
    *
    * PRD 3.2.2 条：支持按 ID 批量删除或按条件删除。
    */
-  async delLLM(
-    input: DelLLMInput,
-    _context: LLMContext,
-    output: DelLLMOutput,
+  async delLLM(input: DelLLMInput, output: DelLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -1045,10 +1030,7 @@ export class LLMService {
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    * llm_provider_id 为引用字段，不可通过本方法修改。
    */
-  async updateLLM(
-    input: UpdateLLMInput,
-    _context: LLMContext,
-    output: UpdateLLMOutput,
+  async updateLLM(input: UpdateLLMInput, output: UpdateLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -1089,12 +1071,9 @@ export class LLMService {
    * 搜索可用模型（soLLM）。
    *
    * 支持关键词搜索 llm_title、条件过滤、排序、分页。
-   * 合并了原 getLLM 的功能。
+   * 合并了原 soLLMById 的功能。
    */
-  async soLLM(
-    input: SoLLMInput,
-    _context: LLMContext,
-    output: SoLLMOutput,
+  async soLLM(input: SoLLMInput, output: SoLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -1345,10 +1324,7 @@ export class LLMService {
 
   // ===== 修改后的方法：支持模型故障自动降级回退（指定模型 -> 默认模型 -> 启用模型1 -> 启用模型2 ...） =====
   // 当 input.no_fallback 为 true 时，仅尝试指定模型，不降级到其他模型
-  async execLLM(
-    input: ExecLLMInput,
-    _context: LLMContext,
-    output: ExecLLMOutput,
+  async execLLM(input: ExecLLMInput, output: ExecLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const prompt = String(input.prompt ?? '');
@@ -1570,13 +1546,16 @@ export class LLMService {
     const req = strategy.buildChatRequest(provider, llm, input);
 
     try {
-      const res = await this.http.request({
+      const httpInput = Object.assign(new ExecRequestInput(), {
         url: req.url,
         method: req.method,
         headers: req.headers,
         body: req.body,
-        timeoutMs: EXEC_TIMEOUT_MS,
+        timeout_ms: EXEC_TIMEOUT_MS,
       });
+      const httpOutput = new ExecRequestOutput();
+      await this.http.execRequest(httpInput, httpOutput, new HttpContext());
+      const res = httpOutput.response;
       if (!res.ok) {
         const text = res.bodyText;
         output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
@@ -1623,10 +1602,7 @@ export class LLMService {
    * 4. 调用向量化 API，解析 data[0].embedding 作为结果；
    * 5. 更新 llm_usage 表当天 usage_count。
    */
-  async embedLLM(
-    input: EmbedLLMInput,
-    _context: LLMContext,
-    output: EmbedLLMOutput,
+  async embedLLM(input: EmbedLLMInput, output: EmbedLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -1675,13 +1651,16 @@ export class LLMService {
     const req = strategy.buildEmbedRequest(provider, llm, input);
 
     try {
-      const res = await this.http.request({
+      const httpInput = Object.assign(new ExecRequestInput(), {
         url: req.url,
         method: req.method,
         headers: req.headers,
         body: req.body,
-        timeoutMs: EXEC_TIMEOUT_MS,
+        timeout_ms: EXEC_TIMEOUT_MS,
       });
+      const httpOutput = new ExecRequestOutput();
+      await this.http.execRequest(httpInput, httpOutput, new HttpContext());
+      const res = httpOutput.response;
       if (!res.ok) {
         const errText = res.bodyText;
         output.error = `向量化调用失败: HTTP ${res.status} ${errText}`;
@@ -1721,10 +1700,7 @@ export class LLMService {
    * 3. 调用大模型生成「简介」与「模型用途」（模型选择：默认模型 → 启用的第一个模型）；
    * 4. 解析 JSON 结果并保存到 llm_available（llm_brief / model_usage）。
    */
-  async genLLMAttr(
-    input: GenLLMAttrInput,
-    _context: LLMContext,
-    output: GenLLMAttrOutput,
+  async genLLMAttr(input: GenLLMAttrInput, output: GenLLMAttrOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -1766,8 +1742,7 @@ export class LLMService {
       const execPromptOutput = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         execPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       prompt = execPromptOutput.prompt || '';
     }
@@ -1789,7 +1764,7 @@ export class LLMService {
     // 4. 调用大模型生成属性（空 id 复用 execLLM 的默认模型 → 启用模型降级顺序）
     const execInput = Object.assign(new ExecLLMInput(), { id: '', prompt });
     const execOutput = new ExecLLMOutput();
-    const ok = await this.execLLM(execInput, new LLMContext(), execOutput);
+    const ok = await this.execLLM(execInput, execOutput, new LLMContext());
     if (!ok || !execOutput.result) {
       output.error = execOutput.error || '大模型生成模型属性失败';
       output.error_code = execOutput.error_code || 'GEN_ATTR_FAILED';
@@ -1853,10 +1828,7 @@ export class LLMService {
    * - volume：数据量（提供商数、模型数、启用 LLM 数、调用记录数）；
    * - diskUsage：占用磁盘空间（基于 SQLite page_size * page_count）。
    */
-  async visualizedLLM(
-    input: VisualizedLLMInput,
-    _context: LLMContext,
-    output: VisualizedLLMOutput,
+  async visualizedLLM(input: VisualizedLLMInput, output: VisualizedLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -1913,10 +1885,7 @@ export class LLMService {
    *
    * 注：closeLLM 为终态操作，执行后不可通过本方法恢复，需重新初始化组件。
    */
-  async enableLLM(
-    input: EnableLLMInput,
-    _context: LLMContext,
-    _output: EnableLLMOutput,
+  async enableLLM(input: EnableLLMInput, _output: EnableLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(

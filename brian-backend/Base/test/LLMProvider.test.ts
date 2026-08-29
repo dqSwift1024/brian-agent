@@ -3,13 +3,15 @@
  *
  * 测试 LLMProvider 的全部接口：addLLMProvider / updateLLMProvider /
  * delLLMProvider / soLLMProvider / testLLMProvider / listLLM /
- * addLLM / delLLM / updateLLM / getLLM / soLLM / execLLM /
+ * addLLM / delLLM / updateLLM / soLLMById / soLLM / execLLM /
  * visualizedLLM / enableLLM / closeLLM。
  *
  * 不使用任何 MOCK 数据，使用真实 SQLite 数据库和本地 HTTP 服务器。
  * 遵循 GraphDBProvider.test.ts 的测试模式。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -269,12 +271,12 @@ describe('LLMProvider', () => {
 
   afterEach(async () => {
     try {
-      await llmAccess.closeLLM(new CloseLLMInput(), new LLMContext(), new CloseLLMOutput());
+      await llmAccess.closeLLM(new CloseLLMInput(), new CloseLLMOutput(), new LLMContext());
     } catch {
       // 忽略关闭时的错误
     }
     try {
-      await relationDb.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+      await relationDb.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
     } catch {
       // 忽略关闭时的错误
     }
@@ -307,7 +309,7 @@ describe('LLMProvider', () => {
       input.data = makeProviderData();
       const output = new AddLLMProviderOutput();
 
-      const result = await llmAccess.addLLMProvider(input, new LLMContext(), output);
+      const result = await llmAccess.addLLMProvider(input, output, new LLMContext());
       expect(result).toBe(true);
       expect(output.id).toBeTruthy();
       expect(typeof output.id).toBe('string');
@@ -319,12 +321,12 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = data;
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.keyword = 'UniqueSearchProvider';
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_provider_title).toBe('UniqueSearchProvider');
@@ -335,12 +337,12 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData({ enable: false });
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: out.id }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list[0].enable).toBe(0);
     });
@@ -351,7 +353,7 @@ describe('LLMProvider', () => {
       const out = new AddLLMProviderOutput();
 
       await expect(
-        llmAccess.addLLMProvider(input, new LLMContext(), out),
+        llmAccess.addLLMProvider(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -361,7 +363,7 @@ describe('LLMProvider', () => {
       const out = new AddLLMProviderOutput();
 
       await expect(
-        llmAccess.addLLMProvider(input, new LLMContext(), out),
+        llmAccess.addLLMProvider(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -369,12 +371,12 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData();
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: out.id }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       const record = soOut.list[0];
       expect(record.created).toBeGreaterThan(0);
@@ -393,7 +395,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData();
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
 
       const row = await relationDb.selectOne('llm_provider', [
         { field: 'id', operator: Operator.EQ, value: out.id },
@@ -413,7 +415,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData({ llm_provider_title: 'ToUpdate' });
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
       providerId = out.id;
     });
 
@@ -422,7 +424,7 @@ describe('LLMProvider', () => {
       input.id = providerId;
       input.data = { llm_provider_title: 'UpdatedTitle' };
       const out = new UpdateLLMProviderOutput();
-      const result = await llmAccess.updateLLMProvider(input, new LLMContext(), out);
+      const result = await llmAccess.updateLLMProvider(input, out, new LLMContext());
 
       expect(result).toBe(true);
       expect(out.affected_rows).toBe(1);
@@ -430,7 +432,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: providerId }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list[0].llm_provider_title).toBe('UpdatedTitle');
     });
 
@@ -439,7 +441,7 @@ describe('LLMProvider', () => {
       input.conditions = [{ field: 'llm_provider_title', operator: Operator.EQ, value: 'ToUpdate' }];
       input.data = { llm_provider_brief: 'UpdatedBrief' };
       const out = new UpdateLLMProviderOutput();
-      await llmAccess.updateLLMProvider(input, new LLMContext(), out);
+      await llmAccess.updateLLMProvider(input, out, new LLMContext());
       expect(out.affected_rows).toBe(1);
     });
 
@@ -450,14 +452,13 @@ describe('LLMProvider', () => {
           id: providerId,
           data: { enable: false },
         }),
-        new LLMContext(),
-        new UpdateLLMProviderOutput(),
+        new UpdateLLMProviderOutput(), new LLMContext(),
       );
 
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: providerId }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list[0].enable).toBe(0);
 
       // 再启用
@@ -466,11 +467,10 @@ describe('LLMProvider', () => {
           id: providerId,
           data: { enable: true },
         }),
-        new LLMContext(),
-        new UpdateLLMProviderOutput(),
+        new UpdateLLMProviderOutput(), new LLMContext(),
       );
       const soOut2 = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut2);
+      await llmAccess.soLLMProvider(soInput, soOut2, new LLMContext());
       expect(soOut2.list[0].enable).toBe(1);
     });
 
@@ -480,7 +480,7 @@ describe('LLMProvider', () => {
       const out = new UpdateLLMProviderOutput();
 
       await expect(
-        llmAccess.updateLLMProvider(input, new LLMContext(), out),
+        llmAccess.updateLLMProvider(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -489,7 +489,7 @@ describe('LLMProvider', () => {
       input.id = 'nonexistent-id';
       input.data = { llm_provider_title: 'Ghost' };
       const out = new UpdateLLMProviderOutput();
-      await llmAccess.updateLLMProvider(input, new LLMContext(), out);
+      await llmAccess.updateLLMProvider(input, out, new LLMContext());
       expect(out.affected_rows).toBe(0);
     });
 
@@ -500,12 +500,12 @@ describe('LLMProvider', () => {
       input.id = providerId;
       input.data = { llm_provider_url: 'https://new-url.example.com' };
       const out = new UpdateLLMProviderOutput();
-      await llmAccess.updateLLMProvider(input, new LLMContext(), out);
+      await llmAccess.updateLLMProvider(input, out, new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: providerId }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list[0].updated).toBeGreaterThanOrEqual(before);
       expect(soOut.list[0].llm_provider_url).toBe('https://new-url.example.com');
@@ -521,12 +521,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData();
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const delInput = new DelLLMProviderInput();
       delInput.ids = [addOut.id];
       const delOut = new DelLLMProviderOutput();
-      const result = await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      const result = await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(delOut.affected_rows).toBe(1);
@@ -535,7 +535,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: addOut.id }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list.length).toBe(0);
     });
 
@@ -545,14 +545,14 @@ describe('LLMProvider', () => {
         const addInput = new AddLLMProviderInput();
         addInput.data = makeProviderData({ llm_provider_title: `BatchDelete ${i}` });
         const addOut = new AddLLMProviderOutput();
-        await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+        await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
         ids.push(addOut.id);
       }
 
       const delInput = new DelLLMProviderInput();
       delInput.ids = ids;
       const delOut = new DelLLMProviderOutput();
-      await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(3);
     });
 
@@ -560,12 +560,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData({ llm_provider_title: 'CondDelete' });
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const delInput = new DelLLMProviderInput();
       delInput.conditions = [{ field: 'llm_provider_title', operator: Operator.EQ, value: 'CondDelete' }];
       const delOut = new DelLLMProviderOutput();
-      await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(1);
     });
 
@@ -574,19 +574,19 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData({ llm_provider_url: httpBaseUrl });
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const listInput = new ListLLMInput();
       listInput.llm_provider_id = addOut.id;
       const listOut = new ListLLMOutput();
-      await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+      await llmAccess.listLLM(listInput, listOut, new LLMContext());
       expect(listOut.list.length).toBeGreaterThan(0);
 
       // 删除提供商
       const delInput = new DelLLMProviderInput();
       delInput.ids = [addOut.id];
       const delOut = new DelLLMProviderOutput();
-      await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
 
       // 验证 llm_cache 表中的关联记录也被删除
       const modelRows = relationDb.select('llm_cache', {
@@ -600,7 +600,7 @@ describe('LLMProvider', () => {
       const delOut = new DelLLMProviderOutput();
 
       await expect(
-        llmAccess.delLLMProvider(delInput, new LLMContext(), delOut),
+        llmAccess.delLLMProvider(delInput, delOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -608,7 +608,7 @@ describe('LLMProvider', () => {
       const delInput = new DelLLMProviderInput();
       delInput.ids = ['nonexistent'];
       const delOut = new DelLLMProviderOutput();
-      await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(0);
     });
   });
@@ -626,7 +626,7 @@ describe('LLMProvider', () => {
           llm_provider_brief: `Brief${i} description`,
         });
         const out = new AddLLMProviderOutput();
-        await llmAccess.addLLMProvider(input, new LLMContext(), out);
+        await llmAccess.addLLMProvider(input, out, new LLMContext());
       }
     });
 
@@ -634,7 +634,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMProviderInput();
       soInput.keyword = 'SearchProvider3';
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_provider_title).toBe('SearchProvider3');
@@ -646,7 +646,7 @@ describe('LLMProvider', () => {
         { field: 'llm_provider_title', operator: Operator.EQ, value: 'SearchProvider2' },
       ];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_provider_title).toBe('SearchProvider2');
@@ -656,7 +656,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMProviderInput();
       soInput.order_by = [{ field: 'llm_provider_title', direction: 'ASC' }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       for (let i = 1; i < soOut.list.length; i++) {
         expect(soOut.list[i].llm_provider_title >= soOut.list[i - 1].llm_provider_title).toBe(true);
@@ -668,7 +668,7 @@ describe('LLMProvider', () => {
       soInput.page = { current: 1, size: 2 };
       soInput.order_by = [{ field: 'llm_provider_title', direction: 'ASC' }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(2);
       expect(soOut.total).toBeGreaterThanOrEqual(5);
@@ -679,7 +679,7 @@ describe('LLMProvider', () => {
       soInput.page = { current: 2, size: 2 };
       soInput.order_by = [{ field: 'llm_provider_title', direction: 'ASC' }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(2);
     });
@@ -688,7 +688,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMProviderInput();
       soInput.keyword = 'NonExistentKeywordXYZ';
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(0);
       expect(soOut.total).toBe(0);
@@ -701,7 +701,7 @@ describe('LLMProvider', () => {
         { field: 'created', operator: Operator.LE, value: Date.now() },
       ];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.total).toBeGreaterThanOrEqual(5);
     });
   });
@@ -717,7 +717,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData({ llm_provider_url: httpBaseUrl });
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
       providerId = out.id;
     });
 
@@ -725,7 +725,7 @@ describe('LLMProvider', () => {
       const testInput = new TestLLMProviderInput();
       testInput.id = providerId;
       const testOut = new TestLLMProviderOutput();
-      const result = await llmAccess.testLLMProvider(testInput, new LLMContext(), testOut);
+      const result = await llmAccess.testLLMProvider(testInput, testOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(testOut.connected).toBe(true);
@@ -739,7 +739,7 @@ describe('LLMProvider', () => {
       const testOut = new TestLLMProviderOutput();
 
       await expect(
-        llmAccess.testLLMProvider(testInput, new LLMContext(), testOut),
+        llmAccess.testLLMProvider(testInput, testOut, new LLMContext()),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -749,7 +749,7 @@ describe('LLMProvider', () => {
       const testOut = new TestLLMProviderOutput();
 
       await expect(
-        llmAccess.testLLMProvider(testInput, new LLMContext(), testOut),
+        llmAccess.testLLMProvider(testInput, testOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -757,12 +757,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999' });
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const testInput = new TestLLMProviderInput();
       testInput.id = addOut.id;
       const testOut = new TestLLMProviderOutput();
-      await llmAccess.testLLMProvider(testInput, new LLMContext(), testOut);
+      await llmAccess.testLLMProvider(testInput, testOut, new LLMContext());
 
       expect(testOut.connected).toBe(false);
       expect(testOut.response_time_ms).toBeGreaterThanOrEqual(0);
@@ -782,7 +782,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData({ llm_provider_url: httpBaseUrl });
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
       providerId = out.id;
     });
 
@@ -790,7 +790,7 @@ describe('LLMProvider', () => {
       const listInput = new ListLLMInput();
       listInput.llm_provider_id = providerId;
       const listOut = new ListLLMOutput();
-      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+      const result = await llmAccess.listLLM(listInput, listOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(listOut.list.length).toBe(3);
@@ -804,7 +804,7 @@ describe('LLMProvider', () => {
       const listOut = new ListLLMOutput();
 
       await expect(
-        llmAccess.listLLM(listInput, new LLMContext(), listOut),
+        llmAccess.listLLM(listInput, listOut, new LLMContext()),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -814,7 +814,7 @@ describe('LLMProvider', () => {
       const listOut = new ListLLMOutput();
 
       await expect(
-        llmAccess.listLLM(listInput, new LLMContext(), listOut),
+        llmAccess.listLLM(listInput, listOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -823,10 +823,10 @@ describe('LLMProvider', () => {
       listInput.llm_provider_id = providerId;
 
       // 第一次调用
-      await llmAccess.listLLM(listInput, new LLMContext(), new ListLLMOutput());
+      await llmAccess.listLLM(listInput, new ListLLMOutput(), new LLMContext());
       // 第二次调用相同提供商
       const listOut2 = new ListLLMOutput();
-      await llmAccess.listLLM(listInput, new LLMContext(), listOut2);
+      await llmAccess.listLLM(listInput, listOut2, new LLMContext());
 
       // 模型数应该保持一致（upsert 语义）
       expect(listOut2.list.length).toBe(3);
@@ -836,12 +836,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999' });
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const listInput = new ListLLMInput();
       listInput.llm_provider_id = addOut.id;
       const listOut = new ListLLMOutput();
-      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+      const result = await llmAccess.listLLM(listInput, listOut, new LLMContext());
 
       expect(result).toBe(false);
       expect(listOut.error).toBeTruthy();
@@ -850,8 +850,7 @@ describe('LLMProvider', () => {
       const soOut = new SoLLMProviderOutput();
       await llmAccess.soLLMProvider(
         Object.assign(new SoLLMProviderInput(), { conditions: [{ field: 'id', operator: Operator.EQ, value: addOut.id }] }),
-        new LLMContext(),
-        soOut,
+        soOut, new LLMContext(),
       );
       expect(soOut.list[0].models_fetched_at).toBeFalsy();
     });
@@ -861,7 +860,7 @@ describe('LLMProvider', () => {
       listInput.llm_provider_id = providerId;
       listInput.force = true;
       const listOut = new ListLLMOutput();
-      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+      const result = await llmAccess.listLLM(listInput, listOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(listOut.cached).toBe(false);
@@ -875,13 +874,13 @@ describe('LLMProvider', () => {
         models_path: 'models',
       });
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const listInput = new ListLLMInput();
       listInput.llm_provider_id = addOut.id;
       listInput.force = true;
       const listOut = new ListLLMOutput();
-      const result = await llmAccess.listLLM(listInput, new LLMContext(), listOut);
+      const result = await llmAccess.listLLM(listInput, listOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(listOut.list.length).toBe(2);
@@ -907,7 +906,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData();
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
       providerId = out.id;
     });
 
@@ -915,7 +914,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMInput();
       input.data = makeLLMData(providerId);
       const output = new AddLLMOutput();
-      const result = await llmAccess.addLLM(input, new LLMContext(), output);
+      const result = await llmAccess.addLLM(input, output, new LLMContext());
 
       expect(result).toBe(true);
       expect(output.id).toBeTruthy();
@@ -925,12 +924,12 @@ describe('LLMProvider', () => {
       const input = new AddLLMInput();
       input.data = makeLLMData(providerId, { llm_title: 'GetLLMTest' });
       const out = new AddLLMOutput();
-      await llmAccess.addLLM(input, new LLMContext(), out);
+      await llmAccess.addLLM(input, out, new LLMContext());
 
       const soInput = new SoLLMInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: out.id }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       expect(soOut.list[0]).toBeTruthy();
       expect(soOut.list[0].llm_title).toBe('GetLLMTest');
@@ -943,7 +942,7 @@ describe('LLMProvider', () => {
       const out = new AddLLMOutput();
 
       await expect(
-        llmAccess.addLLM(input, new LLMContext(), out),
+        llmAccess.addLLM(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -953,7 +952,7 @@ describe('LLMProvider', () => {
       const out = new AddLLMOutput();
 
       await expect(
-        llmAccess.addLLM(input, new LLMContext(), out),
+        llmAccess.addLLM(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -961,12 +960,12 @@ describe('LLMProvider', () => {
       const input = new AddLLMInput();
       input.data = makeLLMData(providerId);
       const out = new AddLLMOutput();
-      await llmAccess.addLLM(input, new LLMContext(), out);
+      await llmAccess.addLLM(input, out, new LLMContext());
 
       const soInput = new SoLLMInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: out.id }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
       expect(soOut.list[0].created).toBeGreaterThan(0);
       expect(soOut.list[0].updated).toBeGreaterThan(0);
     });
@@ -983,7 +982,7 @@ describe('LLMProvider', () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData();
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
       providerId = out.id;
     });
 
@@ -991,18 +990,18 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMInput();
       addInput.data = makeLLMData(providerId);
       const addOut = new AddLLMOutput();
-      await llmAccess.addLLM(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLM(addInput, addOut, new LLMContext());
 
       const delInput = new DelLLMInput();
       delInput.ids = [addOut.id];
       const delOut = new DelLLMOutput();
-      await llmAccess.delLLM(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLM(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(1);
 
       const soInput = new SoLLMInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: addOut.id }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
       expect(soOut.list.length).toBe(0);
     });
 
@@ -1012,14 +1011,14 @@ describe('LLMProvider', () => {
         const addInput = new AddLLMInput();
         addInput.data = makeLLMData(providerId, { llm_title: `BatchLLM${i}` });
         const addOut = new AddLLMOutput();
-        await llmAccess.addLLM(addInput, new LLMContext(), addOut);
+        await llmAccess.addLLM(addInput, addOut, new LLMContext());
         ids.push(addOut.id);
       }
 
       const delInput = new DelLLMInput();
       delInput.ids = ids;
       const delOut = new DelLLMOutput();
-      await llmAccess.delLLM(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLM(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(3);
     });
 
@@ -1027,12 +1026,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMInput();
       addInput.data = makeLLMData(providerId, { llm_title: 'CondLLMDelete' });
       const addOut = new AddLLMOutput();
-      await llmAccess.addLLM(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLM(addInput, addOut, new LLMContext());
 
       const delInput = new DelLLMInput();
       delInput.conditions = [{ field: 'llm_title', operator: Operator.EQ, value: 'CondLLMDelete' }];
       const delOut = new DelLLMOutput();
-      await llmAccess.delLLM(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLM(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(1);
     });
 
@@ -1041,7 +1040,7 @@ describe('LLMProvider', () => {
       const delOut = new DelLLMOutput();
 
       await expect(
-        llmAccess.delLLM(delInput, new LLMContext(), delOut),
+        llmAccess.delLLM(delInput, delOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -1058,13 +1057,13 @@ describe('LLMProvider', () => {
       const pInput = new AddLLMProviderInput();
       pInput.data = makeProviderData();
       const pOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pInput, new LLMContext(), pOut);
+      await llmAccess.addLLMProvider(pInput, pOut, new LLMContext());
       providerId = pOut.id;
 
       const lInput = new AddLLMInput();
       lInput.data = makeLLMData(providerId, { llm_title: 'ToUpdateLLM' });
       const lOut = new AddLLMOutput();
-      await llmAccess.addLLM(lInput, new LLMContext(), lOut);
+      await llmAccess.addLLM(lInput, lOut, new LLMContext());
       llmId = lOut.id;
     });
 
@@ -1073,14 +1072,14 @@ describe('LLMProvider', () => {
       input.id = llmId;
       input.data = { llm_title: 'UpdatedLLMTitle' };
       const out = new UpdateLLMOutput();
-      await llmAccess.updateLLM(input, new LLMContext(), out);
+      await llmAccess.updateLLM(input, out, new LLMContext());
 
       expect(out.affected_rows).toBe(1);
 
       const getInput = new GetLLMInput();
       getInput.id = llmId;
       const getOut = new GetLLMOutput();
-      await llmAccess.getLLM(getInput, new LLMContext(), getOut);
+      await llmAccess.soLLMById(getInput, getOut, new LLMContext());
       expect(getOut.llm!.llm_title).toBe('UpdatedLLMTitle');
     });
 
@@ -1089,7 +1088,7 @@ describe('LLMProvider', () => {
       input.conditions = [{ field: 'llm_title', operator: Operator.EQ, value: 'ToUpdateLLM' }];
       input.data = { llm_brief: 'UpdatedBrief' };
       const out = new UpdateLLMOutput();
-      await llmAccess.updateLLM(input, new LLMContext(), out);
+      await llmAccess.updateLLM(input, out, new LLMContext());
       expect(out.affected_rows).toBe(1);
     });
 
@@ -1099,14 +1098,13 @@ describe('LLMProvider', () => {
           id: llmId,
           data: { enable: false },
         }),
-        new LLMContext(),
-        new UpdateLLMOutput(),
+        new UpdateLLMOutput(), new LLMContext(),
       );
 
       const getInput = new GetLLMInput();
       getInput.id = llmId;
       const getOut = new GetLLMOutput();
-      await llmAccess.getLLM(getInput, new LLMContext(), getOut);
+      await llmAccess.soLLMById(getInput, getOut, new LLMContext());
       expect(getOut.llm!.enable).toBe(0);
 
       await llmAccess.updateLLM(
@@ -1114,11 +1112,10 @@ describe('LLMProvider', () => {
           id: llmId,
           data: { enable: true },
         }),
-        new LLMContext(),
-        new UpdateLLMOutput(),
+        new UpdateLLMOutput(), new LLMContext(),
       );
       const getOut2 = new GetLLMOutput();
-      await llmAccess.getLLM(getInput, new LLMContext(), getOut2);
+      await llmAccess.soLLMById(getInput, getOut2, new LLMContext());
       expect(getOut2.llm!.enable).toBe(1);
     });
 
@@ -1128,7 +1125,7 @@ describe('LLMProvider', () => {
       const out = new UpdateLLMOutput();
 
       await expect(
-        llmAccess.updateLLM(input, new LLMContext(), out),
+        llmAccess.updateLLM(input, out, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1137,7 +1134,7 @@ describe('LLMProvider', () => {
       input.id = 'nonexistent';
       input.data = { llm_title: 'Ghost' };
       const out = new UpdateLLMOutput();
-      await llmAccess.updateLLM(input, new LLMContext(), out);
+      await llmAccess.updateLLM(input, out, new LLMContext());
       expect(out.affected_rows).toBe(0);
     });
   });
@@ -1155,7 +1152,7 @@ describe('LLMProvider', () => {
       const pInput = new AddLLMProviderInput();
       pInput.data = makeProviderData();
       const pOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pInput, new LLMContext(), pOut);
+      await llmAccess.addLLMProvider(pInput, pOut, new LLMContext());
       providerId = pOut.id;
 
       for (let i = 0; i < 5; i++) {
@@ -1165,7 +1162,7 @@ describe('LLMProvider', () => {
           llm_brief: `BriefLLM${i} text`,
         });
         const lOut = new AddLLMOutput();
-        await llmAccess.addLLM(lInput, new LLMContext(), lOut);
+        await llmAccess.addLLM(lInput, lOut, new LLMContext());
       }
     });
 
@@ -1173,7 +1170,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMInput();
       soInput.keyword = 'SearchLLM3';
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_title).toBe('SearchLLM3');
@@ -1183,7 +1180,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMInput();
       soInput.keyword = 'SearchLLM0';
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_title).toBe('SearchLLM0');
     });
@@ -1194,7 +1191,7 @@ describe('LLMProvider', () => {
         { field: 'enable', operator: Operator.EQ, value: 1 },
       ];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
       expect(soOut.total).toBe(5);
     });
 
@@ -1202,7 +1199,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMInput();
       soInput.order_by = [{ field: 'llm_title', direction: 'ASC' }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       for (let i = 1; i < soOut.list.length; i++) {
         expect(soOut.list[i].llm_title >= soOut.list[i - 1].llm_title).toBe(true);
@@ -1214,7 +1211,7 @@ describe('LLMProvider', () => {
       soInput.page = { current: 1, size: 2 };
       soInput.order_by = [{ field: 'llm_title', direction: 'ASC' }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(2);
       expect(soOut.total).toBeGreaterThanOrEqual(5);
@@ -1224,7 +1221,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMInput();
       soInput.keyword = 'NonExistentXYZ';
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(0);
       expect(soOut.total).toBe(0);
@@ -1234,7 +1231,7 @@ describe('LLMProvider', () => {
       const soInput = new SoLLMInput();
       soInput.keyword = 'SearchLLM';
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(5);
     });
@@ -1252,13 +1249,13 @@ describe('LLMProvider', () => {
       const pInput = new AddLLMProviderInput();
       pInput.data = makeProviderData({ llm_provider_url: httpBaseUrl, enable: true });
       const pOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pInput, new LLMContext(), pOut);
+      await llmAccess.addLLMProvider(pInput, pOut, new LLMContext());
       providerId = pOut.id;
 
       const lInput = new AddLLMInput();
       lInput.data = makeLLMData(providerId, { llm_title: 'gpt-4o' });
       const lOut = new AddLLMOutput();
-      await llmAccess.addLLM(lInput, new LLMContext(), lOut);
+      await llmAccess.addLLM(lInput, lOut, new LLMContext());
       llmId = lOut.id;
     });
 
@@ -1267,7 +1264,7 @@ describe('LLMProvider', () => {
       execInput.id = llmId;
       execInput.prompt = 'Hello World';
       const execOut = new ExecLLMOutput();
-      const result = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const result = await llmAccess.execLLM(execInput, execOut, new LLMContext());
 
       expect(result).toBe(true);
       expect(execOut.result).toBeTruthy();
@@ -1279,7 +1276,7 @@ describe('LLMProvider', () => {
       execInput.id = llmId;
       execInput.prompt = 'Test usage tracking';
       const execOut = new ExecLLMOutput();
-      await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      await llmAccess.execLLM(execInput, execOut, new LLMContext());
 
       const usageRows = await relationDb.select('llm_usage', {
         conditions: [{ field: 'llm_available_id', operator: Operator.EQ, value: llmId }],
@@ -1293,11 +1290,10 @@ describe('LLMProvider', () => {
       execInput.id = llmId;
       execInput.prompt = 'Call 1';
 
-      await llmAccess.execLLM(execInput, new LLMContext(), new ExecLLMOutput());
+      await llmAccess.execLLM(execInput, new ExecLLMOutput(), new LLMContext());
       await llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), { id: llmId, prompt: 'Call 2' }),
-        new LLMContext(),
-        new ExecLLMOutput(),
+        new ExecLLMOutput(), new LLMContext(),
       );
 
       const usageRows = await relationDb.select('llm_usage', {
@@ -1315,7 +1311,7 @@ describe('LLMProvider', () => {
       const execOut = new ExecLLMOutput();
 
       await expect(
-        llmAccess.execLLM(execInput, new LLMContext(), execOut),
+        llmAccess.execLLM(execInput, execOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1325,7 +1321,7 @@ describe('LLMProvider', () => {
       execInput.prompt = 'test fallback';
       const execOut = new ExecLLMOutput();
 
-      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const ok = await llmAccess.execLLM(execInput, execOut, new LLMContext());
       expect(ok).toBe(true);
     });
 
@@ -1336,7 +1332,7 @@ describe('LLMProvider', () => {
       const execOut = new ExecLLMOutput();
 
       await expect(
-        llmAccess.execLLM(execInput, new LLMContext(), execOut),
+        llmAccess.execLLM(execInput, execOut, new LLMContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1345,12 +1341,12 @@ describe('LLMProvider', () => {
       const pFailInput = new AddLLMProviderInput();
       pFailInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
       const pFailOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pFailInput, new LLMContext(), pFailOut);
+      await llmAccess.addLLMProvider(pFailInput, pFailOut, new LLMContext());
 
       const lFailInput = new AddLLMInput();
       lFailInput.data = makeLLMData(pFailOut.id, { llm_title: 'failing-model', is_default: false });
       const lFailOut = new AddLLMOutput();
-      await llmAccess.addLLM(lFailInput, new LLMContext(), lFailOut);
+      await llmAccess.addLLM(lFailInput, lFailOut, new LLMContext());
 
       // 2. 将正常工作的模型设为默认模型
       await llmAccess.updateLLM(
@@ -1358,8 +1354,7 @@ describe('LLMProvider', () => {
           id: llmId,
           data: { is_default: true, enable: true },
         }),
-        new LLMContext(),
-        new UpdateLLMOutput(),
+        new UpdateLLMOutput(), new LLMContext(),
       );
 
       // 3. 调用指定的故障模型
@@ -1368,7 +1363,7 @@ describe('LLMProvider', () => {
       execInput.prompt = 'test failover to default';
       const execOut = new ExecLLMOutput();
 
-      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const ok = await llmAccess.execLLM(execInput, execOut, new LLMContext());
       expect(ok).toBe(true);
       expect(execOut.result).toBeTruthy();
     });
@@ -1378,23 +1373,23 @@ describe('LLMProvider', () => {
       const pFailInput1 = new AddLLMProviderInput();
       pFailInput1.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19998', enable: true });
       const pFailOut1 = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pFailInput1, new LLMContext(), pFailOut1);
+      await llmAccess.addLLMProvider(pFailInput1, pFailOut1, new LLMContext());
 
       const lFailInput1 = new AddLLMInput();
       lFailInput1.data = makeLLMData(pFailOut1.id, { llm_title: 'failing-model-1', is_default: false });
       const lFailOut1 = new AddLLMOutput();
-      await llmAccess.addLLM(lFailInput1, new LLMContext(), lFailOut1);
+      await llmAccess.addLLM(lFailInput1, lFailOut1, new LLMContext());
 
       // 2. 创建故障模型 B（作为默认模型）
       const pFailInput2 = new AddLLMProviderInput();
       pFailInput2.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19997', enable: true });
       const pFailOut2 = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pFailInput2, new LLMContext(), pFailOut2);
+      await llmAccess.addLLMProvider(pFailInput2, pFailOut2, new LLMContext());
 
       const lFailInput2 = new AddLLMInput();
       lFailInput2.data = makeLLMData(pFailOut2.id, { llm_title: 'failing-model-default', is_default: true });
       const lFailOut2 = new AddLLMOutput();
-      await llmAccess.addLLM(lFailInput2, new LLMContext(), lFailOut2);
+      await llmAccess.addLLM(lFailInput2, lFailOut2, new LLMContext());
 
       // 3. 将原有的正常模型设为非默认但启用
       await llmAccess.updateLLM(
@@ -1402,8 +1397,7 @@ describe('LLMProvider', () => {
           id: llmId,
           data: { is_default: false, enable: true },
         }),
-        new LLMContext(),
-        new UpdateLLMOutput(),
+        new UpdateLLMOutput(), new LLMContext(),
       );
 
       // 4. 调用指定的故障模型 A -> 尝试默认模型 B (失败) -> 尝试正常模型 llmId (成功)
@@ -1412,7 +1406,7 @@ describe('LLMProvider', () => {
       execInput.prompt = 'test multi-step failover';
       const execOut = new ExecLLMOutput();
 
-      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const ok = await llmAccess.execLLM(execInput, execOut, new LLMContext());
       expect(ok).toBe(true);
       expect(execOut.result).toBeTruthy();
     });
@@ -1426,8 +1420,7 @@ describe('LLMProvider', () => {
             id: String(row.id),
             data: { enable: false },
           }),
-          new LLMContext(),
-          new UpdateLLMOutput(),
+          new UpdateLLMOutput(), new LLMContext(),
         );
       }
 
@@ -1435,19 +1428,19 @@ describe('LLMProvider', () => {
       const pFailInput = new AddLLMProviderInput();
       pFailInput.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
       const pFailOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pFailInput, new LLMContext(), pFailOut);
+      await llmAccess.addLLMProvider(pFailInput, pFailOut, new LLMContext());
 
       const lFailInput = new AddLLMInput();
       lFailInput.data = makeLLMData(pFailOut.id, { llm_title: 'failing-model-only', enable: true });
       const lFailOut = new AddLLMOutput();
-      await llmAccess.addLLM(lFailInput, new LLMContext(), lFailOut);
+      await llmAccess.addLLM(lFailInput, lFailOut, new LLMContext());
 
       const execInput = new ExecLLMInput();
       execInput.id = lFailOut.id;
       execInput.prompt = 'test all fail';
       const execOut = new ExecLLMOutput();
 
-      const ok = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const ok = await llmAccess.execLLM(execInput, execOut, new LLMContext());
       expect(ok).toBe(false);
       expect(execOut.error).toContain('所有可用模型均调用失败');
     });
@@ -1461,25 +1454,24 @@ describe('LLMProvider', () => {
           id: llmId,
           data: { enable: false },
         }),
-        new LLMContext(),
-        new UpdateLLMOutput(),
+        new UpdateLLMOutput(), new LLMContext(),
       );
 
       const pInput2 = new AddLLMProviderInput();
       pInput2.data = makeProviderData({ llm_provider_url: 'http://127.0.0.1:19999', enable: true });
       const pOut2 = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(pInput2, new LLMContext(), pOut2);
+      await llmAccess.addLLMProvider(pInput2, pOut2, new LLMContext());
 
       const lInput2 = new AddLLMInput();
       lInput2.data = makeLLMData(pOut2.id, { llm_title: 'gpt-4o' });
       const lOut2 = new AddLLMOutput();
-      await llmAccess.addLLM(lInput2, new LLMContext(), lOut2);
+      await llmAccess.addLLM(lInput2, lOut2, new LLMContext());
 
       const execInput = new ExecLLMInput();
       execInput.id = lOut2.id;
       execInput.prompt = 'test';
       const execOut = new ExecLLMOutput();
-      const result = await llmAccess.execLLM(execInput, new LLMContext(), execOut);
+      const result = await llmAccess.execLLM(execInput, execOut, new LLMContext());
 
       expect(result).toBe(false);
       expect(execOut.error).toBeTruthy();
@@ -1496,7 +1488,7 @@ describe('LLMProvider', () => {
       const input = new VisualizedLLMInput();
       input.scope = 'health';
       const out = new VisualizedLLMOutput();
-      const result = await llmAccess.visualizedLLM(input, new LLMContext(), out);
+      const result = await llmAccess.visualizedLLM(input, out, new LLMContext());
 
       expect(result).toBe(true);
       expect(out.data.connected).toBe(true);
@@ -1510,7 +1502,7 @@ describe('LLMProvider', () => {
       const input = new VisualizedLLMInput();
       input.scope = 'volume';
       const out = new VisualizedLLMOutput();
-      const result = await llmAccess.visualizedLLM(input, new LLMContext(), out);
+      const result = await llmAccess.visualizedLLM(input, out, new LLMContext());
 
       expect(result).toBe(true);
       expect(typeof out.data.provider_count).toBe('number');
@@ -1523,7 +1515,7 @@ describe('LLMProvider', () => {
       const input = new VisualizedLLMInput();
       input.scope = 'diskUsage';
       const out = new VisualizedLLMOutput();
-      const result = await llmAccess.visualizedLLM(input, new LLMContext(), out);
+      const result = await llmAccess.visualizedLLM(input, out, new LLMContext());
 
       expect(result).toBe(true);
       expect(typeof out.data.disk_usage_bytes).toBe('number');
@@ -1535,7 +1527,7 @@ describe('LLMProvider', () => {
       const input = new VisualizedLLMInput();
       input.scope = 'invalidScope';
       const out = new VisualizedLLMOutput();
-      const result = await llmAccess.visualizedLLM(input, new LLMContext(), out);
+      const result = await llmAccess.visualizedLLM(input, out, new LLMContext());
 
       expect(result).toBe(false);
       expect(out.error).toBeTruthy();
@@ -1546,12 +1538,12 @@ describe('LLMProvider', () => {
       const addInput = new AddLLMProviderInput();
       addInput.data = makeProviderData();
       const addOut = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(addInput, new LLMContext(), addOut);
+      await llmAccess.addLLMProvider(addInput, addOut, new LLMContext());
 
       const input = new VisualizedLLMInput();
       input.scope = 'volume';
       const out = new VisualizedLLMOutput();
-      await llmAccess.visualizedLLM(input, new LLMContext(), out);
+      await llmAccess.visualizedLLM(input, out, new LLMContext());
 
       expect(out.data.provider_count).toBe(1);
     });
@@ -1566,35 +1558,33 @@ describe('LLMProvider', () => {
       const input = new EnableLLMInput();
       input.enable = false;
       const out = new EnableLLMOutput();
-      const result = await llmAccess.enableLLM(input, new LLMContext(), out);
+      const result = await llmAccess.enableLLM(input, out, new LLMContext());
       expect(result).toBe(true);
 
       // 禁用后操作应该失败
       const soInput = new SoLLMProviderInput();
       const soOut = new SoLLMProviderOutput();
       await expect(
-        llmAccess.soLLMProvider(soInput, new LLMContext(), soOut),
+        llmAccess.soLLMProvider(soInput, soOut, new LLMContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('应该支持重新启用 LLM 组件', async () => {
       await llmAccess.enableLLM(
         Object.assign(new EnableLLMInput(), { enable: false }),
-        new LLMContext(),
-        new EnableLLMOutput(),
+        new EnableLLMOutput(), new LLMContext(),
       );
 
       // 重新启用
       await llmAccess.enableLLM(
         Object.assign(new EnableLLMInput(), { enable: true }),
-        new LLMContext(),
-        new EnableLLMOutput(),
+        new EnableLLMOutput(), new LLMContext(),
       );
 
       // 启用后操作应该成功
       const soInput = new SoLLMProviderInput();
       const soOut = new SoLLMProviderOutput();
-      const result = await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      const result = await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(result).toBe(true);
     });
 
@@ -1602,34 +1592,31 @@ describe('LLMProvider', () => {
       for (let i = 0; i < 3; i++) {
         await llmAccess.enableLLM(
           Object.assign(new EnableLLMInput(), { enable: false }),
-          new LLMContext(),
-          new EnableLLMOutput(),
+          new EnableLLMOutput(), new LLMContext(),
         );
         await llmAccess.enableLLM(
           Object.assign(new EnableLLMInput(), { enable: true }),
-          new LLMContext(),
-          new EnableLLMOutput(),
+          new EnableLLMOutput(), new LLMContext(),
         );
       }
 
       const soInput = new SoLLMProviderInput();
       const soOut = new SoLLMProviderOutput();
-      const result = await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      const result = await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(result).toBe(true);
     });
 
     it('禁用状态下 visualizedLLM 也应该失败', async () => {
       await llmAccess.enableLLM(
         Object.assign(new EnableLLMInput(), { enable: false }),
-        new LLMContext(),
-        new EnableLLMOutput(),
+        new EnableLLMOutput(), new LLMContext(),
       );
 
       const visInput = new VisualizedLLMInput();
       visInput.scope = 'health';
       const visOut = new VisualizedLLMOutput();
       await expect(
-        llmAccess.visualizedLLM(visInput, new LLMContext(), visOut),
+        llmAccess.visualizedLLM(visInput, visOut, new LLMContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -1650,12 +1637,12 @@ describe('LLMProvider', () => {
         llm_provider_title: 'Special @#$%^&*() 字符',
       });
       const out = new AddLLMProviderOutput();
-      await llmAccess.addLLMProvider(input, new LLMContext(), out);
+      await llmAccess.addLLMProvider(input, out, new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: out.id }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list[0].llm_provider_title).toBe('Special @#$%^&*() 字符');
     });
 
@@ -1665,7 +1652,7 @@ describe('LLMProvider', () => {
         llm_provider_title: 'KeywordAndCond',
         enable: true,
       });
-      await llmAccess.addLLMProvider(pInput, new LLMContext(), new AddLLMProviderOutput());
+      await llmAccess.addLLMProvider(pInput, new AddLLMProviderOutput(), new LLMContext());
 
       // 再添加一个启用但名称不同的
       const pInput2 = new AddLLMProviderInput();
@@ -1673,13 +1660,13 @@ describe('LLMProvider', () => {
         llm_provider_title: 'OtherProvider',
         enable: true,
       });
-      await llmAccess.addLLMProvider(pInput2, new LLMContext(), new AddLLMProviderOutput());
+      await llmAccess.addLLMProvider(pInput2, new AddLLMProviderOutput(), new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.keyword = 'KeywordAndCond';
       soInput.conditions = [{ field: 'enable', operator: Operator.EQ, value: 1 }];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].llm_provider_title).toBe('KeywordAndCond');
@@ -1691,7 +1678,7 @@ describe('LLMProvider', () => {
         const input = new AddLLMProviderInput();
         input.data = makeProviderData({ llm_provider_title: `INTest${i}` });
         const out = new AddLLMProviderOutput();
-        await llmAccess.addLLMProvider(input, new LLMContext(), out);
+        await llmAccess.addLLMProvider(input, out, new LLMContext());
         ids.push(out.id);
       }
 
@@ -1700,19 +1687,19 @@ describe('LLMProvider', () => {
         { field: 'id', operator: Operator.IN, value: ids.slice(0, 2) },
       ];
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list.length).toBe(2);
     });
 
     it('LIKE 前后模糊匹配应正确工作', async () => {
       const input = new AddLLMProviderInput();
       input.data = makeProviderData({ llm_provider_title: 'MiddleKeyword' });
-      await llmAccess.addLLMProvider(input, new LLMContext(), new AddLLMProviderOutput());
+      await llmAccess.addLLMProvider(input, new AddLLMProviderOutput(), new LLMContext());
 
       const soInput = new SoLLMProviderInput();
       soInput.keyword = 'dleKeyw';
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(soInput, soOut, new LLMContext());
       expect(soOut.list.length).toBe(1);
     });
 
@@ -1720,7 +1707,7 @@ describe('LLMProvider', () => {
       const delInput = new DelLLMProviderInput();
       delInput.ids = ['nonexistent-id-123'];
       const delOut = new DelLLMProviderOutput();
-      await llmAccess.delLLMProvider(delInput, new LLMContext(), delOut);
+      await llmAccess.delLLMProvider(delInput, delOut, new LLMContext());
       expect(delOut.affected_rows).toBe(0);
     });
 
@@ -1729,19 +1716,19 @@ describe('LLMProvider', () => {
         const pInput = new AddLLMProviderInput();
         pInput.data = makeProviderData();
         const o = new AddLLMProviderOutput();
-        await llmAccess.addLLMProvider(pInput, new LLMContext(), o);
+        await llmAccess.addLLMProvider(pInput, o, new LLMContext());
         return [o];
       })();
 
       const lInput = new AddLLMInput();
       lInput.data = makeLLMData(pOut.id, { llm_type: '' });
       const lOut = new AddLLMOutput();
-      await llmAccess.addLLM(lInput, new LLMContext(), lOut);
+      await llmAccess.addLLM(lInput, lOut, new LLMContext());
 
       const soInput = new SoLLMInput();
       soInput.conditions = [{ field: 'id', operator: Operator.EQ, value: lOut.id }];
       const soOut = new SoLLMOutput();
-      await llmAccess.soLLM(soInput, new LLMContext(), soOut);
+      await llmAccess.soLLM(soInput, soOut, new LLMContext());
       expect(soOut.list[0].llm_type).toBe('text');
     });
 
@@ -1749,24 +1736,22 @@ describe('LLMProvider', () => {
       const p1Out = new AddLLMProviderOutput();
       await llmAccess.addLLMProvider(
         Object.assign(new AddLLMProviderInput(), { data: makeProviderData({ llm_provider_title: 'P1' }) }),
-        new LLMContext(),
-        p1Out,
+        p1Out, new LLMContext(),
       );
       const p2Out = new AddLLMProviderOutput();
       await llmAccess.addLLMProvider(
         Object.assign(new AddLLMProviderInput(), { data: makeProviderData({ llm_provider_title: 'P2' }) }),
-        new LLMContext(),
-        p2Out,
+        p2Out, new LLMContext(),
       );
 
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(new SoLLMProviderInput(), new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(new SoLLMProviderInput(), soOut, new LLMContext());
       expect(soOut.total).toBe(2);
     });
 
     it('AOP 代理应填充 elapsed_ms', async () => {
       const soOut = new SoLLMProviderOutput();
-      await llmAccess.soLLMProvider(new SoLLMProviderInput(), new LLMContext(), soOut);
+      await llmAccess.soLLMProvider(new SoLLMProviderInput(), soOut, new LLMContext());
       expect(typeof soOut.elapsed_ms).toBe('number');
       expect(soOut.elapsed_ms).toBeGreaterThanOrEqual(0);
     });

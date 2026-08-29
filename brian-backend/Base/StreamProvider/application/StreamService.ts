@@ -252,7 +252,7 @@ export class StreamService {
   /**
    * 查询活跃连接状态
    */
-  async getStreamStats(output: GetStreamStatsOutput): Promise<boolean> {
+  async soStreamStats(output: GetStreamStatsOutput): Promise<boolean> {
     const active: string[] = [];
     for (const [sid, item] of this.sessions.entries()) {
       if (!item.closed) active.push(sid);

@@ -1,3 +1,5 @@
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -69,7 +71,7 @@ describe('MCPProvider MCPService', () => {
   afterAll(async () => {
     if (dbAccess) {
       try {
-        await dbAccess.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+        await dbAccess.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
       } catch { /* close regardless */ }
     }
     if (tmpDir && fs.existsSync(tmpDir)) {
@@ -713,7 +715,7 @@ describe('MCPProvider MCPService', () => {
     });
   });
 
-  describe('getMcp (PRD 3.2.6)', () => {
+  describe('soMcpById (PRD 3.2.6)', () => {
     let installId: string;
 
     beforeAll(async () => {
@@ -723,7 +725,7 @@ describe('MCPProvider MCPService', () => {
         { field: 'updated', value: Date.now() },
         { field: 'mcp_provider_id', value: 'fake-provider' },
         { field: 'mcp_title', value: 'Get Me MCP' },
-        { field: 'mcp_brief', value: 'MCP for getMcp testing' },
+        { field: 'mcp_brief', value: 'MCP for soMcpById testing' },
         { field: 'mcp_install_cmd', value: 'echo get' },
         { field: 'mcp_start_cmd', value: 'echo start' },
         { field: 'mcp_stop_cmd', value: 'echo stop' },
@@ -737,7 +739,7 @@ describe('MCPProvider MCPService', () => {
       const input = new GetMcpInput();
       input.id = installId;
       const output = new GetMcpOutput();
-      const ok = await mcpAccess.getMcp(input, ctx(), output);
+      const ok = await mcpAccess.soMcpById(input, ctx(), output);
       expect(ok).toBe(true);
       expect(output.mcp).not.toBeNull();
       expect(output.mcp!.id).toBe(installId);
@@ -748,7 +750,7 @@ describe('MCPProvider MCPService', () => {
       const input = new GetMcpInput();
       input.conditions = [{ field: 'mcp_title', operator: Operator.EQ, value: 'Get Me MCP' }];
       const output = new GetMcpOutput();
-      await mcpAccess.getMcp(input, ctx(), output);
+      await mcpAccess.soMcpById(input, ctx(), output);
       expect(output.mcp).not.toBeNull();
       expect(output.mcp!.id).toBe(installId);
     });
@@ -757,7 +759,7 @@ describe('MCPProvider MCPService', () => {
       const input = new GetMcpInput();
       input.id = 'non-existent-install-id';
       const output = new GetMcpOutput();
-      await mcpAccess.getMcp(input, ctx(), output);
+      await mcpAccess.soMcpById(input, ctx(), output);
       expect(output.mcp).toBeNull();
     });
 
@@ -765,7 +767,7 @@ describe('MCPProvider MCPService', () => {
       const input = new GetMcpInput();
       const output = new GetMcpOutput();
       await expect(
-        mcpAccess.getMcp(input, ctx(), output),
+        mcpAccess.soMcpById(input, ctx(), output),
       ).rejects.toThrow(ValidationError);
     });
   });

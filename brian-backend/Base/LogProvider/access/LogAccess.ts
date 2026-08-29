@@ -8,6 +8,8 @@
  * 避免 AOP 代理与日志切面之间产生递归调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { SQLiteRelationDBOptions } from '../../RelationDBProvider/infrastructure/SQLiteRelationDBRepository';
 import { LogSchemaInitializer } from '../infrastructure/LogSchemaInitializer';
@@ -88,29 +90,29 @@ export class LogAccess {
     return this.rawService;
   }
 
-  async addLog(i: AddLogInput, c: LogContext, o: AddLogOutput) {
-    return this.service.addLog(i, c, o);
+  async addLog(i: AddLogInput, o: AddLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.addLog(i, o, c, metrics, report);
   }
-  async getLog(i: GetLogInput, c: LogContext, o: GetLogOutput) {
-    return this.service.getLog(i, c, o);
+  async soLogById(i: GetLogInput, o: GetLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.soLogById(i, o, c, metrics, report);
   }
-  async soLog(i: SoLogInput, c: LogContext, o: SoLogOutput) {
-    return this.service.soLog(i, c, o);
+  async soLog(i: SoLogInput, o: SoLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.soLog(i, o, c, metrics, report);
   }
-  async delLog(i: DelLogInput, c: LogContext, o: DelLogOutput) {
-    return this.service.delLog(i, c, o);
+  async delLog(i: DelLogInput, o: DelLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.delLog(i, o, c, metrics, report);
   }
-  async countLog(i: CountLogInput, c: LogContext, o: CountLogOutput) {
-    return this.service.countLog(i, c, o);
+  async countLog(i: CountLogInput, o: CountLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.countLog(i, o, c, metrics, report);
   }
-  async visualizedLog(i: VisualizedLogInput, c: LogContext, o: VisualizedLogOutput) {
-    return this.service.visualizedLog(i, c, o);
+  async visualizedLog(i: VisualizedLogInput, o: VisualizedLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.visualizedLog(i, o, c, metrics, report);
   }
-  async enableLog(i: EnableLogInput, c: LogContext, o: EnableLogOutput) {
-    return this.service.enableLog(i, c, o);
+  async enableLog(i: EnableLogInput, o: EnableLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.enableLog(i, o, c, metrics, report);
   }
-  async configLog(i: ConfigLogInput, c: LogContext, o: ConfigLogOutput) {
-    return this.service.configLog(i, c, o);
+  async configLog(i: ConfigLogInput, o: ConfigLogOutput, c: LogContext, metrics?: Metrics, report?: Report) {
+    return this.service.configLog(i, o, c, metrics, report);
   }
   async queryLogs(options: {
     level?: string; source?: string; keyword?: string;
@@ -121,8 +123,8 @@ export class LogAccess {
   }) {
     return this.service.queryLogs(options);
   }
-  async getLogStats(options?: { start_time?: number; end_time?: number }) {
-    return this.service.getLogStats(options);
+  async soLogStats(options?: { start_time?: number; end_time?: number }) {
+    return this.service.soLogStats(options);
   }
   async listSources() {
     return this.service.listSources();

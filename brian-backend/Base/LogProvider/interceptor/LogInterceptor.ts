@@ -12,6 +12,8 @@
  * - afterExecute 记录方法执行完成（level=INFO 或 ERROR）；
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { Interceptor, InterceptContext } from '../../shared/aop/Interceptor';
 import type { LogService } from '../application/LogService';
 import type { LogData } from '../domain/types';
@@ -33,8 +35,7 @@ import { LogLevel, LogSource } from '../domain/types';
  * // 配置只记录 SoulProvider 的日志
  * await logAccess.enableLog(
  *   { rules: [{ source: '*', method: '*', enable: false }, { source: 'SoulService', method: '*', enable: true }] },
- *   new LogContext(),
- *   new EnableLogOutput(),
+ *   new EnableLogOutput(), new LogContext(),
  * );
  *
  * // 将拦截器注入到其他 Provider 的 AOP 代理中

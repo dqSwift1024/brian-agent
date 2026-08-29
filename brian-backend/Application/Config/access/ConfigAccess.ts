@@ -237,7 +237,7 @@ export class ConfigAccess {
     return this.service.soLLMProxy(input, context, output);
   }
 
-  async getLLM(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
+  async soLLMById(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
     return this.service.getLLMProxy(input, context, output);
   }
 
@@ -261,7 +261,7 @@ export class ConfigAccess {
     return this.service.soSoulProxy(input, context, output);
   }
 
-  async getSoul(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
+  async soSoulById(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
     return this.service.getSoulProxy(input, context, output);
   }
 
@@ -297,7 +297,7 @@ export class ConfigAccess {
     return this.service.execSkillProxy(input, context, output);
   }
 
-  async getSkill(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
+  async soSkillById(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
     return this.service.getSkillProxy(input, context, output);
   }
 
@@ -357,7 +357,7 @@ export class ConfigAccess {
     return this.service.updateMcpProxy(input, context, output);
   }
 
-  async getMcp(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
+  async soMcpById(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
     return this.service.getMcpProxy(input, context, output);
   }
 
@@ -385,7 +385,7 @@ export class ConfigAccess {
     return this.service.soPromptProxy(input, context, output);
   }
 
-  async getPrompt(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
+  async soPromptById(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
     return this.service.getPromptProxy(input, context, output);
   }
 }

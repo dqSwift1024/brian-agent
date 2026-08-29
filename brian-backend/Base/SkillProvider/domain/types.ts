@@ -97,10 +97,10 @@ export class AddSkillOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getSkill
+// soSkillById
 // ---------------------------------------------------------------------------
 
-/** getSkill 入参 */
+/** soSkillById 入参 */
 export class GetSkillInput extends Input {
   /** 按 ID 获取 */
   id?: string;
@@ -108,7 +108,7 @@ export class GetSkillInput extends Input {
   conditions?: Condition[];
 }
 
-/** getSkill 出参 */
+/** soSkillById 出参 */
 export class GetSkillOutput extends Output {
   /** Skill 信息，无匹配为 null */
   skill: SkillRecord | null = null;

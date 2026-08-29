@@ -153,7 +153,7 @@ export class WriterAgentService {
     if (agent?.soul_id && this.soulAccess) {
       try {
         const soulOut = new GetSoulOutput();
-        await this.soulAccess.getSoul(
+        await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: agent.soul_id }),
           new SoulContext(),
           soulOut,
@@ -346,7 +346,7 @@ export class WriterAgentService {
     if (agent?.soul_id && this.soulAccess) {
       try {
         const soulOut = new GetSoulOutput();
-        await this.soulAccess.getSoul(
+        await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: agent.soul_id }),
           new SoulContext(),
           soulOut,

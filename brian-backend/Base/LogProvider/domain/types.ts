@@ -77,7 +77,7 @@ export class AddLogOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getLog
+// soLogById
 // ---------------------------------------------------------------------------
 
 export class GetLogInput extends Input {

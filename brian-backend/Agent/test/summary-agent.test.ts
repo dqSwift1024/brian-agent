@@ -23,7 +23,7 @@ function makeMocks() {
   const soulAccess = {
     soSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.list = []; o.total = 0; return true; }),
     addSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.id = 'soul-builtin'; return true; }),
-    getSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.soul = { soul_content: '摘要专家', soul_brief: '摘要生成专家', soul_usage: '摘要' }; return true; }),
+    soSoulById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.soul = { soul_content: '摘要专家', soul_brief: '摘要生成专家', soul_usage: '摘要' }; return true; }),
   };
   const agentBuilder = {
     buildSystemAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'agent-summary'; return true; }),

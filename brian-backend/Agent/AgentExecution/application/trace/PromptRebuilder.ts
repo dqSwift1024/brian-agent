@@ -85,7 +85,7 @@ export class PromptRebuilder {
     if (!soulId) return '';
     try {
       const out = new GetSoulOutput();
-      await this.soulAccess.getSoul(
+      await this.soulAccess.soSoulById(
         Object.assign(new GetSoulInput(), { id: soulId }),
         new SoulContext(),
         out,

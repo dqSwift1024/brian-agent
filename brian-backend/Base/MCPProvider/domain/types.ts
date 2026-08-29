@@ -217,12 +217,12 @@ export class UpgradeMcpOutput extends Output {
   version = '';
 }
 
-/** getMcp 入参 */
+/** soMcpById 入参 */
 export class GetMcpInput extends Input {
   id?: string;
   conditions?: Condition[];
 }
-/** getMcp 出参 */
+/** soMcpById 出参 */
 export class GetMcpOutput extends Output {
   mcp: McpInstallRecord | null = null;
 }
@@ -269,7 +269,7 @@ export class EnableMCPInput extends Input {
 /** enableMCP 出参 */
 export class EnableMCPOutput extends Output {}
 
-/** getMcpUsage 入参 */
+/** soMcpUsage 入参 */
 export class GetMcpUsageInput extends Input {
   mcp_install_id?: string;
   start_date?: string;
@@ -284,7 +284,7 @@ export interface McpUsageRecord {
   usage_count: number;
 }
 
-/** getMcpUsage 出参 */
+/** soMcpUsage 出参 */
 export class GetMcpUsageOutput extends Output {
   list: McpUsageRecord[] = [];
   total = 0;

@@ -4,12 +4,14 @@
  * 依赖 RelationDBAccess（通过 IConfigStorage / executeRaw）操作关系数据库，
  * 依赖 ConfigService 管理 mq_config 配置表。
  *
- * 实现所有用例：sendMQ / consumeMQ / ackMQ / nackMQ / getQueueStats / enableMQ。
+ * 实现所有用例：sendMQ / consumeMQ / ackMQ / nackMQ / soQueueStats / enableMQ。
  *
  * MQ 基于 RelationDBProvider 实现，无需引入外部消息队列中间件，
  * 通过 Repository 接口封装底层消息队列操作。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
@@ -87,10 +89,7 @@ export class MQService {
   /**
    * 启用/禁用 MQ 组件。
    */
-  async enableMQ(
-    input: EnableMQInput,
-    _context: MQContext,
-    _output: EnableMQOutput,
+  async enableMQ(input: EnableMQInput, _output: EnableMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new ComponentDisabledError('MQ');
@@ -103,10 +102,7 @@ export class MQService {
   /**
    * 终态关闭 MQ 组件（不可恢复）。
    */
-  async closeMQ(
-    _input: CloseMQInput,
-    _context: MQContext,
-    _output: CloseMQOutput,
+  async closeMQ(_input: CloseMQInput, _output: CloseMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.closed = true;
     this.enabled = false;
@@ -170,10 +166,7 @@ export class MQService {
    * priority 未指定时从 mq_config 读取 default_priority（默认 5）；
    * max_retries 从 mq_config 读取 default_max_retries（默认 3）。
    */
-  async sendMQ(
-    input: SendMQInput,
-    _context: MQContext,
-    output: SendMQOutput,
+  async sendMQ(input: SendMQInput, output: SendMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -227,10 +220,7 @@ export class MQService {
    * 按优先级降序、创建时间升序获取一条 PENDING 状态的消息，
    * 将状态更新为 PROCESSING，返回消息内容。
    */
-  async consumeMQ(
-    input: ConsumeMQInput,
-    _context: MQContext,
-    output: ConsumeMQOutput,
+  async consumeMQ(input: ConsumeMQInput, output: ConsumeMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -287,10 +277,7 @@ export class MQService {
    *
    * PRD 3.1.3 条：确认消息已处理完成，将状态更新为 COMPLETED 并记录处理完成时间。
    */
-  async ackMQ(
-    input: AckMQInput,
-    _context: MQContext,
-    output: AckMQOutput,
+  async ackMQ(input: AckMQInput, output: AckMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -324,10 +311,7 @@ export class MQService {
    * 若 retry_count < max_retries，递增 retry_count 并将状态回退为 PENDING；
    * 否则将状态更新为 FAILED。
    */
-  async nackMQ(
-    input: NackMQInput,
-    _context: MQContext,
-    output: NackMQOutput,
+  async nackMQ(input: NackMQInput, output: NackMQOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -403,15 +387,12 @@ export class MQService {
   // -------------------------------------------------------------------------
 
   /**
-   * 获取队列统计（getQueueStats）。
+   * 获取队列统计（soQueueStats）。
    *
    * PRD 3.2.1 条：统计 queue_message 表中各状态（PENDING/PROCESSING/COMPLETED/FAILED）
    * 的消息数量。queue 不指定则返回所有队列统计。
    */
-  async getQueueStats(
-    input: GetQueueStatsInput,
-    _context: MQContext,
-    output: GetQueueStatsOutput,
+  async soQueueStats(input: GetQueueStatsInput, output: GetQueueStatsOutput, _context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 

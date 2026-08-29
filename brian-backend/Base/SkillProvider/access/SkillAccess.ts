@@ -9,6 +9,8 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { SkillSchemaInitializer } from '../infrastructure/SkillSchemaInitializer';
 import { SkillService } from '../application/SkillService';
@@ -49,8 +51,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddSkillOutput();
  * await skillAccess.addSkill(
  *   { data: { skill_brief: '天气查询', work: 'result = params.city' } },
- *   new SkillContext(),
- *   output,
+ *   output, new SkillContext(),
  * );
  * ```
  */
@@ -80,65 +81,44 @@ export class SkillAccess {
   }
 
   /** 新增 Skill */
-  async addSkill(
-    input: AddSkillInput,
-    context: SkillContext,
-    output: AddSkillOutput,
+  async addSkill(input: AddSkillInput, output: AddSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addSkill(input, context, output);
+    return this.service.addSkill(input, output, context, metrics, report);
   }
 
   /** 获取 Skill */
-  async getSkill(
-    input: GetSkillInput,
-    context: SkillContext,
-    output: GetSkillOutput,
+  async soSkillById(input: GetSkillInput, output: GetSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getSkill(input, context, output);
+    return this.service.soSkillById(input, output, context, metrics, report);
   }
 
   /** 更新 Skill */
-  async updateSkill(
-    input: UpdateSkillInput,
-    context: SkillContext,
-    output: UpdateSkillOutput,
+  async updateSkill(input: UpdateSkillInput, output: UpdateSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSkill(input, context, output);
+    return this.service.updateSkill(input, output, context, metrics, report);
   }
 
   /** 删除 Skill */
-  async delSkill(
-    input: DelSkillInput,
-    context: SkillContext,
-    output: DelSkillOutput,
+  async delSkill(input: DelSkillInput, output: DelSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delSkill(input, context, output);
+    return this.service.delSkill(input, output, context, metrics, report);
   }
 
   /** 搜索 Skill */
-  async soSkill(
-    input: SoSkillInput,
-    context: SkillContext,
-    output: SoSkillOutput,
+  async soSkill(input: SoSkillInput, output: SoSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soSkill(input, context, output);
+    return this.service.soSkill(input, output, context, metrics, report);
   }
 
   /** 执行 Skill（沙箱执行） */
-  async execSkill(
-    input: ExecSkillInput,
-    context: SkillContext,
-    output: ExecSkillOutput,
+  async execSkill(input: ExecSkillInput, output: ExecSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.execSkill(input, context, output);
+    return this.service.execSkill(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 Skill 组件 */
-  async enableSkill(
-    input: EnableSkillInput,
-    context: SkillContext,
-    output: EnableSkillOutput,
+  async enableSkill(input: EnableSkillInput, output: EnableSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableSkill(input, context, output);
+    return this.service.enableSkill(input, output, context, metrics, report);
   }
 }

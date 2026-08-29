@@ -12,6 +12,8 @@
  * 不直接接触 Service 或 Repository。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { SQLiteRelationDBRepository } from '../infrastructure/SQLiteRelationDBRepository';
 import type { SQLiteRelationDBOptions } from '../infrastructure/SQLiteRelationDBRepository';
 import { RelationDBService } from '../application/RelationDBService';
@@ -56,8 +58,7 @@ import type { Condition } from '../../shared/query';
  * const output = new InsertDBOutput();
  * await access.insertDB(
  *   { table: 'soul', data: [{ field: 'id', value: 'xxx' }] },
- *   new DBContext(),
- *   output,
+ *   output, new DBContext(),
  * );
  * ```
  */
@@ -93,66 +94,45 @@ export class RelationDBAccess implements IConfigStorage {
   // -------------------------------------------------------------------------
 
   /** 新增记录 */
-  async insertDB(
-    input: InsertDBInput,
-    context: DBContext,
-    output: InsertDBOutput,
+  async insertDB(input: InsertDBInput, output: InsertDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.insertDB(input, context, output);
+    return this.service.insertDB(input, output, context, metrics, report);
   }
 
   /** 删除记录 */
-  async deleteDB(
-    input: DeleteDBInput,
-    context: DBContext,
-    output: DeleteDBOutput,
+  async deleteDB(input: DeleteDBInput, output: DeleteDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.deleteDB(input, context, output);
+    return this.service.deleteDB(input, output, context, metrics, report);
   }
 
   /** 更新记录 */
-  async updateDB(
-    input: UpdateDBInput,
-    context: DBContext,
-    output: UpdateDBOutput,
+  async updateDB(input: UpdateDBInput, output: UpdateDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateDB(input, context, output);
+    return this.service.updateDB(input, output, context, metrics, report);
   }
 
   /** 查询记录列表 */
-  async selectDB(
-    input: SelectDBInput,
-    context: DBContext,
-    output: SelectDBOutput,
+  async selectDB(input: SelectDBInput, output: SelectDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.selectDB(input, context, output);
+    return this.service.selectDB(input, output, context, metrics, report);
   }
 
   /** 查询单条记录 */
-  async selectOneDB(
-    input: SelectOneDBInput,
-    context: DBContext,
-    output: SelectOneDBOutput,
+  async selectOneDB(input: SelectOneDBInput, output: SelectOneDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.selectOneDB(input, context, output);
+    return this.service.selectOneDB(input, output, context, metrics, report);
   }
 
   /** 统计记录数 */
-  async countDB(
-    input: CountDBInput,
-    context: DBContext,
-    output: CountDBOutput,
+  async countDB(input: CountDBInput, output: CountDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.countDB(input, context, output);
+    return this.service.countDB(input, output, context, metrics, report);
   }
 
   /** 执行事务 */
-  async transactionDB(
-    input: TransactionDBInput,
-    context: DBContext,
-    output: TransactionDBOutput,
+  async transactionDB(input: TransactionDBInput, output: TransactionDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.transactionDB(input, context, output);
+    return this.service.transactionDB(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
@@ -160,30 +140,21 @@ export class RelationDBAccess implements IConfigStorage {
   // -------------------------------------------------------------------------
 
   /** 可视化数据 */
-  async visualizedDB(
-    input: VisualizedDBInput,
-    context: DBContext,
-    output: VisualizedDBOutput,
+  async visualizedDB(input: VisualizedDBInput, output: VisualizedDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.visualizedDB(input, context, output);
+    return this.service.visualizedDB(input, output, context, metrics, report);
   }
 
   /** 启用/禁用关系数据库 */
-  async enableDB(
-    input: EnableDBInput,
-    context: DBContext,
-    output: EnableDBOutput,
+  async enableDB(input: EnableDBInput, output: EnableDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableDB(input, context, output);
+    return this.service.enableDB(input, output, context, metrics, report);
   }
 
   /** 关闭数据库连接（终态操作） */
-  async closeDB(
-    input: CloseDBInput,
-    context: DBContext,
-    output: CloseDBOutput,
+  async closeDB(input: CloseDBInput, output: CloseDBOutput, context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closeDB(input, context, output);
+    return this.service.closeDB(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
@@ -198,8 +169,7 @@ export class RelationDBAccess implements IConfigStorage {
     const output = new SelectOneDBOutput();
     const ok = await this.service.selectOneDB(
       { query_param: { table, conditions } },
-      new DBContext(),
-      output,
+      output, new DBContext(),
     );
     return ok ? output.row : null;
   }
@@ -231,8 +201,7 @@ export class RelationDBAccess implements IConfigStorage {
           fields: options?.fields,
         },
       },
-      new DBContext(),
-      output,
+      output, new DBContext(),
     );
     return output.rows;
   }
@@ -243,7 +212,7 @@ export class RelationDBAccess implements IConfigStorage {
     data: Array<{ field: string; value: unknown }>,
   ): Promise<number> {
     const output = new InsertDBOutput();
-    await this.service.insertDB({ table, data }, new DBContext(), output);
+    await this.service.insertDB({ table, data }, output, new DBContext());
     return output.affected_rows;
   }
 
@@ -256,8 +225,7 @@ export class RelationDBAccess implements IConfigStorage {
     const output = new UpdateDBOutput();
     await this.service.updateDB(
       { table, data, conditions },
-      new DBContext(),
-      output,
+      output, new DBContext(),
     );
     return output.affected_rows;
   }
@@ -273,8 +241,7 @@ export class RelationDBAccess implements IConfigStorage {
     const output = new DeleteDBOutput();
     await this.service.deleteDB(
       { table, conditions },
-      new DBContext(),
-      output,
+      output, new DBContext(),
     );
     return output.affected_rows;
   }
@@ -282,7 +249,7 @@ export class RelationDBAccess implements IConfigStorage {
   /** {@inheritDoc} */
   async count(table: string, conditions?: Condition[]): Promise<number> {
     const output = new CountDBOutput();
-    await this.service.countDB({ table, conditions }, new DBContext(), output);
+    await this.service.countDB({ table, conditions }, output, new DBContext());
     return output.count;
   }
 

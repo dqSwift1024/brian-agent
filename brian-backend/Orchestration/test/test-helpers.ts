@@ -452,7 +452,7 @@ export function createMockMQCore() {
 export function createMockMQAccess() {
   return {
     sendMQ: vi.fn().mockResolvedValue(true),
-    getQueueStats: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.stats = { pending: 0, processing: 0, completed: 0, failed: 0 }; return true; }),
+    soQueueStats: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.stats = { pending: 0, processing: 0, completed: 0, failed: 0 }; return true; }),
     consume: vi.fn().mockResolvedValue(true),
     ack: vi.fn().mockResolvedValue(true),
     nack: vi.fn().mockResolvedValue(true),

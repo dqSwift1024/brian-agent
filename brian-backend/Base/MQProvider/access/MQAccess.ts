@@ -9,6 +9,8 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { MQSchemaInitializer } from '../infrastructure/MQSchemaInitializer';
 import { MQService } from '../application/MQService';
@@ -59,66 +61,45 @@ export class MQAccess {
   }
 
   /** 发送消息 */
-  async sendMQ(
-    input: SendMQInput,
-    context: MQContext,
-    output: SendMQOutput,
+  async sendMQ(input: SendMQInput, output: SendMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.sendMQ(input, context, output);
+    return this.service.sendMQ(input, output, context, metrics, report);
   }
 
   /** 消费消息 */
-  async consumeMQ(
-    input: ConsumeMQInput,
-    context: MQContext,
-    output: ConsumeMQOutput,
+  async consumeMQ(input: ConsumeMQInput, output: ConsumeMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.consumeMQ(input, context, output);
+    return this.service.consumeMQ(input, output, context, metrics, report);
   }
 
   /** 确认消息 */
-  async ackMQ(
-    input: AckMQInput,
-    context: MQContext,
-    output: AckMQOutput,
+  async ackMQ(input: AckMQInput, output: AckMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.ackMQ(input, context, output);
+    return this.service.ackMQ(input, output, context, metrics, report);
   }
 
   /** 否认消息 */
-  async nackMQ(
-    input: NackMQInput,
-    context: MQContext,
-    output: NackMQOutput,
+  async nackMQ(input: NackMQInput, output: NackMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.nackMQ(input, context, output);
+    return this.service.nackMQ(input, output, context, metrics, report);
   }
 
   /** 获取队列统计 */
-  async getQueueStats(
-    input: GetQueueStatsInput,
-    context: MQContext,
-    output: GetQueueStatsOutput,
+  async soQueueStats(input: GetQueueStatsInput, output: GetQueueStatsOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getQueueStats(input, context, output);
+    return this.service.soQueueStats(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 MQ 组件 */
-  async enableMQ(
-    input: EnableMQInput,
-    context: MQContext,
-    output: EnableMQOutput,
+  async enableMQ(input: EnableMQInput, output: EnableMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableMQ(input, context, output);
+    return this.service.enableMQ(input, output, context, metrics, report);
   }
 
   /** 关闭 MQ 组件（终态释放，不可恢复） */
-  async closeMQ(
-    input: CloseMQInput,
-    context: MQContext,
-    output: CloseMQOutput,
+  async closeMQ(input: CloseMQInput, output: CloseMQOutput, context: MQContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closeMQ(input, context, output);
+    return this.service.closeMQ(input, output, context, metrics, report);
   }
 
   /** 清理过期消息（COMPLETED/FAILED 超过 message_ttl） */

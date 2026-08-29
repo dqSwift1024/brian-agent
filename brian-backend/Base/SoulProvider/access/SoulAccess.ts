@@ -9,6 +9,8 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { SoulSchemaInitializer } from '../infrastructure/SoulSchemaInitializer';
 import { SoulService } from '../application/SoulService';
@@ -49,8 +51,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddSoulOutput();
  * await soulAccess.addSoul(
  *   { data: { soul_content: '...', soul_brief: '...', soul_usage: '...' } },
- *   new SoulContext(),
- *   output,
+ *   output, new SoulContext(),
  * );
  * ```
  */
@@ -77,74 +78,50 @@ export class SoulAccess {
   }
 
   /** 新增 Soul */
-  async addSoul(
-    input: AddSoulInput,
-    context: SoulContext,
-    output: AddSoulOutput,
+  async addSoul(input: AddSoulInput, output: AddSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addSoul(input, context, output);
+    return this.service.addSoul(input, output, context, metrics, report);
   }
 
   /** 删除 Soul */
-  async delSoul(
-    input: DelSoulInput,
-    context: SoulContext,
-    output: DelSoulOutput,
+  async delSoul(input: DelSoulInput, output: DelSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delSoul(input, context, output);
+    return this.service.delSoul(input, output, context, metrics, report);
   }
 
   /** 更新 Soul */
-  async updateSoul(
-    input: UpdateSoulInput,
-    context: SoulContext,
-    output: UpdateSoulOutput,
+  async updateSoul(input: UpdateSoulInput, output: UpdateSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSoul(input, context, output);
+    return this.service.updateSoul(input, output, context, metrics, report);
   }
 
   /** 获取 Soul */
-  async getSoul(
-    input: GetSoulInput,
-    context: SoulContext,
-    output: GetSoulOutput,
+  async soSoulById(input: GetSoulInput, output: GetSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getSoul(input, context, output);
+    return this.service.soSoulById(input, output, context, metrics, report);
   }
 
   /** 搜索 Soul */
-  async soSoul(
-    input: SoSoulInput,
-    context: SoulContext,
-    output: SoSoulOutput,
+  async soSoul(input: SoSoulInput, output: SoSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soSoul(input, context, output);
+    return this.service.soSoul(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 Soul 组件 */
-  async enableSoul(
-    input: EnableSoulInput,
-    context: SoulContext,
-    output: EnableSoulOutput,
+  async enableSoul(input: EnableSoulInput, output: EnableSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableSoul(input, context, output);
+    return this.service.enableSoul(input, output, context, metrics, report);
   }
 
   /** 关闭 Soul 组件（终态操作） */
-  async closeSoul(
-    input: CloseSoulInput,
-    context: SoulContext,
-    output: CloseSoulOutput,
+  async closeSoul(input: CloseSoulInput, output: CloseSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closeSoul(input, context, output);
+    return this.service.closeSoul(input, output, context, metrics, report);
   }
 
   /** 记录 Soul 使用次数（upsert） */
-  async recordSoulUsage(
-    input: RecordSoulUsageInput,
-    context: SoulContext,
-    output: RecordSoulUsageOutput,
+  async recordSoulUsage(input: RecordSoulUsageInput, output: RecordSoulUsageOutput, context: SoulContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.recordSoulUsage(input, context, output);
+    return this.service.recordSoulUsage(input, output, context, metrics, report);
   }
 }

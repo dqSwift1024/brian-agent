@@ -133,7 +133,7 @@ function createInMemoryVectorDBAccess() {
       o.vectors = [];
       return true;
     }),
-    getVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soVectorById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       const v = store.get(_i.id);
       o.vector = v || null;
       return true;

@@ -75,7 +75,7 @@ export class StopCDTInput extends Input {}
 export class StopCDTOutput extends Output {}
 
 // ============================================================
-// getCDTEndpoint
+// soCDTEndpoint
 // ============================================================
 
 export class GetCDTEndpointInput extends Input {}

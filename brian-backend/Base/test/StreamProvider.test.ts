@@ -10,6 +10,8 @@
  * - 配置查询与更新
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { RelationDBAccess } from '../RelationDBProvider/access/RelationDBAccess';
 import { StreamAccess } from '../StreamProvider/access/StreamAccess';
@@ -43,7 +45,7 @@ describe('StreamProvider', () => {
       writer: (chunk: string) => { received.push(chunk); },
     });
     const regOut = new RegisterStreamOutput();
-    const ok = await streamAccess.registerStream(regIn, new StreamContext(), regOut);
+    const ok = await streamAccess.registerStream(regIn, regOut, new StreamContext());
 
     expect(ok).toBe(true);
     expect(regOut.registered).toBe(true);
@@ -51,7 +53,7 @@ describe('StreamProvider', () => {
 
     const closeIn = Object.assign(new CloseStreamInput(), { session_id: 'session-1' });
     const closeOut = new CloseStreamOutput();
-    await streamAccess.closeStream(closeIn, new StreamContext(), closeOut);
+    await streamAccess.closeStream(closeIn, closeOut, new StreamContext());
     expect(closeOut.closed).toBe(true);
   });
 
@@ -66,8 +68,7 @@ describe('StreamProvider', () => {
           }
         },
       }),
-      new StreamContext(),
-      new RegisterStreamOutput(),
+      new RegisterStreamOutput(), new StreamContext(),
     );
 
     // 推送结构化事件
@@ -101,8 +102,7 @@ describe('StreamProvider', () => {
           }
         },
       }),
-      new StreamContext(),
-      new RegisterStreamOutput(),
+      new RegisterStreamOutput(), new StreamContext(),
     );
 
     const testText = '通用人工智能（AGI）是指具有与人类相当或超越人类智力水平的机器智能。';
@@ -145,8 +145,7 @@ describe('StreamProvider', () => {
           }
         },
       }),
-      new StreamContext(),
-      new RegisterStreamOutput(),
+      new RegisterStreamOutput(), new StreamContext(),
     );
 
     // 并发推送两个不同 Agent 的思考
@@ -175,7 +174,7 @@ describe('StreamProvider', () => {
       chunk_max_chars: 6,
     });
     const cfgOut = new ConfigStreamOutput();
-    await streamAccess.configStream(cfgIn, new StreamContext(), cfgOut);
+    await streamAccess.configStream(cfgIn, cfgOut, new StreamContext());
     expect(cfgOut.updated).toBe(true);
   });
 });

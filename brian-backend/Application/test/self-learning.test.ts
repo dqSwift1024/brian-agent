@@ -69,7 +69,7 @@ describe('SelfLearningService', () => {
       o.list = [];
       return true;
     });
-    vi.spyOn(graphDb, 'getGraphNeighbors').mockImplementation(async (_i: any, _c: any, o: any) => {
+    vi.spyOn(graphDb, 'soGraphNeighbors').mockImplementation(async (_i: any, _c: any, o: any) => {
       o.list = [];
       return true;
     });
@@ -1368,7 +1368,7 @@ describe('SelfLearningService', () => {
         }));
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [];
         return true;
       });
@@ -1429,7 +1429,7 @@ describe('SelfLearningService', () => {
         }];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [];
         return true;
       });
@@ -1457,7 +1457,7 @@ describe('SelfLearningService', () => {
         }));
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = Array.from({ length: tagCount }, (_, idx) => ({
           id: `edge-${idx}`,
           from_node_id: `tag-node-${idx}`,
@@ -2084,7 +2084,7 @@ describe('SelfLearningService', () => {
         o.list = [{ id: 'node-1', node_type: 'Tag', content: { tag: 'ActiveTag' } }];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [{ id: 'edge-1', from: 'node-1', to: 'node-2', edge_type: 'similarTo' }];
         return true;
       });
@@ -2120,7 +2120,7 @@ describe('SelfLearningService', () => {
         o.list = [{ id: 'node-1', node_type: 'Tag', content: { tag: 'TagA' } }];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [];
         return true;
       });
@@ -2156,7 +2156,7 @@ describe('SelfLearningService', () => {
         ];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [];
         return true;
       });
@@ -2173,7 +2173,7 @@ describe('SelfLearningService', () => {
         o.list = [{ id: 'node-connected', node_type: 'Tag', content: { tag: 'ConnectedTag' } }];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [{ id: 'edge-exists' }];
         return true;
       });
@@ -2195,7 +2195,7 @@ describe('SelfLearningService', () => {
         ];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [];
         return true;
       });
@@ -2231,7 +2231,7 @@ describe('SelfLearningService', () => {
         o.list = [{ id: 'node-rev', node_type: 'Tag', content: { tag: 'ReverseTag' } }];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [{
           id: 'edge-to-revive',
           from_node_id: 'node-rev',
@@ -2258,7 +2258,7 @@ describe('SelfLearningService', () => {
         ];
         return true;
       });
-      graphDb.getGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
         o.list = [
           { id: 'e1', from_node_id: 'ns-node-1', to_node_id: 'ns-node-2', edge_type: 'similarTo', weight: 0.5, is_active: true, activation_count: 10 },
           { id: 'e2', from_node_id: 'ns-node-2', to_node_id: 'ns-node-3', edge_type: 'similarTo', weight: 0.3, is_active: true, activation_count: 2 },

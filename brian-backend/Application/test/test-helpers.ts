@@ -569,7 +569,7 @@ export function createMockLLMProvider(overrides: Record<string, any> = {}) {
       o.models = [];
       return true;
     }),
-    getLLM: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soLLMById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.llm = {};
       return true;
     }),
@@ -596,7 +596,7 @@ export function createMockSoulProvider(overrides: Record<string, any> = {}) {
       o.souls = [];
       return true;
     }),
-    getSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soSoulById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.soul = {};
       return true;
     }),
@@ -623,7 +623,7 @@ export function createMockSkillProvider(overrides: Record<string, any> = {}) {
       o.skills = [];
       return true;
     }),
-    getSkill: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soSkillById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.skill = {};
       return true;
     }),
@@ -666,7 +666,7 @@ export function createMockMCPProvider(overrides: Record<string, any> = {}) {
     uninstallMCP: vi.fn().mockResolvedValue(true),
     updateMcp: vi.fn().mockResolvedValue(true),
     updateMCP: vi.fn().mockResolvedValue(true),
-    getMcp: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soMcpById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.mcp = {};
       return true;
     }),
@@ -701,7 +701,7 @@ export function createMockPromptsProvider(overrides: Record<string, any> = {}) {
       o.prompts = [];
       return true;
     }),
-    getPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soPromptById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.prompt = {};
       return true;
     }),
@@ -717,11 +717,11 @@ export function createMockGraphDBProvider(overrides: Record<string, any> = {}) {
   return {
     addGraphNode: vi.fn().mockResolvedValue(true),
     addGraphEdge: vi.fn().mockResolvedValue(true),
-    getGraphNode: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soGraphNode: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.nodes = [];
       return true;
     }),
-    getGraphEdge: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soGraphEdge: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.edges = [];
       return true;
     }),
@@ -751,7 +751,7 @@ export function createMockMQProvider(overrides: Record<string, any> = {}) {
     }),
     ack: vi.fn().mockResolvedValue(true),
     nack: vi.fn().mockResolvedValue(true),
-    getQueueStats: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soQueueStats: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.stats = {};
       return true;
     }),

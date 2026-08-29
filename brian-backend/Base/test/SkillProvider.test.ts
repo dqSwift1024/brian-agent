@@ -3,7 +3,7 @@
  *
  * 测试范围：
  * - 初始化：initialize / 配置表创建 / 默认配置写入 / enabled 状态恢复
- * - Skill 管理：addSkill / getSkill / updateSkill / delSkill / soSkill
+ * - Skill 管理：addSkill / soSkillById / updateSkill / delSkill / soSkill
  * - Skill 执行：execSkill（沙箱执行、usage_count 更新）
  * - 可视化与运维：enableSkill（运行时启用/禁用）
  * - AOP 集成：elapsed_ms 填充
@@ -15,6 +15,8 @@
  * 每个测试用例在 temp 目录中创建独立的数据库文件，测试后清理。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -91,8 +93,7 @@ describe('SkillProvider', () => {
     try {
       await relationDb.closeDB(
         new CloseDBInput(),
-        new DBContext(),
-        new CloseDBOutput(),
+        new CloseDBOutput(), new DBContext(),
       );
     } catch {
       // 忽略关闭时的错误
@@ -134,8 +135,7 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
       const result = await skillAccess.addSkill(
         input,
-        new SkillContext(),
-        out,
+        out, new SkillContext(),
       );
       expect(result).toBe(true);
     });
@@ -144,8 +144,7 @@ describe('SkillProvider', () => {
       // 先禁用
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       // 重新初始化
@@ -157,7 +156,7 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
 
       await expect(
-        newAccess.addSkill(input, new SkillContext(), out),
+        newAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
@@ -165,13 +164,11 @@ describe('SkillProvider', () => {
       // 先禁用秒启用
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: true }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       // 重新初始化
@@ -184,8 +181,7 @@ describe('SkillProvider', () => {
 
       const result = await newAccess.addSkill(
         input,
-        new SkillContext(),
-        out,
+        out, new SkillContext(),
       );
       expect(result).toBe(true);
       expect(out.id).toBeTruthy();
@@ -204,8 +200,7 @@ describe('SkillProvider', () => {
 
       const result = await skillAccess.addSkill(
         input,
-        new SkillContext(),
-        output,
+        output, new SkillContext(),
       );
       expect(result).toBe(true);
       expect(output.id).toBeTruthy();
@@ -213,17 +208,17 @@ describe('SkillProvider', () => {
       expect(output.id.length).toBeGreaterThan(0);
     });
 
-    it('新增后应可通过 getSkill 查到', async () => {
+    it('新增后应可通过 soSkillById 查到', async () => {
       const data = makeSkillData({ skill_brief: '天气查询' });
       const input = new AddSkillInput();
       input.data = data;
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill).toBeTruthy();
       expect(getOut.skill!.skill_brief).toBe('天气查询');
@@ -234,12 +229,12 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData();
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill!.enable).toBe(true);
     });
@@ -248,12 +243,12 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData({ enable: false });
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill!.enable).toBe(false);
     });
@@ -266,12 +261,12 @@ describe('SkillProvider', () => {
         assets: [{ name: 'img.png', content: '...' }],
       });
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill!.scripts).toEqual([{ name: 'test.sh', content: 'echo test' }]);
       expect(getOut.skill!.references).toEqual([{ name: 'doc.md', content: '# doc' }]);
@@ -285,7 +280,7 @@ describe('SkillProvider', () => {
         const input = new AddSkillInput();
         input.data = makeSkillData();
         const out = new AddSkillOutput();
-        await skillAccess.addSkill(input, new SkillContext(), out);
+        await skillAccess.addSkill(input, out, new SkillContext());
 
         expect(ids.has(out.id)).toBe(false);
         ids.add(out.id);
@@ -297,12 +292,12 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData();
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill!.created).toBeGreaterThan(0);
       expect(getOut.skill!.updated).toBeGreaterThan(0);
@@ -315,7 +310,7 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
 
       await expect(
-        skillAccess.addSkill(input, new SkillContext(), out),
+        skillAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -325,15 +320,14 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
 
       await expect(
-        skillAccess.addSkill(input, new SkillContext(), out),
+        skillAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('组件禁用后 addSkill 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new AddSkillInput();
@@ -341,16 +335,16 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
 
       await expect(
-        skillAccess.addSkill(input, new SkillContext(), out),
+        skillAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
 
   // =========================================================================
-  // getSkill - 获取 Skill
+  // soSkillById - 获取 Skill
   // =========================================================================
 
-  describe('getSkill', () => {
+  describe('soSkillById', () => {
     let skillId: string;
     let skillData: SkillData;
 
@@ -359,7 +353,7 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = skillData;
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
       skillId = out.id;
     });
 
@@ -367,10 +361,9 @@ describe('SkillProvider', () => {
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      const result = await skillAccess.getSkill(
+      const result = await skillAccess.soSkillById(
         getInput,
-        new SkillContext(),
-        getOut,
+        getOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -385,10 +378,9 @@ describe('SkillProvider', () => {
         { field: 'skill_brief', operator: Operator.EQ, value: '待查询 Skill' },
       ];
       const getOut = new GetSkillOutput();
-      const result = await skillAccess.getSkill(
+      const result = await skillAccess.soSkillById(
         getInput,
-        new SkillContext(),
-        getOut,
+        getOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -400,10 +392,9 @@ describe('SkillProvider', () => {
       const getInput = new GetSkillInput();
       getInput.id = 'non-existent-id';
       const getOut = new GetSkillOutput();
-      const result = await skillAccess.getSkill(
+      const result = await skillAccess.soSkillById(
         getInput,
-        new SkillContext(),
-        getOut,
+        getOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -416,10 +407,9 @@ describe('SkillProvider', () => {
         { field: 'skill_brief', operator: Operator.EQ, value: '不存在的 Skill' },
       ];
       const getOut = new GetSkillOutput();
-      const result = await skillAccess.getSkill(
+      const result = await skillAccess.soSkillById(
         getInput,
-        new SkillContext(),
-        getOut,
+        getOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -431,15 +421,14 @@ describe('SkillProvider', () => {
       const getOut = new GetSkillOutput();
 
       await expect(
-        skillAccess.getSkill(getInput, new SkillContext(), getOut),
+        skillAccess.soSkillById(getInput, getOut, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
-    it('组件禁用后 getSkill 应抛出 ComponentDisabledError', async () => {
+    it('组件禁用后 soSkillById 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const getInput = new GetSkillInput();
@@ -447,7 +436,7 @@ describe('SkillProvider', () => {
       const getOut = new GetSkillOutput();
 
       await expect(
-        skillAccess.getSkill(getInput, new SkillContext(), getOut),
+        skillAccess.soSkillById(getInput, getOut, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -470,14 +459,14 @@ describe('SkillProvider', () => {
         const input = new AddSkillInput();
         input.data = s;
         const out = new AddSkillOutput();
-        await skillAccess.addSkill(input, new SkillContext(), out);
+        await skillAccess.addSkill(input, out, new SkillContext());
       }
     });
 
     it('应返回所有 Skill（无条件时）', async () => {
       const input = new SoSkillInput();
       const out = new SoSkillOutput();
-      const result = await skillAccess.soSkill(input, new SkillContext(), out);
+      const result = await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(result).toBe(true);
       expect(out.list.length).toBe(5);
@@ -488,7 +477,7 @@ describe('SkillProvider', () => {
       const input = new SoSkillInput();
       input.keyword = '天气';
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(2);
       expect(out.total).toBe(2);
@@ -501,7 +490,7 @@ describe('SkillProvider', () => {
       const input = new SoSkillInput();
       input.keyword = '不存在的关键词';
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list).toEqual([]);
       expect(out.total).toBe(0);
@@ -513,7 +502,7 @@ describe('SkillProvider', () => {
         { field: 'enable', operator: Operator.EQ, value: 1 },
       ];
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(5);
       expect(out.total).toBe(5);
@@ -523,7 +512,7 @@ describe('SkillProvider', () => {
       const input = new SoSkillInput();
       input.order_by = [{ field: 'created', direction: 'ASC' }];
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(5);
       // 验证升序：created 依次递增
@@ -538,7 +527,7 @@ describe('SkillProvider', () => {
       const input = new SoSkillInput();
       input.order_by = [{ field: 'created', direction: 'DESC' }];
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(5);
       for (let i = 1; i < out.list.length; i++) {
@@ -553,7 +542,7 @@ describe('SkillProvider', () => {
       input.page = { current: 1, size: 2 };
       input.order_by = [{ field: 'created', direction: 'ASC' }];
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(2);
       expect(out.total).toBe(5);
@@ -564,7 +553,7 @@ describe('SkillProvider', () => {
       const allInput = new SoSkillInput();
       allInput.order_by = [{ field: 'created', direction: 'ASC' }];
       const allOut = new SoSkillOutput();
-      await skillAccess.soSkill(allInput, new SkillContext(), allOut);
+      await skillAccess.soSkill(allInput, allOut, new SkillContext());
       const allIds = allOut.list.map((s) => s.id);
 
       // 分页获取
@@ -572,7 +561,7 @@ describe('SkillProvider', () => {
       input.page = { current: 3, size: 2 };
       input.order_by = [{ field: 'created', direction: 'ASC' }];
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBe(1); // 第3页只有1条(总数5, 每页2)
       expect(out.total).toBe(5);
@@ -586,7 +575,7 @@ describe('SkillProvider', () => {
       input.order_by = [{ field: 'created', direction: 'ASC' }];
       input.page = { current: 1, size: 10 };
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list.length).toBeGreaterThanOrEqual(2);
       expect(out.total).toBeGreaterThanOrEqual(2);
@@ -596,20 +585,19 @@ describe('SkillProvider', () => {
       // 清空所有 skill
       const allInput = new SoSkillInput();
       const allOut = new SoSkillOutput();
-      await skillAccess.soSkill(allInput, new SkillContext(), allOut);
+      await skillAccess.soSkill(allInput, allOut, new SkillContext());
 
       const delInput = new DelSkillInput();
       delInput.ids = allOut.list.map((s) => s.id);
       await skillAccess.delSkill(
         delInput,
-        new SkillContext(),
-        new DelSkillOutput(),
+        new DelSkillOutput(), new SkillContext(),
       );
 
       const input = new SoSkillInput();
       input.keyword = '任何';
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.list).toEqual([]);
       expect(out.total).toBe(0);
@@ -618,15 +606,14 @@ describe('SkillProvider', () => {
     it('组件禁用后 soSkill 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new SoSkillInput();
       const out = new SoSkillOutput();
 
       await expect(
-        skillAccess.soSkill(input, new SkillContext(), out),
+        skillAccess.soSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -642,7 +629,7 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData({ skill_brief: '原始 Skill' });
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
       skillId = out.id;
     });
 
@@ -653,8 +640,7 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
       const result = await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        updateOut,
+        updateOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -663,7 +649,7 @@ describe('SkillProvider', () => {
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
       expect(getOut.skill!.skill_brief).toBe('更新后的 Skill');
     });
 
@@ -671,7 +657,7 @@ describe('SkillProvider', () => {
       const getBefore = new GetSkillInput();
       getBefore.id = skillId;
       const getBeforeOut = new GetSkillOutput();
-      await skillAccess.getSkill(getBefore, new SkillContext(), getBeforeOut);
+      await skillAccess.soSkillById(getBefore, getBeforeOut, new SkillContext());
       const beforeUpdated = getBeforeOut.skill!.updated;
 
       // 等待 10ms 确保时间戳不同
@@ -682,14 +668,13 @@ describe('SkillProvider', () => {
       updateInput.data = { skill_brief: '再次更新' };
       await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        new UpdateSkillOutput(),
+        new UpdateSkillOutput(), new SkillContext(),
       );
 
       const getAfter = new GetSkillInput();
       getAfter.id = skillId;
       const getAfterOut = new GetSkillOutput();
-      await skillAccess.getSkill(getAfter, new SkillContext(), getAfterOut);
+      await skillAccess.soSkillById(getAfter, getAfterOut, new SkillContext());
       expect(getAfterOut.skill!.updated).toBeGreaterThan(beforeUpdated);
     });
 
@@ -702,8 +687,7 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
       const result = await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        updateOut,
+        updateOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -717,14 +701,13 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
       await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        updateOut,
+        updateOut, new SkillContext(),
       );
 
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
       expect(getOut.skill!.enable).toBe(false);
     });
 
@@ -735,8 +718,7 @@ describe('SkillProvider', () => {
       updateInput1.data = { enable: false };
       await skillAccess.updateSkill(
         updateInput1,
-        new SkillContext(),
-        new UpdateSkillOutput(),
+        new UpdateSkillOutput(), new SkillContext(),
       );
 
       // 再启用
@@ -745,14 +727,13 @@ describe('SkillProvider', () => {
       updateInput2.data = { enable: true };
       await skillAccess.updateSkill(
         updateInput2,
-        new SkillContext(),
-        new UpdateSkillOutput(),
+        new UpdateSkillOutput(), new SkillContext(),
       );
 
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
       expect(getOut.skill!.enable).toBe(true);
     });
 
@@ -766,14 +747,13 @@ describe('SkillProvider', () => {
       };
       await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        new UpdateSkillOutput(),
+        new UpdateSkillOutput(), new SkillContext(),
       );
 
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
       expect(getOut.skill!.scripts).toEqual([{ name: 'new.sh', content: 'new' }]);
       expect(getOut.skill!.references).toEqual([{ name: 'new.md', content: 'new' }]);
       expect(getOut.skill!.assets).toEqual([{ name: 'new.png', content: 'new' }]);
@@ -786,8 +766,7 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
       const result = await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        updateOut,
+        updateOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -800,15 +779,14 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
 
       await expect(
-        skillAccess.updateSkill(updateInput, new SkillContext(), updateOut),
+        skillAccess.updateSkill(updateInput, updateOut, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('组件禁用后 updateSkill 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const updateInput = new UpdateSkillInput();
@@ -817,7 +795,7 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
 
       await expect(
-        skillAccess.updateSkill(updateInput, new SkillContext(), updateOut),
+        skillAccess.updateSkill(updateInput, updateOut, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -838,7 +816,7 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = data;
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
       skillId = out.id;
     });
 
@@ -849,8 +827,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
       const result = await skillAccess.execSkill(
         execInput,
-        new SkillContext(),
-        execOut,
+        execOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -866,13 +843,13 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = data;
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
       execInput.params = { name: 'Brian' };
       const execOut = new ExecSkillOutput();
-      await skillAccess.execSkill(execInput, new SkillContext(), execOut);
+      await skillAccess.execSkill(execInput, execOut, new SkillContext());
 
       expect(execOut.result).toBe('Hello, Brian!');
     });
@@ -886,13 +863,13 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = data;
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
       execInput.params = { items: [1, 2, 3, 4, 5] };
       const execOut = new ExecSkillOutput();
-      await skillAccess.execSkill(execInput, new SkillContext(), execOut);
+      await skillAccess.execSkill(execInput, execOut, new SkillContext());
 
       expect(execOut.result).toBe(15);
     });
@@ -906,13 +883,13 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = data;
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
       execInput.params = { city: '北京', weather: '晴' };
       const execOut = new ExecSkillOutput();
-      await skillAccess.execSkill(execInput, new SkillContext(), execOut);
+      await skillAccess.execSkill(execInput, execOut, new SkillContext());
 
       expect(execOut.result).toBe('城市 北京 今天天气 晴');
     });
@@ -926,7 +903,7 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = data;
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
@@ -934,8 +911,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
       const result = await skillAccess.execSkill(
         execInput,
-        new SkillContext(),
-        execOut,
+        execOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -948,8 +924,7 @@ describe('SkillProvider', () => {
       execInput.params = { a: 1, b: 2 };
       await skillAccess.execSkill(
         execInput,
-        new SkillContext(),
-        new ExecSkillOutput(),
+        new ExecSkillOutput(), new SkillContext(),
       );
 
       // 查询 usage 表
@@ -971,8 +946,7 @@ describe('SkillProvider', () => {
         execInput.params = { a: i, b: i + 1 };
         await skillAccess.execSkill(
           execInput,
-          new SkillContext(),
-          new ExecSkillOutput(),
+          new ExecSkillOutput(), new SkillContext(),
         );
       }
 
@@ -989,19 +963,19 @@ describe('SkillProvider', () => {
       const addInput2 = new AddSkillInput();
       addInput2.data = data2;
       const addOut2 = new AddSkillOutput();
-      await skillAccess.addSkill(addInput2, new SkillContext(), addOut2);
+      await skillAccess.addSkill(addInput2, addOut2, new SkillContext());
 
       // 执行两个 Skill 各 2 次
       for (let i = 0; i < 2; i++) {
         const execInput1 = new ExecSkillInput();
         execInput1.id = skillId;
         execInput1.params = { a: 1, b: 2 };
-        await skillAccess.execSkill(execInput1, new SkillContext(), new ExecSkillOutput());
+        await skillAccess.execSkill(execInput1, new ExecSkillOutput(), new SkillContext());
 
         const execInput2 = new ExecSkillInput();
         execInput2.id = addOut2.id;
         execInput2.params = {};
-        await skillAccess.execSkill(execInput2, new SkillContext(), new ExecSkillOutput());
+        await skillAccess.execSkill(execInput2, new ExecSkillOutput(), new SkillContext());
       }
 
       const usageRows1 = relationDb.queryRaw<{ usage_count: number }>(
@@ -1024,7 +998,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput, new SkillContext(), execOut),
+        skillAccess.execSkill(execInput, execOut, new SkillContext()),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -1035,8 +1009,7 @@ describe('SkillProvider', () => {
       updateInput.data = { enable: false };
       await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        new UpdateSkillOutput(),
+        new UpdateSkillOutput(), new SkillContext(),
       );
 
       const execInput = new ExecSkillInput();
@@ -1045,7 +1018,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput, new SkillContext(), execOut),
+        skillAccess.execSkill(execInput, execOut, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1056,7 +1029,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput, new SkillContext(), execOut),
+        skillAccess.execSkill(execInput, execOut, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1067,7 +1040,7 @@ describe('SkillProvider', () => {
       const execOut1 = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput1, new SkillContext(), execOut1),
+        skillAccess.execSkill(execInput1, execOut1, new SkillContext()),
       ).rejects.toThrow(ValidationError);
 
       const execInput2 = new ExecSkillInput();
@@ -1076,15 +1049,14 @@ describe('SkillProvider', () => {
       const execOut2 = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput2, new SkillContext(), execOut2),
+        skillAccess.execSkill(execInput2, execOut2, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('组件级禁用后 execSkill 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const execInput = new ExecSkillInput();
@@ -1093,7 +1065,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput, new SkillContext(), execOut),
+        skillAccess.execSkill(execInput, execOut, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
@@ -1106,7 +1078,7 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = data;
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
@@ -1114,7 +1086,7 @@ describe('SkillProvider', () => {
       const execOut = new ExecSkillOutput();
 
       await expect(
-        skillAccess.execSkill(execInput, new SkillContext(), execOut),
+        skillAccess.execSkill(execInput, execOut, new SkillContext()),
       ).rejects.toThrow();
     });
   });
@@ -1133,7 +1105,7 @@ describe('SkillProvider', () => {
         const input = new AddSkillInput();
         input.data = makeSkillData({ skill_brief: `待删除 Skill ${i}` });
         const out = new AddSkillOutput();
-        await skillAccess.addSkill(input, new SkillContext(), out);
+        await skillAccess.addSkill(input, out, new SkillContext());
         skillIds.push(out.id);
       }
       skillId = skillIds[0];
@@ -1145,8 +1117,7 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
       const result = await skillAccess.delSkill(
         delInput,
-        new SkillContext(),
-        delOut,
+        delOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -1156,7 +1127,7 @@ describe('SkillProvider', () => {
       const getInput = new GetSkillInput();
       getInput.id = skillId;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
       expect(getOut.skill).toBeNull();
     });
 
@@ -1166,8 +1137,7 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
       const result = await skillAccess.delSkill(
         delInput,
-        new SkillContext(),
-        delOut,
+        delOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -1176,7 +1146,7 @@ describe('SkillProvider', () => {
       // 验证全部删除
       const soInput = new SoSkillInput();
       const soOut = new SoSkillOutput();
-      await skillAccess.soSkill(soInput, new SkillContext(), soOut);
+      await skillAccess.soSkill(soInput, soOut, new SkillContext());
       expect(soOut.list.length).toBe(0);
     });
 
@@ -1188,8 +1158,7 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
       const result = await skillAccess.delSkill(
         delInput,
-        new SkillContext(),
-        delOut,
+        delOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -1203,8 +1172,7 @@ describe('SkillProvider', () => {
       execInput.params = { a: 1, b: 2 };
       await skillAccess.execSkill(
         execInput,
-        new SkillContext(),
-        new ExecSkillOutput(),
+        new ExecSkillOutput(), new SkillContext(),
       );
 
       // 确认有 usage 记录
@@ -1217,8 +1185,7 @@ describe('SkillProvider', () => {
       // 删除 Skill
       await skillAccess.delSkill(
         Object.assign(new DelSkillInput(), { ids: [skillId] }),
-        new SkillContext(),
-        new DelSkillOutput(),
+        new DelSkillOutput(), new SkillContext(),
       );
 
       // 验证 usage 也被清理
@@ -1236,8 +1203,7 @@ describe('SkillProvider', () => {
       execInput.params = { a: 1, b: 2 };
       await skillAccess.execSkill(
         execInput,
-        new SkillContext(),
-        new ExecSkillOutput(),
+        new ExecSkillOutput(), new SkillContext(),
       );
 
       // 通过 conditions 删除
@@ -1245,8 +1211,7 @@ describe('SkillProvider', () => {
         Object.assign(new DelSkillInput(), {
           conditions: [{ field: 'id', operator: Operator.EQ, value: skillId }],
         }),
-        new SkillContext(),
-        new DelSkillOutput(),
+        new DelSkillOutput(), new SkillContext(),
       );
 
       // 验证 usage 也被清理
@@ -1263,8 +1228,7 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
       const result = await skillAccess.delSkill(
         delInput,
-        new SkillContext(),
-        delOut,
+        delOut, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -1276,15 +1240,14 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
 
       await expect(
-        skillAccess.delSkill(delInput, new SkillContext(), delOut),
+        skillAccess.delSkill(delInput, delOut, new SkillContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('组件禁用后 delSkill 应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const delInput = new DelSkillInput();
@@ -1292,7 +1255,7 @@ describe('SkillProvider', () => {
       const delOut = new DelSkillOutput();
 
       await expect(
-        skillAccess.delSkill(delInput, new SkillContext(), delOut),
+        skillAccess.delSkill(delInput, delOut, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -1305,8 +1268,7 @@ describe('SkillProvider', () => {
     it('禁用后所有操作应抛出 ComponentDisabledError', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new AddSkillInput();
@@ -1314,20 +1276,18 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
 
       await expect(
-        skillAccess.addSkill(input, new SkillContext(), out),
+        skillAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('禁用后再启用应恢复正常', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: true }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new AddSkillInput();
@@ -1335,8 +1295,7 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
       const result = await skillAccess.addSkill(
         input,
-        new SkillContext(),
-        out,
+        out, new SkillContext(),
       );
 
       expect(result).toBe(true);
@@ -1346,8 +1305,7 @@ describe('SkillProvider', () => {
     it('enable 状态应持久化到 skill_config', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const rows = relationDb.queryRaw<{ config_value: string }>(
@@ -1358,8 +1316,7 @@ describe('SkillProvider', () => {
 
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: true }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const rows2 = relationDb.queryRaw<{ config_value: string }>(
@@ -1371,8 +1328,7 @@ describe('SkillProvider', () => {
     it('重复启用应无副作用', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: true }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new AddSkillInput();
@@ -1380,8 +1336,7 @@ describe('SkillProvider', () => {
       const out = new AddSkillOutput();
       const result = await skillAccess.addSkill(
         input,
-        new SkillContext(),
-        out,
+        out, new SkillContext(),
       );
       expect(result).toBe(true);
     });
@@ -1389,20 +1344,18 @@ describe('SkillProvider', () => {
     it('重复禁用应无副作用', async () => {
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
       await skillAccess.enableSkill(
         Object.assign(new EnableSkillInput(), { enable: false }),
-        new SkillContext(),
-        new EnableSkillOutput(),
+        new EnableSkillOutput(), new SkillContext(),
       );
 
       const input = new AddSkillInput();
       input.data = makeSkillData();
       const out = new AddSkillOutput();
       await expect(
-        skillAccess.addSkill(input, new SkillContext(), out),
+        skillAccess.addSkill(input, out, new SkillContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -1416,23 +1369,23 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData();
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       expect(out.elapsed_ms).toBeDefined();
       expect(out.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });
 
-    it('getSkill 应填充 elapsed_ms', async () => {
+    it('soSkillById 应填充 elapsed_ms', async () => {
       // 先新增
       const addInput = new AddSkillInput();
       addInput.data = makeSkillData();
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = addOut.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.elapsed_ms).toBeDefined();
       expect(getOut.elapsed_ms!).toBeGreaterThanOrEqual(0);
@@ -1441,7 +1394,7 @@ describe('SkillProvider', () => {
     it('soSkill 应填充 elapsed_ms', async () => {
       const input = new SoSkillInput();
       const out = new SoSkillOutput();
-      await skillAccess.soSkill(input, new SkillContext(), out);
+      await skillAccess.soSkill(input, out, new SkillContext());
 
       expect(out.elapsed_ms).toBeDefined();
       expect(out.elapsed_ms!).toBeGreaterThanOrEqual(0);
@@ -1452,7 +1405,7 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = makeSkillData();
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const updateInput = new UpdateSkillInput();
       updateInput.id = addOut.id;
@@ -1460,8 +1413,7 @@ describe('SkillProvider', () => {
       const updateOut = new UpdateSkillOutput();
       await skillAccess.updateSkill(
         updateInput,
-        new SkillContext(),
-        updateOut,
+        updateOut, new SkillContext(),
       );
 
       expect(updateOut.elapsed_ms).toBeDefined();
@@ -1472,12 +1424,12 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = makeSkillData();
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const delInput = new DelSkillInput();
       delInput.ids = [addOut.id];
       const delOut = new DelSkillOutput();
-      await skillAccess.delSkill(delInput, new SkillContext(), delOut);
+      await skillAccess.delSkill(delInput, delOut, new SkillContext());
 
       expect(delOut.elapsed_ms).toBeDefined();
       expect(delOut.elapsed_ms!).toBeGreaterThanOrEqual(0);
@@ -1487,13 +1439,13 @@ describe('SkillProvider', () => {
       const addInput = new AddSkillInput();
       addInput.data = makeSkillData();
       const addOut = new AddSkillOutput();
-      await skillAccess.addSkill(addInput, new SkillContext(), addOut);
+      await skillAccess.addSkill(addInput, addOut, new SkillContext());
 
       const execInput = new ExecSkillInput();
       execInput.id = addOut.id;
       execInput.params = { a: 1, b: 2 };
       const execOut = new ExecSkillOutput();
-      await skillAccess.execSkill(execInput, new SkillContext(), execOut);
+      await skillAccess.execSkill(execInput, execOut, new SkillContext());
 
       expect(execOut.elapsed_ms).toBeDefined();
       expect(execOut.elapsed_ms!).toBeGreaterThanOrEqual(0);
@@ -1509,12 +1461,12 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = makeSkillData({ skill_brief: '完整性测试' });
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       const skill = getOut.skill!;
       expect(skill.id).toBeTruthy();
@@ -1531,12 +1483,12 @@ describe('SkillProvider', () => {
       const input = new AddSkillInput();
       input.data = { name: '最小值', skill_brief: '最小值测试', skill_md: 'result = 1' };
       const out = new AddSkillOutput();
-      await skillAccess.addSkill(input, new SkillContext(), out);
+      await skillAccess.addSkill(input, out, new SkillContext());
 
       const getInput = new GetSkillInput();
       getInput.id = out.id;
       const getOut = new GetSkillOutput();
-      await skillAccess.getSkill(getInput, new SkillContext(), getOut);
+      await skillAccess.soSkillById(getInput, getOut, new SkillContext());
 
       expect(getOut.skill!.scripts).toBeUndefined();
       expect(getOut.skill!.references).toBeUndefined();

@@ -11,15 +11,17 @@
  * - graph_activation_event：Node Table，存储边激活事件
  * - graph_edge_daily_activation：Node Table，按天聚合存储边激活次数
  *
- * 实现所有用例：addGraphNode / getGraphNode / updateGraphNode / delGraphNode /
- * addGraphEdge / getGraphEdge / updateGraphEdge / delGraphEdge / selectGraph /
- * getGraphNeighbors / activateGraphEdge / ageGraphEdge / visualizedGraph /
+ * 实现所有用例：addGraphNode / soGraphNode / updateGraphNode / delGraphNode /
+ * addGraphEdge / soGraphEdge / updateGraphEdge / delGraphEdge / selectGraph /
+ * soGraphNeighbors / activateGraphEdge / ageGraphEdge / visualizedGraph /
  * enableGraphDB / closeGraphDB。
  *
  * 所有方法返回 Promise<boolean>，true 表示执行完成；
  * 实际数据通过 output 参数（引用传递）回传。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { GraphDBComponent } from '../../components/GraphDB/GraphDBComponent';
 import { ConfigService } from '../../shared/config/ConfigService';
@@ -396,10 +398,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（id 节点 ID）
    */
-  async addGraphNode(
-    input: AddGraphNodeInput,
-    _context: GraphContext,
-    output: AddGraphNodeOutput,
+  async addGraphNode(input: AddGraphNodeInput, output: AddGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -435,7 +434,7 @@ export class GraphDBService {
   }
 
   /**
-   * 获取节点（getGraphNode）。
+   * 获取节点（soGraphNode）。
    *
    * PRD 3.1.2 条：按 ID 获取节点完整信息，不存在返回 null。
    *
@@ -443,10 +442,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（node 节点信息）
    */
-  async getGraphNode(
-    input: GetGraphNodeInput,
-    _context: GraphContext,
-    output: GetGraphNodeOutput,
+  async soGraphNode(input: GetGraphNodeInput, output: GetGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -472,10 +468,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async updateGraphNode(
-    input: UpdateGraphNodeInput,
-    _context: GraphContext,
-    output: UpdateGraphNodeOutput,
+  async updateGraphNode(input: UpdateGraphNodeInput, output: UpdateGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -528,10 +521,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async delGraphNode(
-    input: DelGraphNodeInput,
-    _context: GraphContext,
-    output: DelGraphNodeOutput,
+  async delGraphNode(input: DelGraphNodeInput, output: DelGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids || input.ids.length === 0) {
@@ -592,10 +582,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（id 边 ID）
    */
-  async addGraphEdge(
-    input: AddGraphEdgeInput,
-    _context: GraphContext,
-    output: AddGraphEdgeOutput,
+  async addGraphEdge(input: AddGraphEdgeInput, output: AddGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -649,7 +636,7 @@ export class GraphDBService {
   }
 
   /**
-   * 获取边（getGraphEdge）。
+   * 获取边（soGraphEdge）。
    *
    * PRD 3.2.2 条：按 ID 获取边完整信息，不存在返回 null。
    *
@@ -657,10 +644,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（edge 边信息）
    */
-  async getGraphEdge(
-    input: GetGraphEdgeInput,
-    _context: GraphContext,
-    output: GetGraphEdgeOutput,
+  async soGraphEdge(input: GetGraphEdgeInput, output: GetGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -690,10 +674,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async updateGraphEdge(
-    input: UpdateGraphEdgeInput,
-    _context: GraphContext,
-    output: UpdateGraphEdgeOutput,
+  async updateGraphEdge(input: UpdateGraphEdgeInput, output: UpdateGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -806,10 +787,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async delGraphEdge(
-    input: DelGraphEdgeInput,
-    _context: GraphContext,
-    output: DelGraphEdgeOutput,
+  async delGraphEdge(input: DelGraphEdgeInput, output: DelGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids || input.ids.length === 0) {
@@ -954,10 +932,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（list 结果列表，total 总数）
    */
-  async selectGraph(
-    input: SelectGraphInput,
-    _context: GraphContext,
-    output: SelectGraphOutput,
+  async selectGraph(input: SelectGraphInput, output: SelectGraphOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const target = String(input.target);
@@ -1022,7 +997,7 @@ export class GraphDBService {
   }
 
   /**
-   * 获取邻居节点（getGraphNeighbors）。
+   * 获取邻居节点（soGraphNeighbors）。
    *
    * PRD 3.3.2 条：从指定节点开始多跳遍历，返回 depth 范围内的所有邻居节点。
    *
@@ -1036,10 +1011,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（list 邻居节点列表）
    */
-  async getGraphNeighbors(
-    input: GetGraphNeighborsInput,
-    _context: GraphContext,
-    output: GetGraphNeighborsOutput,
+  async soGraphNeighbors(input: GetGraphNeighborsInput, output: GetGraphNeighborsOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.node_id) {
@@ -1113,10 +1085,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async activateGraphEdge(
-    input: ActivateGraphEdgeInput,
-    _context: GraphContext,
-    _output: ActivateGraphEdgeOutput,
+  async activateGraphEdge(input: ActivateGraphEdgeInput, _output: ActivateGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.edge_id) {
@@ -1213,10 +1182,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（aged_count 老化的边数量）
    */
-  async ageGraphEdge(
-    _input: AgeGraphEdgeInput,
-    _context: GraphContext,
-    output: AgeGraphEdgeOutput,
+  async ageGraphEdge(_input: AgeGraphEdgeInput, output: AgeGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -1305,10 +1271,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（data 可视化数据）
    */
-  async visualizedGraph(
-    input: VisualizedGraphInput,
-    _context: GraphContext,
-    output: VisualizedGraphOutput,
+  async visualizedGraph(input: VisualizedGraphInput, output: VisualizedGraphOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -1376,10 +1339,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async enableGraphDB(
-    input: EnableGraphDBInput,
-    _context: GraphContext,
-    _output: EnableGraphDBOutput,
+  async enableGraphDB(input: EnableGraphDBInput, _output: EnableGraphDBOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(
@@ -1413,10 +1373,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async closeGraphDB(
-    _input: CloseGraphDBInput,
-    _context: GraphContext,
-    _output: CloseGraphDBOutput,
+  async closeGraphDB(_input: CloseGraphDBInput, _output: CloseGraphDBOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;

@@ -4,6 +4,8 @@
  * 管理 Chrome 进程的启动/停止，通过 CDP WebSocket 与浏览器通信。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -158,10 +160,7 @@ export class CDTService {
   // 进程生命周期
   // ============================================================
 
-  async startCDT(
-    _input: StartCDTInput,
-    _ctx: CDTContext,
-    output: StartCDTOutput,
+  async startCDT(_input: StartCDTInput, output: StartCDTOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!this.enabled) throw new ComponentDisabledError('CDTProvider');
 
@@ -264,10 +263,7 @@ export class CDTService {
     return true;
   }
 
-  async stopCDT(
-    _input: StopCDTInput,
-    _ctx: CDTContext,
-    output: StopCDTOutput,
+  async stopCDT(_input: StopCDTInput, output: StopCDTOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.stopCommandWs();
     this.stopKeepAlive();
@@ -279,19 +275,13 @@ export class CDTService {
     return true;
   }
 
-  async getCDTEndpoint(
-    _input: GetCDTEndpointInput,
-    _ctx: CDTContext,
-    output: GetCDTEndpointOutput,
+  async soCDTEndpoint(_input: GetCDTEndpointInput, output: GetCDTEndpointOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     output.endpoint = this.endpoint;
     return true;
   }
 
-  async isCDTRunning(
-    _input: IsCDTRunningInput,
-    _ctx: CDTContext,
-    output: IsCDTRunningOutput,
+  async isCDTRunning(_input: IsCDTRunningInput, output: IsCDTRunningOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const alive = this.isProcessAlive();
     output.running = alive;
@@ -304,10 +294,7 @@ export class CDTService {
   // CDP 通信
   // ============================================================
 
-  async execCDP(
-    input: ExecCDPInput,
-    _ctx: CDTContext,
-    output: ExecCDPOutput,
+  async execCDP(input: ExecCDPInput, output: ExecCDPOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!this.endpoint) {
       output.error = 'CDT 未启动';

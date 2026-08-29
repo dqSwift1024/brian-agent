@@ -9,6 +9,8 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { PromptsSchemaInitializer } from '../infrastructure/PromptsSchemaInitializer';
 import { PromptsService } from '../application/PromptsService';
@@ -50,8 +52,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddPromptOutput();
  * await promptsAccess.addPrompt(
  *   { data: { prompt_template_title: '...', prompt_template: '...' } },
- *   new PromptContext(),
- *   output,
+ *   output, new PromptContext(),
  * );
  * ```
  */
@@ -81,74 +82,50 @@ export class PromptsAccess {
   }
 
   /** 新增 Prompt */
-  async addPrompt(
-    input: AddPromptInput,
-    context: PromptContext,
-    output: AddPromptOutput,
+  async addPrompt(input: AddPromptInput, output: AddPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addPrompt(input, context, output);
+    return this.service.addPrompt(input, output, context, metrics, report);
   }
 
   /** 删除 Prompt */
-  async delPrompt(
-    input: DelPromptInput,
-    context: PromptContext,
-    output: DelPromptOutput,
+  async delPrompt(input: DelPromptInput, output: DelPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delPrompt(input, context, output);
+    return this.service.delPrompt(input, output, context, metrics, report);
   }
 
   /** 更新 Prompt */
-  async updatePrompt(
-    input: UpdatePromptInput,
-    context: PromptContext,
-    output: UpdatePromptOutput,
+  async updatePrompt(input: UpdatePromptInput, output: UpdatePromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updatePrompt(input, context, output);
+    return this.service.updatePrompt(input, output, context, metrics, report);
   }
 
   /** 获取 Prompt */
-  async getPrompt(
-    input: GetPromptInput,
-    context: PromptContext,
-    output: GetPromptOutput,
+  async soPromptById(input: GetPromptInput, output: GetPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getPrompt(input, context, output);
+    return this.service.soPromptById(input, output, context, metrics, report);
   }
 
   /** 搜索 Prompt */
-  async soPrompt(
-    input: SoPromptInput,
-    context: PromptContext,
-    output: SoPromptOutput,
+  async soPrompt(input: SoPromptInput, output: SoPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soPrompt(input, context, output);
+    return this.service.soPrompt(input, output, context, metrics, report);
   }
 
   /** 执行/渲染 Prompt */
-  async execPrompt(
-    input: ExecPromptInput,
-    context: PromptContext,
-    output: ExecPromptOutput,
+  async execPrompt(input: ExecPromptInput, output: ExecPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.execPrompt(input, context, output);
+    return this.service.execPrompt(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 Prompts 组件 */
-  async enablePrompts(
-    input: EnablePromptsInput,
-    context: PromptContext,
-    output: EnablePromptsOutput,
+  async enablePrompts(input: EnablePromptsInput, output: EnablePromptsOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enablePrompts(input, context, output);
+    return this.service.enablePrompts(input, output, context, metrics, report);
   }
 
   /** 关闭 Prompts 组件（终态操作） */
-  async closePrompts(
-    input: ClosePromptInput,
-    context: PromptContext,
-    output: ClosePromptOutput,
+  async closePrompts(input: ClosePromptInput, output: ClosePromptOutput, context: PromptContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closePrompts(input, context, output);
+    return this.service.closePrompts(input, output, context, metrics, report);
   }
 }

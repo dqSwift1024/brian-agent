@@ -141,7 +141,7 @@ export class SummaryAgentService {
     if (agent?.soul_id) {
       try {
         const soulOut = new GetSoulOutput();
-        await this.soulAccess.getSoul(
+        await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: agent.soul_id }),
           new SoulContext(),
           soulOut,

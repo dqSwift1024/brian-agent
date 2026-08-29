@@ -8,9 +8,11 @@
  * - retention_days：日志保留天数，默认 30 天，超过自动清理；
  * - max_log_count：日志最大保留条数，默认 70 万条，超过自动清理最旧记录。
  *
- * 实现所有用例：addLog / getLog / soLog / delLog / countLog / visualizedLog / enableLog。
+ * 实现所有用例：addLog / soLogById / soLog / delLog / countLog / visualizedLog / enableLog。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError } from '../../shared/errors';
@@ -249,10 +251,7 @@ export class LogService {
   // }
 
   // ===== 修改后的方法（增加 min_level 过滤）=====
-  async addLog(
-    input: AddLogInput,
-    _context: LogContext,
-    output: AddLogOutput,
+  async addLog(input: AddLogInput, output: AddLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -339,11 +338,8 @@ export class LogService {
     }
   }
 
-  /** 获取日志（getLog）- 从 SQLite 中查找第一条匹配记录 */
-  async getLog(
-    input: GetLogInput,
-    _context: LogContext,
-    output: GetLogOutput,
+  /** 获取日志（soLogById）- 从 SQLite 中查找第一条匹配记录 */
+  async soLogById(input: GetLogInput, output: GetLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -370,16 +366,13 @@ export class LogService {
       }
     }
     soInput.page = { current: 1, size: 1 };
-    await this.soLog(soInput, _context, soOutput);
+    await this.soLog(soInput, soOutput, _context, metrics, report);
     output.log = soOutput.list.length > 0 ? soOutput.list[0] : null;
     return true;
   }
 
   /** 搜索日志（soLog）- 从 SQLite 查询并过滤 */
-  async soLog(
-    input: SoLogInput,
-    _context: LogContext,
-    output: SoLogOutput,
+  async soLog(input: SoLogInput, output: SoLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -426,10 +419,7 @@ export class LogService {
   }
 
   /** 删除日志（delLog）- 从 SQLite 删除 */
-  async delLog(
-    input: DelLogInput,
-    _context: LogContext,
-    output: DelLogOutput,
+  async delLog(input: DelLogInput, output: DelLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -464,10 +454,7 @@ export class LogService {
   }
 
   /** 统计日志数量（countLog）- 从 SQLite 统计 */
-  async countLog(
-    input: CountLogInput,
-    _context: LogContext,
-    output: CountLogOutput,
+  async countLog(input: CountLogInput, output: CountLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -497,10 +484,7 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 可视化数据（visualizedLog） */
-  async visualizedLog(
-    input: VisualizedLogInput,
-    _context: LogContext,
-    output: VisualizedLogOutput,
+  async visualizedLog(input: VisualizedLogInput, output: VisualizedLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -562,10 +546,7 @@ export class LogService {
   }
 
   /** 配置日志记录规则（enableLog） */
-  async enableLog(
-    input: EnableLogInput,
-    _context: LogContext,
-    _output: EnableLogOutput,
+  async enableLog(input: EnableLogInput, _output: EnableLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.rules || input.rules.length === 0) {
       throw new ValidationError('rules 不能为空');
@@ -607,10 +588,7 @@ export class LogService {
   }
 
   /** 配置日志组件（configLog） */
-  async configLog(
-    input: ConfigLogInput,
-    _context: LogContext,
-    output: ConfigLogOutput,
+  async configLog(input: ConfigLogInput, output: ConfigLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let agingChanged = false;
     if (input.enabled !== undefined) {
@@ -726,8 +704,8 @@ export class LogService {
     return { logs, total };
   }
 
-  /** 从 SQLite 统计日志级别分布（getLogStats） */
-  async getLogStats(options?: {
+  /** 从 SQLite 统计日志级别分布（soLogStats） */
+  async soLogStats(options?: {
     start_time?: number;
     end_time?: number;
   }): Promise<{ distribution: Array<{ level: string; count: number }> }> {

@@ -11,6 +11,8 @@
  * 实际数据通过 output 参数（引用传递）回传。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBRepository } from '../domain/RelationDBRepository';
 import {
   DBContext,
@@ -117,10 +119,7 @@ export class RelationDBService {
    *
    * PRD 3.1 条。
    */
-  async insertDB(
-    input: InsertDBInput,
-    _context: DBContext,
-    output: InsertDBOutput,
+  async insertDB(input: InsertDBInput, output: InsertDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.affected_rows = this.repository.insert(input.table, input.data);
@@ -132,10 +131,7 @@ export class RelationDBService {
    *
    * PRD 3.2 条。
    */
-  async deleteDB(
-    input: DeleteDBInput,
-    _context: DBContext,
-    output: DeleteDBOutput,
+  async deleteDB(input: DeleteDBInput, output: DeleteDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.affected_rows = this.repository.delete(input.table, input.conditions);
@@ -147,10 +143,7 @@ export class RelationDBService {
    *
    * PRD 3.3 条。
    */
-  async updateDB(
-    input: UpdateDBInput,
-    _context: DBContext,
-    output: UpdateDBOutput,
+  async updateDB(input: UpdateDBInput, output: UpdateDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.affected_rows = this.repository.update(
@@ -166,10 +159,7 @@ export class RelationDBService {
    *
    * PRD 3.4 条。
    */
-  async selectDB(
-    input: SelectDBInput,
-    _context: DBContext,
-    output: SelectDBOutput,
+  async selectDB(input: SelectDBInput, output: SelectDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.rows = this.repository.select(input.query_param);
@@ -186,10 +176,7 @@ export class RelationDBService {
    *
    * PRD 3.5 条。
    */
-  async selectOneDB(
-    input: SelectOneDBInput,
-    _context: DBContext,
-    output: SelectOneDBOutput,
+  async selectOneDB(input: SelectOneDBInput, output: SelectOneDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.row = this.repository.selectOne(input.query_param);
@@ -201,10 +188,7 @@ export class RelationDBService {
    *
    * PRD 3.6 条。
    */
-  async countDB(
-    input: CountDBInput,
-    _context: DBContext,
-    output: CountDBOutput,
+  async countDB(input: CountDBInput, output: CountDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     output.count = this.repository.count(input.table, input.conditions);
@@ -216,10 +200,7 @@ export class RelationDBService {
    *
    * PRD 3.7 条：在事务中执行多个操作，保证原子性。
    */
-  async transactionDB(
-    input: TransactionDBInput,
-    _context: DBContext,
-    output: TransactionDBOutput,
+  async transactionDB(input: TransactionDBInput, output: TransactionDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const ok = this.repository.transaction(input.operations);
@@ -239,10 +220,7 @@ export class RelationDBService {
    *
    * PRD 3.8 条。
    */
-  async visualizedDB(
-    input: VisualizedDBInput,
-    _context: DBContext,
-    output: VisualizedDBOutput,
+  async visualizedDB(input: VisualizedDBInput, output: VisualizedDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -281,10 +259,7 @@ export class RelationDBService {
    * PRD 5.8 条：enableDB 为运行时启用/禁用（可恢复）。
    * 状态同步持久化到 relationdb_config，组件初始化时恢复。
    */
-  async enableDB(
-    input: EnableDBInput,
-    _context: DBContext,
-    _output: EnableDBOutput,
+  async enableDB(input: EnableDBInput, _output: EnableDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError('关系数据库已关闭（closeDB 为终态操作），需重新初始化组件');
@@ -308,10 +283,7 @@ export class RelationDBService {
    *
    * PRD 5.8 条：closeDB 为系统关闭时的终态释放（不可恢复，需重新初始化组件）。
    */
-  async closeDB(
-    _input: CloseDBInput,
-    _context: DBContext,
-    _output: CloseDBOutput,
+  async closeDB(_input: CloseDBInput, _output: CloseDBOutput, _context: DBContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;

@@ -1232,7 +1232,7 @@ export class SelfLearningService {
           edge_type: 'similarTo',
           only_active: false,
         });
-        await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+        await this.graphDBAccess.soGraphNeighbors(neighborInput, new GraphContext(), neighbors);
 
         for (const edgeRow of neighbors.list) {
           try {
@@ -1304,7 +1304,7 @@ export class SelfLearningService {
           node_id: node.id,
           direction: GraphDirection.BOTH,
         });
-        await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+        await this.graphDBAccess.soGraphNeighbors(neighborInput, new GraphContext(), neighbors);
 
         if (neighbors.list.length === 0) {
           try {
@@ -1384,7 +1384,7 @@ export class SelfLearningService {
         node_id: nid,
         direction: GraphDirection.BOTH,
       });
-      await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+      await this.graphDBAccess.soGraphNeighbors(neighborInput, new GraphContext(), neighbors);
 
       for (const n of neighbors.list) {
         if (!('node_type' in n)) continue;
@@ -1788,7 +1788,7 @@ export class SelfLearningService {
       for (const node of graphNodes.list) {
         if (!('node_type' in node)) continue;
         const neighbors = Object.assign(new GetGraphNeighborsOutput(), {});
-        await this.graphDBAccess.getGraphNeighbors(
+        await this.graphDBAccess.soGraphNeighbors(
           Object.assign(new GetGraphNeighborsInput(), {
             node_id: node.id,
             direction: GraphDirection.BOTH,

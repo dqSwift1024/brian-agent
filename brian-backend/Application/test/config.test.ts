@@ -812,16 +812,16 @@ describe('ConfigService', () => {
       vi.spyOn(llmAccess, 'soLLM').mockRejectedValue(new Error('SO LLM error'));
       await expect((service as any).soLLMProxy({}, ctx(), {})).rejects.toThrow('SO LLM error');
     });
-    it('TC-CFG-110: getLLMProxy delegates to getLLM with params', async () => {
+    it('TC-CFG-110: getLLMProxy delegates to soLLMById with params', async () => {
       const testInput = { id: 'fake-llm-id' };
       const testCtx = ctx();
       const testOutput = {};
-      const spy = vi.spyOn(llmAccess, 'getLLM');
+      const spy = vi.spyOn(llmAccess, 'soLLMById');
       await (service as any).getLLMProxy(testInput, testCtx, testOutput);
       expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
     });
     it('TC-CFG-110-ERR: getLLMProxy propagates error', async () => {
-      vi.spyOn(llmAccess, 'getLLM').mockRejectedValue(new Error('get LLM error'));
+      vi.spyOn(llmAccess, 'soLLMById').mockRejectedValue(new Error('get LLM error'));
       await expect((service as any).getLLMProxy({}, ctx(), {})).rejects.toThrow('get LLM error');
     });
   });
@@ -880,16 +880,16 @@ describe('ConfigService', () => {
       vi.spyOn(soulAccess, 'soSoul').mockRejectedValue(new Error('SO soul error'));
       await expect((service as any).soSoulProxy({}, ctx(), {})).rejects.toThrow('SO soul error');
     });
-    it('TC-CFG-124: getSoulProxy delegates to getSoul with params', async () => {
+    it('TC-CFG-124: getSoulProxy delegates to soSoulById with params', async () => {
       const testInput = { id: 'fake-soul-id' };
       const testCtx = ctx();
       const testOutput = {};
-      const spy = vi.spyOn(soulAccess, 'getSoul');
+      const spy = vi.spyOn(soulAccess, 'soSoulById');
       await (service as any).getSoulProxy(testInput, testCtx, testOutput);
       expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
     });
     it('TC-CFG-124-ERR: getSoulProxy propagates error', async () => {
-      vi.spyOn(soulAccess, 'getSoul').mockRejectedValue(new Error('get soul error'));
+      vi.spyOn(soulAccess, 'soSoulById').mockRejectedValue(new Error('get soul error'));
       await expect((service as any).getSoulProxy({}, ctx(), {})).rejects.toThrow('get soul error');
     });
     it('TC-CFG-125: getSoulRuleProxy delegates to soulCore.soSoulRule with params', async () => {
@@ -972,16 +972,16 @@ describe('ConfigService', () => {
       vi.spyOn(skillAccess, 'soSkill').mockRejectedValue(new Error('SO skill error'));
       await expect((service as any).soSkillProxy({}, ctx(), {})).rejects.toThrow('SO skill error');
     });
-    it('TC-CFG-134: getSkillProxy delegates to getSkill with params', async () => {
+    it('TC-CFG-134: getSkillProxy delegates to soSkillById with params', async () => {
       const testInput = { id: 'fake-skill-id' };
       const testCtx = ctx();
       const testOutput = {};
-      const spy = vi.spyOn(skillAccess, 'getSkill');
+      const spy = vi.spyOn(skillAccess, 'soSkillById');
       await (service as any).getSkillProxy(testInput, testCtx, testOutput);
       expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
     });
     it('TC-CFG-134-ERR: getSkillProxy propagates error', async () => {
-      vi.spyOn(skillAccess, 'getSkill').mockRejectedValue(new Error('get skill error'));
+      vi.spyOn(skillAccess, 'soSkillById').mockRejectedValue(new Error('get skill error'));
       await expect((service as any).getSkillProxy({}, ctx(), {})).rejects.toThrow('get skill error');
     });
     it('TC-CFG-135: getSkillRuleProxy delegates to skillCore.soSkillRule with params', async () => {
@@ -1148,16 +1148,16 @@ describe('ConfigService', () => {
       vi.spyOn(mcpAccess, 'updateMcp').mockRejectedValue(new Error('update mcp error'));
       await expect((service as any).updateMcpProxy({}, ctx(), {})).rejects.toThrow('update mcp error');
     });
-    it('TC-CFG-151: getMcpProxy delegates to getMcp with params', async () => {
+    it('TC-CFG-151: getMcpProxy delegates to soMcpById with params', async () => {
       const testInput = { id: 'fake-mcp-install-id' };
       const testCtx = ctx();
       const testOutput = {};
-      const spy = vi.spyOn(mcpAccess, 'getMcp');
+      const spy = vi.spyOn(mcpAccess, 'soMcpById');
       await (service as any).getMcpProxy(testInput, testCtx, testOutput);
       expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
     });
     it('TC-CFG-151-ERR: getMcpProxy propagates error', async () => {
-      vi.spyOn(mcpAccess, 'getMcp').mockRejectedValue(new Error('get mcp error'));
+      vi.spyOn(mcpAccess, 'soMcpById').mockRejectedValue(new Error('get mcp error'));
       await expect((service as any).getMcpProxy({}, ctx(), {})).rejects.toThrow('get mcp error');
     });
     it('TC-CFG-152: soMcpProxy delegates to soMcp with params', async () => {
@@ -1240,16 +1240,16 @@ describe('ConfigService', () => {
       vi.spyOn(promptsAccess, 'soPrompt').mockRejectedValue(new Error('SO prompt error'));
       await expect((service as any).soPromptProxy({}, ctx(), {})).rejects.toThrow('SO prompt error');
     });
-    it('TC-CFG-164: getPromptProxy delegates to getPrompt with params', async () => {
+    it('TC-CFG-164: getPromptProxy delegates to soPromptById with params', async () => {
       const testInput = { id: 'fake-prompt-id' };
       const testCtx = ctx();
       const testOutput = {};
-      const spy = vi.spyOn(promptsAccess, 'getPrompt');
+      const spy = vi.spyOn(promptsAccess, 'soPromptById');
       await (service as any).getPromptProxy(testInput, testCtx, testOutput);
       expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
     });
     it('TC-CFG-164-ERR: getPromptProxy propagates error', async () => {
-      vi.spyOn(promptsAccess, 'getPrompt').mockRejectedValue(new Error('get prompt error'));
+      vi.spyOn(promptsAccess, 'soPromptById').mockRejectedValue(new Error('get prompt error'));
       await expect((service as any).getPromptProxy({}, ctx(), {})).rejects.toThrow('get prompt error');
     });
   });

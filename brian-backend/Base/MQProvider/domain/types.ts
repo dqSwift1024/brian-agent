@@ -157,16 +157,16 @@ export class NackMQOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getQueueStats
+// soQueueStats
 // ---------------------------------------------------------------------------
 
-/** getQueueStats 入参 */
+/** soQueueStats 入参 */
 export class GetQueueStatsInput extends Input {
   /** 队列名称，不指定则返回所有队列统计 */
   queue?: string;
 }
 
-/** getQueueStats 出参 */
+/** soQueueStats 出参 */
 export class GetQueueStatsOutput extends Output {
   /** 队列统计信息 */
   stats: QueueStats = {

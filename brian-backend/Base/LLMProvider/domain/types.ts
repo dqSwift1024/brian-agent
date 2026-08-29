@@ -362,7 +362,7 @@ export class UpdateLLMOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getLLM（保留类型供外部兼容，内部已合并到 soLLM）
+// soLLMById（保留类型供外部兼容，内部已合并到 soLLM）
 // ---------------------------------------------------------------------------
 
 export class GetLLMInput extends Input {

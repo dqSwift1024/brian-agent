@@ -1559,7 +1559,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // 距离度量方式写入保护：如果已有向量数据，禁止修改
         if (body.config_key === 'vectordb_provider.default_distance_metric' && body.value !== undefined) {
           try {
-            const count = await ctx.vectorDBAccess.getVectorCount();
+            const count = await ctx.vectorDBAccess.soVectorCount();
             if (count > 0) {
               sendJson(res, 400, { error: `已存在 ${count} 条向量数据，写入数据后不支持更改距离度量方式。如需更改请先删除所有向量数据。` });
               return;
@@ -1774,7 +1774,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const modelInput = Object.assign(new GetLLMInput(), { id });
         const modelOutput = new GetLLMOutput();
         const modelCtx = new LLMContext();
-        await ctx.configAccess.getLLM(modelInput, modelCtx, modelOutput);
+        await ctx.configAccess.soLLMById(modelInput, modelCtx, modelOutput);
         const model = modelOutput.llm as Record<string, unknown> | null;
         const providerId = (model?.llm_provider_id as string) || '';
         if (providerId) {
@@ -2539,7 +2539,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           end_date: params.get('end_date') || undefined,
         });
         const output = new GetMcpUsageOutput();
-        await ctx.mcpAccess.getMcpUsage(input, new McpContext(), output);
+        await ctx.mcpAccess.soMcpUsage(input, new McpContext(), output);
         sendJson(res, 200, { list: output.list, total: output.total });
 
       } else if (method === 'GET' && pathname === '/api/mcp/market') {
@@ -3682,7 +3682,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const queue = params.get('queue') || undefined;
         const statsInput = Object.assign(new GetQueueStatsInput(), { queue });
         const statsOutput = new GetQueueStatsOutput();
-        await ctx.mqAccess.getQueueStats(statsInput, new MQContext(), statsOutput);
+        await ctx.mqAccess.soQueueStats(statsInput, new MQContext(), statsOutput);
         sendJson(res, 200, statsOutput.stats);
 
       } else if (method === 'GET' && pathname === '/api/config/mq/queues') {
@@ -4045,7 +4045,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // MQ
         try {
           const o = new GetQueueStatsOutput();
-          await ctx.mqAccess.getQueueStats(new GetQueueStatsInput(), new MQContext(), o);
+          await ctx.mqAccess.soQueueStats(new GetQueueStatsInput(), new MQContext(), o);
           const s = o.stats || {};
           components.push({
             name: 'MQ', status: 'healthy', message: `${s.total ?? 0} 条消息`,
@@ -4519,7 +4519,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         } else {
           const input = Object.assign(new GetCronTaskInput(), { name });
           const output = new GetCronTaskOutput();
-          await ctx.cronAccess.getCronTask(input, new CronContext(), output);
+          await ctx.cronAccess.soCronTask(input, new CronContext(), output);
           sendJson(res, 200, { task: output.task });
         }
 

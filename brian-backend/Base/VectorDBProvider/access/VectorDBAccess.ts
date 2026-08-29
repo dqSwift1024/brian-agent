@@ -15,6 +15,8 @@
  * - 配置项（vectordb_config）存储于关系数据库（由 RelationDBProvider 管理）。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { VectorDBComponent } from '../../components/VectorDB/VectorDBComponent';
 import { VectorDBSchemaInitializer } from '../infrastructure/VectorDBSchemaInitializer';
@@ -82,8 +84,7 @@ export interface VectorDBAccessOptions {
  * const output = new AddVectorOutput();
  * await vectorDb.addVector(
  *   { vectors: [{ content: '示例', embedding: [0.1, 0.2, 0.3] }] },
- *   new VectorContext(),
- *   output,
+ *   output, new VectorContext(),
  * );
  * console.log(output.ids);
  * ```
@@ -160,7 +161,7 @@ export class VectorDBAccess {
   }
 
   /** 获取当前向量总数（用于判断是否存在数据） */
-  async getVectorCount(): Promise<number> {
+  async soVectorCount(): Promise<number> {
     return this.vectorDb.count();
   }
 
@@ -209,83 +210,56 @@ export class VectorDBAccess {
   }
 
   /** 新增/更新向量（upsert） */
-  async addVector(
-    input: AddVectorInput,
-    context: VectorContext,
-    output: AddVectorOutput,
+  async addVector(input: AddVectorInput, output: AddVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addVector(input, context, output);
+    return this.service.addVector(input, output, context, metrics, report);
   }
 
   /** 删除向量（按 ID 批量） */
-  async delVector(
-    input: DelVectorInput,
-    context: VectorContext,
-    output: DelVectorOutput,
+  async delVector(input: DelVectorInput, output: DelVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delVector(input, context, output);
+    return this.service.delVector(input, output, context, metrics, report);
   }
 
   /** 按条件删除向量 */
-  async delVectorByFilter(
-    input: DelVectorByFilterInput,
-    context: VectorContext,
-    output: DelVectorByFilterOutput,
+  async delVectorByFilter(input: DelVectorByFilterInput, output: DelVectorByFilterOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delVectorByFilter(input, context, output);
+    return this.service.delVectorByFilter(input, output, context, metrics, report);
   }
 
   /** 搜索向量（相似度搜索） */
-  async soVector(
-    input: SoVectorInput,
-    context: VectorContext,
-    output: SoVectorOutput,
+  async soVector(input: SoVectorInput, output: SoVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soVector(input, context, output);
+    return this.service.soVector(input, output, context, metrics, report);
   }
 
   /** 获取向量（按 ID） */
-  async getVector(
-    input: GetVectorInput,
-    context: VectorContext,
-    output: GetVectorOutput,
+  async soVectorById(input: GetVectorInput, output: GetVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getVector(input, context, output);
+    return this.service.soVectorById(input, output, context, metrics, report);
   }
 
   /** 统计向量数量 */
-  async countVector(
-    input: CountVectorInput,
-    context: VectorContext,
-    output: CountVectorOutput,
+  async countVector(input: CountVectorInput, output: CountVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.countVector(input, context, output);
+    return this.service.countVector(input, output, context, metrics, report);
   }
 
   /** 可视化数据 */
-  async visualizedVector(
-    input: VisualizedVectorInput,
-    context: VectorContext,
-    output: VisualizedVectorOutput,
+  async visualizedVector(input: VisualizedVectorInput, output: VisualizedVectorOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.visualizedVector(input, context, output);
+    return this.service.visualizedVector(input, output, context, metrics, report);
   }
 
   /** 启用/禁用向量数据库 */
-  async enableVectorDB(
-    input: EnableVectorDBInput,
-    context: VectorContext,
-    output: EnableVectorDBOutput,
+  async enableVectorDB(input: EnableVectorDBInput, output: EnableVectorDBOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableVectorDB(input, context, output);
+    return this.service.enableVectorDB(input, output, context, metrics, report);
   }
 
   /** 关闭向量数据库连接（终态操作） */
-  async closeVectorDB(
-    input: CloseVectorDBInput,
-    context: VectorContext,
-    output: CloseVectorDBOutput,
+  async closeVectorDB(input: CloseVectorDBInput, output: CloseVectorDBOutput, context: VectorContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closeVectorDB(input, context, output);
+    return this.service.closeVectorDB(input, output, context, metrics, report);
   }
 }

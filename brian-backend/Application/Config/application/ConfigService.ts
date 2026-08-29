@@ -1003,7 +1003,7 @@ export class ConfigService {
       if (configKey === 'self_learning.tag_aging_cron' || configKey === 'self_learning.orphan_tag_check_cron') {
         const taskName = configKey === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
         const out = new GetCronTaskOutput();
-        await this.cronAccess.getCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), new CronContext(), out);
+        await this.cronAccess.soCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), new CronContext(), out);
         return out.task ? out.task.cron : null;
       }
       return this.getConfigFromAccess(
@@ -1514,7 +1514,7 @@ export class ConfigService {
   }
 
   async getLLMProxy(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
-    return this.llmAccess.getLLM(input, context, output);
+    return this.llmAccess.soLLMById(input, context, output);
   }
 
   // =========================================================================
@@ -1538,7 +1538,7 @@ export class ConfigService {
   }
 
   async getSoulProxy(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
-    return this.soulAccess.getSoul(input, context, output);
+    return this.soulAccess.soSoulById(input, context, output);
   }
 
   async getSoulRuleProxy(input: SoSoulRuleInput, context: SoulCoreContext, output: SoSoulRuleOutput): Promise<boolean> {
@@ -1574,7 +1574,7 @@ export class ConfigService {
   }
 
   async getSkillProxy(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
-    return this.skillAccess.getSkill(input, context, output);
+    return this.skillAccess.soSkillById(input, context, output);
   }
 
   async getSkillRuleProxy(input: SoSkillRuleInput, context: SkillCoreContext, output: SoSkillRuleOutput): Promise<boolean> {
@@ -1634,7 +1634,7 @@ export class ConfigService {
   }
 
   async getMcpProxy(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
-    return this.mcpAccess.getMcp(input, context, output);
+    return this.mcpAccess.soMcpById(input, context, output);
   }
 
   async soMcpProxy(input: SoMcpInput, context: McpContext, output: SoMcpOutput): Promise<boolean> {
@@ -1662,6 +1662,6 @@ export class ConfigService {
   }
 
   async getPromptProxy(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
-    return this.promptsAccess.getPrompt(input, context, output);
+    return this.promptsAccess.soPromptById(input, context, output);
   }
 }

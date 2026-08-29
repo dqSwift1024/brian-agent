@@ -838,7 +838,7 @@ export class InfoCoreService {
     }
 
     const neighOutput = new GetGraphNeighborsOutput();
-    await this.graphDb.getGraphNeighbors(
+    await this.graphDb.soGraphNeighbors(
       {
         node_id: infoNodeId,
         depth: 1,
@@ -1086,7 +1086,7 @@ export class InfoCoreService {
   /** 读取 GraphDB 节点内容中的 tag 文本。 */
   private async getGraphNodeTag(nodeId: string): Promise<string> {
     const out = new GetGraphNodeOutput();
-    await this.graphDb.getGraphNode({ id: nodeId } as GetGraphNodeInput, new GraphContext(), out);
+    await this.graphDb.soGraphNode({ id: nodeId } as GetGraphNodeInput, new GraphContext(), out);
     return String(out.node?.content['tag'] ?? '');
   }
 
@@ -2279,7 +2279,7 @@ const rawPriority = priorityOrderStr
   ): Promise<boolean> {
     if (input.llm_id) {
       const llmOutput = new GetLLMOutput();
-      await this.llmAccess.getLLM({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
+      await this.llmAccess.soLLMById({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
       if (!llmOutput.llm) {
         throw new ValidationError(`llm_id ${input.llm_id} 不存在`);
       }
@@ -2289,7 +2289,7 @@ const rawPriority = priorityOrderStr
     }
     if (input.prompt_template_id) {
       const promptOutput = new GetPromptOutput();
-      await this.promptsAccess.getPrompt({ id: input.prompt_template_id } as GetPromptInput, new PromptContext(), promptOutput);
+      await this.promptsAccess.soPromptById({ id: input.prompt_template_id } as GetPromptInput, new PromptContext(), promptOutput);
       if (!promptOutput.prompt) {
         throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
       }
@@ -2328,7 +2328,7 @@ const rawPriority = priorityOrderStr
   ): Promise<boolean> {
     if (input.llm_id) {
       const llmOutput = new GetLLMOutput();
-      await this.llmAccess.getLLM({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
+      await this.llmAccess.soLLMById({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
       if (!llmOutput.llm) {
         throw new ValidationError(`llm_id ${input.llm_id} 不存在`);
       }
@@ -2338,7 +2338,7 @@ const rawPriority = priorityOrderStr
     }
     if (input.prompt_template_id) {
       const promptOutput = new GetPromptOutput();
-      await this.promptsAccess.getPrompt({ id: input.prompt_template_id } as GetPromptInput, new PromptContext(), promptOutput);
+      await this.promptsAccess.soPromptById({ id: input.prompt_template_id } as GetPromptInput, new PromptContext(), promptOutput);
       if (!promptOutput.prompt) {
         throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
       }
@@ -2401,14 +2401,14 @@ const rawPriority = priorityOrderStr
     output: UpdateInfoVectorConfigOutput,
   ): Promise<boolean> {
     if (input.dimension !== undefined) {
-      const vectorCount = await this.vectorDb.getVectorCount();
+      const vectorCount = await this.vectorDb.soVectorCount();
       if (vectorCount > 0) {
         throw new ValidationError('dimension 只允许在没有计算过向量数据的情况下修改');
       }
     }
     if (input.llm_id) {
       const llmOutput = new GetLLMOutput();
-      await this.llmAccess.getLLM({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
+      await this.llmAccess.soLLMById({ id: input.llm_id } as GetLLMInput, new LLMContext(), llmOutput);
       if (!llmOutput.llm) {
         throw new ValidationError(`llm_id ${input.llm_id} 不存在`);
       }
@@ -2809,7 +2809,7 @@ const rawPriority = priorityOrderStr
 
   private async getVectorRecord(id: string): Promise<VectorRecord | null> {
     const out = new GetVectorOutput();
-    await this.vectorDb.getVector({ id } as GetVectorInput, new VectorContext(), out);
+    await this.vectorDb.soVectorById({ id } as GetVectorInput, new VectorContext(), out);
     return out.vector;
   }
 
@@ -2988,7 +2988,7 @@ const rawPriority = priorityOrderStr
     });
     if (tagRows.length > 0) return tagRows[0]['tag'] as string;
     const nodeOut = new GetGraphNodeOutput();
-    await this.graphDb.getGraphNode({ id: tagId } as GetGraphNodeInput, new GraphContext(), nodeOut);
+    await this.graphDb.soGraphNode({ id: tagId } as GetGraphNodeInput, new GraphContext(), nodeOut);
     return String(nodeOut.node?.content['tag'] ?? '');
   }
 

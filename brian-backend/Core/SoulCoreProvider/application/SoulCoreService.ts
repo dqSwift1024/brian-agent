@@ -388,7 +388,7 @@ export class SoulCoreService {
   //     if (input.prompt_template_id !== undefined) {
   //       if (input.prompt_template_id) {
   //         const getPromptOutput = new GetPromptOutput();
-  //         await this.promptsAccess.getPrompt(
+  //         await this.promptsAccess.soPromptById(
   //           { id: input.prompt_template_id } as GetPromptInput,
   //           new PromptContext(),
   //           getPromptOutput,
@@ -447,7 +447,7 @@ export class SoulCoreService {
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
           const getPromptOutput = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
             new PromptContext(),
             getPromptOutput,
@@ -528,10 +528,10 @@ export class SoulCoreService {
   // 内部辅助 — Soul 查询
   // ---------------------------------------------------------------------------
 
-  /** 通过 SoulAccess.getSoul 获取 Soul 详情 */
+  /** 通过 SoulAccess.soSoulById 获取 Soul 详情 */
   private async getSoulById(soulId: string): Promise<Record<string, unknown> | null> {
     const getOutput = new GetSoulOutput();
-    await this.soulAccess.getSoul(
+    await this.soulAccess.soSoulById(
       { id: soulId } as GetSoulInput,
       new SoulContext(),
       getOutput,

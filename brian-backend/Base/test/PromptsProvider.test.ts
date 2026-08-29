@@ -2,12 +2,14 @@
  * @fileoverview PromptsProvider 模块测试。
  *
  * 测试 PromptsProvider 的全部接口：addPrompt / delPrompt / updatePrompt /
- * getPrompt / soPrompt / execPrompt / enablePrompts / closePrompts。
+ * soPromptById / soPrompt / execPrompt / enablePrompts / closePrompts。
  *
  * 不使用任何 MOCK 数据，使用真实 SQLite 数据库。
  * 所有数据访问通过 RelationDBProvider，遵循 LLMProvider.test.ts 的测试模式。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -83,8 +85,7 @@ describe('PromptsProvider', () => {
     try {
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
     } catch {
       // 忽略关闭时的错误
@@ -92,8 +93,7 @@ describe('PromptsProvider', () => {
     try {
       await relationDb.closeDB(
         new CloseDBInput(),
-        new DBContext(),
-        new CloseDBOutput(),
+        new CloseDBOutput(), new DBContext(),
       );
     } catch {
       // 忽略关闭时的错误
@@ -121,8 +121,7 @@ describe('PromptsProvider', () => {
 
       const result = await promptsAccess.addPrompt(
         input,
-        new PromptContext(),
-        output,
+        output, new PromptContext(),
       );
       expect(result).toBe(true);
       expect(output.id).toBeTruthy();
@@ -130,19 +129,19 @@ describe('PromptsProvider', () => {
       expect(output.id.length).toBeGreaterThan(0);
     });
 
-    it('新增后应该可以通过 getPrompt 查到', async () => {
+    it('新增后应该可以通过 soPromptById 查到', async () => {
       const data = makePromptData({
         prompt_template_title: 'UniqueAddPromptTitle',
       });
       const input = new AddPromptInput();
       input.data = data;
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = out.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt).toBeTruthy();
       expect(getOut.prompt!.prompt_template_title).toBe('UniqueAddPromptTitle');
@@ -153,12 +152,12 @@ describe('PromptsProvider', () => {
       const input = new AddPromptInput();
       input.data = makePromptData();
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = out.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt!.enable).toBe(1);
     });
@@ -167,12 +166,12 @@ describe('PromptsProvider', () => {
       const input = new AddPromptInput();
       input.data = makePromptData({ enable: false });
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = out.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt!.enable).toBe(0);
     });
@@ -183,7 +182,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -193,7 +192,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -202,12 +201,12 @@ describe('PromptsProvider', () => {
       input.data = makePromptData();
       const out = new AddPromptOutput();
       const before = Date.now();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = out.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       const record = getOut.prompt!;
       expect(record.id).toBe(out.id);
@@ -222,12 +221,12 @@ describe('PromptsProvider', () => {
         prompt_template: '模板内容',
       };
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = out.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt!.prompt_template_brief).toBeNull();
     });
@@ -242,15 +241,14 @@ describe('PromptsProvider', () => {
       const addInput = new AddPromptInput();
       addInput.data = makePromptData();
       const addOut = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOut);
+      await promptsAccess.addPrompt(addInput, addOut, new PromptContext());
 
       const delInput = new DelPromptInput();
       delInput.ids = [addOut.id];
       const delOut = new DelPromptOutput();
       const result = await promptsAccess.delPrompt(
         delInput,
-        new PromptContext(),
-        delOut,
+        delOut, new PromptContext(),
       );
 
       expect(result).toBe(true);
@@ -260,7 +258,7 @@ describe('PromptsProvider', () => {
       const getInput = new GetPromptInput();
       getInput.id = addOut.id;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
       expect(getOut.prompt).toBeNull();
     });
 
@@ -272,14 +270,14 @@ describe('PromptsProvider', () => {
           prompt_template_title: `BatchDelete${i}`,
         });
         const addOut = new AddPromptOutput();
-        await promptsAccess.addPrompt(addInput, new PromptContext(), addOut);
+        await promptsAccess.addPrompt(addInput, addOut, new PromptContext());
         ids.push(addOut.id);
       }
 
       const delInput = new DelPromptInput();
       delInput.ids = ids;
       const delOut = new DelPromptOutput();
-      await promptsAccess.delPrompt(delInput, new PromptContext(), delOut);
+      await promptsAccess.delPrompt(delInput, delOut, new PromptContext());
       expect(delOut.affected_rows).toBe(3);
     });
 
@@ -289,7 +287,7 @@ describe('PromptsProvider', () => {
         prompt_template_title: 'CondDeletePrompts',
       });
       const addOut = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOut);
+      await promptsAccess.addPrompt(addInput, addOut, new PromptContext());
 
       const delInput = new DelPromptInput();
       delInput.conditions = [
@@ -300,7 +298,7 @@ describe('PromptsProvider', () => {
         },
       ];
       const delOut = new DelPromptOutput();
-      await promptsAccess.delPrompt(delInput, new PromptContext(), delOut);
+      await promptsAccess.delPrompt(delInput, delOut, new PromptContext());
       expect(delOut.affected_rows).toBe(1);
     });
 
@@ -310,7 +308,7 @@ describe('PromptsProvider', () => {
         prompt_template: '清理测试模板，变量 {{var1}}',
       });
       const addOut = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOut);
+      await promptsAccess.addPrompt(addInput, addOut, new PromptContext());
 
       // 先执行几次 execPrompt 产生 usage 记录
       const execInput = new ExecPromptInput();
@@ -318,8 +316,7 @@ describe('PromptsProvider', () => {
       execInput.variables = { var1: 'test' };
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
 
       // 确认 usage 表有记录
@@ -342,8 +339,7 @@ describe('PromptsProvider', () => {
       delInput.ids = [addOut.id];
       await promptsAccess.delPrompt(
         delInput,
-        new PromptContext(),
-        new DelPromptOutput(),
+        new DelPromptOutput(), new PromptContext(),
       );
 
       // 确认 usage 表记录也被清理
@@ -367,7 +363,7 @@ describe('PromptsProvider', () => {
       const delOut = new DelPromptOutput();
 
       await expect(
-        promptsAccess.delPrompt(delInput, new PromptContext(), delOut),
+        promptsAccess.delPrompt(delInput, delOut, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -375,7 +371,7 @@ describe('PromptsProvider', () => {
       const delInput = new DelPromptInput();
       delInput.ids = ['nonexistent'];
       const delOut = new DelPromptOutput();
-      await promptsAccess.delPrompt(delInput, new PromptContext(), delOut);
+      await promptsAccess.delPrompt(delInput, delOut, new PromptContext());
       expect(delOut.affected_rows).toBe(0);
     });
   });
@@ -391,7 +387,7 @@ describe('PromptsProvider', () => {
       const input = new AddPromptInput();
       input.data = makePromptData({ prompt_template_title: 'ToUpdateTitle' });
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
       promptId = out.id;
     });
 
@@ -402,8 +398,7 @@ describe('PromptsProvider', () => {
       const out = new UpdatePromptOutput();
       const result = await promptsAccess.updatePrompt(
         input,
-        new PromptContext(),
-        out,
+        out, new PromptContext(),
       );
 
       expect(result).toBe(true);
@@ -412,7 +407,7 @@ describe('PromptsProvider', () => {
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
       expect(getOut.prompt!.prompt_template_title).toBe('UpdatedTitle');
     });
 
@@ -427,7 +422,7 @@ describe('PromptsProvider', () => {
       ];
       input.data = { prompt_template_brief: 'UpdatedBrief' };
       const out = new UpdatePromptOutput();
-      await promptsAccess.updatePrompt(input, new PromptContext(), out);
+      await promptsAccess.updatePrompt(input, out, new PromptContext());
       expect(out.affected_rows).toBe(1);
     });
 
@@ -438,14 +433,13 @@ describe('PromptsProvider', () => {
       updateInput1.data = { enable: false };
       await promptsAccess.updatePrompt(
         updateInput1,
-        new PromptContext(),
-        new UpdatePromptOutput(),
+        new UpdatePromptOutput(), new PromptContext(),
       );
 
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut1 = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut1);
+      await promptsAccess.soPromptById(getInput, getOut1, new PromptContext());
       expect(getOut1.prompt!.enable).toBe(0);
 
       // 再启用
@@ -454,11 +448,10 @@ describe('PromptsProvider', () => {
       updateInput2.data = { enable: true };
       await promptsAccess.updatePrompt(
         updateInput2,
-        new PromptContext(),
-        new UpdatePromptOutput(),
+        new UpdatePromptOutput(), new PromptContext(),
       );
       const getOut2 = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut2);
+      await promptsAccess.soPromptById(getInput, getOut2, new PromptContext());
       expect(getOut2.prompt!.enable).toBe(1);
     });
 
@@ -468,7 +461,7 @@ describe('PromptsProvider', () => {
       const out = new UpdatePromptOutput();
 
       await expect(
-        promptsAccess.updatePrompt(input, new PromptContext(), out),
+        promptsAccess.updatePrompt(input, out, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -477,7 +470,7 @@ describe('PromptsProvider', () => {
       input.id = 'nonexistent';
       input.data = { prompt_template_title: 'Ghost' };
       const out = new UpdatePromptOutput();
-      await promptsAccess.updatePrompt(input, new PromptContext(), out);
+      await promptsAccess.updatePrompt(input, out, new PromptContext());
       expect(out.affected_rows).toBe(0);
     });
 
@@ -488,12 +481,12 @@ describe('PromptsProvider', () => {
       input.id = promptId;
       input.data = { prompt_template: '更新后的模板内容' };
       const out = new UpdatePromptOutput();
-      await promptsAccess.updatePrompt(input, new PromptContext(), out);
+      await promptsAccess.updatePrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt!.updated).toBeGreaterThanOrEqual(before);
       expect(getOut.prompt!.prompt_template).toBe('更新后的模板内容');
@@ -504,12 +497,12 @@ describe('PromptsProvider', () => {
       input.id = promptId;
       input.data = { prompt_template_title: 'NewTitle' };
       const out = new UpdatePromptOutput();
-      await promptsAccess.updatePrompt(input, new PromptContext(), out);
+      await promptsAccess.updatePrompt(input, out, new PromptContext());
 
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       // id 不应该被修改（updatePrompt 不会处理 id 字段）
       expect(getOut.prompt!.id).toBe(promptId);
@@ -517,10 +510,10 @@ describe('PromptsProvider', () => {
   });
 
   // =========================================================================
-  // getPrompt - 获取 Prompt
+  // soPromptById - 获取 Prompt
   // =========================================================================
 
-  describe('getPrompt', () => {
+  describe('soPromptById', () => {
     let promptId: string;
     let promptTitle: string;
 
@@ -534,7 +527,7 @@ describe('PromptsProvider', () => {
       const input = new AddPromptInput();
       input.data = data;
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
       promptId = out.id;
     });
 
@@ -542,10 +535,9 @@ describe('PromptsProvider', () => {
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut = new GetPromptOutput();
-      const result = await promptsAccess.getPrompt(
+      const result = await promptsAccess.soPromptById(
         getInput,
-        new PromptContext(),
-        getOut,
+        getOut, new PromptContext(),
       );
 
       expect(result).toBe(true);
@@ -564,7 +556,7 @@ describe('PromptsProvider', () => {
         },
       ];
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt).toBeTruthy();
       expect(getOut.prompt!.prompt_template_title).toBe('GetTargetTitle');
@@ -574,7 +566,7 @@ describe('PromptsProvider', () => {
       const getInput = new GetPromptInput();
       getInput.id = 'nonexistent';
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       expect(getOut.prompt).toBeNull();
     });
@@ -584,7 +576,7 @@ describe('PromptsProvider', () => {
       const getOut = new GetPromptOutput();
 
       await expect(
-        promptsAccess.getPrompt(getInput, new PromptContext(), getOut),
+        promptsAccess.soPromptById(getInput, getOut, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -592,7 +584,7 @@ describe('PromptsProvider', () => {
       const getInput = new GetPromptInput();
       getInput.id = promptId;
       const getOut = new GetPromptOutput();
-      await promptsAccess.getPrompt(getInput, new PromptContext(), getOut);
+      await promptsAccess.soPromptById(getInput, getOut, new PromptContext());
 
       const p = getOut.prompt!;
       expect(p.id).toBe(promptId);
@@ -618,7 +610,7 @@ describe('PromptsProvider', () => {
           prompt_template: `模板内容 ${i}，变量 {{var${i}}}`,
         });
         const out = new AddPromptOutput();
-        await promptsAccess.addPrompt(input, new PromptContext(), out);
+        await promptsAccess.addPrompt(input, out, new PromptContext());
       }
     });
 
@@ -626,7 +618,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.keyword = 'SearchPrompt3';
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].prompt_template_title).toBe('SearchPrompt3');
@@ -636,7 +628,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.keyword = 'Brief3';
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].prompt_template_brief).toBe('Brief3 description');
@@ -649,7 +641,7 @@ describe('PromptsProvider', () => {
         { field: 'prompt_template_title', operator: Operator.LIKE, value: 'SearchPrompt%' },
       ];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(5);
       expect(soOut.total).toBe(5);
@@ -659,7 +651,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.order_by = [{ field: 'created', direction: 'DESC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       for (let i = 1; i < soOut.list.length; i++) {
         expect(soOut.list[i].created).toBeLessThanOrEqual(
@@ -672,7 +664,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.order_by = [{ field: 'prompt_template_title', direction: 'ASC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       for (let i = 1; i < soOut.list.length; i++) {
         expect(
@@ -689,7 +681,7 @@ describe('PromptsProvider', () => {
         { field: 'prompt_template_title', direction: 'ASC' },
       ];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(2);
       expect(soOut.total).toBeGreaterThanOrEqual(5);
@@ -702,7 +694,7 @@ describe('PromptsProvider', () => {
         { field: 'prompt_template_title', direction: 'ASC' },
       ];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(2);
       expect(soOut.total).toBeGreaterThanOrEqual(5);
@@ -712,7 +704,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.keyword = 'NonExistentKeywordXYZ';
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(0);
       expect(soOut.total).toBe(0);
@@ -722,7 +714,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.keyword = 'SearchPrompt';
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(5);
     });
@@ -734,7 +726,7 @@ describe('PromptsProvider', () => {
         { field: 'enable', operator: Operator.EQ, value: 1 },
       ];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(5);
       expect(soOut.total).toBe(5);
@@ -757,7 +749,7 @@ describe('PromptsProvider', () => {
           prompt_template: 'Test {{var}}',
         });
         const out = new AddPromptOutput();
-        await promptsAccess.addPrompt(input, new PromptContext(), out);
+        await promptsAccess.addPrompt(input, out, new PromptContext());
         promptIds.push(out.id);
       }
 
@@ -771,8 +763,7 @@ describe('PromptsProvider', () => {
         execInput.variables = { var: 'test' };
         await promptsAccess.execPrompt(
           execInput,
-          new PromptContext(),
-          new ExecPromptOutput(),
+          new ExecPromptOutput(), new PromptContext(),
         );
       }
       const execInput2 = new ExecPromptInput();
@@ -780,8 +771,7 @@ describe('PromptsProvider', () => {
       execInput2.variables = { var: 'test' };
       await promptsAccess.execPrompt(
         execInput2,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
     });
 
@@ -789,7 +779,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.order_by = [{ field: 'usage_total_count', direction: 'DESC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBeGreaterThanOrEqual(3);
       // 使用次数多的排前面
@@ -805,7 +795,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.order_by = [{ field: 'usage_today_count', direction: 'DESC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBeGreaterThanOrEqual(1);
     });
@@ -815,7 +805,7 @@ describe('PromptsProvider', () => {
       soInput.order_by = [{ field: 'usage_total_count', direction: 'DESC' }];
       soInput.page = { current: 1, size: 2 };
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.list.length).toBe(2);
       expect(soOut.total).toBeGreaterThanOrEqual(3);
@@ -825,7 +815,7 @@ describe('PromptsProvider', () => {
       const soInput = new SoPromptInput();
       soInput.order_by = [{ field: 'usage_total_count', direction: 'ASC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       expect(soOut.total).toBeGreaterThanOrEqual(3);
     });
@@ -837,7 +827,7 @@ describe('PromptsProvider', () => {
       ];
       soInput.order_by = [{ field: 'usage_total_count', direction: 'ASC' }];
       const soOut = new SoPromptOutput();
-      await promptsAccess.soPrompt(soInput, new PromptContext(), soOut);
+      await promptsAccess.soPrompt(soInput, soOut, new PromptContext());
 
       // UsageSort0 执行 0 次，应该排在前面（ASC）
       const firstTitle = soOut.list[0]?.prompt_template_title;
@@ -859,7 +849,7 @@ describe('PromptsProvider', () => {
           '请将以下内容翻译为{{target_lang}}：\n\n原文：{{source}}\n\n要求：{{requirement}}',
       });
       const out = new AddPromptOutput();
-      await promptsAccess.addPrompt(input, new PromptContext(), out);
+      await promptsAccess.addPrompt(input, out, new PromptContext());
       promptId = out.id;
     });
 
@@ -874,8 +864,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
       const result = await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        execOut,
+        execOut, new PromptContext(),
       );
 
       expect(result).toBe(true);
@@ -893,7 +882,7 @@ describe('PromptsProvider', () => {
         prompt_template: '名称：{{name}}，再次确认：{{name}}',
       });
       const addOut = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOut);
+      await promptsAccess.addPrompt(addInput, addOut, new PromptContext());
 
       const execInput = new ExecPromptInput();
       execInput.id = addOut.id;
@@ -901,8 +890,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        execOut,
+        execOut, new PromptContext(),
       );
 
       // split by 'Brian' should give 3 parts (2 occurrences)
@@ -920,8 +908,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        execOut,
+        execOut, new PromptContext(),
       );
 
       expect(execOut.prompt).toContain('$$$');
@@ -938,8 +925,7 @@ describe('PromptsProvider', () => {
       };
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
 
       const usageRows = await relationDb.select('prompt_template_usage', {
@@ -966,18 +952,15 @@ describe('PromptsProvider', () => {
 
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        new ExecPromptOutput(),
+        new ExecPromptOutput(), new PromptContext(),
       );
 
       const usageRows = await relationDb.select('prompt_template_usage', {
@@ -1000,7 +983,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
 
       await expect(
-        promptsAccess.execPrompt(execInput, new PromptContext(), execOut),
+        promptsAccess.execPrompt(execInput, execOut, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1011,7 +994,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
 
       await expect(
-        promptsAccess.execPrompt(execInput, new PromptContext(), execOut),
+        promptsAccess.execPrompt(execInput, execOut, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1022,7 +1005,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
 
       await expect(
-        promptsAccess.execPrompt(execInput, new PromptContext(), execOut),
+        promptsAccess.execPrompt(execInput, execOut, new PromptContext()),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -1033,8 +1016,7 @@ describe('PromptsProvider', () => {
           id: promptId,
           data: { enable: false },
         }),
-        new PromptContext(),
-        new UpdatePromptOutput(),
+        new UpdatePromptOutput(), new PromptContext(),
       );
 
       const execInput = new ExecPromptInput();
@@ -1047,7 +1029,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
 
       await expect(
-        promptsAccess.execPrompt(execInput, new PromptContext(), execOut),
+        promptsAccess.execPrompt(execInput, execOut, new PromptContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -1063,8 +1045,7 @@ describe('PromptsProvider', () => {
       const execOut = new ExecPromptOutput();
       await promptsAccess.execPrompt(
         execInput,
-        new PromptContext(),
-        execOut,
+        execOut, new PromptContext(),
       );
 
       // extra_var 不在模板中，不会出现在结果中
@@ -1081,8 +1062,7 @@ describe('PromptsProvider', () => {
     it('禁用组件后所有操作应抛出 ComponentDisabledError', async () => {
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: false }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       const input = new AddPromptInput();
@@ -1090,7 +1070,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
@@ -1098,15 +1078,13 @@ describe('PromptsProvider', () => {
       // 先禁用
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: false }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       // 再启用
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: true }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       const input = new AddPromptInput();
@@ -1114,8 +1092,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
       const result = await promptsAccess.addPrompt(
         input,
-        new PromptContext(),
-        out,
+        out, new PromptContext(),
       );
       expect(result).toBe(true);
       expect(out.id).toBeTruthy();
@@ -1125,8 +1102,7 @@ describe('PromptsProvider', () => {
       // 设为 false
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: false }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       // 检查 config 表
@@ -1144,8 +1120,7 @@ describe('PromptsProvider', () => {
     it('重复启用已启用的组件应无副作用', async () => {
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: true }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       const input = new AddPromptInput();
@@ -1153,8 +1128,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
       const result = await promptsAccess.addPrompt(
         input,
-        new PromptContext(),
-        out,
+        out, new PromptContext(),
       );
       expect(result).toBe(true);
     });
@@ -1163,8 +1137,7 @@ describe('PromptsProvider', () => {
       // 先禁用
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: false }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       // 重新初始化
@@ -1176,7 +1149,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        newAccess.addPrompt(input, new PromptContext(), out),
+        newAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -1189,8 +1162,7 @@ describe('PromptsProvider', () => {
     it('closePrompts 后所有操作应抛出 DatabaseError', async () => {
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
 
       const input = new AddPromptInput();
@@ -1198,22 +1170,20 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(DatabaseError);
     });
 
     it('closePrompts 后 enablePrompts 应抛出 DatabaseError', async () => {
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
 
       await expect(
         promptsAccess.enablePrompts(
           Object.assign(new EnablePromptsInput(), { enable: true }),
-          new PromptContext(),
-          new EnablePromptsOutput(),
+          new EnablePromptsOutput(), new PromptContext(),
         ),
       ).rejects.toThrow(DatabaseError);
     });
@@ -1221,14 +1191,12 @@ describe('PromptsProvider', () => {
     it('先禁用再 closePrompts 也应生效', async () => {
       await promptsAccess.enablePrompts(
         Object.assign(new EnablePromptsInput(), { enable: false }),
-        new PromptContext(),
-        new EnablePromptsOutput(),
+        new EnablePromptsOutput(), new PromptContext(),
       );
 
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
 
       const input = new AddPromptInput();
@@ -1236,20 +1204,18 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(DatabaseError);
     });
 
     it('closePrompts 可以重复调用且无副作用', async () => {
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
 
       // 状态仍然为关闭
@@ -1258,15 +1224,14 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
 
       await expect(
-        promptsAccess.addPrompt(input, new PromptContext(), out),
+        promptsAccess.addPrompt(input, out, new PromptContext()),
       ).rejects.toThrow(DatabaseError);
     });
 
     it('组件操作在 close 不可恢复后需要重新初始化', async () => {
       await promptsAccess.closePrompts(
         new ClosePromptInput(),
-        new PromptContext(),
-        new ClosePromptOutput(),
+        new ClosePromptOutput(), new PromptContext(),
       );
 
       // 创建新的 access 实例重新初始化
@@ -1278,8 +1243,7 @@ describe('PromptsProvider', () => {
       const out = new AddPromptOutput();
       const result = await newAccess.addPrompt(
         input,
-        new PromptContext(),
-        out,
+        out, new PromptContext(),
       );
       expect(result).toBe(true);
       expect(out.id).toBeTruthy();
