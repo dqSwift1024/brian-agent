@@ -25,7 +25,8 @@
     "lint:backend": "ESLINT_USE_FLAT_CONFIG=true eslint --config eslint.backend.config.mjs brian-backend",
     "lint:backend:fix": "ESLINT_USE_FLAT_CONFIG=true eslint --config eslint.backend.config.mjs --fix brian-backend",
     "lint": "npm run lint --workspace=@brian-agent/frontend",
-    "typecheck": "npm run typecheck --workspace=@brian-agent/base && npm run typecheck --workspace=@brian-agent/core && npm run typecheck --workspace=@brian-agent/agent && npm run typecheck --workspace=@brian-agent/orchestration && npm run typecheck --workspace=@brian-agent/application"
+    "typecheck": "npm run typecheck --workspace=@brian-agent/base && npm run typecheck --workspace=@brian-agent/core && npm run typecheck --workspace=@brian-agent/agent && npm run typecheck --workspace=@brian-agent/orchestration && npm run typecheck --workspace=@brian-agent/application",
+    "analyze:methods": "node scripts/analyze-method-length.mjs"
   },
   "keywords": [
     "agent",
