@@ -35,6 +35,12 @@ import { Operator, Direction } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
 import { LLMContext, LLMProviderRecord, LLMCacheRecord, LLMAvailableRecord, AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput, DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput, ListLLMInput, ListLLMOutput, AddLLMInput, AddLLMOutput, DelLLMInput, DelLLMOutput, UpdateLLMInput, UpdateLLMOutput, SoLLMInput, SoLLMOutput, ExecLLMInput, ExecLLMOutput, EmbedLLMInput, EmbedLLMOutput, GenLLMAttrInput, GenLLMAttrOutput, VisualizedLLMInput, VisualizedLLMOutput, EnableLLMInput, EnableLLMOutput, LLM_PROVIDER_TABLE, LLM_CACHE_TABLE, LLM_AVAILABLE_TABLE, LLM_USAGE_TABLE, LLM_CONFIG_TABLE } from '../domain/types';
 import { LLMStrategyFactory } from './strategies';
+import {
+  isModelsCacheFresh,
+  extractRemoteErrorDetail,
+  toCacheInsertRecord,
+  toCacheUpdatePatch,
+} from '../domain/services/LLMCacheDomainService';
 
 /** testLLMProvider 默认连接超时时间（毫秒） */
 const TEST_TIMEOUT_MS = 10000;
@@ -472,10 +478,7 @@ export class LLMService {
     const provider = row as unknown as LLMProviderRecord;
 
     // 缓存命中：仅在未指定 force 且缓存未过期时直接返回本地模型列表
-    const cacheAge = !input.force && provider.models_fetched_at
-      ? IdGenerator.now() - provider.models_fetched_at
-      : Infinity;
-    if (cacheAge < MODELS_CACHE_TTL_MS) {
+    if (isModelsCacheFresh(provider.models_fetched_at, input.force, IdGenerator.now())) {
       const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
         conditions: [
           { field: 'llm_provider_id', operator: Operator.EQ, value: input.llm_provider_id },
@@ -509,13 +512,7 @@ export class LLMService {
       await this.http.execRequest(httpInput, httpOutput, new HttpContext());
       const res = httpOutput.response;
       if (!res.ok) {
-        let errDetail = `HTTP ${res.status}`;
-        try {
-          const errJson = JSON.parse(res.bodyText) as { error?: { message?: string } };
-          if (errJson.error?.message) errDetail += ` - ${errJson.error.message}`;
-        } catch {
-          /* ignore */
-        }
+        const errDetail = extractRemoteErrorDetail(res.status, res.bodyText);
         output.error = `获取模型列表失败: ${errDetail}`;
         output.error_code = 'REMOTE_ERROR';
         // 请求失败时不写入/更新缓存时间戳
@@ -541,8 +538,6 @@ export class LLMService {
     for (const m of parsedModels) {
       const modelId = m.modelId;
       if (!modelId) continue;
-      const brief = m.description ?? null;
-      const maxTokens = m.maxTokens ?? 0;
 
       const existing = await this.relationDb.selectOne(LLM_CACHE_TABLE, [
         {
@@ -556,12 +551,7 @@ export class LLMService {
       if (existing) {
         await this.relationDb.update(
           LLM_CACHE_TABLE,
-          [
-            { field: 'llm_brief', value: brief },
-            { field: 'llm_param', value: JSON.stringify(m.raw) },
-            { field: 'max_tokens', value: maxTokens },
-            { field: 'updated', value: now },
-          ],
+          toCacheUpdatePatch(m),
           [
             {
               field: 'llm_provider_id',
@@ -572,18 +562,8 @@ export class LLMService {
           ],
         );
       } else {
-        const id = IdGenerator.generate();
         try {
-          await this.relationDb.insert(LLM_CACHE_TABLE, [
-            { field: 'id', value: id },
-            { field: 'created', value: now },
-            { field: 'updated', value: now },
-            { field: 'llm_provider_id', value: input.llm_provider_id },
-            { field: 'llm_title', value: modelId },
-            { field: 'llm_brief', value: brief },
-            { field: 'llm_param', value: JSON.stringify(m.raw) },
-            { field: 'max_tokens', value: maxTokens },
-          ]);
+          await this.relationDb.insert(LLM_CACHE_TABLE, toCacheInsertRecord(input.llm_provider_id, m));
         } catch {
           // skip duplicate insert
         }

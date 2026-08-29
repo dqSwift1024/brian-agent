@@ -91,6 +91,12 @@
 
 ## 7. 模块重构样例（试点沉淀）
 
+### LLMProvider（2026-08-29，中大型模块样例）
+
+**before**：`listLLM` 146 行混合缓存 TTL 判定、策略分发、HTTP、逐条 upsert 字段映射。
+
+**after**：领域服务 `LLMCacheDomainService`（isModelsCacheFresh / extractRemoteErrorDetail / toCacheInsertRecord / toCacheUpdatePatch）；strategies/ 维持 Strategy+Factory+Template Method；PRD 补录 soLLMById。
+
 ### SoulProvider（2026-08-29，参考实现）
 
 **before**：`SoulService` 516 行，`soSoul` 单方法内混合关键词预查询（I/O）、usage 四维 Map 聚合、多字段排序、内存分页；`delSoul/updateSoul/soSoulById` 三处重复的"id/ids/conditions 目标条件解析"。
