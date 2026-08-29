@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type {
   RelationDBAccess,
   LLMAccess,
@@ -133,10 +134,7 @@ export class VisualizationService {
     private readonly logger?: Logger,
   ) {}
 
-  async getVisualizedMessages(
-    input: GetVisualizedMessagesInput,
-    _ctx: VisualizationContext,
-    output: GetVisualizedMessagesOutput,
+  async soVisualizedMessages(input: GetVisualizedMessagesInput, output: GetVisualizedMessagesOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const lastN = input.lastN ?? 50;
     const pageCurrent = input.page_current ?? 1;
@@ -153,7 +151,7 @@ export class VisualizationService {
     });
 
     try {
-      await this.infoCore.lastNInfo(lastNInput, new InfoCoreContext(), lastNOut);
+      await this.infoCore.lastNInfo(lastNInput, lastNOut, new InfoCoreContext());
     } catch (err) {
       this.logWarn('lastNInfo failed', err);
       return true;
@@ -221,10 +219,7 @@ export class VisualizationService {
     return true;
   }
 
-  async getVisualizedMessageGraph(
-    input: GetVisualizedMessageGraphInput,
-    _ctx: VisualizationContext,
-    output: GetVisualizedMessageGraphOutput,
+  async soVisualizedMessageGraph(input: GetVisualizedMessageGraphInput, output: GetVisualizedMessageGraphOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const maxNodes = input.max_nodes ?? config.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH;
@@ -233,8 +228,8 @@ export class VisualizationService {
     try {
       await this.infoCore.graphInfo(
         Object.assign(new GraphInfoInput(), { session_id: input.session_id }),
-        new InfoCoreContext(),
         graphOut,
+        new InfoCoreContext(),
       );
     } catch (err) {
       this.logWarn('graphInfo failed', err);
@@ -305,10 +300,7 @@ export class VisualizationService {
     return true;
   }
 
-  async getVisualizedAgentDAG(
-    input: GetVisualizedAgentDAGInput,
-    _ctx: VisualizationContext,
-    output: GetVisualizedAgentDAGOutput,
+  async soVisualizedAgentDAG(input: GetVisualizedAgentDAGInput, output: GetVisualizedAgentDAGOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const resolveContent = input.resolve_content ?? (config.resolve_content_by_default === 1);
@@ -317,8 +309,8 @@ export class VisualizationService {
     try {
       await this.orchestrationVisualization.visualizeAgentDAG(
         Object.assign(new VisualizeAgentDAGInput(), { work_id: input.work_id }),
-        new OrchestrationVisualizationContext(),
         dagOut,
+        new OrchestrationVisualizationContext(),
       );
     } catch (err) {
       this.logWarn('visualizeAgentDAG failed', err);
@@ -339,17 +331,14 @@ export class VisualizationService {
     return true;
   }
 
-  async getVisualizedWorkFlow(
-    input: GetVisualizedWorkFlowInput,
-    _ctx: VisualizationContext,
-    output: GetVisualizedWorkFlowOutput,
+  async soVisualizedWorkFlow(input: GetVisualizedWorkFlowInput, output: GetVisualizedWorkFlowOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const wfOut = new VisualizeWorkFlowOutput();
     try {
       await this.orchestrationVisualization.visualizeWorkFlow(
         Object.assign(new VisualizeWorkFlowInput(), { work_id: input.work_id }),
-        new OrchestrationVisualizationContext(),
         wfOut,
+        new OrchestrationVisualizationContext(),
       );
     } catch (err) {
       this.logWarn('visualizeWorkFlow failed', err);
@@ -385,10 +374,7 @@ export class VisualizationService {
     return true;
   }
 
-  async getAgentTrace(
-    input: GetAgentTraceInput,
-    _ctx: VisualizationContext,
-    output: GetAgentTraceOutput,
+  async soAgentTrace(input: GetAgentTraceInput, output: GetAgentTraceOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const traceId = input.trace_id ?? '';
     const traceOut = new GetTraceOutput();
@@ -397,8 +383,8 @@ export class VisualizationService {
       try {
         await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: traceId }),
-          new AgentExecutionContext(),
           traceOut,
+          new AgentExecutionContext(),
         );
       } catch (err) {
         this.logWarn('soTrace by trace_id failed', err);
@@ -411,8 +397,8 @@ export class VisualizationService {
       try {
         await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: input.agent_id }),
-          Object.assign(new AgentExecutionContext(), { trace_id: input.agent_id }),
           traceOut,
+          Object.assign(new AgentExecutionContext(), { trace_id: input.agent_id }),
         );
       } catch (err) {
         this.logWarn('soTrace by agent_id failed', err);
@@ -481,10 +467,7 @@ export class VisualizationService {
     return true;
   }
 
-  async getVisualizedMessageDAG(
-    input: GetVisualizedMessageDAGInput,
-    _ctx: VisualizationContext,
-    output: GetVisualizedMessageDAGOutput,
+  async soVisualizedMessageDAG(input: GetVisualizedMessageDAGInput, output: GetVisualizedMessageDAGOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const maxNodes = input.max_nodes ?? config.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH;
@@ -652,7 +635,7 @@ export class VisualizationService {
     const allInfoIds = new Set(nodes.map((n) => String(n.info_id)));
     try {
       const citeOut = new SoCitationEdgesOutput();
-      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), citeOut, new InfoCoreContext());
       return citeOut.edges
         .filter((e) => allInfoIds.has(e.citing_info_id) && e.cited_info_id && e.citing_info_id)
         .map((e) => ({
@@ -728,10 +711,7 @@ export class VisualizationService {
     };
   }
 
-  async getResource(
-    input: GetResourceInput,
-    _ctx: VisualizationContext,
-    output: GetResourceOutput,
+  async soResource(input: GetResourceInput, output: GetResourceOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { resource_type, resource_id } = input;
 
@@ -741,8 +721,8 @@ export class VisualizationService {
           const out = new GetAgentOutput();
           await this.agentLibrary.soAgent(
             Object.assign(new GetAgentInput(), { agent_id: resource_id }),
-            new AgentLibraryContext(),
             out,
+            new AgentLibraryContext(),
           );
           output.resource = out.agents.length > 0 ? (out.agents[0] as unknown as Record<string, unknown>) : {};
           break;
@@ -751,8 +731,8 @@ export class VisualizationService {
           const out = new GetLLMOutput();
           await this.llmAccess.soLLMById(
             Object.assign(new GetLLMInput(), { id: resource_id }),
-            new LLMContext(),
             out,
+            new LLMContext(),
           );
           output.resource = (out.llm ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -761,8 +741,8 @@ export class VisualizationService {
           const out = new GetSoulOutput();
           await this.soulAccess.soSoulById(
             Object.assign(new GetSoulInput(), { id: resource_id }),
-            new SoulContext(),
             out,
+            new SoulContext(),
           );
           output.resource = (out.soul ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -771,8 +751,8 @@ export class VisualizationService {
           const out = new GetSkillOutput();
           await this.skillAccess.soSkillById(
             Object.assign(new GetSkillInput(), { id: resource_id }),
-            new SkillContext(),
             out,
+            new SkillContext(),
           );
           output.resource = (out.skill ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -781,8 +761,8 @@ export class VisualizationService {
           const out = new GetMcpOutput();
           await this.mcpAccess.soMcpById(
             Object.assign(new GetMcpInput(), { id: resource_id }),
-            new McpContext(),
             out,
+            new McpContext(),
           );
           output.resource = (out.mcp ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -791,8 +771,8 @@ export class VisualizationService {
           const out = new GetPromptOutput();
           await this.promptsAccess.soPromptById(
             Object.assign(new GetPromptInput(), { id: resource_id }),
-            new PromptContext(),
             out,
+            new PromptContext(),
           );
           output.resource = (out.prompt ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -801,8 +781,8 @@ export class VisualizationService {
           const out = new GetTraceOutput();
           await this.agentExecution.soTrace(
             Object.assign(new GetTraceInput(), { trace_id: resource_id }),
-            new AgentExecutionContext(),
             out,
+            new AgentExecutionContext(),
           );
           output.resource = (out.trace ?? {}) as unknown as Record<string, unknown>;
           break;
@@ -811,8 +791,8 @@ export class VisualizationService {
           const out = new LastNInfoOutput();
           await this.infoCore.lastNInfo(
             Object.assign(new LastNInfoInput(), { info_id: resource_id, lastN: 1 }),
-            new InfoCoreContext(),
             out,
+            new InfoCoreContext(),
           );
           output.resource = out.list.length > 0 ? (out.list[0] as unknown as Record<string, unknown>) : {};
           break;
@@ -821,8 +801,8 @@ export class VisualizationService {
           const out = new GetEvaluationOutput();
           await this.evolutorAgent.soEvaluation(
             Object.assign(new GetEvaluationInput(), { conditions: [{ field: 'eval_id', operator: Operator.EQ, value: resource_id }] }),
-            new EvolutorAgentContext(),
             out,
+            new EvolutorAgentContext(),
           );
           output.resource = out.evaluations.length > 0 ? (out.evaluations[0] as unknown as Record<string, unknown>) : {};
           break;
@@ -831,8 +811,8 @@ export class VisualizationService {
           const out = new GetPlanOutput();
           await this.plannerAgent.soPlan(
             Object.assign(new GetPlanInput(), { plan_id: resource_id }),
-            new PlannerAgentContext(),
             out,
+            new PlannerAgentContext(),
           );
           output.resource = out.plans.length > 0 ? (out.plans[0] as unknown as Record<string, unknown>) : {};
           break;
@@ -841,8 +821,8 @@ export class VisualizationService {
           const out = new GetContextDetailOutput();
           await this.agentContext.soContextDetail(
             Object.assign(new GetContextDetailInput(), { work_id: resource_id }),
-            new AgentContextContext(),
             out,
+            new AgentContextContext(),
           );
           output.resource = out as unknown as Record<string, unknown>;
           break;
@@ -852,17 +832,14 @@ export class VisualizationService {
         }
       }
     } catch (err) {
-      this.logWarn(`getResource ${resource_type}/${resource_id} failed`, err);
-      output.resource = { error: `getResource failed: ${resource_type}/${resource_id}` };
+      this.logWarn(`soResource ${resource_type}/${resource_id} failed`, err);
+      output.resource = { error: `soResource failed: ${resource_type}/${resource_id}` };
     }
 
     return true;
   }
 
-  async configVisualization(
-    input: ConfigVisualizationInput,
-    _ctx: VisualizationContext,
-    output: ConfigVisualizationOutput,
+  async configVisualization(input: ConfigVisualizationInput, output: ConfigVisualizationOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfigFull();
 
@@ -933,10 +910,7 @@ export class VisualizationService {
     return true;
   }
 
-  async getGraphVisualizationConfig(
-    input: GraphVisualizationConfigInput,
-    _ctx: VisualizationContext,
-    output: GraphVisualizationConfigOutput,
+  async soGraphVisualizationConfig(input: GraphVisualizationConfigInput, output: GraphVisualizationConfigOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const isKeyword = input.graph_type === 'keyword';
@@ -986,7 +960,7 @@ export class VisualizationService {
 
     try {
       const citeOut = new SoCitationEdgesOutput();
-      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), citeOut, new InfoCoreContext());
       const citedRows = citeOut.edges;
 
       for (const id of infoIds) {
@@ -1042,7 +1016,7 @@ export class VisualizationService {
   private async buildParentInfoIds(infoId: string): Promise<string[]> {
     try {
       const citeOut = new SoCitationEdgesOutput();
-      await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { citing_info_id: infoId }), new InfoCoreContext(), citeOut);
+      await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { citing_info_id: infoId }), citeOut, new InfoCoreContext());
       return [...new Set(citeOut.edges.map((e) => e.cited_info_id).filter(Boolean))];
     } catch {
       return [];
@@ -1086,8 +1060,8 @@ export class VisualizationService {
         const out = new GetLLMOutput();
         await this.llmAccess.soLLMById(
           Object.assign(new GetLLMInput(), { id: llmId }),
-          new LLMContext(),
           out,
+          new LLMContext(),
         );
         if (out.llm) {
           node.llm_detail = out.llm as unknown as Record<string, unknown>;
@@ -1102,8 +1076,8 @@ export class VisualizationService {
         const out = new GetSoulOutput();
         await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: soulId }),
-          new SoulContext(),
           out,
+          new SoulContext(),
         );
         if (out.soul) {
           node.soul_detail = out.soul as unknown as Record<string, unknown>;
@@ -1147,8 +1121,8 @@ export class VisualizationService {
           Object.assign(new GetEvaluationInput(), {
             conditions: [{ field: 'eval_id', operator: Operator.EQ, value: evalId }],
           }),
-          new EvolutorAgentContext(),
           out,
+          new EvolutorAgentContext(),
         );
         if (out.evaluations.length > 0) {
           node.eval_detail = out.evaluations[0] as unknown as Record<string, unknown>;
@@ -1187,7 +1161,7 @@ export class VisualizationService {
     try {
       if (k.includes('agent')) {
         const out = new GetAgentOutput();
-        await this.agentLibrary.soAgent(Object.assign(new GetAgentInput(), { agent_id: id }), new AgentLibraryContext(), out);
+        await this.agentLibrary.soAgent(Object.assign(new GetAgentInput(), { agent_id: id }), out, new AgentLibraryContext());
         return out.agents[0] ?? { agent_id: id };
       }
       if (k.includes('llm')) return await this.resolveLLM(id);
@@ -1197,7 +1171,7 @@ export class VisualizationService {
       if (k.includes('prompt')) return await this.resolvePrompt(id);
       if (k.includes('info') || k.includes('context')) {
         const out = new LastNInfoOutput();
-        await this.infoCore.lastNInfo(Object.assign(new LastNInfoInput(), { info_id: id, lastN: 1 }), new InfoCoreContext(), out);
+        await this.infoCore.lastNInfo(Object.assign(new LastNInfoInput(), { info_id: id, lastN: 1 }), out, new InfoCoreContext());
         return out.list[0] ?? { info_id: id };
       }
     } catch {
@@ -1207,20 +1181,20 @@ export class VisualizationService {
 
   private async resolveLLM(id: string): Promise<Record<string, unknown>> {
     const out = new GetLLMOutput();
-    await this.llmAccess.soLLMById(Object.assign(new GetLLMInput(), { id }), new LLMContext(), out);
+    await this.llmAccess.soLLMById(Object.assign(new GetLLMInput(), { id }), out, new LLMContext());
     return (out.llm ?? { id }) as unknown as Record<string, unknown>;
   }
 
   private async resolveSoul(id: string): Promise<Record<string, unknown>> {
     const out = new GetSoulOutput();
-    await this.soulAccess.soSoulById(Object.assign(new GetSoulInput(), { id }), new SoulContext(), out);
+    await this.soulAccess.soSoulById(Object.assign(new GetSoulInput(), { id }), out, new SoulContext());
     return (out.soul ?? { id }) as unknown as Record<string, unknown>;
   }
 
   private async resolveSkill(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetSkillOutput();
-      await this.skillAccess.soSkillById(Object.assign(new GetSkillInput(), { id }), new SkillContext(), out);
+      await this.skillAccess.soSkillById(Object.assign(new GetSkillInput(), { id }), out, new SkillContext());
       return (out.skill ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1230,7 +1204,7 @@ export class VisualizationService {
   private async resolveMcp(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetMcpOutput();
-      await this.mcpAccess.soMcpById(Object.assign(new GetMcpInput(), { id }), new McpContext(), out);
+      await this.mcpAccess.soMcpById(Object.assign(new GetMcpInput(), { id }), out, new McpContext());
       return (out.mcp ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1240,7 +1214,7 @@ export class VisualizationService {
   private async resolvePrompt(id: string): Promise<Record<string, unknown>> {
     try {
       const out = new GetPromptOutput();
-      await this.promptsAccess.soPromptById(Object.assign(new GetPromptInput(), { id }), new PromptContext(), out);
+      await this.promptsAccess.soPromptById(Object.assign(new GetPromptInput(), { id }), out, new PromptContext());
       return (out.prompt ?? { id }) as unknown as Record<string, unknown>;
     } catch {
       return { id };
@@ -1272,8 +1246,8 @@ export class VisualizationService {
       const out = new GetPlanOutput();
       await this.plannerAgent.soPlan(
         Object.assign(new GetPlanInput(), { plan_id: planId }),
-        new PlannerAgentContext(),
         out,
+        new PlannerAgentContext(),
       );
       if (out.plans.length > 0) {
         phase.plan_detail = out.plans[0] as unknown as Record<string, unknown>;
@@ -1292,8 +1266,8 @@ export class VisualizationService {
         const out = new GetAgentOutput();
         await this.agentLibrary.soAgent(
           Object.assign(new GetAgentInput(), { agent_id: id }),
-          new AgentLibraryContext(),
           out,
+          new AgentLibraryContext(),
         );
         resolved.push(out.agents[0] ? (out.agents[0] as unknown as Record<string, unknown>) : { agent_id: id });
       } catch {
@@ -1313,8 +1287,8 @@ export class VisualizationService {
         const out = new GetTraceOutput();
         await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: id }),
-          new AgentExecutionContext(),
           out,
+          new AgentExecutionContext(),
         );
         if (out.trace) {
           summaries.push({
@@ -1341,8 +1315,8 @@ export class VisualizationService {
       const out = new GetAgentOutput();
       await this.agentLibrary.soAgent(
         Object.assign(new GetAgentInput(), { agent_id: writerAgentId }),
-        new AgentLibraryContext(),
         out,
+        new AgentLibraryContext(),
       );
       if (out.agents.length > 0) {
         phase.writer_detail = out.agents[0] as unknown as Record<string, unknown>;
@@ -1361,8 +1335,8 @@ export class VisualizationService {
         Object.assign(new GetEvaluationInput(), {
           conditions: [],
         }),
-        new EvolutorAgentContext(),
         out,
+        new EvolutorAgentContext(),
       );
       const matched = out.evaluations.filter((e) => evalIds.includes(e.eval_id));
       phase.eval_details = matched as unknown as Record<string, unknown>[];
@@ -1400,8 +1374,8 @@ export class VisualizationService {
         const out = new GetSkillOutput();
         await this.skillAccess.soSkillById(
           Object.assign(new GetSkillInput(), { id }),
-          new SkillContext(),
           out,
+          new SkillContext(),
         );
         const skill = out.skill as Record<string, unknown> | null;
         return String(skill?.skill_name ?? skill?.name ?? id);
@@ -1410,8 +1384,8 @@ export class VisualizationService {
         const out = new GetMcpOutput();
         await this.mcpAccess.soMcpById(
           Object.assign(new GetMcpInput(), { id }),
-          new McpContext(),
           out,
+          new McpContext(),
         );
         const mcp = out.mcp as Record<string, unknown> | null;
         return String(mcp?.mcp_name ?? mcp?.name ?? id);

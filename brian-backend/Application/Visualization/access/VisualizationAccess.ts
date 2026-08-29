@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type {
   RelationDBAccess,
   LLMAccess,
@@ -88,84 +89,57 @@ export class VisualizationAccess {
     await this.initPromise;
   }
 
-  async getVisualizedMessages(
-    i: GetVisualizedMessagesInput,
-    c: VisualizationContext,
-    o: GetVisualizedMessagesOutput,
+  async soVisualizedMessages(i: GetVisualizedMessagesInput, o: GetVisualizedMessagesOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getVisualizedMessages(i, c, o);
+    return this.service.soVisualizedMessages(i, o, c, metrics, report);
   }
 
-  async getVisualizedMessageGraph(
-    i: GetVisualizedMessageGraphInput,
-    c: VisualizationContext,
-    o: GetVisualizedMessageGraphOutput,
+  async soVisualizedMessageGraph(i: GetVisualizedMessageGraphInput, o: GetVisualizedMessageGraphOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getVisualizedMessageGraph(i, c, o);
+    return this.service.soVisualizedMessageGraph(i, o, c, metrics, report);
   }
 
-  async getVisualizedAgentDAG(
-    i: GetVisualizedAgentDAGInput,
-    c: VisualizationContext,
-    o: GetVisualizedAgentDAGOutput,
+  async soVisualizedAgentDAG(i: GetVisualizedAgentDAGInput, o: GetVisualizedAgentDAGOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getVisualizedAgentDAG(i, c, o);
+    return this.service.soVisualizedAgentDAG(i, o, c, metrics, report);
   }
 
-  async getVisualizedWorkFlow(
-    i: GetVisualizedWorkFlowInput,
-    c: VisualizationContext,
-    o: GetVisualizedWorkFlowOutput,
+  async soVisualizedWorkFlow(i: GetVisualizedWorkFlowInput, o: GetVisualizedWorkFlowOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getVisualizedWorkFlow(i, c, o);
+    return this.service.soVisualizedWorkFlow(i, o, c, metrics, report);
   }
 
-  async getAgentTrace(
-    i: GetAgentTraceInput,
-    c: VisualizationContext,
-    o: GetAgentTraceOutput,
+  async soAgentTrace(i: GetAgentTraceInput, o: GetAgentTraceOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getAgentTrace(i, c, o);
+    return this.service.soAgentTrace(i, o, c, metrics, report);
   }
 
-  async getVisualizedMessageDAG(
-    i: GetVisualizedMessageDAGInput,
-    c: VisualizationContext,
-    o: GetVisualizedMessageDAGOutput,
+  async soVisualizedMessageDAG(i: GetVisualizedMessageDAGInput, o: GetVisualizedMessageDAGOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getVisualizedMessageDAG(i, c, o);
+    return this.service.soVisualizedMessageDAG(i, o, c, metrics, report);
   }
 
-  async getResource(
-    i: GetResourceInput,
-    c: VisualizationContext,
-    o: GetResourceOutput,
+  async soResource(i: GetResourceInput, o: GetResourceOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getResource(i, c, o);
+    return this.service.soResource(i, o, c, metrics, report);
   }
 
-  async configVisualization(
-    i: ConfigVisualizationInput,
-    c: VisualizationContext,
-    o: ConfigVisualizationOutput,
+  async configVisualization(i: ConfigVisualizationInput, o: ConfigVisualizationOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configVisualization(i, c, o);
+    return this.service.configVisualization(i, o, c, metrics, report);
   }
 
-  async getGraphVisualizationConfig(
-    i: GraphVisualizationConfigInput,
-    c: VisualizationContext,
-    o: GraphVisualizationConfigOutput,
+  async soGraphVisualizationConfig(i: GraphVisualizationConfigInput, o: GraphVisualizationConfigOutput, c: VisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getGraphVisualizationConfig(i, c, o);
+    return this.service.soGraphVisualizationConfig(i, o, c, metrics, report);
   }
 }

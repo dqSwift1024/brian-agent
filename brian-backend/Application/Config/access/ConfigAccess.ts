@@ -9,6 +9,7 @@
  * 4. 代理 Base 层资源管理（LLM/Soul/Skill/MCP/Prompt）到下层模块。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { CronAccess } from '@brian-agent/base';
@@ -145,247 +146,229 @@ export class ConfigAccess {
   // Config management
   // -------------------------------------------------------------------------
 
-  async updateLayerPrivilege(
-    input: UpdateLayerPrivilegeInput,
-    context: ConfigContext,
-    output: UpdateLayerPrivilegeOutput,
+  async updateLayerPrivilege(input: UpdateLayerPrivilegeInput, output: UpdateLayerPrivilegeOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateLayerPrivilege(input, context, output);
+    return this.service.updateLayerPrivilege(input, output, context, metrics, report);
   }
 
-  async updateModulePrivilege(
-    input: UpdateModulePrivilegeInput,
-    context: ConfigContext,
-    output: UpdateModulePrivilegeOutput,
+  async updateModulePrivilege(input: UpdateModulePrivilegeInput, output: UpdateModulePrivilegeOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateModulePrivilege(input, context, output);
+    return this.service.updateModulePrivilege(input, output, context, metrics, report);
   }
 
-  async getConfigDetail(
-    input: GetConfigDetailInput,
-    context: ConfigContext,
-    output: GetConfigDetailOutput,
+  async soConfigDetail(input: GetConfigDetailInput, output: GetConfigDetailOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getConfigDetail(input, context, output);
+    return this.service.soConfigDetail(input, output, context, metrics, report);
   }
 
-  async getConfigItem(
-    input: GetConfigItemInput,
-    context: ConfigContext,
-    output: GetConfigItemOutput,
+  async soConfigItem(input: GetConfigItemInput, output: GetConfigItemOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getConfigItem(input, context, output);
+    return this.service.soConfigItem(input, output, context, metrics, report);
   }
 
-  async updateConfig(
-    input: UpdateConfigInput,
-    context: ConfigContext,
-    output: UpdateConfigOutput,
+  async updateConfig(input: UpdateConfigInput, output: UpdateConfigOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateConfig(input, context, output);
+    return this.service.updateConfig(input, output, context, metrics, report);
   }
 
-  async configConfig(
-    input: ConfigConfigInput,
-    context: ConfigContext,
-    output: ConfigConfigOutput,
+  async configConfig(input: ConfigConfigInput, output: ConfigConfigOutput, context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configConfig(input, context, output);
+    return this.service.configConfig(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
   // LLM management proxy
   // -------------------------------------------------------------------------
 
-  async addLLMProvider(input: AddLLMProviderInput, context: LLMContext, output: AddLLMProviderOutput): Promise<boolean> {
-    return this.service.addLLMProviderProxy(input, context, output);
+  async addLLMProvider(input: AddLLMProviderInput, output: AddLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addLLMProviderProxy(input, output, context, metrics, report);
   }
 
-  async updateLLMProvider(input: UpdateLLMProviderInput, context: LLMContext, output: UpdateLLMProviderOutput): Promise<boolean> {
-    return this.service.updateLLMProviderProxy(input, context, output);
+  async updateLLMProvider(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateLLMProviderProxy(input, output, context, metrics, report);
   }
 
-  async delLLMProvider(input: DelLLMProviderInput, context: LLMContext, output: DelLLMProviderOutput): Promise<boolean> {
-    return this.service.delLLMProviderProxy(input, context, output);
+  async delLLMProvider(input: DelLLMProviderInput, output: DelLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delLLMProviderProxy(input, output, context, metrics, report);
   }
 
-  async soLLMProvider(input: SoLLMProviderInput, context: LLMContext, output: SoLLMProviderOutput): Promise<boolean> {
-    return this.service.soLLMProviderProxy(input, context, output);
+  async soLLMProvider(input: SoLLMProviderInput, output: SoLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soLLMProviderProxy(input, output, context, metrics, report);
   }
 
-  async testLLMProvider(input: TestLLMProviderInput, context: LLMContext, output: TestLLMProviderOutput): Promise<boolean> {
-    return this.service.testLLMProviderProxy(input, context, output);
+  async testLLMProvider(input: TestLLMProviderInput, output: TestLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.testLLMProviderProxy(input, output, context, metrics, report);
   }
 
-  async listLLM(input: ListLLMInput, context: LLMContext, output: ListLLMOutput): Promise<boolean> {
-    return this.service.listLLMProxy(input, context, output);
+  async listLLM(input: ListLLMInput, output: ListLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.listLLMProxy(input, output, context, metrics, report);
   }
 
-  async addLLM(input: AddLLMInput, context: LLMContext, output: AddLLMOutput): Promise<boolean> {
-    return this.service.addLLMProxy(input, context, output);
+  async addLLM(input: AddLLMInput, output: AddLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addLLMProxy(input, output, context, metrics, report);
   }
 
-  async updateLLM(input: UpdateLLMInput, context: LLMContext, output: UpdateLLMOutput): Promise<boolean> {
-    return this.service.updateLLMProxy(input, context, output);
+  async updateLLM(input: UpdateLLMInput, output: UpdateLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateLLMProxy(input, output, context, metrics, report);
   }
 
-  async delLLM(input: DelLLMInput, context: LLMContext, output: DelLLMOutput): Promise<boolean> {
-    return this.service.delLLMProxy(input, context, output);
+  async delLLM(input: DelLLMInput, output: DelLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delLLMProxy(input, output, context, metrics, report);
   }
 
-  async soLLM(input: SoLLMInput, context: LLMContext, output: SoLLMOutput): Promise<boolean> {
-    return this.service.soLLMProxy(input, context, output);
+  async soLLM(input: SoLLMInput, output: SoLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soLLMProxy(input, output, context, metrics, report);
   }
 
-  async soLLMById(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
-    return this.service.getLLMProxy(input, context, output);
+  async soLLMById(input: GetLLMInput, output: GetLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getLLMProxy(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
   // Soul management proxy
   // -------------------------------------------------------------------------
 
-  async addSoul(input: AddSoulInput, context: SoulContext, output: AddSoulOutput): Promise<boolean> {
-    return this.service.addSoulProxy(input, context, output);
+  async addSoul(input: AddSoulInput, output: AddSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addSoulProxy(input, output, context, metrics, report);
   }
 
-  async updateSoul(input: UpdateSoulInput, context: SoulContext, output: UpdateSoulOutput): Promise<boolean> {
-    return this.service.updateSoulProxy(input, context, output);
+  async updateSoul(input: UpdateSoulInput, output: UpdateSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateSoulProxy(input, output, context, metrics, report);
   }
 
-  async delSoul(input: DelSoulInput, context: SoulContext, output: DelSoulOutput): Promise<boolean> {
-    return this.service.delSoulProxy(input, context, output);
+  async delSoul(input: DelSoulInput, output: DelSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delSoulProxy(input, output, context, metrics, report);
   }
 
-  async soSoul(input: SoSoulInput, context: SoulContext, output: SoSoulOutput): Promise<boolean> {
-    return this.service.soSoulProxy(input, context, output);
+  async soSoul(input: SoSoulInput, output: SoSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soSoulProxy(input, output, context, metrics, report);
   }
 
-  async soSoulById(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
-    return this.service.getSoulProxy(input, context, output);
+  async soSoulById(input: GetSoulInput, output: GetSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getSoulProxy(input, output, context, metrics, report);
   }
 
-  async getSoulRule(input: SoSoulRuleInput, context: SoulCoreContext, output: SoSoulRuleOutput): Promise<boolean> {
-    return this.service.getSoulRuleProxy(input, context, output);
+  async getSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getSoulRuleProxy(input, output, context, metrics, report);
   }
 
-  async updateSoulRule(input: UpdateSoulRuleInput, context: SoulCoreContext, output: UpdateSoulRuleOutput): Promise<boolean> {
-    return this.service.updateSoulRuleProxy(input, context, output);
+  async updateSoulRule(input: UpdateSoulRuleInput, output: UpdateSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateSoulRuleProxy(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
   // Skill management proxy
   // -------------------------------------------------------------------------
 
-  async addSkill(input: AddSkillInput, context: SkillContext, output: AddSkillOutput): Promise<boolean> {
-    return this.service.addSkillProxy(input, context, output);
+  async addSkill(input: AddSkillInput, output: AddSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addSkillProxy(input, output, context, metrics, report);
   }
 
-  async updateSkill(input: UpdateSkillInput, context: SkillContext, output: UpdateSkillOutput): Promise<boolean> {
-    return this.service.updateSkillProxy(input, context, output);
+  async updateSkill(input: UpdateSkillInput, output: UpdateSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateSkillProxy(input, output, context, metrics, report);
   }
 
-  async delSkill(input: DelSkillInput, context: SkillContext, output: DelSkillOutput): Promise<boolean> {
-    return this.service.delSkillProxy(input, context, output);
+  async delSkill(input: DelSkillInput, output: DelSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delSkillProxy(input, output, context, metrics, report);
   }
 
-  async soSkill(input: SoSkillInput, context: SkillContext, output: SoSkillOutput): Promise<boolean> {
-    return this.service.soSkillProxy(input, context, output);
+  async soSkill(input: SoSkillInput, output: SoSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soSkillProxy(input, output, context, metrics, report);
   }
 
-  async execSkill(input: ExecSkillInput, context: SkillContext, output: ExecSkillOutput): Promise<boolean> {
-    return this.service.execSkillProxy(input, context, output);
+  async execSkill(input: ExecSkillInput, output: ExecSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.execSkillProxy(input, output, context, metrics, report);
   }
 
-  async soSkillById(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
-    return this.service.getSkillProxy(input, context, output);
+  async soSkillById(input: GetSkillInput, output: GetSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getSkillProxy(input, output, context, metrics, report);
   }
 
-  async getSkillRule(input: SoSkillRuleInput, context: SkillCoreContext, output: SoSkillRuleOutput): Promise<boolean> {
-    return this.service.getSkillRuleProxy(input, context, output);
+  async getSkillRule(input: SoSkillRuleInput, output: SoSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getSkillRuleProxy(input, output, context, metrics, report);
   }
 
-  async updateSkillRule(input: UpdateSkillRuleInput, context: SkillCoreContext, output: UpdateSkillRuleOutput): Promise<boolean> {
-    return this.service.updateSkillRuleProxy(input, context, output);
+  async updateSkillRule(input: UpdateSkillRuleInput, output: UpdateSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateSkillRuleProxy(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
   // MCP management proxy
   // -------------------------------------------------------------------------
 
-  async addMcpProvider(input: AddMcpProviderInput, context: McpContext, output: AddMcpProviderOutput): Promise<boolean> {
-    return this.service.addMcpProviderProxy(input, context, output);
+  async addMcpProvider(input: AddMcpProviderInput, output: AddMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addMcpProviderProxy(input, output, context, metrics, report);
   }
 
-  async updateMcpProvider(input: UpdateMcpProviderInput, context: McpContext, output: UpdateMcpProviderOutput): Promise<boolean> {
-    return this.service.updateMcpProviderProxy(input, context, output);
+  async updateMcpProvider(input: UpdateMcpProviderInput, output: UpdateMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateMcpProviderProxy(input, output, context, metrics, report);
   }
 
-  async delMcpProvider(input: DelMcpProviderInput, context: McpContext, output: DelMcpProviderOutput): Promise<boolean> {
-    return this.service.delMcpProviderProxy(input, context, output);
+  async delMcpProvider(input: DelMcpProviderInput, output: DelMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delMcpProviderProxy(input, output, context, metrics, report);
   }
 
-  async soMcpProvider(input: SoMcpProviderInput, context: McpContext, output: SoMcpProviderOutput): Promise<boolean> {
-    return this.service.soMcpProviderProxy(input, context, output);
+  async soMcpProvider(input: SoMcpProviderInput, output: SoMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soMcpProviderProxy(input, output, context, metrics, report);
   }
 
-  async testMcpProvider(input: TestMcpProviderInput, context: McpContext, output: TestMcpProviderOutput): Promise<boolean> {
-    return this.service.testMcpProviderProxy(input, context, output);
+  async testMcpProvider(input: TestMcpProviderInput, output: TestMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.testMcpProviderProxy(input, output, context, metrics, report);
   }
 
-  async listMcp(input: ListMcpInput, context: McpContext, output: ListMcpOutput): Promise<boolean> {
-    return this.service.listMcpProxy(input, context, output);
+  async listMcp(input: ListMcpInput, output: ListMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.listMcpProxy(input, output, context, metrics, report);
   }
 
-  async installMcp(input: InstallMcpInput, context: McpContext, output: InstallMcpOutput): Promise<boolean> {
-    return this.service.installMcpProxy(input, context, output);
+  async installMcp(input: InstallMcpInput, output: InstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.installMcpProxy(input, output, context, metrics, report);
   }
 
-  async startMcp(input: StartMcpInput, context: McpContext, output: StartMcpOutput): Promise<boolean> {
-    return this.service.startMcpProxy(input, context, output);
+  async startMcp(input: StartMcpInput, output: StartMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.startMcpProxy(input, output, context, metrics, report);
   }
 
-  async stopMcp(input: StopMcpInput, context: McpContext, output: StopMcpOutput): Promise<boolean> {
-    return this.service.stopMcpProxy(input, context, output);
+  async stopMcp(input: StopMcpInput, output: StopMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.stopMcpProxy(input, output, context, metrics, report);
   }
 
-  async uninstallMcp(input: UninstallMcpInput, context: McpContext, output: UninstallMcpOutput): Promise<boolean> {
-    return this.service.uninstallMcpProxy(input, context, output);
+  async uninstallMcp(input: UninstallMcpInput, output: UninstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.uninstallMcpProxy(input, output, context, metrics, report);
   }
 
-  async updateMcp(input: UpdateMcpInput, context: McpContext, output: UpdateMcpOutput): Promise<boolean> {
-    return this.service.updateMcpProxy(input, context, output);
+  async updateMcp(input: UpdateMcpInput, output: UpdateMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateMcpProxy(input, output, context, metrics, report);
   }
 
-  async soMcpById(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
-    return this.service.getMcpProxy(input, context, output);
+  async soMcpById(input: GetMcpInput, output: GetMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getMcpProxy(input, output, context, metrics, report);
   }
 
-  async soMcp(input: SoMcpInput, context: McpContext, output: SoMcpOutput): Promise<boolean> {
-    return this.service.soMcpProxy(input, context, output);
+  async soMcp(input: SoMcpInput, output: SoMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soMcpProxy(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
   // Prompt management proxy
   // -------------------------------------------------------------------------
 
-  async addPrompt(input: AddPromptInput, context: PromptContext, output: AddPromptOutput): Promise<boolean> {
-    return this.service.addPromptProxy(input, context, output);
+  async addPrompt(input: AddPromptInput, output: AddPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addPromptProxy(input, output, context, metrics, report);
   }
 
-  async updatePrompt(input: UpdatePromptInput, context: PromptContext, output: UpdatePromptOutput): Promise<boolean> {
-    return this.service.updatePromptProxy(input, context, output);
+  async updatePrompt(input: UpdatePromptInput, output: UpdatePromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updatePromptProxy(input, output, context, metrics, report);
   }
 
-  async delPrompt(input: DelPromptInput, context: PromptContext, output: DelPromptOutput): Promise<boolean> {
-    return this.service.delPromptProxy(input, context, output);
+  async delPrompt(input: DelPromptInput, output: DelPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delPromptProxy(input, output, context, metrics, report);
   }
 
-  async soPrompt(input: SoPromptInput, context: PromptContext, output: SoPromptOutput): Promise<boolean> {
-    return this.service.soPromptProxy(input, context, output);
+  async soPrompt(input: SoPromptInput, output: SoPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soPromptProxy(input, output, context, metrics, report);
   }
 
-  async soPromptById(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
-    return this.service.getPromptProxy(input, context, output);
+  async soPromptById(input: GetPromptInput, output: GetPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.getPromptProxy(input, output, context, metrics, report);
   }
 }

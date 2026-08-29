@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   RelationDBAccess,
@@ -65,16 +66,16 @@ describe('SelfLearningService', () => {
 
     vi.spyOn(evolutorAgent, 'startEvalSchedule').mockResolvedValue(true);
     vi.spyOn(evolutorAgent, 'stopEvalSchedule').mockResolvedValue(true);
-    vi.spyOn(graphDb, 'selectGraph').mockImplementation(async (_i: any, _c: any, o: any) => {
+    vi.spyOn(graphDb, 'selectGraph').mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.list = [];
       return true;
     });
-    vi.spyOn(graphDb, 'soGraphNeighbors').mockImplementation(async (_i: any, _c: any, o: any) => {
+    vi.spyOn(graphDb, 'soGraphNeighbors').mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.list = [];
       return true;
     });
     vi.spyOn(graphDb, 'activateGraphEdge').mockResolvedValue(true);
-    vi.spyOn(graphDb, 'ageGraphEdge').mockImplementation(async (_i: any, _c: any, o: any) => {
+    vi.spyOn(graphDb, 'ageGraphEdge').mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.aged_count = 0;
       return true;
     });
@@ -152,7 +153,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      const result = await service.addLibrary(input, makeCtx(), output);
+      const result = await service.addLibrary(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(typeof output.library_id).toBe('string');
@@ -170,7 +171,7 @@ describe('SelfLearningService', () => {
       });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.library_name).toBe('My Custom Library');
@@ -184,7 +185,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.library_name).toBe(dirName);
@@ -200,7 +201,7 @@ describe('SelfLearningService', () => {
       });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.enable_self_learning).toBe(1);
@@ -216,7 +217,7 @@ describe('SelfLearningService', () => {
       });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.enable_self_learning).toBe(0);
@@ -232,7 +233,7 @@ describe('SelfLearningService', () => {
       });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.learning_rate).toBe(10);
@@ -245,7 +246,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       const lib = await getLibraryById(db, output.library_id);
       expect(lib?.learning_rate).toBe(5);
@@ -260,7 +261,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       expect(output.file_count).toBe(10);
     });
@@ -274,7 +275,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       expect(output.file_count).toBe(3);
     });
@@ -286,7 +287,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       expect(output.file_count).toBe(1);
       expect(typeof output.library_id).toBe('string');
@@ -318,7 +319,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: '' });
       const output = new AddLibraryOutput();
 
-      const result = await service.addLibrary(input, makeCtx(), output);
+      const result = await service.addLibrary(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(typeof output.library_id).toBe('string');
@@ -334,7 +335,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new AddLibraryInput(), { library_path: dir });
       const output = new AddLibraryOutput();
 
-      await service.addLibrary(input, makeCtx(), output);
+      await service.addLibrary(input, output, makeCtx());
 
       expect(output.file_count).toBe(2);
     });
@@ -403,10 +404,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // searchLibrary
+  // soLibrary
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('searchLibrary', () => {
+  describe('soLibrary', () => {
     beforeEach(async () => {
       await db.insert('self_learning_library', [
         { field: 'id', value: 'row-a' },
@@ -466,7 +467,7 @@ describe('SelfLearningService', () => {
       const input = new SearchLibraryInput();
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       expect(output.total).toBe(3);
       expect(output.libraries).toHaveLength(3);
@@ -481,7 +482,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new SearchLibraryInput(), { keyword: 'Alpha' });
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       expect(output.total).toBe(2);
       expect(output.libraries).toHaveLength(2);
@@ -491,7 +492,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new SearchLibraryInput(), { page_current: 1, page_size: 2 });
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       expect(output.total).toBe(3);
       expect(output.libraries.length).toBeLessThanOrEqual(2);
@@ -501,7 +502,7 @@ describe('SelfLearningService', () => {
       const input = new SearchLibraryInput();
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       const libA = output.libraries.find((l) => l.library_id === 'lib-a');
       expect(libA).toBeDefined();
@@ -512,7 +513,7 @@ describe('SelfLearningService', () => {
       const input = new SearchLibraryInput();
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       const libA = output.libraries.find((l) => l.library_id === 'lib-a');
       expect(libA).toBeDefined();
@@ -523,7 +524,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new SearchLibraryInput(), { keyword: 'xyzzy_no_match' });
       const output = new SearchLibraryOutput();
 
-      await service.searchLibrary(input, makeCtx(), output);
+      await service.soLibrary(input, output, makeCtx());
 
       expect(output.total).toBe(0);
       expect(output.libraries).toHaveLength(0);
@@ -531,10 +532,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getLibraryFiles
+  // soLibraryFiles
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getLibraryFiles', () => {
+  describe('soLibraryFiles', () => {
     const libId = 'lib-files-test';
 
     beforeEach(async () => {
@@ -598,7 +599,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLibraryFilesInput(), { library_id: libId });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(4);
       expect(output.files).toHaveLength(4);
@@ -611,7 +612,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.files[0].status).toBe('PENDING');
@@ -624,7 +625,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.files[0].status).toBe('COMPLETED');
@@ -637,7 +638,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.files[0].status).toBe('PROCESSING');
@@ -650,7 +651,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.files[0].status).toBe('FAILED');
@@ -664,7 +665,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(4);
       expect(output.files.length).toBeLessThanOrEqual(2);
@@ -676,7 +677,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(0);
       expect(output.files).toEqual([]);
@@ -698,7 +699,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLibraryFilesInput(), { library_id: emptyLibId });
       const output = new GetLibraryFilesOutput();
 
-      await service.getLibraryFiles(input, makeCtx(), output);
+      await service.soLibraryFiles(input, output, makeCtx());
 
       expect(output.total).toBe(0);
       expect(output.files).toEqual([]);
@@ -706,10 +707,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getFileContent
+  // soFileContent
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getFileContent', () => {
+  describe('soFileContent', () => {
     it('TC-SL-045: Get file content → returns file_name and content', async () => {
       const dir = makeTempDir();
       const content = '# Test Content\nThe quick brown fox';
@@ -743,7 +744,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetFileContentInput(), { file_id: 'file-fc-test' });
       const output = new GetFileContentOutput();
 
-      const result = await service.getFileContent(input, makeCtx(), output);
+      const result = await service.soFileContent(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(output.file_name).toBe(fileName);
@@ -754,12 +755,12 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetFileContentInput(), { file_id: 'nonexistent-file' });
       const output = new GetFileContentOutput();
 
-      const result = await service.getFileContent(input, makeCtx(), output);
+      const result = await service.soFileContent(input, output, makeCtx());
 
       expect(result).toBe(false);
     });
 
-    it('TC-SL-047: getFileContent returns learned_at from DB', async () => {
+    it('TC-SL-047: soFileContent returns learned_at from DB', async () => {
       const dir = makeTempDir();
       writeMdFile(dir, 'doc.md', '# Doc');
       const filePath = path.join(dir, 'doc.md');
@@ -791,7 +792,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetFileContentInput(), { file_id: 'file-fc-learned' });
       const output = new GetFileContentOutput();
 
-      await service.getFileContent(input, makeCtx(), output);
+      await service.soFileContent(input, output, makeCtx());
 
       expect(output.learned_at).toBe(learnedAt);
     });
@@ -826,7 +827,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetFileContentInput(), { file_id: 'file-fc-pending' });
       const output = new GetFileContentOutput();
 
-      await service.getFileContent(input, makeCtx(), output);
+      await service.soFileContent(input, output, makeCtx());
 
       expect(output.file_name).toBe('pending.md');
       expect(output.learned_at).toBeNull();
@@ -1084,7 +1085,7 @@ describe('SelfLearningService', () => {
     }
 
     it('TC-SL-080: Small file learning (< threshold) uses SIMPLE strategy', async () => {
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         return true;
       });
@@ -1099,7 +1100,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-081: Large file learning (>= threshold) — content split, PLANNING for large chunks', async () => {
       const receiveWorkCalls: any[] = [];
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         receiveWorkCalls.push(i);
         return true;
@@ -1119,7 +1120,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-082: File auto-split by markdown headings — each ## section as chunk', async () => {
       const receiveWorkCalls: any[] = [];
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         receiveWorkCalls.push(i);
         return true;
@@ -1138,7 +1139,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-084: System builtin session auto-created — "self_learning" session inserted', async () => {
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         return true;
       });
@@ -1153,7 +1154,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-085: System builtin session reused — existing "self_learning" session not duplicated', async () => {
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         return true;
       });
@@ -1170,7 +1171,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-086: Learning completion — file status → COMPLETED, learned_at set', async () => {
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         return true;
       });
@@ -1196,7 +1197,7 @@ describe('SelfLearningService', () => {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await db.selectOneDB(selInput, new DBContext(), selOutput);
+      await db.selectOneDB(selInput, selOutput, new DBContext());
 
       expect(selOutput.row).not.toBeNull();
       expect(selOutput.row?.status).toBe('COMPLETED');
@@ -1227,7 +1228,7 @@ describe('SelfLearningService', () => {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await db.selectOneDB(selInput, new DBContext(), selOutput);
+      await db.selectOneDB(selInput, selOutput, new DBContext());
 
       expect(selOutput.row).not.toBeNull();
       expect(selOutput.row?.status).toBe('FAILED');
@@ -1235,7 +1236,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-088: Learning result submitted via receiveWorkAsync with LEARNING role', async () => {
       const recvCalls: any[] = [];
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         recvCalls.push(i);
         return true;
@@ -1252,7 +1253,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-089: Chunked learning sequential — chunks processed in order', async () => {
       const callOrder: string[] = [];
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         callOrder.push((i.user_query as string).substring(0, 20).trim());
         return true;
@@ -1273,7 +1274,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-090: Learning rate control — each call processes one file', async () => {
-      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, _c: any, o: any) => {
+      vi.spyOn(orchestrationEntry, 'receiveWorkAsync').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.work_id = 'mock-work-id';
         return true;
       });
@@ -1299,7 +1300,7 @@ describe('SelfLearningService', () => {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await db.selectOneDB(selInput, new DBContext(), selOutput);
+      await db.selectOneDB(selInput, selOutput, new DBContext());
 
       expect(selOutput.row?.status).toBe('COMPLETED');
       expect(orchestrationEntry.receiveWorkAsync).toHaveBeenCalled();
@@ -1307,10 +1308,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getTagGraph
+  // soTagGraph
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getTagGraph', () => {
+  describe('soTagGraph', () => {
     beforeEach(() => {
       ensureInfoTables();
     });
@@ -1319,7 +1320,7 @@ describe('SelfLearningService', () => {
       const input = new GetTagGraphInput();
       const output = new GetTagGraphOutput();
 
-      const result = await service.getTagGraph(input, makeCtx(), output);
+      const result = await service.soTagGraph(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(Array.isArray(output.nodes)).toBe(true);
@@ -1331,7 +1332,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: true });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(graphDb.selectGraph).toHaveBeenCalled();
       expect(Array.isArray(output.edges)).toBe(true);
@@ -1341,7 +1342,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: false });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(graphDb.selectGraph).toHaveBeenCalled();
     });
@@ -1353,13 +1354,13 @@ describe('SelfLearningService', () => {
       });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(Array.isArray(output.edges)).toBe(true);
     });
 
     it('TC-SL-124: limit restriction applied', async () => {
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = Array.from({ length: 100 }, (_, idx) => ({
           id: `tag-${idx}`,
           node_type: 'Tag',
@@ -1368,7 +1369,7 @@ describe('SelfLearningService', () => {
         }));
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -1376,7 +1377,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { limit: 10 });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(output.nodes.length).toBeLessThanOrEqual(10);
     });
@@ -1385,7 +1386,7 @@ describe('SelfLearningService', () => {
       const input = new GetTagGraphInput();
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(Array.isArray(output.edges)).toBe(true);
     });
@@ -1394,7 +1395,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: false });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(output.metadata).toHaveProperty('total_nodes');
       expect(output.metadata).toHaveProperty('total_edges');
@@ -1403,7 +1404,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-127: Empty graph → empty nodes/edges', async () => {
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -1411,7 +1412,7 @@ describe('SelfLearningService', () => {
       const input = new GetTagGraphInput();
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(output.nodes).toEqual([]);
       expect(output.edges).toEqual([]);
@@ -1420,7 +1421,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-128: Node structure contains tag_id, tag_name, activation_count', async () => {
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{
           id: 'tag-node-1',
           node_type: 'Tag',
@@ -1429,7 +1430,7 @@ describe('SelfLearningService', () => {
         }];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -1437,7 +1438,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: false });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(output.nodes.length).toBeGreaterThanOrEqual(1);
       const node = output.nodes[0];
@@ -1448,7 +1449,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-128-LARGE: Graph with more tags than limit — sorted by activation_count desc, truncated', async () => {
       const tagCount = 50;
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = Array.from({ length: tagCount }, (_, idx) => ({
           id: `tag-node-${idx}`,
           node_type: 'Tag',
@@ -1457,7 +1458,7 @@ describe('SelfLearningService', () => {
         }));
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = Array.from({ length: tagCount }, (_, idx) => ({
           id: `edge-${idx}`,
           from_node_id: `tag-node-${idx}`,
@@ -1474,7 +1475,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: false, limit });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       expect(output.nodes.length).toBeLessThanOrEqual(limit);
       expect(output.nodes.length).toBeGreaterThan(0);
@@ -1486,10 +1487,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getTagRelatedInfo
+  // soTagRelatedInfo
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getTagRelatedInfo', () => {
+  describe('soTagRelatedInfo', () => {
     const tagId = 'tag-related-1';
 
     beforeEach(() => {
@@ -1517,7 +1518,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagRelatedInfoInput(), { tag_id: tagId });
       const output = new GetTagRelatedInfoOutput();
 
-      const result = await service.getTagRelatedInfo(input, makeCtx(), output);
+      const result = await service.soTagRelatedInfo(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(Array.isArray(output.infos)).toBe(true);
@@ -1527,7 +1528,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagRelatedInfoInput(), { tag_id: 'nonexistent-tag' });
       const output = new GetTagRelatedInfoOutput();
 
-      const result = await service.getTagRelatedInfo(input, makeCtx(), output);
+      const result = await service.soTagRelatedInfo(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(output.total).toBe(0);
@@ -1546,7 +1547,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagRelatedInfoInput(), { tag_id: 'tag-empty-1' });
       const output = new GetTagRelatedInfoOutput();
 
-      await service.getTagRelatedInfo(input, makeCtx(), output);
+      await service.soTagRelatedInfo(input, output, makeCtx());
 
       expect(Array.isArray(output.infos)).toBe(true);
     });
@@ -1559,17 +1560,17 @@ describe('SelfLearningService', () => {
       });
       const output = new GetTagRelatedInfoOutput();
 
-      await service.getTagRelatedInfo(input, makeCtx(), output);
+      await service.soTagRelatedInfo(input, output, makeCtx());
 
       expect(output.infos.length).toBeLessThanOrEqual(1);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getLearningProgress
+  // soLearningProgress
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getLearningProgress', () => {
+  describe('soLearningProgress', () => {
     it('TC-SL-140: With running task → current_task populated', async () => {
       await db.insert('self_learning_task', [
         { field: 'id', value: 'task-1' },
@@ -1586,7 +1587,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.current_task).not.toBeNull();
       expect(output.current_task?.status).toBe('RUNNING');
@@ -1620,7 +1621,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.task_queue.length).toBe(2);
     });
@@ -1629,7 +1630,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.builtin_tasks.length).toBeGreaterThanOrEqual(3);
       const taskTypes = output.builtin_tasks.map((t) => t.task_type);
@@ -1642,7 +1643,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.current_task).toBeNull();
     });
@@ -1651,7 +1652,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.task_queue).toEqual([]);
     });
@@ -1660,7 +1661,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningProgressInput();
       const output = new GetLearningProgressOutput();
 
-      await service.getLearningProgress(input, makeCtx(), output);
+      await service.soLearningProgress(input, output, makeCtx());
 
       expect(output.builtin_tasks.length).toBeGreaterThan(0);
       for (const task of output.builtin_tasks) {
@@ -1670,10 +1671,10 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getLearningResults
+  // soLearningResults
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getLearningResults', () => {
+  describe('soLearningResults', () => {
     beforeEach(async () => {
       await db.insert('self_learning_result', [
         { field: 'id', value: 'lr-1' },
@@ -1714,7 +1715,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningResultsInput();
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(3);
       expect(output.results).toHaveLength(3);
@@ -1724,7 +1725,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { type: 'KNOWLEDGE' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(2);
       for (const r of output.results) {
@@ -1736,7 +1737,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { type: 'INSIGHT' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.results[0].type).toBe('INSIGHT');
@@ -1746,7 +1747,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { source: 'DOCUMENT' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.results[0].source).toBe('DOCUMENT');
@@ -1756,7 +1757,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { source: 'CONVERSATION' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.results[0].source).toBe('CONVERSATION');
@@ -1766,7 +1767,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { source: 'TAG_MAINTENANCE' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.results[0].source).toBe('TAG_MAINTENANCE');
@@ -1779,7 +1780,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(1);
       expect(output.results[0].type).toBe('KNOWLEDGE');
@@ -1793,7 +1794,7 @@ describe('SelfLearningService', () => {
       });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(3);
       expect(output.results.length).toBeLessThanOrEqual(2);
@@ -1803,7 +1804,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { type: 'NONEXISTENT' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       expect(output.total).toBe(0);
       expect(output.results).toEqual([]);
@@ -1828,7 +1829,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetLearningResultsInput(), { type: 'KNOWLEDGE', source: 'DOCUMENT' });
       const output = new GetLearningResultsOutput();
 
-      await service.getLearningResults(input, makeCtx(), output);
+      await service.soLearningResults(input, output, makeCtx());
 
       const docResult = output.results.find((r) => r.result_id === 'result-1');
       expect(docResult).toBeDefined();
@@ -1839,15 +1840,15 @@ describe('SelfLearningService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // getLearningStats
+  // soLearningStats
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('getLearningStats', () => {
+  describe('soLearningStats', () => {
     it('TC-SL-165: Complete stats → all fields present', async () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
-      await service.getLearningStats(input, makeCtx(), output);
+      await service.soLearningStats(input, output, makeCtx());
 
       const stats = output.stats;
       expect(stats).toHaveProperty('total_learning_count');
@@ -1897,7 +1898,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
-      await service.getLearningStats(input, makeCtx(), output);
+      await service.soLearningStats(input, output, makeCtx());
 
       const docStats = output.stats.document_learning as Record<string, unknown>;
       expect(docStats.total_files).toBe(3);
@@ -1911,7 +1912,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
-      await service.getLearningStats(input, makeCtx(), output);
+      await service.soLearningStats(input, output, makeCtx());
 
       const tagStats = output.stats.tag_graph as Record<string, unknown>;
       expect(tagStats).toHaveProperty('total_tags');
@@ -1926,7 +1927,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
-      await service.getLearningStats(input, makeCtx(), output);
+      await service.soLearningStats(input, output, makeCtx());
 
       const trend = output.stats.learning_trend as Array<Record<string, unknown>>;
       expect(Array.isArray(trend)).toBe(true);
@@ -1942,7 +1943,7 @@ describe('SelfLearningService', () => {
       const input = new GetLearningStatsInput();
       const output = new GetLearningStatsOutput();
 
-      await service.getLearningStats(input, makeCtx(), output);
+      await service.soLearningStats(input, output, makeCtx());
 
       expect(output.stats.total_learning_count).toBe(0);
       expect(output.stats.total_knowledge_count).toBe(0);
@@ -1963,7 +1964,7 @@ describe('SelfLearningService', () => {
       });
       const output = new ConfigSelfLearningOutput();
 
-      await service.configSelfLearning(input, makeCtx(), output);
+      await service.configSelfLearning(input, output, makeCtx());
 
       expect(output.config).toBeDefined();
       expect(output.config.default_learning_rate).toBe(10);
@@ -1976,7 +1977,7 @@ describe('SelfLearningService', () => {
       });
       const output = new ConfigSelfLearningOutput();
 
-      await service.configSelfLearning(input, makeCtx(), output);
+      await service.configSelfLearning(input, output, makeCtx());
 
       expect(output.config.learning_interval_ms).toBe(300000);
       expect(output.config).toHaveProperty('random_factor');
@@ -1986,7 +1987,7 @@ describe('SelfLearningService', () => {
     it('configSelfLearning: getConfig returns defaults when no saved config', async () => {
       const input = new ConfigSelfLearningInput();
       const output = new ConfigSelfLearningOutput();
-      await service.configSelfLearning(input, makeCtx(), output);
+      await service.configSelfLearning(input, output, makeCtx());
       expect(output.config).toHaveProperty('random_factor');
       expect(output.config).toHaveProperty('default_learning_rate');
       expect(output.config).toHaveProperty('document_split_threshold');
@@ -2002,7 +2003,7 @@ describe('SelfLearningService', () => {
       const input = new ConfigSelfLearningInput();
       const output = new ConfigSelfLearningOutput();
 
-      const result = await service.configSelfLearning(input, makeCtx(), output);
+      const result = await service.configSelfLearning(input, output, makeCtx());
 
       expect(result).toBe(true);
       expect(output.config).toBeDefined();
@@ -2080,11 +2081,11 @@ describe('SelfLearningService', () => {
         { field: 'info_id', value: 'info-active' },
       ]);
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'node-1', node_type: 'Tag', content: { tag: 'ActiveTag' } }];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'edge-1', from: 'node-1', to: 'node-2', edge_type: 'similarTo' }];
         return true;
       });
@@ -2096,7 +2097,7 @@ describe('SelfLearningService', () => {
 
     it('TC-SL-106: startTagActivation — no tag nodes in graph', async () => {
       infoCore.graphTag.mockClear();
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -2116,11 +2117,11 @@ describe('SelfLearningService', () => {
         { field: 'info_id', value: 'info-a' },
       ]);
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'node-1', node_type: 'Tag', content: { tag: 'TagA' } }];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -2137,7 +2138,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-112: startTagAging with aged_count > 0 records result', async () => {
-      graphDb.ageGraphEdge.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.ageGraphEdge.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.aged_count = 5;
         return true;
       });
@@ -2150,13 +2151,13 @@ describe('SelfLearningService', () => {
     it('TC-SL-115: startOrphanTagCheck attempts to reconnect orphan tags', async () => {
       infoCore.graphTag.mockClear();
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { id: 'node-orphan', node_type: 'Tag', content: { tag: 'OrphanTag' } },
         ];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -2169,11 +2170,11 @@ describe('SelfLearningService', () => {
     it('TC-SL-116: No orphan tags — no graphTag calls for reconnection', async () => {
       infoCore.graphTag.mockClear();
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'node-connected', node_type: 'Tag', content: { tag: 'ConnectedTag' } }];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'edge-exists' }];
         return true;
       });
@@ -2188,14 +2189,14 @@ describe('SelfLearningService', () => {
       infoCore.graphTag.mockRejectedValueOnce(new Error('graphTag failed for first'));
       infoCore.graphTag.mockResolvedValueOnce(true);
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { id: 'orphan-1', node_type: 'Tag', content: { tag: 'TagO1' } },
           { id: 'orphan-2', node_type: 'Tag', content: { tag: 'TagO2' } },
         ];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         return true;
       });
@@ -2206,11 +2207,11 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-111: Aging reversibility — after aging an edge, activating it restores active state', async () => {
-      graphDb.ageGraphEdge.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.ageGraphEdge.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.aged_count = 2;
         return true;
       });
-      graphDb.activateGraphEdge.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.activateGraphEdge.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.activated = true;
         return true;
       });
@@ -2227,11 +2228,11 @@ describe('SelfLearningService', () => {
         { field: 'info_id', value: 'info-rev' },
       ]);
 
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'node-rev', node_type: 'Tag', content: { tag: 'ReverseTag' } }];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{
           id: 'edge-to-revive',
           from_node_id: 'node-rev',
@@ -2250,7 +2251,7 @@ describe('SelfLearningService', () => {
     });
 
     it('TC-SL-125: node_size calculation — follows [0.3, 1.0] log normalization formula', async () => {
-      graphDb.selectGraph.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.selectGraph.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { id: 'ns-node-1', node_type: 'Tag', created: 1700000001000, content: { tag: 'high-tag', tag_name: 'High Tag' } },
           { id: 'ns-node-2', node_type: 'Tag', created: 1700000002000, content: { tag: 'low-tag', tag_name: 'Low Tag' } },
@@ -2258,7 +2259,7 @@ describe('SelfLearningService', () => {
         ];
         return true;
       });
-      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, _c: any, o: any) => {
+      graphDb.soGraphNeighbors.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { id: 'e1', from_node_id: 'ns-node-1', to_node_id: 'ns-node-2', edge_type: 'similarTo', weight: 0.5, is_active: true, activation_count: 10 },
           { id: 'e2', from_node_id: 'ns-node-2', to_node_id: 'ns-node-3', edge_type: 'similarTo', weight: 0.3, is_active: true, activation_count: 2 },
@@ -2269,7 +2270,7 @@ describe('SelfLearningService', () => {
       const input = Object.assign(new GetTagGraphInput(), { only_active: false });
       const output = new GetTagGraphOutput();
 
-      await service.getTagGraph(input, makeCtx(), output);
+      await service.soTagGraph(input, output, makeCtx());
 
       for (const node of output.nodes) {
         const nodeSize = node.node_size as number;
@@ -2311,6 +2312,6 @@ async function getLibraryById(
     },
   });
   const selOutput = Object.assign(new SelectOneDBOutput(), {});
-  await db.selectOneDB(selInput, new DBContext(), selOutput);
+  await db.selectOneDB(selInput, selOutput, new DBContext());
   return selOutput.row ?? null;
 }

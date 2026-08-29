@@ -32,7 +32,7 @@ export class DeleteLibraryInput extends Input {
 export class DeleteLibraryOutput extends Output {}
 
 // ─────────────────────────────────────────────────────────────────────────
-// searchLibrary
+// soLibrary
 // ─────────────────────────────────────────────────────────────────────────
 
 export class SearchLibraryInput extends Input {
@@ -62,7 +62,7 @@ export class SetLibraryEnabledOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getLibraryFiles
+// soLibraryFiles
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetLibraryFilesInput extends Input {
@@ -88,7 +88,7 @@ export class GetLibraryFilesOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getLibraryTree
+// soLibraryTree
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetLibraryTreeInput extends Input {
@@ -108,7 +108,7 @@ export class GetLibraryTreeOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getFileContent
+// soFileContent
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetFileContentInput extends Input {
@@ -144,7 +144,7 @@ export class QueryDocumentOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// saveAnnotation / getFileAnnotations（文档咨询卡片持久化）
+// saveAnnotation / soFileAnnotations（文档咨询卡片持久化）
 // ─────────────────────────────────────────────────────────────────────────
 
 export class SaveAnnotationInput extends Input {
@@ -194,7 +194,7 @@ export class StopLearningInput extends Input {
 export class StopLearningOutput extends Output {}
 
 // ─────────────────────────────────────────────────────────────────────────
-// getTagGraph
+// soTagGraph
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetTagGraphInput extends Input {
@@ -210,7 +210,7 @@ export class GetTagGraphOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getTagRelatedInfo
+// soTagRelatedInfo
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetTagRelatedInfoInput extends Input {
@@ -225,7 +225,7 @@ export class GetTagRelatedInfoOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getLearningProgress
+// soLearningProgress
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetLearningProgressInput extends Input {
@@ -242,7 +242,7 @@ export class GetLearningProgressOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getLearningResults
+// soLearningResults
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetLearningResultsInput extends Input {
@@ -258,7 +258,7 @@ export class GetLearningResultsOutput extends Output {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// getLearningStats
+// soLearningStats
 // ─────────────────────────────────────────────────────────────────────────
 
 export class GetLearningStatsInput extends Input {

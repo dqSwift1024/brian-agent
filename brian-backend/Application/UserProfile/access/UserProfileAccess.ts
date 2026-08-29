@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -53,73 +54,63 @@ export class UserProfileAccess {
     (this.service as unknown as { stopAutoGeneration(): void }).stopAutoGeneration();
   }
 
-  async configProfileDirection(
-    i: ConfigProfileDirectionInput, c: UserProfileContext, o: ConfigProfileDirectionOutput,
+  async configProfileDirection(i: ConfigProfileDirectionInput, o: ConfigProfileDirectionOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configProfileDirection(i, c, o);
+    return this.service.configProfileDirection(i, o, c, metrics, report);
   }
 
-  async deleteProfileDirection(
-    i: DeleteProfileDirectionInput, c: UserProfileContext, o: DeleteProfileDirectionOutput,
+  async deleteProfileDirection(i: DeleteProfileDirectionInput, o: DeleteProfileDirectionOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.deleteProfileDirection(i, c, o);
+    return this.service.deleteProfileDirection(i, o, c, metrics, report);
   }
 
-  async getProfileDirection(
-    i: GetProfileDirectionInput, c: UserProfileContext, o: GetProfileDirectionOutput,
+  async soProfileDirection(i: GetProfileDirectionInput, o: GetProfileDirectionOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getProfileDirection(i, c, o);
+    return this.service.soProfileDirection(i, o, c, metrics, report);
   }
 
-  async soUserProfile(
-    i: GetUserProfileInput, c: UserProfileContext, o: GetUserProfileOutput,
+  async soUserProfile(i: GetUserProfileInput, o: GetUserProfileOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.soUserProfile(i, c, o);
+    return this.service.soUserProfile(i, o, c, metrics, report);
   }
 
-  async generateProfile(
-    i: GenerateProfileInput, c: UserProfileContext, o: GenerateProfileOutput,
+  async generateProfile(i: GenerateProfileInput, o: GenerateProfileOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.generateProfile(i, c, o);
+    return this.service.generateProfile(i, o, c, metrics, report);
   }
 
-  async saveUserPreference(
-    i: SaveUserPreferenceInput, c: UserProfileContext, o: SaveUserPreferenceOutput,
+  async saveUserPreference(i: SaveUserPreferenceInput, o: SaveUserPreferenceOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.saveUserPreference(i, c, o);
+    return this.service.saveUserPreference(i, o, c, metrics, report);
   }
 
-  async getProfileHistory(
-    i: GetProfileHistoryInput, c: UserProfileContext, o: GetProfileHistoryOutput,
+  async soProfileHistory(i: GetProfileHistoryInput, o: GetProfileHistoryOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getProfileHistory(i, c, o);
+    return this.service.soProfileHistory(i, o, c, metrics, report);
   }
 
-  async getProfileByVersion(
-    i: GetProfileByVersionInput, c: UserProfileContext, o: GetProfileByVersionOutput,
+  async soProfileByVersion(i: GetProfileByVersionInput, o: GetProfileByVersionOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getProfileByVersion(i, c, o);
+    return this.service.soProfileByVersion(i, o, c, metrics, report);
   }
 
-  async resetUserProfile(
-    i: ResetUserProfileInput, c: UserProfileContext, o: ResetUserProfileOutput,
+  async resetUserProfile(i: ResetUserProfileInput, o: ResetUserProfileOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.resetUserProfile(i, c, o);
+    return this.service.resetUserProfile(i, o, c, metrics, report);
   }
 
-  async configUserProfile(
-    i: ConfigUserProfileInput, c: UserProfileContext, o: ConfigUserProfileOutput,
+  async configUserProfile(i: ConfigUserProfileInput, o: ConfigUserProfileOutput, c: UserProfileContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configUserProfile(i, c, o);
+    return this.service.configUserProfile(i, o, c, metrics, report);
   }
 }

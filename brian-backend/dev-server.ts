@@ -1551,7 +1551,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input: GetConfigDetailInput = Object.assign(new GetConfigDetailInput(), {});
         const output = new GetConfigDetailOutput();
         const context = new ConfigContext();
-        await ctx.configAccess.getConfigDetail(input, context, output);
+        await ctx.configAccess.soConfigDetail(input, context, output);
         sendJson(res, 200, { config: { layers: output.layers } });
 
       } else if (method === 'PUT' && pathname === '/api/config') {
@@ -1576,7 +1576,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const i = Object.assign(new GraphVisualizationConfigInput(), { graph_type: graphType });
         const o = new GraphVisualizationConfigOutput();
         const c = new VisualizationContext();
-        await ctx.visualizationAccess.getGraphVisualizationConfig(i, c, o);
+        await ctx.visualizationAccess.soGraphVisualizationConfig(i, c, o);
         sendJson(res, 200, {
           graph_repulsion: o.graph_repulsion,
           graph_spring_strength: o.graph_spring_strength,
@@ -1601,7 +1601,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetConfigItemInput(), { config_key: configKey });
         const output = new GetConfigItemOutput();
         const context = new ConfigContext();
-        await ctx.configAccess.getConfigItem(input, context, output);
+        await ctx.configAccess.soConfigItem(input, context, output);
         sendJson(res, 200, { config_item: output.config_item });
 
       // ---- Config Save Defaults ----
@@ -2623,7 +2623,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         const output = new SearchSessionOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.searchSession(input, context, output);
+        await ctx.chatAccess.soSession(input, context, output);
         sendJson(res, 200, {
           sessions: (output.sessions || []).map((s) => ({
             sessionId: s.session_id,
@@ -2643,7 +2643,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         const output = new SearchSessionOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.searchSession(input, context, output);
+        await ctx.chatAccess.soSession(input, context, output);
         sendJson(res, 200, {
           sessions: (output.sessions || []).map((s) => ({
             sessionId: s.session_id,
@@ -2668,7 +2668,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetChatHistoryInput(), { session_id: sid });
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.getChatHistory(input, context, output);
+        await ctx.chatAccess.soChatHistory(input, context, output);
 
         // ===== 原始代码（保留作为参考）：仅保留一问(REQUEST)一答(RESPONSE)，未填充思考 Blocks =====
         /*
@@ -2859,7 +2859,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetChatHistoryInput(), { session_id: sid });
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.getChatHistory(input, context, output);
+        await ctx.chatAccess.soChatHistory(input, context, output);
         sendJson(res, 200, { exchanges: output.messages || [] });
 
       } else if (method === 'POST' && pathname === '/api/chat/send') {
@@ -2983,7 +2983,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetSessionDetailOutput();
         const context = new ChatContext();
         try {
-          await ctx.chatAccess.getSessionDetail(input, context, output);
+          await ctx.chatAccess.soSessionDetail(input, context, output);
           sendJson(res, 200, { session: output.session });
         } catch (err: any) {
           sendJson(res, 404, { error: err?.message || 'Session not found' });
@@ -2994,7 +2994,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new SearchMessageInput(), { keyword: kw });
         const output = new SearchMessageOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.searchMessage(input, context, output);
+        await ctx.chatAccess.soMessage(input, context, output);
         sendJson(res, 200, { messages: output.messages || [], total: output.total });
 
       } else if (method === 'POST' && /\/api\/chat\/message\/[^/]+\/pin$/.test(pathname)) {
@@ -3577,7 +3577,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const srcParam = params.get('source') || undefined;
         const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
         const output = new GetLearningStatsOutput();
-        await ctx.selfLearningAccess.getLearningStats(
+        await ctx.selfLearningAccess.soLearningStats(
           Object.assign(new GetLearningStatsInput(), { source: backendSource }),
           new SelfLearningContext(),
           output,
@@ -3593,7 +3593,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && pathname === '/api/learning/progress-enhanced') {
         const progressOut = new GetLearningProgressOutput();
-        await ctx.selfLearningAccess.getLearningProgress(new GetLearningProgressInput(), new SelfLearningContext(), progressOut);
+        await ctx.selfLearningAccess.soLearningProgress(new GetLearningProgressInput(), new SelfLearningContext(), progressOut);
         const cfgOut = new ConfigSelfLearningOutput();
         await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
         const cfg = cfgOut.config || {};
@@ -3614,7 +3614,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const srcParam = params.get('source') || undefined;
         const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
         const progressOut = new GetLearningProgressOutput();
-        await ctx.selfLearningAccess.getLearningProgress(
+        await ctx.selfLearningAccess.soLearningProgress(
           Object.assign(new GetLearningProgressInput(), { source: backendSource }),
           new SelfLearningContext(),
           progressOut,
@@ -3625,7 +3625,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const srcParam = params.get('source') || undefined;
         const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
         const output = new GetLearningResultsOutput();
-        await ctx.selfLearningAccess.getLearningResults(
+        await ctx.selfLearningAccess.soLearningResults(
           Object.assign(new GetLearningResultsInput(), { type: 'KNOWLEDGE', source: backendSource, page_current: 1, page_size: 20 }),
           new SelfLearningContext(),
           output,
@@ -3636,7 +3636,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const srcParam = params.get('source') || undefined;
         const backendSource = srcParam ? mapLearningMode(srcParam) : undefined;
         const output = new GetLearningResultsOutput();
-        await ctx.selfLearningAccess.getLearningResults(
+        await ctx.selfLearningAccess.soLearningResults(
           Object.assign(new GetLearningResultsInput(), { type: 'INSIGHT', source: backendSource, page_current: 1, page_size: 20 }),
           new SelfLearningContext(),
           output,
@@ -3704,7 +3704,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       // ===== Library Routes =====
       } else if (method === 'GET' && pathname === '/api/library/paths') {
         const output = new SearchLibraryOutput();
-        await ctx.selfLearningAccess.searchLibrary(new SearchLibraryInput(), new SelfLearningContext(), output);
+        await ctx.selfLearningAccess.soLibrary(new SearchLibraryInput(), new SelfLearningContext(), output);
         sendJson(res, 200, { paths: (output.libraries || []).map(l => ({
           id: String(l.library_id || ''),
           name: String(l.library_name || ''),
@@ -3768,7 +3768,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && /\/api\/library\/paths\/[^/]+\/files$/.test(pathname)) {
         const id = pathname.split('/api/library/paths/')[1].split('/')[0];
         const out = new GetLibraryFilesOutput();
-        await ctx.selfLearningAccess.getLibraryFiles(
+        await ctx.selfLearningAccess.soLibraryFiles(
           Object.assign(new GetLibraryFilesInput(), {
             library_id: id,
             directory: params.get('directory') !== null ? params.get('directory')! : undefined,
@@ -3798,7 +3798,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && /\/api\/library\/paths\/[^/]+\/tree$/.test(pathname)) {
         const id = pathname.split('/api/library/paths/')[1].split('/')[0];
         const out = new GetLibraryTreeOutput();
-        await ctx.selfLearningAccess.getLibraryTree(
+        await ctx.selfLearningAccess.soLibraryTree(
           Object.assign(new GetLibraryTreeInput(), { library_id: id }),
           new SelfLearningContext(),
           out,
@@ -3808,7 +3808,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && /\/api\/library\/files\/[^/]+\/content$/.test(pathname)) {
         const fileId = pathname.split('/api/library/files/')[1].split('/')[0];
         const out = new GetFileContentOutput();
-        const ok = await ctx.selfLearningAccess.getFileContent(
+        const ok = await ctx.selfLearningAccess.soFileContent(
           Object.assign(new GetFileContentInput(), { file_id: fileId }),
           new SelfLearningContext(),
           out,
@@ -3854,7 +3854,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && /\/api\/library\/files\/[^/]+\/annotations$/.test(pathname)) {
         const fileId = pathname.split('/api/library/files/')[1].split('/')[0];
         const out = new GetFileAnnotationsOutput();
-        await ctx.selfLearningAccess.getFileAnnotations(
+        await ctx.selfLearningAccess.soFileAnnotations(
           Object.assign(new GetFileAnnotationsInput(), { file_id: fileId }),
           new SelfLearningContext(),
           out,
@@ -3911,7 +3911,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined,
         });
         const output = new GetProfileHistoryOutput();
-        await ctx.userProfileAccess.getProfileHistory(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileHistory(input, new UserProfileContext(), output);
         sendJson(res, 200, { history: output.history });
       } else if (method === 'GET' && pathname.startsWith('/api/profile/version/')) {
         const versionStr = pathname.split('/').pop()!;
@@ -3922,12 +3922,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           session_id: params.get('session_id') || undefined,
         });
         const output = new GetProfileByVersionOutput();
-        await ctx.userProfileAccess.getProfileByVersion(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileByVersion(input, new UserProfileContext(), output);
         sendJson(res, 200, output.profile);
       } else if (method === 'GET' && pathname === '/api/profile/direction') {
         const input = new GetProfileDirectionInput();
         const output = new GetProfileDirectionOutput();
-        await ctx.userProfileAccess.getProfileDirection(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileDirection(input, new UserProfileContext(), output);
         sendJson(res, 200, { directions: output.directions });
       } else if (method === 'POST' && pathname === '/api/profile/reset') {
         const input = Object.assign(new ResetUserProfileInput(), {
@@ -4314,7 +4314,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           page_size: params.get('page_size') ? parseInt(params.get('page_size')!, 10) : undefined,
         });
         const o = new GetVisualizedMessagesOutput();
-        await ctx.visualizationAccess.getVisualizedMessages(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessages(i, new VisualizationContext(), o);
         sendJson(res, 200, { messages: o.messages, total: o.total });
 
       } else if (method === 'GET' && pathname === '/api/visualization/message-graph') {
@@ -4323,7 +4323,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
         });
         const o = new GetVisualizedMessageGraphOutput();
-        await ctx.visualizationAccess.getVisualizedMessageGraph(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessageGraph(i, new VisualizationContext(), o);
         sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/dag')) {
@@ -4333,14 +4333,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           resolve_content: params.get('resolve_content') !== 'false',
         });
         const o = new GetVisualizedAgentDAGOutput();
-        await ctx.visualizationAccess.getVisualizedAgentDAG(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedAgentDAG(i, new VisualizationContext(), o);
         sendJson(res, 200, o.dag);
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/timeline')) {
         const workId = pathname.split('/')[4] || '';
         const i = Object.assign(new GetVisualizedWorkFlowInput(), { work_id: workId });
         const o = new GetVisualizedWorkFlowOutput();
-        await ctx.visualizationAccess.getVisualizedWorkFlow(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedWorkFlow(i, new VisualizationContext(), o);
         sendJson(res, 200, o.timeline);
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/agent/') && pathname.endsWith('/trace')) {
@@ -4350,7 +4350,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           trace_id: params.get('trace_id') || undefined,
         });
         const o = new GetAgentTraceOutput();
-        await ctx.visualizationAccess.getAgentTrace(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soAgentTrace(i, new VisualizationContext(), o);
         sendJson(res, 200, o.trace);
 
       } else if (method === 'GET' && pathname === '/api/visualization/message-dag') {
@@ -4362,7 +4362,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
         });
         const o = new GetVisualizedMessageDAGOutput();
-        await ctx.visualizationAccess.getVisualizedMessageDAG(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessageDAG(i, new VisualizationContext(), o);
         sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/resource/')) {
@@ -4371,7 +4371,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const resourceId = parts[4] || '';
         const i = Object.assign(new GetResourceInput(), { resource_type: resourceType, resource_id: resourceId });
         const o = new GetResourceOutput();
-        await ctx.visualizationAccess.getResource(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soResource(i, new VisualizationContext(), o);
         sendJson(res, 200, o.resource);
 
       // ---- VectorDB Search Routes ----

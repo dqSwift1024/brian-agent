@@ -8,6 +8,7 @@
  * 4. Base 资源管理代理（LLM/Soul/Skill/MCP/Prompt）
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, Logger, IdGenerator, CronAccess } from '@brian-agent/base';
 import { GetCronTaskInput, GetCronTaskOutput, CronContext, SetCronTaskInput, SetCronTaskOutput } from '@brian-agent/base';
 import { Operator, ValidationError, NotFoundError } from '@brian-agent/base';
@@ -307,10 +308,7 @@ export class ConfigService {
   // updateLayerPrivilege
   // =========================================================================
 
-  async updateLayerPrivilege(
-    input: UpdateLayerPrivilegeInput,
-    _context: ConfigContext,
-    output: UpdateLayerPrivilegeOutput,
+  async updateLayerPrivilege(input: UpdateLayerPrivilegeInput, output: UpdateLayerPrivilegeOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.layer || !VALID_LAYERS.includes(input.layer as any)) {
       throw new ValidationError(`layer 必须是 ${VALID_LAYERS.join('/')} 之一`);
@@ -352,10 +350,7 @@ export class ConfigService {
   // updateModulePrivilege
   // =========================================================================
 
-  async updateModulePrivilege(
-    input: UpdateModulePrivilegeInput,
-    _context: ConfigContext,
-    output: UpdateModulePrivilegeOutput,
+  async updateModulePrivilege(input: UpdateModulePrivilegeInput, output: UpdateModulePrivilegeOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.module) {
       throw new ValidationError('module 不能为空');
@@ -419,13 +414,10 @@ export class ConfigService {
   }
 
   // =========================================================================
-  // getConfigDetail
+  // soConfigDetail
   // =========================================================================
 
-  async getConfigDetail(
-    input: GetConfigDetailInput,
-    _context: ConfigContext,
-    output: GetConfigDetailOutput,
+  async soConfigDetail(input: GetConfigDetailInput, output: GetConfigDetailOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const layerRows = await this.relationDb.select(CONFIG_LAYER_PRIVILEGE_TABLE);
     const moduleRows = await this.relationDb.select(CONFIG_MODULE_PRIVILEGE_TABLE);
@@ -551,13 +543,10 @@ export class ConfigService {
   }
 
   // =========================================================================
-  // getConfigItem
+  // soConfigItem
   // =========================================================================
 
-  async getConfigItem(
-    input: GetConfigItemInput,
-    _context: ConfigContext,
-    output: GetConfigItemOutput,
+  async soConfigItem(input: GetConfigItemInput, output: GetConfigItemOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -615,10 +604,7 @@ export class ConfigService {
   // updateConfig
   // =========================================================================
 
-  async updateConfig(
-    input: UpdateConfigInput,
-    _context: ConfigContext,
-    output: UpdateConfigOutput,
+  async updateConfig(input: UpdateConfigInput, output: UpdateConfigOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -662,10 +648,7 @@ export class ConfigService {
   // configConfig (self-config)
   // =========================================================================
 
-  async configConfig(
-    input: ConfigConfigInput,
-    _context: ConfigContext,
-    output: ConfigConfigOutput,
+  async configConfig(input: ConfigConfigInput, output: ConfigConfigOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(CONFIG_CONFIG_TABLE, []);
     const now = Date.now();
@@ -857,54 +840,54 @@ export class ConfigService {
     }
     if (configKey.startsWith('log_provider.')) {
       const out: any = {};
-      await this.logAccess.configLog({} as ConfigLogInput, {} as LogContext, out);
+      await this.logAccess.configLog({} as ConfigLogInput, out, {} as LogContext);
       const cfg = (out.config ?? {}) as Record<string, unknown>;
       const field = configKey.split('.').pop() ?? '';
       return field ? (cfg[field] ?? null) : null;
     }
     if (configKey.startsWith('info_core.tag_config.')) {
       const out = new SoInfoTagConfigOutput();
-      await this.infoCore.soInfoTagConfig({} as SoInfoTagConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoTagConfig({} as SoInfoTagConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'tag_config', configKey);
     }
     if (configKey.startsWith('info_core.summary_config.')) {
       const out = new SoInfoSummaryConfigOutput();
-      await this.infoCore.soInfoSummaryConfig({} as SoInfoSummaryConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoSummaryConfig({} as SoInfoSummaryConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'summary_config', configKey);
     }
     if (configKey.startsWith('info_core.vector_config.')) {
       const out = new SoInfoVectorConfigOutput();
-      await this.infoCore.soInfoVectorConfig({} as SoInfoVectorConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoVectorConfig({} as SoInfoVectorConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'vector_config', configKey);
     }
     if (configKey.startsWith('info_core.context_config.')) {
       const out = new SoInfoContextConfigOutput();
-      await this.infoCore.soInfoContextConfig({} as SoInfoContextConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoContextConfig({} as SoInfoContextConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'context_config', configKey);
     }
     if (configKey.startsWith('info_core.config.')) {
       const out = new SoInfoConfigOutput();
-      await this.infoCore.soInfoConfig({} as SoInfoConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoConfig({} as SoInfoConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'config', configKey);
     }
     if (configKey.startsWith('llm_core.')) {
       const out = new ConfigLLMCoreOutput();
-      await this.llmCore.configLLMCore({} as ConfigLLMCoreInput, {} as LLMCoreContext, out);
+      await this.llmCore.configLLMCore({} as ConfigLLMCoreInput, out, {} as LLMCoreContext);
       return this.extractConfigValue(out, 'llm_core', configKey);
     }
     if (configKey.startsWith('mcp_core.')) {
       const out = new ConfigMcpCoreOutput();
-      await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, {} as McpCoreContext, out);
+      await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, out, {} as McpCoreContext);
       return this.extractConfigValue(out, 'mcp_core', configKey);
     }
     if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
       const out = new ConfigSkillCoreOutput();
-      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
+      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, out, {} as SkillCoreContext);
       return this.extractConfigValue(out, 'skill_core', configKey);
     }
     if (configKey.startsWith('skill_core.opt_rule')) {
       const out = new SoSkillRuleOutput();
-      await this.skillCore.soSkillRule({} as SoSkillRuleInput, {} as SkillCoreContext, out);
+      await this.skillCore.soSkillRule({} as SoSkillRuleInput, out, {} as SkillCoreContext);
       const first = (out.list ?? [])[0];
       if (!first) return null;
       const key = configKey.split('skill_core.opt_rule.')[1];
@@ -912,12 +895,12 @@ export class ConfigService {
     }
     if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SOUL_MATCH) || configKey.startsWith('soul_core.llm_id')) {
       const out = new ConfigSoulCoreOutput();
-      await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, {} as SoulCoreContext, out);
+      await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, out, {} as SoulCoreContext);
       return this.extractConfigValue(out, 'soul_core', configKey);
     }
     if (configKey.startsWith('soul_core.opt_rule')) {
       const out = new SoSoulRuleOutput();
-      await this.soulCore.soSoulRule({} as SoSoulRuleInput, {} as SoulCoreContext, out);
+      await this.soulCore.soSoulRule({} as SoSoulRuleInput, out, {} as SoulCoreContext);
       const first = (out.list ?? [])[0];
       if (!first) return null;
       const key = configKey.split('soul_core.opt_rule.')[1];
@@ -926,19 +909,19 @@ export class ConfigService {
     if (configKey.startsWith('planner_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'planner_agent',
-        (i: any, c: any, o: any) => this.plannerAgent.configPlannerAgent(i, c, o),
+        (i: any, c: any, o: any) => this.plannerAgent.configPlannerAgent(i, o, c),
       );
     }
     if (configKey.startsWith('writer_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'writer_agent',
-        (i: any, c: any, o: any) => this.writerAgent.configWriterAgent(i, c, o),
+        (i: any, c: any, o: any) => this.writerAgent.configWriterAgent(i, o, c),
       );
     }
     if (configKey.startsWith('evolutor_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'evolutor_agent',
-        (i: any, c: any, o: any) => this.evolutorAgent.configEvolutorAgent(i, c, o),
+        (i: any, c: any, o: any) => this.evolutorAgent.configEvolutorAgent(i, o, c),
       );
     }
     if (configKey.startsWith('agent_context.')) {
@@ -950,25 +933,25 @@ export class ConfigService {
     if (configKey.startsWith('agent_library.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_library',
-        (i: any, c: any, o: any) => this.agentLibrary.configAgentLibrary(i, c, o),
+        (i: any, c: any, o: any) => this.agentLibrary.configAgentLibrary(i, o, c),
       );
     }
     if (configKey.startsWith('agent_builder.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_builder',
-        (i: any, c: any, o: any) => this.agentBuilder.configAgentBuilder(i, c, o),
+        (i: any, c: any, o: any) => this.agentBuilder.configAgentBuilder(i, o, c),
       );
     }
     if (configKey.startsWith('agent_execution.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_execution',
-        (i: any, c: any, o: any) => this.agentExecution.configAgentExecution(i, c, o),
+        (i: any, c: any, o: any) => this.agentExecution.configAgentExecution(i, o, c),
       );
     }
     if (configKey.startsWith('agent_strategy.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_strategy',
-        (i: any, c: any, o: any) => this.agentStrategy.configAgentStrategy(i, c, o),
+        (i: any, c: any, o: any) => this.agentStrategy.configAgentStrategy(i, o, c),
       );
     }
     if (configKey.startsWith('orchestration.')) {
@@ -995,7 +978,7 @@ export class ConfigService {
     if (configKey.startsWith('chat.')) {
       return this.getConfigFromAccess(
         configKey, 'chat',
-        (i: any, c: any, o: any) => this.chatAccess.configChat(i, c, o),
+        (i: any, c: any, o: any) => this.chatAccess.configChat(i, o, c),
       );
     }
     if (configKey.startsWith('self_learning.')) {
@@ -1003,18 +986,18 @@ export class ConfigService {
       if (configKey === 'self_learning.tag_aging_cron' || configKey === 'self_learning.orphan_tag_check_cron') {
         const taskName = configKey === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
         const out = new GetCronTaskOutput();
-        await this.cronAccess.soCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), new CronContext(), out);
+        await this.cronAccess.soCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), out, new CronContext());
         return out.task ? out.task.cron : null;
       }
       return this.getConfigFromAccess(
         configKey, 'self_learning',
-        (i: any, c: any, o: any) => this.selfLearningAccess.configSelfLearning(i, c, o),
+        (i: any, c: any, o: any) => this.selfLearningAccess.configSelfLearning(i, o, c),
       );
     }
     if (configKey.startsWith('user_profile.')) {
       return this.getConfigFromAccess(
         configKey, 'user_profile',
-        (i: any, c: any, o: any) => this.userProfileAccess.configUserProfile(i, c, o),
+        (i: any, c: any, o: any) => this.userProfileAccess.configUserProfile(i, o, c),
       );
     }
     if (configKey.startsWith('visualization.')) {
@@ -1142,7 +1125,7 @@ export class ConfigService {
       else if (prefix.startsWith('log_provider.retention_days')) input.retention_days = value as number;
       else if (prefix.startsWith('log_provider.max_log_count')) input.max_log_count = value as number;
       const output: any = {};
-      await this.logAccess.configLog(input as ConfigLogInput, {} as LogContext, output);
+      await this.logAccess.configLog(input as ConfigLogInput, output, {} as LogContext);
       return;
     }
 
@@ -1423,7 +1406,7 @@ export class ConfigService {
       // 定时任务 cron 写入 CronProvider（与定时任务展示页面同一时间源）
       if (prefix === 'self_learning.tag_aging_cron' || prefix === 'self_learning.orphan_tag_check_cron') {
         const taskName = prefix === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
-        await this.cronAccess.setCronTask(Object.assign(new SetCronTaskInput(), { name: taskName, cron: value as string }), new CronContext(), new SetCronTaskOutput());
+        await this.cronAccess.setCronTask(Object.assign(new SetCronTaskInput(), { name: taskName, cron: value as string }), new SetCronTaskOutput(), new CronContext());
         return;
       }
       const input: any = {};
@@ -1473,195 +1456,195 @@ export class ConfigService {
   // LLM Proxy methods
   // =========================================================================
 
-  async addLLMProviderProxy(input: AddLLMProviderInput, context: LLMContext, output: AddLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.addLLMProvider(input, context, output);
+  async addLLMProviderProxy(input: AddLLMProviderInput, output: AddLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.addLLMProvider(input, output, context, metrics, report);
   }
 
-  async updateLLMProviderProxy(input: UpdateLLMProviderInput, context: LLMContext, output: UpdateLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.updateLLMProvider(input, context, output);
+  async updateLLMProviderProxy(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.updateLLMProvider(input, output, context, metrics, report);
   }
 
-  async delLLMProviderProxy(input: DelLLMProviderInput, context: LLMContext, output: DelLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.delLLMProvider(input, context, output);
+  async delLLMProviderProxy(input: DelLLMProviderInput, output: DelLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.delLLMProvider(input, output, context, metrics, report);
   }
 
-  async soLLMProviderProxy(input: SoLLMProviderInput, context: LLMContext, output: SoLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.soLLMProvider(input, context, output);
+  async soLLMProviderProxy(input: SoLLMProviderInput, output: SoLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLMProvider(input, output, context, metrics, report);
   }
 
-  async testLLMProviderProxy(input: TestLLMProviderInput, context: LLMContext, output: TestLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.testLLMProvider(input, context, output);
+  async testLLMProviderProxy(input: TestLLMProviderInput, output: TestLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.testLLMProvider(input, output, context, metrics, report);
   }
 
-  async listLLMProxy(input: ListLLMInput, context: LLMContext, output: ListLLMOutput): Promise<boolean> {
-    return this.llmAccess.listLLM(input, context, output);
+  async listLLMProxy(input: ListLLMInput, output: ListLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.listLLM(input, output, context, metrics, report);
   }
 
-  async addLLMProxy(input: AddLLMInput, context: LLMContext, output: AddLLMOutput): Promise<boolean> {
-    return this.llmAccess.addLLM(input, context, output);
+  async addLLMProxy(input: AddLLMInput, output: AddLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.addLLM(input, output, context, metrics, report);
   }
 
-  async updateLLMProxy(input: UpdateLLMInput, context: LLMContext, output: UpdateLLMOutput): Promise<boolean> {
-    return this.llmAccess.updateLLM(input, context, output);
+  async updateLLMProxy(input: UpdateLLMInput, output: UpdateLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.updateLLM(input, output, context, metrics, report);
   }
 
-  async delLLMProxy(input: DelLLMInput, context: LLMContext, output: DelLLMOutput): Promise<boolean> {
-    return this.llmAccess.delLLM(input, context, output);
+  async delLLMProxy(input: DelLLMInput, output: DelLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.delLLM(input, output, context, metrics, report);
   }
 
-  async soLLMProxy(input: SoLLMInput, context: LLMContext, output: SoLLMOutput): Promise<boolean> {
-    return this.llmAccess.soLLM(input, context, output);
+  async soLLMProxy(input: SoLLMInput, output: SoLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLM(input, output, context, metrics, report);
   }
 
-  async getLLMProxy(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
-    return this.llmAccess.soLLMById(input, context, output);
+  async getLLMProxy(input: GetLLMInput, output: GetLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLMById(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Soul Proxy methods
   // =========================================================================
 
-  async addSoulProxy(input: AddSoulInput, context: SoulContext, output: AddSoulOutput): Promise<boolean> {
-    return this.soulAccess.addSoul(input, context, output);
+  async addSoulProxy(input: AddSoulInput, output: AddSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.addSoul(input, output, context, metrics, report);
   }
 
-  async updateSoulProxy(input: UpdateSoulInput, context: SoulContext, output: UpdateSoulOutput): Promise<boolean> {
-    return this.soulAccess.updateSoul(input, context, output);
+  async updateSoulProxy(input: UpdateSoulInput, output: UpdateSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.updateSoul(input, output, context, metrics, report);
   }
 
-  async delSoulProxy(input: DelSoulInput, context: SoulContext, output: DelSoulOutput): Promise<boolean> {
-    return this.soulAccess.delSoul(input, context, output);
+  async delSoulProxy(input: DelSoulInput, output: DelSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.delSoul(input, output, context, metrics, report);
   }
 
-  async soSoulProxy(input: SoSoulInput, context: SoulContext, output: SoSoulOutput): Promise<boolean> {
-    return this.soulAccess.soSoul(input, context, output);
+  async soSoulProxy(input: SoSoulInput, output: SoSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.soSoul(input, output, context, metrics, report);
   }
 
-  async getSoulProxy(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
-    return this.soulAccess.soSoulById(input, context, output);
+  async getSoulProxy(input: GetSoulInput, output: GetSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.soSoulById(input, output, context, metrics, report);
   }
 
-  async getSoulRuleProxy(input: SoSoulRuleInput, context: SoulCoreContext, output: SoSoulRuleOutput): Promise<boolean> {
-    return this.soulCore.soSoulRule(input, context, output);
+  async getSoulRuleProxy(input: SoSoulRuleInput, output: SoSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulCore.soSoulRule(input, output, context, metrics, report);
   }
 
-  async updateSoulRuleProxy(input: UpdateSoulRuleInput, context: SoulCoreContext, output: UpdateSoulRuleOutput): Promise<boolean> {
-    return this.soulCore.updateSoulRule(input, context, output);
+  async updateSoulRuleProxy(input: UpdateSoulRuleInput, output: UpdateSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulCore.updateSoulRule(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Skill Proxy methods
   // =========================================================================
 
-  async addSkillProxy(input: AddSkillInput, context: SkillContext, output: AddSkillOutput): Promise<boolean> {
-    return this.skillAccess.addSkill(input, context, output);
+  async addSkillProxy(input: AddSkillInput, output: AddSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.addSkill(input, output, context, metrics, report);
   }
 
-  async updateSkillProxy(input: UpdateSkillInput, context: SkillContext, output: UpdateSkillOutput): Promise<boolean> {
-    return this.skillAccess.updateSkill(input, context, output);
+  async updateSkillProxy(input: UpdateSkillInput, output: UpdateSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.updateSkill(input, output, context, metrics, report);
   }
 
-  async delSkillProxy(input: DelSkillInput, context: SkillContext, output: DelSkillOutput): Promise<boolean> {
-    return this.skillAccess.delSkill(input, context, output);
+  async delSkillProxy(input: DelSkillInput, output: DelSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.delSkill(input, output, context, metrics, report);
   }
 
-  async soSkillProxy(input: SoSkillInput, context: SkillContext, output: SoSkillOutput): Promise<boolean> {
-    return this.skillAccess.soSkill(input, context, output);
+  async soSkillProxy(input: SoSkillInput, output: SoSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.soSkill(input, output, context, metrics, report);
   }
 
-  async execSkillProxy(input: ExecSkillInput, context: SkillContext, output: ExecSkillOutput): Promise<boolean> {
-    return this.skillAccess.execSkill(input, context, output);
+  async execSkillProxy(input: ExecSkillInput, output: ExecSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.execSkill(input, output, context, metrics, report);
   }
 
-  async getSkillProxy(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
-    return this.skillAccess.soSkillById(input, context, output);
+  async getSkillProxy(input: GetSkillInput, output: GetSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.soSkillById(input, output, context, metrics, report);
   }
 
-  async getSkillRuleProxy(input: SoSkillRuleInput, context: SkillCoreContext, output: SoSkillRuleOutput): Promise<boolean> {
-    return this.skillCore.soSkillRule(input, context, output);
+  async getSkillRuleProxy(input: SoSkillRuleInput, output: SoSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillCore.soSkillRule(input, output, context, metrics, report);
   }
 
-  async updateSkillRuleProxy(input: UpdateSkillRuleInput, context: SkillCoreContext, output: UpdateSkillRuleOutput): Promise<boolean> {
-    return this.skillCore.updateSkillRule(input, context, output);
+  async updateSkillRuleProxy(input: UpdateSkillRuleInput, output: UpdateSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillCore.updateSkillRule(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // MCP Proxy methods
   // =========================================================================
 
-  async addMcpProviderProxy(input: AddMcpProviderInput, context: McpContext, output: AddMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.addMcpProvider(input, context, output);
+  async addMcpProviderProxy(input: AddMcpProviderInput, output: AddMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.addMcpProvider(input, output, context, metrics, report);
   }
 
-  async updateMcpProviderProxy(input: UpdateMcpProviderInput, context: McpContext, output: UpdateMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.updateMcpProvider(input, context, output);
+  async updateMcpProviderProxy(input: UpdateMcpProviderInput, output: UpdateMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.updateMcpProvider(input, output, context, metrics, report);
   }
 
-  async delMcpProviderProxy(input: DelMcpProviderInput, context: McpContext, output: DelMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.delMcpProvider(input, context, output);
+  async delMcpProviderProxy(input: DelMcpProviderInput, output: DelMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.delMcpProvider(input, output, context, metrics, report);
   }
 
-  async soMcpProviderProxy(input: SoMcpProviderInput, context: McpContext, output: SoMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.soMcpProvider(input, context, output);
+  async soMcpProviderProxy(input: SoMcpProviderInput, output: SoMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcpProvider(input, output, context, metrics, report);
   }
 
-  async testMcpProviderProxy(input: TestMcpProviderInput, context: McpContext, output: TestMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.testMcpProvider(input, context, output);
+  async testMcpProviderProxy(input: TestMcpProviderInput, output: TestMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.testMcpProvider(input, output, context, metrics, report);
   }
 
-  async listMcpProxy(input: ListMcpInput, context: McpContext, output: ListMcpOutput): Promise<boolean> {
-    return this.mcpAccess.listMcp(input, context, output);
+  async listMcpProxy(input: ListMcpInput, output: ListMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.listMcp(input, output, context, metrics, report);
   }
 
-  async installMcpProxy(input: InstallMcpInput, context: McpContext, output: InstallMcpOutput): Promise<boolean> {
-    return this.mcpAccess.installMcp(input, context, output);
+  async installMcpProxy(input: InstallMcpInput, output: InstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.installMcp(input, output, context, metrics, report);
   }
 
-  async startMcpProxy(input: StartMcpInput, context: McpContext, output: StartMcpOutput): Promise<boolean> {
-    return this.mcpAccess.startMcp(input, context, output);
+  async startMcpProxy(input: StartMcpInput, output: StartMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.startMcp(input, output, context, metrics, report);
   }
 
-  async stopMcpProxy(input: StopMcpInput, context: McpContext, output: StopMcpOutput): Promise<boolean> {
-    return this.mcpAccess.stopMcp(input, context, output);
+  async stopMcpProxy(input: StopMcpInput, output: StopMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.stopMcp(input, output, context, metrics, report);
   }
 
-  async uninstallMcpProxy(input: UninstallMcpInput, context: McpContext, output: UninstallMcpOutput): Promise<boolean> {
-    return this.mcpAccess.uninstallMcp(input, context, output);
+  async uninstallMcpProxy(input: UninstallMcpInput, output: UninstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.uninstallMcp(input, output, context, metrics, report);
   }
 
-  async updateMcpProxy(input: UpdateMcpInput, context: McpContext, output: UpdateMcpOutput): Promise<boolean> {
-    return this.mcpAccess.updateMcp(input, context, output);
+  async updateMcpProxy(input: UpdateMcpInput, output: UpdateMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.updateMcp(input, output, context, metrics, report);
   }
 
-  async getMcpProxy(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
-    return this.mcpAccess.soMcpById(input, context, output);
+  async getMcpProxy(input: GetMcpInput, output: GetMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcpById(input, output, context, metrics, report);
   }
 
-  async soMcpProxy(input: SoMcpInput, context: McpContext, output: SoMcpOutput): Promise<boolean> {
-    return this.mcpAccess.soMcp(input, context, output);
+  async soMcpProxy(input: SoMcpInput, output: SoMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcp(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Prompt Proxy methods
   // =========================================================================
 
-  async addPromptProxy(input: AddPromptInput, context: PromptContext, output: AddPromptOutput): Promise<boolean> {
-    return this.promptsAccess.addPrompt(input, context, output);
+  async addPromptProxy(input: AddPromptInput, output: AddPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.addPrompt(input, output, context, metrics, report);
   }
 
-  async updatePromptProxy(input: UpdatePromptInput, context: PromptContext, output: UpdatePromptOutput): Promise<boolean> {
-    return this.promptsAccess.updatePrompt(input, context, output);
+  async updatePromptProxy(input: UpdatePromptInput, output: UpdatePromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.updatePrompt(input, output, context, metrics, report);
   }
 
-  async delPromptProxy(input: DelPromptInput, context: PromptContext, output: DelPromptOutput): Promise<boolean> {
-    return this.promptsAccess.delPrompt(input, context, output);
+  async delPromptProxy(input: DelPromptInput, output: DelPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.delPrompt(input, output, context, metrics, report);
   }
 
-  async soPromptProxy(input: SoPromptInput, context: PromptContext, output: SoPromptOutput): Promise<boolean> {
-    return this.promptsAccess.soPrompt(input, context, output);
+  async soPromptProxy(input: SoPromptInput, output: SoPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.soPrompt(input, output, context, metrics, report);
   }
 
-  async getPromptProxy(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
-    return this.promptsAccess.soPromptById(input, context, output);
+  async getPromptProxy(input: GetPromptInput, output: GetPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.soPromptById(input, output, context, metrics, report);
   }
 }

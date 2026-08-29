@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, GraphDBAccess, Logger, MQAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -59,130 +60,112 @@ export class SelfLearningAccess {
     await this.initPromise;
   }
 
-  async addLibrary(
-    i: AddLibraryInput, c: SelfLearningContext, o: AddLibraryOutput,
+  async addLibrary(i: AddLibraryInput, o: AddLibraryOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.addLibrary(i, c, o);
+    return this.service.addLibrary(i, o, c, metrics, report);
   }
 
-  async deleteLibrary(
-    i: DeleteLibraryInput, c: SelfLearningContext, o: DeleteLibraryOutput,
+  async deleteLibrary(i: DeleteLibraryInput, o: DeleteLibraryOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.deleteLibrary(i, c, o);
+    return this.service.deleteLibrary(i, o, c, metrics, report);
   }
 
-  async searchLibrary(
-    i: SearchLibraryInput, c: SelfLearningContext, o: SearchLibraryOutput,
+  async soLibrary(i: SearchLibraryInput, o: SearchLibraryOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.searchLibrary(i, c, o);
+    return this.service.soLibrary(i, o, c, metrics, report);
   }
 
-  async setLibraryEnabled(
-    i: SetLibraryEnabledInput, c: SelfLearningContext, o: SetLibraryEnabledOutput,
+  async setLibraryEnabled(i: SetLibraryEnabledInput, o: SetLibraryEnabledOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.setLibraryEnabled(i, c, o);
+    return this.service.setLibraryEnabled(i, o, c, metrics, report);
   }
 
-  async getLibraryFiles(
-    i: GetLibraryFilesInput, c: SelfLearningContext, o: GetLibraryFilesOutput,
+  async soLibraryFiles(i: GetLibraryFilesInput, o: GetLibraryFilesOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getLibraryFiles(i, c, o);
+    return this.service.soLibraryFiles(i, o, c, metrics, report);
   }
 
-  async getLibraryTree(
-    i: GetLibraryTreeInput, c: SelfLearningContext, o: GetLibraryTreeOutput,
+  async soLibraryTree(i: GetLibraryTreeInput, o: GetLibraryTreeOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getLibraryTree(i, c, o);
+    return this.service.soLibraryTree(i, o, c, metrics, report);
   }
 
-  async getFileContent(
-    i: GetFileContentInput, c: SelfLearningContext, o: GetFileContentOutput,
+  async soFileContent(i: GetFileContentInput, o: GetFileContentOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getFileContent(i, c, o);
+    return this.service.soFileContent(i, o, c, metrics, report);
   }
 
-  async queryDocument(
-    i: QueryDocumentInput, c: SelfLearningContext, o: QueryDocumentOutput,
+  async queryDocument(i: QueryDocumentInput, o: QueryDocumentOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.queryDocument(i, c, o);
+    return this.service.queryDocument(i, o, c, metrics, report);
   }
 
-  async saveAnnotation(
-    i: SaveAnnotationInput, c: SelfLearningContext, o: SaveAnnotationOutput,
+  async saveAnnotation(i: SaveAnnotationInput, o: SaveAnnotationOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.saveAnnotation(i, c, o);
+    return this.service.saveAnnotation(i, o, c, metrics, report);
   }
 
-  async getFileAnnotations(
-    i: GetFileAnnotationsInput, c: SelfLearningContext, o: GetFileAnnotationsOutput,
+  async soFileAnnotations(i: GetFileAnnotationsInput, o: GetFileAnnotationsOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getFileAnnotations(i, c, o);
+    return this.service.soFileAnnotations(i, o, c, metrics, report);
   }
 
-  async startLearning(
-    i: StartLearningInput, c: SelfLearningContext, o: StartLearningOutput,
+  async startLearning(i: StartLearningInput, o: StartLearningOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.startLearning(i, c, o);
+    return this.service.startLearning(i, o, c, metrics, report);
   }
 
-  async stopLearning(
-    i: StopLearningInput, c: SelfLearningContext, o: StopLearningOutput,
+  async stopLearning(i: StopLearningInput, o: StopLearningOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.stopLearning(i, c, o);
+    return this.service.stopLearning(i, o, c, metrics, report);
   }
 
-  async getTagGraph(
-    i: GetTagGraphInput, c: SelfLearningContext, o: GetTagGraphOutput,
+  async soTagGraph(i: GetTagGraphInput, o: GetTagGraphOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getTagGraph(i, c, o);
+    return this.service.soTagGraph(i, o, c, metrics, report);
   }
 
-  async getTagRelatedInfo(
-    i: GetTagRelatedInfoInput, c: SelfLearningContext, o: GetTagRelatedInfoOutput,
+  async soTagRelatedInfo(i: GetTagRelatedInfoInput, o: GetTagRelatedInfoOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getTagRelatedInfo(i, c, o);
+    return this.service.soTagRelatedInfo(i, o, c, metrics, report);
   }
 
-  async getLearningProgress(
-    i: GetLearningProgressInput, c: SelfLearningContext, o: GetLearningProgressOutput,
+  async soLearningProgress(i: GetLearningProgressInput, o: GetLearningProgressOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getLearningProgress(i, c, o);
+    return this.service.soLearningProgress(i, o, c, metrics, report);
   }
 
-  async getLearningResults(
-    i: GetLearningResultsInput, c: SelfLearningContext, o: GetLearningResultsOutput,
+  async soLearningResults(i: GetLearningResultsInput, o: GetLearningResultsOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getLearningResults(i, c, o);
+    return this.service.soLearningResults(i, o, c, metrics, report);
   }
 
-  async getLearningStats(
-    i: GetLearningStatsInput, c: SelfLearningContext, o: GetLearningStatsOutput,
+  async soLearningStats(i: GetLearningStatsInput, o: GetLearningStatsOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getLearningStats(i, c, o);
+    return this.service.soLearningStats(i, o, c, metrics, report);
   }
 
-  async configSelfLearning(
-    i: ConfigSelfLearningInput, c: SelfLearningContext, o: ConfigSelfLearningOutput,
+  async configSelfLearning(i: ConfigSelfLearningInput, o: ConfigSelfLearningOutput, c: SelfLearningContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configSelfLearning(i, c, o);
+    return this.service.configSelfLearning(i, o, c, metrics, report);
   }
 
   /** 标签老化（供 CronProvider 定时触发） */

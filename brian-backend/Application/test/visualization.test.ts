@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   RelationDBAccess, IdGenerator, Operator, GraphDBAccess,
@@ -56,15 +57,15 @@ function insInfoRaw(db: RelationDBAccess, o: Record<string, unknown>) {
 
 async function ensureInfoGraphNode(graphDb: GraphDBAccess, infoId: string, sessionId: string): Promise<string> {
   const selOut = new SelectGraphOutput();
-  await graphDb.selectGraph({ target: GraphTarget.NODE, node_type: 'info' } as SelectGraphInput, new GraphContext(), selOut);
+  await graphDb.selectGraph({ target: GraphTarget.NODE, node_type: 'info' } as SelectGraphInput, selOut, new GraphContext());
   for (const n of selOut.list as Array<{ id: string; content?: Record<string, unknown> }>) {
     if (n.content?.['info_id'] === infoId) return n.id;
   }
   const addOut = new AddGraphNodeOutput();
   await graphDb.addGraphNode(
     { data: { node_type: 'info', content: { info_id: infoId, session_id: sessionId, info_preview: '' } } } as AddGraphNodeInput,
-    new GraphContext(),
     addOut,
+    new GraphContext(),
   );
   return addOut.id;
 }
@@ -82,8 +83,8 @@ async function insInfoGraph(graphDb: GraphDBAccess, citingInfoId: string, citedI
         properties: { citing_info_id: citingInfoId, cited_info_id: citedInfoId, session_id: sessionId },
       },
     } as AddGraphEdgeInput,
-    new GraphContext(),
     new AddGraphEdgeOutput(),
+    new GraphContext(),
   );
 }
 
@@ -176,9 +177,9 @@ describe('VisualizationService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 1. getVisualizedMessages  TC-VIS-001 ~ TC-VIS-015
+  // 1. soVisualizedMessages  TC-VIS-001 ~ TC-VIS-015
   // ═══════════════════════════════════════════════════════════════
-  describe('getVisualizedMessages', () => {
+  describe('soVisualizedMessages', () => {
     it('TC-VIS-001: by session_id returns messages with extended fields', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1',
         info_id: 'info-1', info_type: 'REQUEST', info: 'Hello', info_length: 11 });
@@ -186,7 +187,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
 
       expect(out.total).toBe(1);
       expect(out.messages).toHaveLength(1);
@@ -205,7 +206,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.work_id = 'work-A';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect(out.total).toBe(1);
       expect((out.messages[0] as any).work_id).toBe('work-A');
     });
@@ -215,7 +216,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.interact_id = 'inter-X';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect(out.total).toBe(1);
       expect((out.messages[0] as any).interact_id).toBe('inter-X');
     });
@@ -228,7 +229,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-lastn';
       input.lastN = 20;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect(out.messages.length).toBeLessThanOrEqual(20);
     });
 
@@ -241,7 +242,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_citing_info = true;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
 
       const m = out.messages.find(msg => (msg as any).info_id === infoId) as Record<string, unknown>;
       expect(Array.isArray(m.citing_info_ids)).toBe(true);
@@ -256,7 +257,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_citing_info = false;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       const m = out.messages[0] as Record<string, unknown>;
       expect(m).not.toHaveProperty('citing_info_ids');
       expect(m).not.toHaveProperty('cited_info_ids');
@@ -271,7 +272,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_context_source = true;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
 
       const m = out.messages[0] as Record<string, unknown>;
       expect(m).toHaveProperty('context_source_info');
@@ -284,7 +285,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_context_source = true;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       const m = out.messages[0] as Record<string, unknown>;
       expect(m).not.toHaveProperty('context_source_info');
     });
@@ -299,7 +300,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_citing_info = true;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
 
       const m = out.messages.find(msg => (msg as any).info_id === 'info-cited') as Record<string, unknown>;
       expect(m.citing_count).toBe(3);
@@ -317,7 +318,7 @@ describe('VisualizationService', () => {
       input.page_current = 2;
       input.page_size = 10;
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
 
       expect(out.total).toBeGreaterThanOrEqual(10);
       expect(out.messages).toHaveLength(10);
@@ -327,13 +328,13 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-empty-default';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect(out.messages).toBeDefined();
     });
 
     it('TC-VIS-013: No parameters at all returns messages=[], total=0', async () => {
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(new GetVisualizedMessagesInput(), ctx(), out);
+      await svc.soVisualizedMessages(new GetVisualizedMessagesInput(), ctx(), out);
       expect(out.messages).toEqual([]);
       expect(out.total).toBe(0);
     });
@@ -342,7 +343,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-nonexistent';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect(out.messages).toEqual([]);
       expect(out.total).toBe(0);
     });
@@ -354,22 +355,22 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessagesInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessagesOutput();
-      await svc.getVisualizedMessages(input, ctx(), out);
+      await svc.soVisualizedMessages(input, out, ctx());
       expect((out.messages[0] as any).info_length).toBe(txt.length);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 2. getVisualizedMessageGraph  TC-VIS-020 ~ TC-VIS-030
+  // 2. soVisualizedMessageGraph  TC-VIS-020 ~ TC-VIS-030
   // ═══════════════════════════════════════════════════════════════
-  describe('getVisualizedMessageGraph', () => {
+  describe('soVisualizedMessageGraph', () => {
     it('TC-VIS-020: Get message graph -> session_id, graph(nodes+edges), metadata', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-graph', info_id: 'info-1', info: 'First' });
 
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = 'sess-graph';
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect(out.session_id).toBe('sess-graph');
       expect(out.graph).toHaveProperty('nodes');
       expect(out.graph).toHaveProperty('edges');
@@ -384,7 +385,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       const node = (out.graph as any).nodes[0];
       expect(node).toHaveProperty('id');
       expect(node).toHaveProperty('label');
@@ -403,7 +404,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       const edges = (out.graph as any).edges;
       expect(edges.length).toBeGreaterThanOrEqual(1);
       const edge = edges[0];
@@ -424,7 +425,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       const edges = (out.graph as any).edges.filter((e: any) => e.edge_type === 'CITATION');
       expect(edges.length).toBeGreaterThanOrEqual(1);
     });
@@ -437,7 +438,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       const replyEdges = (out.graph as any).edges.filter((e: any) => e.edge_type === 'REPLY');
       expect(replyEdges.length).toBeGreaterThanOrEqual(1);
     });
@@ -452,7 +453,7 @@ describe('VisualizationService', () => {
       input.session_id = sessId;
       input.max_nodes = 50;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect((out.graph as any).nodes).toHaveLength(50);
       expect((out.metadata as any).displayed_nodes).toBe(50);
       expect((out.metadata as any).truncated).toBe(true);
@@ -462,7 +463,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = 'sess-empty';
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect((out.metadata as any).max_nodes_limit).toBe(200);
     });
 
@@ -475,7 +476,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect((out.graph as any).nodes[0].info_summary.length).toBeLessThanOrEqual(53);
     });
 
@@ -483,7 +484,7 @@ describe('VisualizationService', () => {
       const out = new GetVisualizedMessageGraphOutput();
       const input = new GetVisualizedMessageGraphInput();
       (input as any).session_id = '';
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect(out.session_id).toBe('');
       expect(out.graph).toBeDefined();
     });
@@ -495,7 +496,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect((out.graph as any).nodes.length).toBe(1);
       expect((out.graph as any).edges).toEqual([]);
     });
@@ -509,7 +510,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageGraphInput();
       input.session_id = sessId;
       const out = new GetVisualizedMessageGraphOutput();
-      await svc.getVisualizedMessageGraph(input, ctx(), out);
+      await svc.soVisualizedMessageGraph(input, out, ctx());
       expect(out.metadata.total_nodes).toBeGreaterThanOrEqual(1);
       expect(out.metadata.total_edges).toBeGreaterThanOrEqual(1);
       expect(out.metadata.displayed_nodes).toBeGreaterThanOrEqual(1);
@@ -518,9 +519,9 @@ describe('VisualizationService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 3. getVisualizedAgentDAG  TC-VIS-040 ~ TC-VIS-054
+  // 3. soVisualizedAgentDAG  TC-VIS-040 ~ TC-VIS-054
   // ═══════════════════════════════════════════════════════════════
-  describe('getVisualizedAgentDAG', () => {
+  describe('soVisualizedAgentDAG', () => {
     it('TC-VIS-040: resolve_content=true -> DAG with resolved refs', async () => {
       insOrchWork(ctxEnv.db, { work_id: 'work-1', orchestration_strategy: 'SIMPLE' });
       insOrchAgentExec(ctxEnv.db, { work_id: 'work-1', agent_id: 'agent-1', status: 'COMPLETED' });
@@ -529,7 +530,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toHaveProperty('graph');
       expect((out.dag as any).graph).toHaveProperty('nodes');
       expect((out.dag as any).graph).toHaveProperty('edges');
@@ -543,7 +544,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = false;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       const nodes = (out.dag as any).graph.nodes;
       expect(nodes.length).toBeGreaterThanOrEqual(1);
       expect(nodes[0].agent_id).toBe('agent-1');
@@ -557,7 +558,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -569,7 +570,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -581,7 +582,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -593,7 +594,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -605,7 +606,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -617,7 +618,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -629,7 +630,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -641,7 +642,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -653,7 +654,7 @@ describe('VisualizationService', () => {
       input.work_id = 'work-1';
       input.resolve_content = true;
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect(out.dag).toBeDefined();
     });
 
@@ -661,15 +662,15 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedAgentDAGInput();
       input.work_id = 'invalid';
       const out = new GetVisualizedAgentDAGOutput();
-      await svc.getVisualizedAgentDAG(input, ctx(), out);
+      await svc.soVisualizedAgentDAG(input, out, ctx());
       expect((out.dag as any).error).toBeDefined();
     });
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 4. getVisualizedWorkFlow  TC-VIS-060 ~ TC-VIS-066
+  // 4. soVisualizedWorkFlow  TC-VIS-060 ~ TC-VIS-066
   // ═══════════════════════════════════════════════════════════════
-  describe('getVisualizedWorkFlow', () => {
+  describe('soVisualizedWorkFlow', () => {
     it('TC-VIS-060: Get timeline -> workflow_timeline with phases', async () => {
       insOrchWork(ctxEnv.db, { work_id: 'work-1', status: 'COMPLETED', orchestration_strategy: 'PLANNING' });
       insOrchAgentExec(ctxEnv.db, { work_id: 'work-1', agent_id: 'agent-1', status: 'COMPLETED' });
@@ -677,7 +678,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       expect(out.timeline).toHaveProperty('phases');
     });
 
@@ -688,7 +689,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       const phases = (out.timeline as any).phases;
       const p = phases.find((x: any) => x.phase === 'PLANNING');
       expect(p).toBeDefined();
@@ -701,7 +702,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       const phases = (out.timeline as any).phases;
       const p = phases.find((x: any) => x.phase === 'BUILD_AGENT_DAG');
       expect(p).toBeDefined();
@@ -714,7 +715,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       const phases = (out.timeline as any).phases;
       const p = phases.find((x: any) => x.phase === 'EXECUTING');
       expect(p).toBeDefined();
@@ -727,7 +728,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       expect(out.timeline).toBeDefined();
     });
 
@@ -738,7 +739,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'work-1';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       expect(out.timeline).toBeDefined();
     });
 
@@ -746,15 +747,15 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedWorkFlowInput();
       input.work_id = 'invalid';
       const out = new GetVisualizedWorkFlowOutput();
-      await svc.getVisualizedWorkFlow(input, ctx(), out);
+      await svc.soVisualizedWorkFlow(input, out, ctx());
       expect((out.timeline as any).error).toBeDefined();
     });
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 5. getAgentTrace  TC-VIS-070 ~ TC-VIS-085
+  // 5. soAgentTrace  TC-VIS-070 ~ TC-VIS-085
   // ═══════════════════════════════════════════════════════════════
-  describe('getAgentTrace', () => {
+  describe('soAgentTrace', () => {
     it('TC-VIS-070: Get latest trace -> all fields', async () => {
       const iterations = [
         { iteration_index: 0, iteration_elapsed_ms: 1500,
@@ -781,7 +782,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-1';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const t = out.trace as any;
       expect(t.trace_id).toBe('trace-1');
       expect(t.agent_id).toBe('agent-1');
@@ -803,7 +804,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-specific';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).trace_id).toBe('trace-specific');
     });
 
@@ -825,7 +826,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-think';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const think = (out.trace as any).steps.filter((s: any) => s.phase === 'THINK');
       expect(think.length).toBeGreaterThanOrEqual(1);
       expect(think[0].content).toBe('I need to analyze...');
@@ -849,7 +850,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-act';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const act = (out.trace as any).steps.filter((s: any) => s.phase === 'ACT');
       expect(act.length).toBeGreaterThanOrEqual(1);
       expect(act[0]).toHaveProperty('tool_calls');
@@ -873,7 +874,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-refl';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const reflect = (out.trace as any).steps.filter((s: any) => s.phase === 'REFLECT');
       expect(reflect.length).toBeGreaterThanOrEqual(1);
       expect(reflect[0].reflection).toBe('good progress');
@@ -896,7 +897,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-ans';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).final_answer).toBe('Here is the final answer.');
     });
 
@@ -916,7 +917,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-skill';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const act = (out.trace as any).steps.find((s: any) => s.phase === 'ACT' && (s.tool_calls as any[]).length > 0);
       expect(act).toBeDefined();
       expect(act.tool_calls[0]).toHaveProperty('tool_type');
@@ -938,7 +939,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-mcp';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       const act = (out.trace as any).steps.find((s: any) => s.phase === 'ACT' && (s.tool_calls as any[]).length > 0);
       expect(act).toBeDefined();
       expect(act.tool_calls[0]).toHaveProperty('tool_type');
@@ -960,7 +961,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-iter3';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).iteration_count).toBe(3);
     });
 
@@ -975,7 +976,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-comp';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).trace_id).toBeDefined();
       expect((out.trace as any).agent_id).toBe('agent-1');
     });
@@ -994,7 +995,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-fail';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).trace_id).toBeDefined();
       expect((out.trace as any).iteration_count).toBe(1);
     });
@@ -1013,7 +1014,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-run';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).steps).toBeDefined();
     });
 
@@ -1021,7 +1022,7 @@ describe('VisualizationService', () => {
       const input = new GetAgentTraceInput();
       input.agent_id = 'invalid-agent';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).error).toBeDefined();
     });
 
@@ -1030,7 +1031,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'invalid-trace';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).error).toBeDefined();
     });
 
@@ -1051,7 +1052,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-multi';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).iteration_count).toBe(4);
       expect((out.trace as any).steps.length).toBe(4);
     });
@@ -1067,7 +1068,7 @@ describe('VisualizationService', () => {
       input.agent_id = 'agent-1';
       input.trace_id = 'trace-tok';
       const out = new GetAgentTraceOutput();
-      await svc.getAgentTrace(input, ctx(), out);
+      await svc.soAgentTrace(input, out, ctx());
       expect((out.trace as any).total_token_usage).toBe(500);
     });
 
@@ -1086,7 +1087,7 @@ describe('VisualizationService', () => {
         input.agent_id = `agent-${idx}`;
         input.trace_id = `trace-${idx}`;
         const out = new GetAgentTraceOutput();
-        await svc.getAgentTrace(input, ctx(), out);
+        await svc.soAgentTrace(input, out, ctx());
         expect((out.trace as any).agent_id).toBe(`agent-${idx}`);
         expect((out.trace as any).trace_id).toBe(`trace-${idx}`);
       }
@@ -1094,9 +1095,9 @@ describe('VisualizationService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 6. getVisualizedMessageDAG  TC-VIS-095 ~ TC-VIS-110
+  // 6. soVisualizedMessageDAG  TC-VIS-095 ~ TC-VIS-110
   // ═══════════════════════════════════════════════════════════════
-  describe('getVisualizedMessageDAG', () => {
+  describe('soVisualizedMessageDAG', () => {
     it('TC-VIS-095: Get DAG -> graph(nodes+edges) + metadata', async () => {
       insInfoRaw(ctxEnv.db, { session_id: 'sess-1', work_id: 'work-1', info_id: 'info-user',
         info_type: 'REQUEST', info: 'Q', info_length: 1 });
@@ -1106,7 +1107,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       expect(out.session_id).toBe('sess-1');
       expect((out.graph as any).nodes).toBeDefined();
       expect((out.graph as any).edges).toBeDefined();
@@ -1121,7 +1122,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.work_id = 'work-A';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       for (const n of (out.graph as any).nodes) expect(n.work_id).toBe('work-A');
     });
 
@@ -1135,7 +1136,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_question_answer_edges = true;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const qa = (out.graph as any).edges.filter((e: any) => e.edge_type === 'QUESTION_ANSWER');
       expect(qa.length).toBeGreaterThanOrEqual(1);
     });
@@ -1150,7 +1151,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_question_answer_edges = false;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const qa = (out.graph as any).edges.filter((e: any) => e.edge_type === 'QUESTION_ANSWER');
       expect(qa.length).toBe(0);
     });
@@ -1164,7 +1165,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_citation_edges = true;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const cite = (out.graph as any).edges.filter((e: any) => e.edge_type === 'CITATION');
       expect(cite.length).toBeGreaterThanOrEqual(1);
     });
@@ -1178,7 +1179,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.include_citation_edges = false;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const cite = (out.graph as any).edges.filter((e: any) => e.edge_type === 'CITATION');
       expect(cite.length).toBe(0);
     });
@@ -1194,7 +1195,7 @@ describe('VisualizationService', () => {
       input.include_question_answer_edges = true;
       input.include_citation_edges = false;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const edges = (out.graph as any).edges;
       expect(edges.filter((e: any) => e.edge_type === 'QUESTION_ANSWER').length).toBe(1);
       expect(edges.filter((e: any) => e.edge_type === 'CITATION').length).toBe(0);
@@ -1212,7 +1213,7 @@ describe('VisualizationService', () => {
       input.include_question_answer_edges = false;
       input.include_citation_edges = true;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const edges = (out.graph as any).edges;
       expect(edges.filter((e: any) => e.edge_type === 'QUESTION_ANSWER').length).toBe(0);
       expect(edges.filter((e: any) => e.edge_type === 'CITATION').length).toBe(1);
@@ -1226,7 +1227,7 @@ describe('VisualizationService', () => {
       input.session_id = 'sess-1';
       input.max_nodes = 100;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       expect((out.graph as any).nodes.length).toBeLessThanOrEqual(100);
     });
 
@@ -1239,7 +1240,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const qa = (out.graph as any).edges.find((e: any) =>
         e.edge_type === 'QUESTION_ANSWER' && e.from === 'info-q' && e.to === 'info-a');
       expect(qa).toBeDefined();
@@ -1256,7 +1257,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const cite = (out.graph as any).edges.find((e: any) => e.edge_type === 'CITATION');
       expect(cite).toBeDefined();
       expect(cite.from).toBe('info-cited');
@@ -1270,7 +1271,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       const node = (out.graph as any).nodes[0];
       expect(node).toHaveProperty('id', 'info-1');
       expect(node).toHaveProperty('label');
@@ -1290,7 +1291,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       expect(out.metadata).toHaveProperty('total_nodes');
       expect(out.metadata).toHaveProperty('total_edges');
       expect(out.metadata).toHaveProperty('max_nodes_limit');
@@ -1300,7 +1301,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       (input as any).session_id = '';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       expect(out.session_id).toBe('');
       expect((out.graph as any).nodes).toBeDefined();
     });
@@ -1309,7 +1310,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'empty-sess';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
       expect((out.graph as any).nodes).toEqual([]);
       expect((out.graph as any).edges).toEqual([]);
     });
@@ -1325,7 +1326,7 @@ describe('VisualizationService', () => {
       input.session_id = sessId;
       input.max_nodes = 50;
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
 
       expect((out.graph as any).nodes.length).toBeLessThanOrEqual(50);
       const nodeIds = (out.graph as any).nodes.map((n: any) => n.info_id);
@@ -1349,7 +1350,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
 
       const edges = (out.graph as any).edges;
       const followup = edges.find((e: any) => e.edge_type === 'FOLLOW_UP' && e.from === 'a1' && e.to === 'q2');
@@ -1373,7 +1374,7 @@ describe('VisualizationService', () => {
       const input = new GetVisualizedMessageDAGInput();
       input.session_id = 'sess-1';
       const out = new GetVisualizedMessageDAGOutput();
-      await svc.getVisualizedMessageDAG(input, ctx(), out);
+      await svc.soVisualizedMessageDAG(input, out, ctx());
 
       const edges = (out.graph as any).edges;
       const followup = edges.find((e: any) => e.edge_type === 'CITATION' && e.from === 'a1' && e.to === 'q2');
@@ -1383,15 +1384,15 @@ describe('VisualizationService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 7. getResource  TC-VIS-120 ~ TC-VIS-133
+  // 7. soResource  TC-VIS-120 ~ TC-VIS-133
   // ═══════════════════════════════════════════════════════════════
-  describe('getResource', () => {
+  describe('soResource', () => {
     it('TC-VIS-120: Query agent -> returns agent metadata', async () => {
       const input = new GetResourceInput();
       input.resource_type = 'agent';
       input.resource_id = 'agent-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1400,7 +1401,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'llm';
       input.resource_id = 'llm-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1409,7 +1410,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'soul';
       input.resource_id = 'soul-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1418,7 +1419,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'skill';
       input.resource_id = 'skill-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1427,7 +1428,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'mcp';
       input.resource_id = 'mcp-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1436,7 +1437,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'prompt';
       input.resource_id = 'prompt-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1447,7 +1448,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'trace';
       input.resource_id = 'trace-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1458,7 +1459,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'info';
       input.resource_id = 'info-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1467,7 +1468,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'eval';
       input.resource_id = 'eval-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1476,7 +1477,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'plan';
       input.resource_id = 'plan-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1485,7 +1486,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'context';
       input.resource_id = 'ctx-1';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1494,7 +1495,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'nonsense';
       input.resource_id = 'x';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect((out.resource as any).error).toBeDefined();
     });
 
@@ -1503,7 +1504,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'agent';
       input.resource_id = 'nonexistent';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
 
@@ -1512,7 +1513,7 @@ describe('VisualizationService', () => {
       input.resource_type = 'agent';
       input.resource_id = '';
       const out = new GetResourceOutput();
-      await svc.getResource(input, ctx(), out);
+      await svc.soResource(input, out, ctx());
       expect(out.resource).toBeDefined();
     });
   });
@@ -1524,7 +1525,7 @@ describe('VisualizationService', () => {
     it('should return default config when none exists', async () => {
       const input = new ConfigVisualizationInput();
       const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       const c = out.config as any;
       expect(c.max_nodes_per_graph).toBe(200);
       expect(c.default_message_summary_length).toBe(50);
@@ -1535,7 +1536,7 @@ describe('VisualizationService', () => {
       const input = new ConfigVisualizationInput();
       input.max_nodes_per_graph = 500;
       const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).max_nodes_per_graph).toBe(500);
     });
 
@@ -1543,7 +1544,7 @@ describe('VisualizationService', () => {
       const input = new ConfigVisualizationInput();
       input.default_message_summary_length = 100;
       const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).default_message_summary_length).toBe(100);
     });
 
@@ -1551,7 +1552,7 @@ describe('VisualizationService', () => {
       const input = new ConfigVisualizationInput();
       input.resolve_content_by_default = false;
       const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).resolve_content_by_default).toBe(0);
     });
 
@@ -1561,7 +1562,7 @@ describe('VisualizationService', () => {
       input.default_message_summary_length = 80;
       input.resolve_content_by_default = false;
       const out = new ConfigVisualizationOutput();
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       const c = out.config as any;
       expect(c.max_nodes_per_graph).toBe(300);
       expect(c.default_message_summary_length).toBe(80);
@@ -1572,12 +1573,12 @@ describe('VisualizationService', () => {
       const input1 = new ConfigVisualizationInput();
       input1.max_nodes_per_graph = 111;
       const out1 = new ConfigVisualizationOutput();
-      await svc.configVisualization(input1, ctx(), out1);
+      await svc.configVisualization(input1, out1, ctx());
       expect((out1.config as any).max_nodes_per_graph).toBe(111);
 
       const input2 = new ConfigVisualizationInput();
       const out2 = new ConfigVisualizationOutput();
-      await svc.configVisualization(input2, ctx(), out2);
+      await svc.configVisualization(input2, out2, ctx());
       expect((out2.config as any).max_nodes_per_graph).toBe(111);
     });
   });
@@ -1587,7 +1588,7 @@ describe('VisualizationService', () => {
       const input = new ConfigVisualizationInput();
       const out = new ConfigVisualizationOutput();
 
-      const result = await svc.configVisualization(input, ctx(), out);
+      const result = await svc.configVisualization(input, out, ctx());
       expect(result).toBe(true);
       expect(out.config).toBeDefined();
     });
@@ -1597,7 +1598,7 @@ describe('VisualizationService', () => {
       input.max_nodes_per_graph = 250;
       const out = new ConfigVisualizationOutput();
 
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).max_nodes_per_graph).toBe(250);
     });
 
@@ -1606,7 +1607,7 @@ describe('VisualizationService', () => {
       input.default_message_summary_length = 75;
       const out = new ConfigVisualizationOutput();
 
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).default_message_summary_length).toBe(75);
     });
 
@@ -1615,7 +1616,7 @@ describe('VisualizationService', () => {
       input.resolve_content_by_default = false;
       const out = new ConfigVisualizationOutput();
 
-      await svc.configVisualization(input, ctx(), out);
+      await svc.configVisualization(input, out, ctx());
       expect((out.config as any).resolve_content_by_default).toBe(0);
     });
   });

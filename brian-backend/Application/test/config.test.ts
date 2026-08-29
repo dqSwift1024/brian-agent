@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RelationDBAccess, ValidationError, NotFoundError } from '@brian-agent/base';
 import { ConfigService } from '../Config/application/ConfigService';
@@ -54,25 +55,25 @@ describe('ConfigService', () => {
     jsonNode = realCtx.jsonNode;
     logger = realCtx.logger;
     chatAccess = {
-      configChat: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+      configChat: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.config = {};
         return true;
       }),
     } as any;
     selfLearningAccess = {
-      configSelfLearning: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+      configSelfLearning: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.config = {};
         return true;
       }),
     } as any;
     userProfileAccess = {
-      configUserProfile: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+      configUserProfile: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.config = {};
         return true;
       }),
     } as any;
     visualizationAccess = {
-      configVisualization: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+      configVisualization: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.config = {};
         return true;
       }),
@@ -102,7 +103,7 @@ describe('ConfigService', () => {
       input.layer = 'BASE';
       input.readable = false;
       const output = new UpdateLayerPrivilegeOutput();
-      const result = await service.updateLayerPrivilege(input, ctx(), output);
+      const result = await service.updateLayerPrivilege(input, output, ctx());
       expect(result).toBe(true);
       expect(output.privilege).toBeDefined();
       expect(output.privilege.layer).toBe('BASE');
@@ -114,7 +115,7 @@ describe('ConfigService', () => {
       input.layer = 'BASE';
       input.writable = false;
       const output = new UpdateLayerPrivilegeOutput();
-      await service.updateLayerPrivilege(input, ctx(), output);
+      await service.updateLayerPrivilege(input, output, ctx());
       expect(output.privilege.writable).toBe(false);
     });
 
@@ -124,7 +125,7 @@ describe('ConfigService', () => {
       input.readable = false;
       input.writable = false;
       const output = new UpdateLayerPrivilegeOutput();
-      await service.updateLayerPrivilege(input, ctx(), output);
+      await service.updateLayerPrivilege(input, output, ctx());
       expect(output.privilege.readable).toBe(false);
       expect(output.privilege.writable).toBe(false);
     });
@@ -139,7 +140,7 @@ describe('ConfigService', () => {
       restoreInput.layer = 'CORE';
       restoreInput.readable = true;
       const restoreOut = new UpdateLayerPrivilegeOutput();
-      await service.updateLayerPrivilege(restoreInput, ctx(), restoreOut);
+      await service.updateLayerPrivilege(restoreInput, restoreOut, ctx());
       expect(restoreOut.privilege.readable).toBe(true);
     });
 
@@ -147,7 +148,7 @@ describe('ConfigService', () => {
       const input = new UpdateLayerPrivilegeInput();
       input.layer = 'INVALID';
       const output = new UpdateLayerPrivilegeOutput();
-      await expect(service.updateLayerPrivilege(input, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateLayerPrivilege(input, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-025: Upsert same layer twice — second succeeds', async () => {
@@ -160,7 +161,7 @@ describe('ConfigService', () => {
       input2.layer = 'AGENT';
       input2.writable = false;
       const out2 = new UpdateLayerPrivilegeOutput();
-      await service.updateLayerPrivilege(input2, ctx(), out2);
+      await service.updateLayerPrivilege(input2, out2, ctx());
       expect(out2.privilege.readable).toBe(false);
       expect(out2.privilege.writable).toBe(false);
     });
@@ -175,7 +176,7 @@ describe('ConfigService', () => {
       input.layer = 'ORCHESTRATION';
       input.readable = false;
       const output = new UpdateLayerPrivilegeOutput();
-      await service.updateLayerPrivilege(input, ctx(), output);
+      await service.updateLayerPrivilege(input, output, ctx());
       expect(output.privilege.readable).toBe(false);
       expect(output.privilege.writable).toBe(false);
     });
@@ -191,7 +192,7 @@ describe('ConfigService', () => {
       input.module = 'test_mod_030';
       input.readable = false;
       const output = new UpdateModulePrivilegeOutput();
-      const result = await service.updateModulePrivilege(input, ctx(), output);
+      const result = await service.updateModulePrivilege(input, output, ctx());
       expect(result).toBe(true);
       expect(output.privilege.module).toBe('test_mod_030');
       expect(output.privilege.readable).toBe(false);
@@ -202,7 +203,7 @@ describe('ConfigService', () => {
       input.module = 'test_mod_031';
       input.writable = false;
       const output = new UpdateModulePrivilegeOutput();
-      await service.updateModulePrivilege(input, ctx(), output);
+      await service.updateModulePrivilege(input, output, ctx());
       expect(output.privilege.writable).toBe(false);
     });
 
@@ -216,7 +217,7 @@ describe('ConfigService', () => {
       modInput.module = 'test_mod_032';
       modInput.readable = true;
       const output = new UpdateModulePrivilegeOutput();
-      await expect(service.updateModulePrivilege(modInput, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateModulePrivilege(modInput, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-033: Layer restricts, module writable=true rejected', async () => {
@@ -229,7 +230,7 @@ describe('ConfigService', () => {
       modInput.module = 'test_mod_033';
       modInput.writable = true;
       const output = new UpdateModulePrivilegeOutput();
-      await expect(service.updateModulePrivilege(modInput, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateModulePrivilege(modInput, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-035: Upsert same module twice', async () => {
@@ -242,7 +243,7 @@ describe('ConfigService', () => {
       input2.module = 'test_mod_035';
       input2.writable = false;
       const out2 = new UpdateModulePrivilegeOutput();
-      await service.updateModulePrivilege(input2, ctx(), out2);
+      await service.updateModulePrivilege(input2, out2, ctx());
       expect(out2.privilege.readable).toBe(false);
       expect(out2.privilege.writable).toBe(false);
     });
@@ -253,7 +254,7 @@ describe('ConfigService', () => {
       input.readable = false;
       input.writable = false;
       const output = new UpdateModulePrivilegeOutput();
-      const result = await service.updateModulePrivilege(input, ctx(), output);
+      const result = await service.updateModulePrivilege(input, output, ctx());
       expect(result).toBe(true);
       expect(output.privilege.module).toBe('unknown_module_036');
       expect(output.privilege.readable).toBe(false);
@@ -263,14 +264,14 @@ describe('ConfigService', () => {
   });
 
   // =====================================================================
-  // getConfigDetail
+  // soConfigDetail
   // =====================================================================
 
-  describe('getConfigDetail', () => {
+  describe('soConfigDetail', () => {
     it('TC-CFG-060: Get full config detail returns layers→modules→categories→configs', async () => {
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
-      const result = await service.getConfigDetail(input, ctx(), output);
+      const result = await service.soConfigDetail(input, output, ctx());
       expect(result).toBe(true);
       expect(Array.isArray(output.layers)).toBe(true);
 
@@ -285,7 +286,7 @@ describe('ConfigService', () => {
       const cat = (mod.categories as any[]).find((c: any) => c.category === 'basic');
       expect(cat).toBeDefined();
       expect(Array.isArray(cat.items)).toBe(true);
-      expect(cat.items.length).toBe(5);
+      expect(cat.items.length).toBe(6);
 
       const keys = cat.items.map((i: any) => i.config_key);
       expect(keys).toContain('orchestration.entry.complexity_decompose_threshold');
@@ -296,7 +297,7 @@ describe('ConfigService', () => {
       const input = new GetConfigDetailInput();
       input.layer = 'ORCHESTRATION';
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       expect(output.layers.length).toBe(1);
       expect((output.layers[0] as any).layer).toBe('ORCHESTRATION');
@@ -306,7 +307,7 @@ describe('ConfigService', () => {
       const input = new GetConfigDetailInput();
       input.module = 'entry';
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
       expect(orchLayer).toBeDefined();
@@ -318,7 +319,7 @@ describe('ConfigService', () => {
       const input = new GetConfigDetailInput();
       input.category = 'basic';
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
       expect(orchLayer).toBeDefined();
@@ -326,7 +327,7 @@ describe('ConfigService', () => {
       expect(mod).toBeDefined();
       const cat = (mod.categories as any[]).find((c: any) => c.category === 'basic');
       expect(cat).toBeDefined();
-      expect(cat.items.length).toBe(5);
+      expect(cat.items.length).toBe(6);
     });
 
     it('TC-CFG-064: Combined filter (layer + module)', async () => {
@@ -334,7 +335,7 @@ describe('ConfigService', () => {
       input.layer = 'ORCHESTRATION';
       input.module = 'entry';
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       expect(output.layers.length).toBe(1);
       const layer = output.layers[0] as any;
@@ -347,7 +348,7 @@ describe('ConfigService', () => {
       const input = new GetConfigDetailInput();
       input.readable_only = true;
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
       const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'self_learning') : null;
@@ -360,7 +361,7 @@ describe('ConfigService', () => {
       const input = new GetConfigDetailInput();
       input.readable_only = false;
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       const appLayer = output.layers.find((l: any) => l.layer === 'APPLICATION');
       const mod = appLayer ? (appLayer.modules as any[]).find((m: any) => m.module === 'self_learning') : null;
@@ -372,7 +373,7 @@ describe('ConfigService', () => {
     it('TC-CFG-067: Each config item contains current_value field', async () => {
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       for (const layer of output.layers as any[]) {
         for (const mod of (layer.modules as any[])) {
@@ -388,7 +389,7 @@ describe('ConfigService', () => {
     it('TC-CFG-068: 返回字段完整性', async () => {
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       for (const layer of output.layers as any[]) {
         expect(layer).toHaveProperty('layer');
@@ -407,7 +408,7 @@ describe('ConfigService', () => {
     it('TC-CFG-070: config_description is returned in config detail', async () => {
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
-      await service.getConfigDetail(input, ctx(), output);
+      await service.soConfigDetail(input, output, ctx());
 
       const orchLayer = output.layers.find((l: any) => l.layer === 'ORCHESTRATION');
       const mod = (orchLayer!.modules as any[]).find((m: any) => m.module === 'entry');
@@ -431,23 +432,23 @@ describe('ConfigService', () => {
 
       const input = new GetConfigDetailInput();
       const output = new GetConfigDetailOutput();
-      await freshService.getConfigDetail(input, ctx(), output);
+      await freshService.soConfigDetail(input, output, ctx());
       expect(output.layers.length).toBeGreaterThan(0);
     });
   });
 
   // =====================================================================
-  // getConfigItem
+  // soConfigItem
   // =====================================================================
 
-  describe('getConfigItem', () => {
+  describe('soConfigItem', () => {
     const itemKey = 'llm_core.regen_rate';
 
     it('TC-CFG-075: Get single config item returns config_item', async () => {
       const input = new GetConfigItemInput();
       input.config_key = itemKey;
       const output = new GetConfigItemOutput();
-      const result = await service.getConfigItem(input, ctx(), output);
+      const result = await service.soConfigItem(input, output, ctx());
       expect(result).toBe(true);
       expect(output.config_item.config_key).toBe(itemKey);
       expect(output.config_item.config_name).toBe('LLM 重新匹配概率（0-100）');
@@ -458,7 +459,7 @@ describe('ConfigService', () => {
       const input = new GetConfigItemInput();
       input.config_key = 'non.existent.076';
       const output = new GetConfigItemOutput();
-      await expect(service.getConfigItem(input, ctx(), output)).rejects.toThrow(NotFoundError);
+      await expect(service.soConfigItem(input, output, ctx())).rejects.toThrow(NotFoundError);
     });
 
     it('TC-CFG-077: Unreadable item reports effective_readable=false', async () => {
@@ -471,7 +472,7 @@ describe('ConfigService', () => {
       const input = new GetConfigItemInput();
       input.config_key = itemKey;
       const output = new GetConfigItemOutput();
-      const result = await service.getConfigItem(input, ctx(), output);
+      const result = await service.soConfigItem(input, output, ctx());
       expect(result).toBe(true);
       expect(output.config_item.effective_readable).toBe(false);
     });
@@ -489,7 +490,7 @@ describe('ConfigService', () => {
       input.config_key = key;
       input.value = false;
       const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
+      const result = await service.updateConfig(input, output, ctx());
       expect(result).toBe(true);
       expect(infoCore.updateInfoContextConfig).toHaveBeenCalled();
     });
@@ -501,7 +502,7 @@ describe('ConfigService', () => {
       input.config_key = key;
       input.value = 42;
       const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
+      const result = await service.updateConfig(input, output, ctx());
       expect(result).toBe(true);
       expect(llmCore.configLLMCore).toHaveBeenCalled();
     });
@@ -513,7 +514,7 @@ describe('ConfigService', () => {
       input.config_key = key;
       input.value = 'updated';
       const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
+      const result = await service.updateConfig(input, output, ctx());
       expect(result).toBe(true);
     });
 
@@ -524,7 +525,7 @@ describe('ConfigService', () => {
       input.config_key = key;
       input.value = 'PLANNING';
       const output = new UpdateConfigOutput();
-      const result = await service.updateConfig(input, ctx(), output);
+      const result = await service.updateConfig(input, output, ctx());
       expect(result).toBe(true);
       expect(orchestrationEntry.configOrchestrationEntry).toHaveBeenCalled();
     });
@@ -534,7 +535,7 @@ describe('ConfigService', () => {
       input.config_key = 'non.existent.091';
       input.value = 123;
       const output = new UpdateConfigOutput();
-      await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(NotFoundError);
+      await expect(service.updateConfig(input, output, ctx())).rejects.toThrow(NotFoundError);
     });
 
     it('TC-CFG-092: Unwritable config throws error', async () => {
@@ -548,7 +549,7 @@ describe('ConfigService', () => {
       input.config_key = 'llm_core.regen_rate';
       input.value = 99;
       const output = new UpdateConfigOutput();
-      await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateConfig(input, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-093: INT type with string value throws ValidationError', async () => {
@@ -556,7 +557,7 @@ describe('ConfigService', () => {
       input.config_key = 'llm_core.regen_rate';
       input.value = 'not_a_number';
       const output = new UpdateConfigOutput();
-      await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateConfig(input, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-094: BOOLEAN type with string value throws ValidationError', async () => {
@@ -564,7 +565,7 @@ describe('ConfigService', () => {
       input.config_key = 'info_core.context_config.enable_snapshot_persistence';
       input.value = 'true';
       const output = new UpdateConfigOutput();
-      await expect(service.updateConfig(input, ctx(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateConfig(input, output, ctx())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CFG-096: chat. prefix routes to chatAccess.configChat', async () => {
@@ -598,7 +599,7 @@ describe('ConfigService', () => {
       const getInput = new GetConfigItemInput();
       getInput.config_key = 'agent_library.regen_rate';
       const getOutput = new GetConfigItemOutput();
-      await service.getConfigItem(getInput, ctx(), getOutput);
+      await service.soConfigItem(getInput, getOutput, ctx());
       expect(getOutput.config_item.config_name).toBe('Agent 重新评估概率（0-100）');
       expect((getOutput.config_item.current_value as any)?.regen_rate).toBe(50);
     });
@@ -643,7 +644,7 @@ describe('ConfigService', () => {
       const input = new ConfigConfigInput();
       input.default_readable = false;
       const output = new ConfigConfigOutput();
-      const result = await service.configConfig(input, ctx(), output);
+      const result = await service.configConfig(input, output, ctx());
       expect(result).toBe(true);
       expect(output.config.default_readable).toBe(false);
     });
@@ -652,7 +653,7 @@ describe('ConfigService', () => {
       const input = new ConfigConfigInput();
       input.default_writable = false;
       const output = new ConfigConfigOutput();
-      await service.configConfig(input, ctx(), output);
+      await service.configConfig(input, output, ctx());
       expect(output.config.default_writable).toBe(false);
     });
 
@@ -664,7 +665,7 @@ describe('ConfigService', () => {
 
       const input = new ConfigConfigInput();
       const output = new ConfigConfigOutput();
-      await service.configConfig(input, ctx(), output);
+      await service.configConfig(input, output, ctx());
       expect(output.config).toBeDefined();
       expect(output.config.default_readable).toBe(false);
       expect(output.config.default_writable).toBe(false);
@@ -679,7 +680,7 @@ describe('ConfigService', () => {
       const input = new ConfigConfigInput();
       input.default_readable = false;
       const output = new ConfigConfigOutput();
-      await service.configConfig(input, ctx(), output);
+      await service.configConfig(input, output, ctx());
       expect(output.config.default_readable).toBe(false);
       expect(output.config.default_writable).toBe(true);
     });
@@ -694,7 +695,7 @@ describe('ConfigService', () => {
       const testInput = { data: { llm_provider_url: 'https://api.test.com', llm_provider_title: 'test-provider' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addLLMProviderProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addLLMProviderProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -708,8 +709,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'updateLLMProvider');
-      await (service as any).updateLLMProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateLLMProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-101-ERR: updateLLMProviderProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'updateLLMProvider').mockRejectedValue(new Error('update error'));
@@ -720,8 +721,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'delLLMProvider');
-      await (service as any).delLLMProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delLLMProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-102-ERR: delLLMProviderProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'delLLMProvider').mockRejectedValue(new Error('delete error'));
@@ -732,8 +733,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'soLLMProvider');
-      await (service as any).soLLMProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soLLMProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-103-ERR: soLLMProviderProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'soLLMProvider').mockRejectedValue(new Error('SO error'));
@@ -744,8 +745,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'testLLMProvider');
-      await (service as any).testLLMProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).testLLMProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-104-ERR: testLLMProviderProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'testLLMProvider').mockRejectedValue(new Error('test error'));
@@ -756,8 +757,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'listLLM');
-      await (service as any).listLLMProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).listLLMProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-105-ERR: listLLMProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'listLLM').mockRejectedValue(new Error('list error'));
@@ -767,7 +768,7 @@ describe('ConfigService', () => {
       const testInput = { data: { llm_provider_id: 'fake-provider-id', llm_title: 'gpt-4' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addLLMProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addLLMProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -781,8 +782,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'updateLLM');
-      await (service as any).updateLLMProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateLLMProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-107-ERR: updateLLMProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'updateLLM').mockRejectedValue(new Error('update LLM error'));
@@ -793,8 +794,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'delLLM');
-      await (service as any).delLLMProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delLLMProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-108-ERR: delLLMProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'delLLM').mockRejectedValue(new Error('del LLM error'));
@@ -805,8 +806,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'soLLM');
-      await (service as any).soLLMProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soLLMProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-109-ERR: soLLMProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'soLLM').mockRejectedValue(new Error('SO LLM error'));
@@ -817,8 +818,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(llmAccess, 'soLLMById');
-      await (service as any).getLLMProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getLLMProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-110-ERR: getLLMProxy propagates error', async () => {
       vi.spyOn(llmAccess, 'soLLMById').mockRejectedValue(new Error('get LLM error'));
@@ -835,7 +836,7 @@ describe('ConfigService', () => {
       const testInput = { data: { soul_content: 'test-soul content', soul_brief: 'brief', soul_usage: 'friendly' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addSoulProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addSoulProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -849,8 +850,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulAccess, 'updateSoul');
-      await (service as any).updateSoulProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateSoulProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-121-ERR: updateSoulProxy propagates error', async () => {
       vi.spyOn(soulAccess, 'updateSoul').mockRejectedValue(new Error('update soul error'));
@@ -861,8 +862,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulAccess, 'delSoul');
-      await (service as any).delSoulProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delSoulProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-122-ERR: delSoulProxy propagates error', async () => {
       vi.spyOn(soulAccess, 'delSoul').mockRejectedValue(new Error('del soul error'));
@@ -873,8 +874,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulAccess, 'soSoul');
-      await (service as any).soSoulProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soSoulProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-123-ERR: soSoulProxy propagates error', async () => {
       vi.spyOn(soulAccess, 'soSoul').mockRejectedValue(new Error('SO soul error'));
@@ -885,8 +886,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulAccess, 'soSoulById');
-      await (service as any).getSoulProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getSoulProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-124-ERR: getSoulProxy propagates error', async () => {
       vi.spyOn(soulAccess, 'soSoulById').mockRejectedValue(new Error('get soul error'));
@@ -897,8 +898,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulCore, 'soSoulRule');
-      await (service as any).getSoulRuleProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getSoulRuleProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-125-ERR: getSoulRuleProxy propagates error', async () => {
       vi.spyOn(soulCore, 'soSoulRule').mockRejectedValue(new Error('soSoulRule error'));
@@ -909,8 +910,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(soulCore, 'updateSoulRule').mockResolvedValue(true);
-      await (service as any).updateSoulRuleProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateSoulRuleProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-126-ERR: updateSoulRuleProxy propagates error', async () => {
       vi.spyOn(soulCore, 'updateSoulRule').mockRejectedValue(new Error('updateSoulRule error'));
@@ -927,7 +928,7 @@ describe('ConfigService', () => {
       const testInput = { data: { name: 'test-skill', skill_brief: 'test-skill', skill_md: 'do something' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addSkillProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addSkillProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -941,8 +942,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillAccess, 'updateSkill');
-      await (service as any).updateSkillProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateSkillProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-131-ERR: updateSkillProxy propagates error', async () => {
       vi.spyOn(skillAccess, 'updateSkill').mockRejectedValue(new Error('update skill error'));
@@ -953,8 +954,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillAccess, 'delSkill');
-      await (service as any).delSkillProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delSkillProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-132-ERR: delSkillProxy propagates error', async () => {
       vi.spyOn(skillAccess, 'delSkill').mockRejectedValue(new Error('del skill error'));
@@ -965,8 +966,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillAccess, 'soSkill');
-      await (service as any).soSkillProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soSkillProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-133-ERR: soSkillProxy propagates error', async () => {
       vi.spyOn(skillAccess, 'soSkill').mockRejectedValue(new Error('SO skill error'));
@@ -977,8 +978,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillAccess, 'soSkillById');
-      await (service as any).getSkillProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getSkillProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-134-ERR: getSkillProxy propagates error', async () => {
       vi.spyOn(skillAccess, 'soSkillById').mockRejectedValue(new Error('get skill error'));
@@ -989,8 +990,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillCore, 'soSkillRule');
-      await (service as any).getSkillRuleProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getSkillRuleProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-135-ERR: getSkillRuleProxy propagates error', async () => {
       vi.spyOn(skillCore, 'soSkillRule').mockRejectedValue(new Error('soSkillRule error'));
@@ -1001,8 +1002,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(skillCore, 'updateSkillRule').mockResolvedValue(true);
-      await (service as any).updateSkillRuleProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateSkillRuleProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-136-ERR: updateSkillRuleProxy propagates error', async () => {
       vi.spyOn(skillCore, 'updateSkillRule').mockRejectedValue(new Error('updateSkillRule error'));
@@ -1019,7 +1020,7 @@ describe('ConfigService', () => {
       const testInput = { data: { mcp_provider_url: 'https://mcp.test.com', mcp_provider_title: 'test-mcp' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addMcpProviderProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addMcpProviderProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -1033,8 +1034,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'updateMcpProvider');
-      await (service as any).updateMcpProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateMcpProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-141-ERR: updateMcpProviderProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'updateMcpProvider').mockRejectedValue(new Error('update mcp provider error'));
@@ -1045,8 +1046,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'delMcpProvider');
-      await (service as any).delMcpProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delMcpProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-142-ERR: delMcpProviderProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'delMcpProvider').mockRejectedValue(new Error('del mcp provider error'));
@@ -1057,8 +1058,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'soMcpProvider');
-      await (service as any).soMcpProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soMcpProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-143-ERR: soMcpProviderProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'soMcpProvider').mockRejectedValue(new Error('SO mcp provider error'));
@@ -1069,8 +1070,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'testMcpProvider');
-      await (service as any).testMcpProviderProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).testMcpProviderProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-144-ERR: testMcpProviderProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'testMcpProvider').mockRejectedValue(new Error('test mcp provider error'));
@@ -1081,8 +1082,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'listMcp');
-      await (service as any).listMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).listMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-145-ERR: listMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'listMcp').mockRejectedValue(new Error('list mcp error'));
@@ -1093,8 +1094,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'installMcp');
-      await (service as any).installMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).installMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-146-ERR: installMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'installMcp').mockRejectedValue(new Error('install mcp error'));
@@ -1105,8 +1106,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'startMcp');
-      await (service as any).startMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).startMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-147-ERR: startMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'startMcp').mockRejectedValue(new Error('start mcp error'));
@@ -1117,8 +1118,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'stopMcp');
-      await (service as any).stopMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).stopMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-148-ERR: stopMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'stopMcp').mockRejectedValue(new Error('stop mcp error'));
@@ -1129,8 +1130,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'uninstallMcp');
-      await (service as any).uninstallMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).uninstallMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-149-ERR: uninstallMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'uninstallMcp').mockRejectedValue(new Error('uninstall mcp error'));
@@ -1141,8 +1142,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'updateMcp');
-      await (service as any).updateMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updateMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-150-ERR: updateMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'updateMcp').mockRejectedValue(new Error('update mcp error'));
@@ -1153,8 +1154,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'soMcpById');
-      await (service as any).getMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-151-ERR: getMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'soMcpById').mockRejectedValue(new Error('get mcp error'));
@@ -1165,8 +1166,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(mcpAccess, 'soMcp');
-      await (service as any).soMcpProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soMcpProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-152-ERR: soMcpProxy propagates error', async () => {
       vi.spyOn(mcpAccess, 'soMcp').mockRejectedValue(new Error('SO mcp error'));
@@ -1179,10 +1180,10 @@ describe('ConfigService', () => {
       const testOutput = {};
       const spy1 = vi.spyOn(mcpAccess, 'installMcp');
       const spy2 = vi.spyOn(mcpAccess, 'startMcp');
-      await (service as any).installMcpProxy(testInput1, testCtx, testOutput);
-      expect(spy1).toHaveBeenCalledWith(testInput1, testCtx, testOutput);
-      await (service as any).startMcpProxy(testInput2, testCtx, testOutput);
-      expect(spy2).toHaveBeenCalledWith(testInput2, testCtx, testOutput);
+      await (service as any).installMcpProxy(testInput1, testOutput, testCtx);
+      expect(spy1).toHaveBeenCalledWith(testInput1, testOutput, testCtx, undefined, undefined);
+      await (service as any).startMcpProxy(testInput2, testOutput, testCtx);
+      expect(spy2).toHaveBeenCalledWith(testInput2, testOutput, testCtx, undefined, undefined);
     });
   });
 
@@ -1195,7 +1196,7 @@ describe('ConfigService', () => {
       const testInput = { data: { prompt_template_title: 'test-prompt', prompt_template: 'Hello {{name}}' } };
       const testCtx = ctx();
       const testOutput = {};
-      const result = await (service as any).addPromptProxy(testInput, testCtx, testOutput);
+      const result = await (service as any).addPromptProxy(testInput, testOutput, testCtx);
       expect(result).toBe(true);
       expect(testOutput.id).toBeDefined();
       expect(typeof testOutput.id).toBe('string');
@@ -1209,8 +1210,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(promptsAccess, 'updatePrompt');
-      await (service as any).updatePromptProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).updatePromptProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-161-ERR: updatePromptProxy propagates error', async () => {
       vi.spyOn(promptsAccess, 'updatePrompt').mockRejectedValue(new Error('update prompt error'));
@@ -1221,8 +1222,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(promptsAccess, 'delPrompt');
-      await (service as any).delPromptProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).delPromptProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-162-ERR: delPromptProxy propagates error', async () => {
       vi.spyOn(promptsAccess, 'delPrompt').mockRejectedValue(new Error('del prompt error'));
@@ -1233,8 +1234,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(promptsAccess, 'soPrompt');
-      await (service as any).soPromptProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).soPromptProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-163-ERR: soPromptProxy propagates error', async () => {
       vi.spyOn(promptsAccess, 'soPrompt').mockRejectedValue(new Error('SO prompt error'));
@@ -1245,8 +1246,8 @@ describe('ConfigService', () => {
       const testCtx = ctx();
       const testOutput = {};
       const spy = vi.spyOn(promptsAccess, 'soPromptById');
-      await (service as any).getPromptProxy(testInput, testCtx, testOutput);
-      expect(spy).toHaveBeenCalledWith(testInput, testCtx, testOutput);
+      await (service as any).getPromptProxy(testInput, testOutput, testCtx);
+      expect(spy).toHaveBeenCalledWith(testInput, testOutput, testCtx, undefined, undefined);
     });
     it('TC-CFG-164-ERR: getPromptProxy propagates error', async () => {
       vi.spyOn(promptsAccess, 'soPromptById').mockRejectedValue(new Error('get prompt error'));
@@ -1266,7 +1267,7 @@ describe('ConfigService', () => {
       updInput.config_key = key;
       updInput.value = 20;
       const updOut = new UpdateConfigOutput();
-      const result = await service.updateConfig(updInput, ctx(), updOut);
+      const result = await service.updateConfig(updInput, updOut, ctx());
       expect(result).toBe(true);
       expect(llmCore.configLLMCore).toHaveBeenCalled();
     });
@@ -1277,7 +1278,7 @@ describe('ConfigService', () => {
       updInput.config_key = key;
       updInput.value = 500;
       const updOut = new UpdateConfigOutput();
-      const result = await service.updateConfig(updInput, ctx(), updOut);
+      const result = await service.updateConfig(updInput, updOut, ctx());
       expect(result).toBe(true);
       expect(chatAccess.configChat).toHaveBeenCalled();
     });
@@ -1327,7 +1328,7 @@ describe('ConfigService', () => {
       const getInput = new GetConfigItemInput();
       getInput.config_key = 'mq_provider.message_ttl';
       const getOutput = new GetConfigItemOutput();
-      await service.getConfigItem(getInput, ctx(), getOutput);
+      await service.soConfigItem(getInput, getOutput, ctx());
       expect(getOutput.config_item.current_value).toBe(1234);
     });
 
@@ -1344,7 +1345,7 @@ describe('ConfigService', () => {
       const getInput = new GetConfigItemInput();
       getInput.config_key = 'mq_provider.default_priority';
       const getOutput = new GetConfigItemOutput();
-      await service.getConfigItem(getInput, ctx(), getOutput);
+      await service.soConfigItem(getInput, getOutput, ctx());
       expect(getOutput.config_item.current_value).toBe(5);
     });
   });

@@ -66,14 +66,14 @@ function seedAgentStrategies(relationDb: RelationDBAccess): void {
 }
 
 function mockExternalLLMMethods(llmAccess: LLMAccess) {
-  vi.spyOn(llmAccess as any, 'execLLM' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+  vi.spyOn(llmAccess as any, 'execLLM' as any).mockImplementation(async (_i: any, o: any, _c: any, ) => {
     o.result = 'Mock LLM response for testing';
     o.input_tokens = 50;
     o.output_tokens = 50;
     return true;
   });
   vi.spyOn(llmAccess as any, 'testLLMProvider' as any).mockImplementation(async () => true);
-  vi.spyOn(llmAccess as any, 'listLLM' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+  vi.spyOn(llmAccess as any, 'listLLM' as any).mockImplementation(async (_i: any, o: any, _c: any, ) => {
     o.models = [];
     return true;
   });
@@ -82,14 +82,14 @@ function mockExternalLLMMethods(llmAccess: LLMAccess) {
 function mockExternalMCPMethods(mcpAccess: MCPAccess) {
   vi.spyOn(mcpAccess as any, 'testMcpProvider' as any).mockImplementation(async () => true);
   vi.spyOn(mcpAccess as any, 'listMcp' as any).mockImplementation(async () => true);
-  vi.spyOn(mcpAccess as any, 'installMcp' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+  vi.spyOn(mcpAccess as any, 'installMcp' as any).mockImplementation(async (_i: any, o: any, _c: any, ) => {
     o.install_id = 'mock-install-id';
     return true;
   });
   vi.spyOn(mcpAccess as any, 'startMcp' as any).mockImplementation(async () => true);
   vi.spyOn(mcpAccess as any, 'stopMcp' as any).mockImplementation(async () => true);
   vi.spyOn(mcpAccess as any, 'uninstallMcp' as any).mockImplementation(async () => true);
-  vi.spyOn(mcpAccess as any, 'execMcp' as any).mockImplementation(async (_i: any, _c: any, o: any) => {
+  vi.spyOn(mcpAccess as any, 'execMcp' as any).mockImplementation(async (_i: any, o: any, _c: any, ) => {
     o.result = 'mock MCP result';
     return true;
   });
@@ -99,7 +99,7 @@ function createInMemoryVectorDBAccess() {
   const store = new Map<string, { id: string; content: string; embedding: number[]; user_id?: string; metadata?: string; created: number; updated: number }>();
 
   return {
-    addVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    addVector: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       const ids: string[] = [];
       for (const v of _i.vectors || []) {
         const id = v.id || `vec-${++_seq}`;
@@ -117,7 +117,7 @@ function createInMemoryVectorDBAccess() {
       o.ids = ids;
       return true;
     }),
-    delVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    delVector: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       let count = 0;
       for (const id of _i.ids || []) {
         if (store.delete(id)) count++;
@@ -125,24 +125,24 @@ function createInMemoryVectorDBAccess() {
       o.deleted = count;
       return true;
     }),
-    delVectorByFilter: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    delVectorByFilter: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.deleted = 0;
       return true;
     }),
-    soVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soVector: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.vectors = [];
       return true;
     }),
-    soVectorById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soVectorById: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       const v = store.get(_i.id);
       o.vector = v || null;
       return true;
     }),
-    countVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    countVector: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.count = store.size;
       return true;
     }),
-    visualizedVector: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    visualizedVector: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.data = [];
       return true;
     }),

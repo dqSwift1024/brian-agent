@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, InsertDBOutput,
   SelectDBInput, SelectDBOutput,
@@ -64,10 +65,7 @@ export class ChatService {
 
   // ===== 原始 submitWork 与 openChatStream 实现（保留作为参考） =====
   /*
-  async submitWork(
-    input: SubmitWorkInput,
-    context: ChatContext,
-    output: SubmitWorkOutput,
+  async submitWork(input: SubmitWorkInput, output: SubmitWorkOutput, context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -80,7 +78,7 @@ export class ChatService {
       session_id: input.session_id,
     });
     const overflowOutput = new CheckSessionOverflowOutput();
-    await this.checkSessionOverflow(overflowInput, context, overflowOutput);
+    await this.checkSessionOverflow(overflowInput, overflowOutput, context, metrics, report);
     if (overflowOutput.is_overflowed) {
       throw new ValidationError(`Session ${input.session_id} has exceeded message limit`);
     }
@@ -125,7 +123,7 @@ export class ChatService {
 
     let workOk = false;
     try {
-      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
+      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwOutput, rwContext, metrics, report);
     } catch (err: unknown) {
       this.logger?.error?.('submitWork: orchestration failed', {
         session_id: input.session_id,
@@ -159,10 +157,7 @@ export class ChatService {
   */
 
   // ===== 修改后的 submitWork 与 openChatStream 实现：增加第一条消息自动生成会话名称（50字截断，若已有名称则不覆盖） =====
-  async submitWork(
-    input: SubmitWorkInput,
-    context: ChatContext,
-    output: SubmitWorkOutput,
+  async submitWork(input: SubmitWorkInput, output: SubmitWorkOutput, context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -175,7 +170,7 @@ export class ChatService {
       session_id: input.session_id,
     });
     const overflowOutput = new CheckSessionOverflowOutput();
-    await this.checkSessionOverflow(overflowInput, context, overflowOutput);
+    await this.checkSessionOverflow(overflowInput, overflowOutput, context, metrics, report);
     if (overflowOutput.is_overflowed) {
       throw new ValidationError(`Session ${input.session_id} has exceeded message limit`);
     }
@@ -223,7 +218,7 @@ export class ChatService {
 
     let workOk = false;
     try {
-      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
+      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwOutput, rwContext, metrics, report);
     } catch (err: unknown) {
       this.logger?.error?.('submitWork: orchestration failed', {
         session_id: input.session_id,
@@ -257,8 +252,10 @@ export class ChatService {
 
   async openChatStream(
     input: OpenChatStreamInput,
-    context: ChatContext,
     output: OpenChatStreamOutput,
+    context: ChatContext,
+    metrics?: Metrics,
+    report?: Report,
     onEvent?: (event: SSEEvent) => void,
   ): Promise<boolean> {
     if (!input.session_id) {
@@ -283,7 +280,7 @@ export class ChatService {
       session_id: input.session_id,
     });
     const overflowOutput = new CheckSessionOverflowOutput();
-    await this.checkSessionOverflow(overflowInput, context, overflowOutput);
+    await this.checkSessionOverflow(overflowInput, overflowOutput, context, metrics, report);
     if (overflowOutput.is_overflowed) {
       const errEvent: SSEEvent = {
         event: 'error',
@@ -361,7 +358,7 @@ export class ChatService {
     let tokenUsage: Record<string, unknown> = {};
     let workOk = false;
     try {
-      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwContext, rwOutput);
+      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwOutput, rwContext, metrics, report);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.logger?.error?.('openChatStream: orchestration failed', {
@@ -439,10 +436,7 @@ export class ChatService {
     return true;
   }
 
-  async createSession(
-    input: CreateSessionInput,
-    _context: ChatContext,
-    output: CreateSessionOutput,
+  async createSession(input: CreateSessionInput, output: CreateSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const sessionId = IdGenerator.generate();
     const now = IdGenerator.now();
@@ -460,7 +454,7 @@ export class ChatService {
       table: 'chat_session',
       data,
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     output.session_id = sessionId;
     output.session_title = title;
@@ -468,10 +462,7 @@ export class ChatService {
     return true;
   }
 
-  async deleteSession(
-    input: DeleteSessionInput,
-    _context: ChatContext,
-    output: DeleteSessionOutput,
+  async deleteSession(input: DeleteSessionInput, output: DeleteSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_ids || input.session_ids.length === 0) {
       throw new ValidationError('session_ids must be a non-empty array');
@@ -512,7 +503,7 @@ export class ChatService {
         }
 
         // 3. 删除主表与 GraphDB 引用节点/边
-        await this.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new InfoCoreContext(), new DelInfoGraphOutput());
+        await this.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new DelInfoGraphOutput(), new InfoCoreContext());
         await this.relationDb.delete('info_raw', [
           { field: 'session_id', operator: Operator.EQ, value: sessionId },
         ]);
@@ -532,10 +523,7 @@ export class ChatService {
     return true;
   }
 
-  async searchSession(
-    input: SearchSessionInput,
-    _context: ChatContext,
-    output: SearchSessionOutput,
+  async soSession(input: SearchSessionInput, output: SearchSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
 
@@ -615,7 +603,7 @@ export class ChatService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     // ===== 新增：批量聚合会话统计（问答次数 / 字符数 / 标签 / token），避免逐会话 N+1 =====
     const sessionIds = selOutput.rows.map((r) => String(r.session_id ?? '')).filter(Boolean);
@@ -731,7 +719,7 @@ export class ChatService {
           ] as Condition[],
         });
         const cntOutput = Object.assign(new CountDBOutput(), {});
-        await this.relationDb.countDB(cntInput, new DBContext(), cntOutput);
+        await this.relationDb.countDB(cntInput, cntOutput, new DBContext());
         messageCount = cntOutput.count;
       } catch {
         /* degrade gracefully */
@@ -749,7 +737,7 @@ export class ChatService {
           },
         });
         const lastSelOutput = Object.assign(new SelectDBOutput(), {});
-        await this.relationDb.selectDB(lastSelInput, new DBContext(), lastSelOutput);
+        await this.relationDb.selectDB(lastSelInput, lastSelOutput, new DBContext());
         if (lastSelOutput.rows.length > 0) {
           lastMessageTime = lastSelOutput.rows[0].created as number;
           lastMessage = (lastSelOutput.rows[0].info as string) ?? '';
@@ -785,7 +773,7 @@ export class ChatService {
         conditions,
       });
       const totalOutput = Object.assign(new CountDBOutput(), {});
-      await this.relationDb.countDB(totalInput, new DBContext(), totalOutput);
+      await this.relationDb.countDB(totalInput, totalOutput, new DBContext());
       total = totalOutput.count;
     } catch {
       /* degrade gracefully */
@@ -796,10 +784,7 @@ export class ChatService {
     return true;
   }
 
-  async getSessionDetail(
-    input: GetSessionDetailInput,
-    _context: ChatContext,
-    output: GetSessionDetailOutput,
+  async soSessionDetail(input: GetSessionDetailInput, output: GetSessionDetailOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -810,7 +795,7 @@ export class ChatService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     if (!selOutput.row) {
       throw new NotFoundError('Session', input.session_id);
@@ -825,7 +810,7 @@ export class ChatService {
         ] as Condition[],
       });
       const cntOutput = Object.assign(new CountDBOutput(), {});
-      await this.relationDb.countDB(cntInput, new DBContext(), cntOutput);
+      await this.relationDb.countDB(cntInput, cntOutput, new DBContext());
       messageCount = cntOutput.count;
     } catch {
       /* degrade gracefully */
@@ -838,10 +823,7 @@ export class ChatService {
     return true;
   }
 
-  async updateSessionTitle(
-    input: UpdateSessionTitleInput,
-    _context: ChatContext,
-    output: UpdateSessionTitleOutput,
+  async updateSessionTitle(input: UpdateSessionTitleInput, output: UpdateSessionTitleOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -863,7 +845,7 @@ export class ChatService {
       ] as Condition[],
     });
     const updOutput = Object.assign(new UpdateDBOutput(), {});
-    await this.relationDb.updateDB(updInput, new DBContext(), updOutput);
+    await this.relationDb.updateDB(updInput, updOutput, new DBContext());
 
     if (updOutput.affected_rows === 0) {
       throw new NotFoundError('Session', input.session_id);
@@ -872,10 +854,7 @@ export class ChatService {
     return true;
   }
 
-  async checkSessionOverflow(
-    input: CheckSessionOverflowInput,
-    _context: ChatContext,
-    output: CheckSessionOverflowOutput,
+  async checkSessionOverflow(input: CheckSessionOverflowInput, output: CheckSessionOverflowOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let maxMessages = 1000;
     try {
@@ -883,7 +862,7 @@ export class ChatService {
         query_param: { table: 'chat_config' },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       if (selOutput.row) {
         maxMessages = (selOutput.row.max_messages_per_session as number) ?? 1000;
       }
@@ -900,7 +879,7 @@ export class ChatService {
         ] as Condition[],
       });
       const cntOutput = Object.assign(new CountDBOutput(), {});
-      await this.relationDb.countDB(cntInput, new DBContext(), cntOutput);
+      await this.relationDb.countDB(cntInput, cntOutput, new DBContext());
       messageCount = cntOutput.count;
     } catch {
       /* degrade gracefully */
@@ -912,10 +891,7 @@ export class ChatService {
     return true;
   }
 
-  async getChatHistory(
-    input: GetChatHistoryInput,
-    _context: ChatContext,
-    output: GetChatHistoryOutput,
+  async soChatHistory(input: GetChatHistoryInput, output: GetChatHistoryOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let lastN = input.lastN;
     if (lastN === undefined) {
@@ -925,7 +901,7 @@ export class ChatService {
           query_param: { table: 'chat_config' },
         });
         const selOutput = Object.assign(new SelectOneDBOutput(), {});
-        await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+        await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
         if (selOutput.row) {
           lastN = (selOutput.row.default_history_lastN as number) ?? 50;
         }
@@ -943,8 +919,8 @@ export class ChatService {
     const lastNOutput = new LastNInfoOutput();
     await this.infoCore.lastNInfo(
       lastNInput,
-      new InfoCoreContext(),
       lastNOutput,
+      new InfoCoreContext(),
     );
 
     const messages: GetChatHistoryOutput['messages'] = [];
@@ -965,7 +941,7 @@ export class ChatService {
     let graphRows: Array<{ citing_info_id: string; cited_info_id: string }> = [];
     try {
       const citeOut = new SoCitationEdgesOutput();
-      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), new InfoCoreContext(), citeOut);
+      await this.infoCore.soCitationEdges(new SoCitationEdgesInput(), citeOut, new InfoCoreContext());
       graphRows = citeOut.edges;
     } catch { /* degrade gracefully */ }
 
@@ -1006,10 +982,7 @@ export class ChatService {
     return true;
   }
 
-  async searchMessage(
-    input: SearchMessageInput,
-    _context: ChatContext,
-    output: SearchMessageOutput,
+  async soMessage(input: SearchMessageInput, output: SearchMessageOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.keyword || input.keyword.trim() === '') {
       throw new ValidationError('keyword cannot be empty');
@@ -1021,8 +994,8 @@ export class ChatService {
     const kwOutput = new KeywordKInfoOutput();
     await this.infoCore.keywordKInfo(
       kwInput,
-      new InfoCoreContext(),
       kwOutput,
+      new InfoCoreContext(),
     );
 
     let filteredList = kwOutput.list;
@@ -1049,7 +1022,7 @@ export class ChatService {
           },
         });
         const selOutput = Object.assign(new SelectOneDBOutput(), {});
-        await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+        await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
         if (selOutput.row) {
           summary = (selOutput.row.summary as string) ?? '';
         }
@@ -1073,10 +1046,7 @@ export class ChatService {
     return true;
   }
 
-  async pinMessage(
-    input: PinMessageInput,
-    _context: ChatContext,
-    output: PinMessageOutput,
+  async pinMessage(input: PinMessageInput, output: PinMessageOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('info_id is required');
@@ -1093,7 +1063,7 @@ export class ChatService {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       if (selOutput.row) {
         currentPin = (selOutput.row.pin as number) === 1;
       }
@@ -1107,8 +1077,8 @@ export class ChatService {
       });
       await this.infoCore.pinInfo(
         pinInput,
-        new InfoCoreContext(),
         new PinInfoOutput(),
+        new InfoCoreContext(),
       );
       output.pin = !currentPin;
     } catch (err: unknown) {
@@ -1123,10 +1093,7 @@ export class ChatService {
     return true;
   }
 
-  async getMessageGraph(
-    input: GetMessageGraphInput,
-    _context: ChatContext,
-    output: GetMessageGraphOutput,
+  async soMessageGraph(input: GetMessageGraphInput, output: GetMessageGraphOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -1138,8 +1105,8 @@ export class ChatService {
     const graphOutput = new GraphInfoOutput();
     await this.infoCore.graphInfo(
       graphInput,
-      new InfoCoreContext(),
       graphOutput,
+      new InfoCoreContext(),
     );
 
     output.graph_structure = {
@@ -1150,10 +1117,7 @@ export class ChatService {
     return true;
   }
 
-  async cancelWork(
-    input: CancelWorkInput,
-    _context: ChatContext,
-    output: CancelWorkOutput,
+  async cancelWork(input: CancelWorkInput, output: CancelWorkOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) {
       throw new ValidationError('work_id is required');
@@ -1167,7 +1131,7 @@ export class ChatService {
     const cancelContext = new OrchestrationEntryContext();
 
     try {
-      const ok = await this.orchestrationEntry.cancelWork(cancelInput, cancelContext, cancelOutput);
+      const ok = await this.orchestrationEntry.cancelWork(cancelInput, cancelOutput, cancelContext, metrics, report);
       output.cancelled = cancelOutput.cancelled;
       return ok;
     } catch (err: unknown) {
@@ -1180,10 +1144,7 @@ export class ChatService {
     }
   }
 
-  async confirmIntent(
-    input: ConfirmIntentInput,
-    _context: ChatContext,
-    output: ConfirmIntentOutput,
+  async confirmIntent(input: ConfirmIntentInput, output: ConfirmIntentOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.action) throw new ValidationError('action is required');
@@ -1197,7 +1158,7 @@ export class ChatService {
     const confirmOut = new OrchConfirmIntentOutput();
     const confirmCtx = new OrchestrationEntryContext();
 
-    const ok = await this.orchestrationEntry.confirmIntent(confirmIn, confirmCtx, confirmOut);
+    const ok = await this.orchestrationEntry.confirmIntent(confirmIn, confirmOut, confirmCtx, metrics, report);
     output.success = confirmOut.success;
     output.action_applied = confirmOut.action_applied;
     output.next_status = confirmOut.next_status;
@@ -1228,10 +1189,7 @@ export class ChatService {
     return ok;
   }
 
-  async submitClarification(
-    input: SubmitClarificationInput,
-    _context: ChatContext,
-    output: SubmitClarificationOutput,
+  async submitClarification(input: SubmitClarificationInput, output: SubmitClarificationOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.answers || input.answers.length === 0) throw new ValidationError('answers is required');
@@ -1244,7 +1202,7 @@ export class ChatService {
     const subOut = new OrchSubmitClarificationOutput();
     const subCtx = new OrchestrationEntryContext();
 
-    const ok = await this.orchestrationEntry.submitClarification(subIn, subCtx, subOut);
+    const ok = await this.orchestrationEntry.submitClarification(subIn, subOut, subCtx, metrics, report);
     output.success = subOut.success;
     output.final_response = subOut.final_response || '';
     output.interact_id = subOut.interact_id || '';
@@ -1273,16 +1231,13 @@ export class ChatService {
     return ok;
   }
 
-  async configChat(
-    input: ConfigChatInput,
-    _context: ChatContext,
-    output: ConfigChatOutput,
+  async configChat(input: ConfigChatInput, output: ConfigChatOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'chat_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
     const id = (current.id as string) || 'chat_config_default';
@@ -1320,7 +1275,7 @@ export class ChatService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     const outConfig: Record<string, unknown> = {};
@@ -1352,7 +1307,7 @@ export class ChatService {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
       if (selOutput.row) {
         const currentTitle = (selOutput.row.session_title as string) ?? '';
@@ -1363,7 +1318,7 @@ export class ChatService {
               session_id: sessionId,
               session_title: autoTitle,
             });
-            await this.updateSessionTitle(updInput, new ChatContext(), new UpdateSessionTitleOutput());
+            await this.updateSessionTitle(updInput, new UpdateSessionTitleOutput(), new ChatContext());
           }
         }
       }
@@ -1383,7 +1338,7 @@ export class ChatService {
         },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       return selOutput.row != null;
     } catch {
       return false;
