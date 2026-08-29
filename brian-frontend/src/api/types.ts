@@ -285,6 +285,31 @@ export interface ChatMessage {
   pin?: boolean
 }
 
+// ============================================================
+// 需求理解确认 / 需求补充（流式事件驱动的对话区内联卡片）
+// ============================================================
+
+/** 需求理解确认：IntentAgent 匹配得分低于阈值时，由 intent_confirmation_required 事件驱动 */
+export interface IntentConfirmation {
+  session_id: string
+  work_id: string
+  interact_id: string
+  original_query: string
+  understood_requirement: string
+  match_score: number
+  threshold_score: number
+  reasoning: string
+}
+
+/** 需求补充：Planner 识别出需用户补充参数才能执行的任务时，由 clarification_required 事件驱动 */
+export interface ClarificationRequest {
+  session_id: string
+  work_id: string
+  interact_id: string
+  original_query: string
+  clarifications: Array<{ question: string; domain?: string; answer: string }>
+}
+
 export interface ChatSession {
   sessionId: string
   sessionTitle?: string

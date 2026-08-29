@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, triggerRef } from 'vue'
-import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block, PlanningData, AgentDagData, AgentExecutionStatus, AgentRuntimeInfo } from '@/api/types'
+import type { ChatMessage, ChatSession, ChatMapNode, ChatMapEdge, AgentChainNode, Block, PlanningData, AgentDagData, AgentExecutionStatus, AgentRuntimeInfo, IntentConfirmation, ClarificationRequest } from '@/api/types'
 import { chatApi, visualizationApi } from '@/api'
 import { layoutChatMap } from '@/utils/chatMapLayout'
 
@@ -55,16 +55,6 @@ export const useSessionStore = defineStore('session', () => {
   const evalTraceId = ref('')
 
   // 需求理解确认弹窗：IntentAgent 匹配得分低于阈值时，由 intent_confirmation_required 事件驱动
-  interface IntentConfirmation {
-    session_id: string
-    work_id: string
-    interact_id: string
-    original_query: string
-    understood_requirement: string
-    match_score: number
-    threshold_score: number
-    reasoning: string
-  }
   const intentConfirmation = ref<IntentConfirmation | null>(null)
 
   function setIntentConfirmation(data: Record<string, unknown> | null) {
@@ -89,13 +79,6 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   // 需求补充弹窗：Planner 识别出需用户补充参数才能执行的任务时，由 clarification_required 事件驱动
-  interface ClarificationRequest {
-    session_id: string
-    work_id: string
-    interact_id: string
-    original_query: string
-    clarifications: Array<{ question: string; domain?: string; answer: string }>
-  }
   const clarificationRequest = ref<ClarificationRequest | null>(null)
 
   function setClarificationRequest(data: Record<string, unknown> | null) {
