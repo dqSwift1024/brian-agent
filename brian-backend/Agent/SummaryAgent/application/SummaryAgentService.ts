@@ -14,6 +14,7 @@ import {
 import {
   GetAgentInput, GetAgentOutput, UpdateAgentInput, UpdateAgentOutput, AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
+import { renderPromptWithFallback, resolveAgentLlm } from '../../shared/AgentKit';
 import {
   SummaryAgentContext,
   GenerateSummaryInput, GenerateSummaryOutput,
@@ -177,16 +178,6 @@ export class SummaryAgentService {
    * 通过 Core.matchLLM 解析 SummaryAgent 绑定的 LLM（agent_llm）。
    */
   private async resolveLlm(agentId: string): Promise<string> {
-    try {
-      const llmOut = new MatchLLMOutput();
-      await this.llmCore?.matchLLM(
-        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        llmOut,
-        new LLMCoreContext(),
-      );
-      return llmOut.llm_id || '';
-    } catch {
-      return '';
-    }
+    return resolveAgentLlm(this.llmCore, agentId);
   }
 }

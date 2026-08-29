@@ -35,6 +35,7 @@ import {
 } from '../../AgentLibrary/domain/types';
 import { parseJsonObject } from '../../shared/signature';
 import { formatContextCategories } from '@brian-agent/base';
+import { assertPromptExists, renderPromptWithFallback, resolveAgentLlm } from '../../shared/AgentKit';
 
 type TaskDag = PlanTaskDAG;
 
@@ -655,15 +656,7 @@ export class PlannerAgentService {
   }
 
   private async assertPrompt(id: string): Promise<void> {
-    const out = new SoPromptOutput();
-    await this.promptsAccess.soPrompt(
-      Object.assign(new SoPromptInput(), {
-        conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
-      }),
-      out,
-      new PromptContext(),
-    );
-    if (!out.list?.length) throw new ValidationError(`prompt_template_id 不存在: ${id}`);
+    await assertPromptExists(this.promptsAccess, id);
   }
 
   /**
@@ -674,35 +667,14 @@ export class PlannerAgentService {
     builtinId: string,
     variables: Record<string, unknown>,
   ): Promise<string> {
-    const id = templateId || builtinId;
-    try {
-      const promptOut = new ExecPromptOutput();
-      await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), { id, variables }),
-        promptOut,
-        new PromptContext(),
-      );
-      if (promptOut.prompt) return promptOut.prompt;
-    } catch { /* use fallback prompt */ }
-    const tpl = getBuiltinTemplate(builtinId);
-    return tpl ? renderTemplate(tpl, variables) : '';
+    return renderPromptWithFallback(this.promptsAccess, templateId, builtinId, variables);
   }
 
   /**
    * 通过 Core.matchLLM 解析 PlannerAgent 绑定的 LLM（agent_llm）。
    */
   private async resolveLlm(agentId: string): Promise<string> {
-    try {
-      const llmOut = new MatchLLMOutput();
-      await this.llmCore?.matchLLM(
-        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        llmOut,
-        new LLMCoreContext(),
-      );
-      return llmOut.llm_id || '';
-    } catch {
-      return '';
-    }
+    return resolveAgentLlm(this.llmCore, agentId);
   }
 
   private async getConfig(): Promise<PlannerAgentConfigRecord | null> {

@@ -8,6 +8,7 @@
  */
 
 import { Metrics, Report } from '@brian-agent/base';
+import { callLLMJson } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -447,34 +448,17 @@ export class SoulCoreService {
       '仅输出 JSON，不要包含其他内容。',
     ].join('\n');
 
-    // 最多重试 3 次，容忍 LLM 偶发失败 / 返回格式异常
-    let parsed: Record<string, unknown> | null = null;
-    let lastError = '未知错误';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const llmOutput = new ExecLLMOutput();
-      let ok = false;
-      try {
-        ok = await this.llmAccess.execLLM(
-          { id: llmId, prompt: generationPrompt },
-          llmOutput, new LLMContext(),
-        );
-      } catch {
-        break;
-      }
-      if (!ok) {
-        lastError = llmOutput.error ?? '未知错误';
-        continue;
-      }
-      parsed = JsonParser.parseObject(llmOutput.result);
-      if (parsed) {
-        break;
-      }
-      lastError = 'LLM 生成的 Soul JSON 解析失败';
-    }
-
-    if (!parsed) {
-      throw new ProcessingError(`Soul 生成失败: ${lastError}`);
-    }
+    // 最多重试 3 次，容忍 LLM 偶发失败 / 返回格式异常（callLLMJson 公共封装）
+    const parsed = await callLLMJson<Record<string, unknown>>(this.llmAccess, {
+      llmId,
+      prompt: generationPrompt,
+      retries: 2,
+      parse: (text) => JsonParser.parseObject(text),
+      onError: (err, attempt) =>
+        this.logger?.warn?.(`Soul 生成第 ${attempt} 次尝试失败`, { error: String(err) }),
+    }).catch((err: unknown) => {
+      throw new ProcessingError(`Soul 生成失败: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
     const addOutput = new AddSoulOutput();
     await this.soulAccess.addSoul(

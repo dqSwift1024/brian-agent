@@ -26,6 +26,7 @@ import {
 import { formatContextCategories } from '@brian-agent/base';
 import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
 import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
+import { renderPromptWithFallback, resolveAgentLlm } from '../../shared/AgentKit';
 
 const FORMAT_ENUM = ['TEXT', 'MARKDOWN', 'JSON'];
 const STYLE_ENUM = ['clear', 'concise', 'detailed', 'creative'];
@@ -458,35 +459,14 @@ export class WriterAgentService {
     builtinId: string,
     variables: Record<string, unknown>,
   ): Promise<string> {
-    const id = templateId || builtinId;
-    try {
-      const promptOut = new ExecPromptOutput();
-      await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), { id, variables }),
-        promptOut,
-        new PromptContext(),
-      );
-      if (promptOut.prompt) return promptOut.prompt;
-    } catch { /* use fallback prompt */ }
-    const tpl = getBuiltinTemplate(builtinId);
-    return tpl ? renderTemplate(tpl, variables) : '';
+    return renderPromptWithFallback(this.promptsAccess, templateId, builtinId, variables);
   }
 
   /**
    * 通过 Core.matchLLM 解析 WriterAgent 绑定的 LLM（agent_llm）。
    */
   private async resolveLlm(agentId: string): Promise<string> {
-    try {
-      const llmOut = new MatchLLMOutput();
-      await this.llmCore?.matchLLM(
-        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        llmOut,
-        new LLMCoreContext(),
-      );
-      return llmOut.llm_id || '';
-    } catch {
-      return '';
-    }
+    return resolveAgentLlm(this.llmCore, agentId);
   }
 
   private async getConfig(): Promise<WriterAgentConfigRecord | null> {

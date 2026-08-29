@@ -16,8 +16,8 @@
 
 | 方法 | 签名 | 返回 | 说明 |
 |------|------|------|------|
-| `soCpuUsage` | `input: SoCpuUsageInput, output: SoCpuUsageOutput, _context: SystemMonitorContext, _metr...` | `Promise<boolean>` | 采集 CPU 使用率（%） |
-| `soMemoryUsage` | `input: SoMemoryUsageInput, output: SoMemoryUsageOutput, _context: SystemMonitorContext,...` | `Promise<boolean>` | 采集内存使用率（%） |
+| `soCpuUsage` | `_input: SoCpuUsageInput, output: SoCpuUsageOutput, _context: SystemMonitorContext, _met...` | `Promise<boolean>` | 采集 CPU 使用率（%） |
+| `soMemoryUsage` | `_input: SoMemoryUsageInput, output: SoMemoryUsageOutput, _context: SystemMonitorContext...` | `Promise<boolean>` | 采集内存使用率（%） |
 | `soDiskUsage` | `input: SoDiskUsageInput, output: SoDiskUsageOutput, _context: SystemMonitorContext, _me...` | `Promise<boolean>` | 采集磁盘使用率（%） |
 | `soResource` | `input: SoResourceInput, output: SoResourceOutput, _context: SystemMonitorContext, _metr...` | `Promise<boolean>` | 一次性采集 CPU / 内存 / 磁盘使用率 |
 
@@ -27,10 +27,10 @@
 
 | 方法 | 签名 | 返回 | 说明 |
 |------|------|------|------|
-| `generateId` | `input: GenerateIdInput, output: GenerateIdOutput, _context: ToolContext, _metrics?: Met...` | `Promise<boolean>` | 生成一个 UUID v4 |
+| `generateId` | `_input: GenerateIdInput, output: GenerateIdOutput, _context: ToolContext, _metrics?: Me...` | `Promise<boolean>` | 生成一个 UUID v4 |
 | `generateIds` | `input: GenerateIdsInput, output: GenerateIdsOutput, _context: ToolContext, _metrics?: M...` | `Promise<boolean>` | 批量生成指定数量的 UUID |
-| `now` | `input: NowInput, output: NowOutput, _context: ToolContext, _metrics?: Metrics, _report?...` | `Promise<boolean>` | 当前毫秒时间戳 |
-| `today` | `input: TodayInput, output: TodayOutput, _context: ToolContext, _metrics?: Metrics, _rep...` | `Promise<boolean>` | 当天日期（YYYY-MM-DD） |
+| `now` | `_input: NowInput, output: NowOutput, _context: ToolContext, _metrics?: Metrics, _report...` | `Promise<boolean>` | 当前毫秒时间戳 |
+| `today` | `_input: TodayInput, output: TodayOutput, _context: ToolContext, _metrics?: Metrics, _re...` | `Promise<boolean>` | 当天日期（YYYY-MM-DD） |
 | `jsonCheck` | `input: JsonCheckInput, output: JsonCheckOutput, _context: ToolContext, _metrics?: Metri...` | `Promise<boolean>` | 检查 JSON 合法性 |
 | `jsonFormat` | `input: JsonFormatInput, output: JsonFormatOutput, _context: ToolContext, _metrics?: Met...` | `Promise<boolean>` | 格式化（美化）JSON |
 | `jsonMinify` | `input: JsonMinifyInput, output: JsonMinifyOutput, _context: ToolContext, _metrics?: Met...` | `Promise<boolean>` | 压缩（minify）JSON |

@@ -12,8 +12,8 @@
 | `start` | `` | `void` | 启动调度循环 |
 | `stop` | `` | `void` | 停止调度循环 |
 | `listCronTasks` | `_input: ListCronTasksInput, output: ListCronTasksOutput, _context: CronContext, _metric...` | `Promise<boolean>` | — |
-| `soCronTask` | `input: GetCronTaskInput, output: GetCronTaskOutput, _context: CronContext, metrics?: Me...` | `Promise<boolean>` | — |
-| `setCronTask` | `input: SetCronTaskInput, output: SetCronTaskOutput, _context: CronContext, metrics?: Me...` | `Promise<boolean>` | — |
+| `soCronTask` | `input: GetCronTaskInput, output: GetCronTaskOutput, _context: CronContext, _metrics?: M...` | `Promise<boolean>` | — |
+| `setCronTask` | `input: SetCronTaskInput, output: SetCronTaskOutput, _context: CronContext, _metrics?: M...` | `Promise<boolean>` | — |
 | `setCronTaskEnabled` | `input: SetCronTaskEnabledInput, output: SetCronTaskEnabledOutput, _context: CronContext...` | `Promise<boolean>` | — |
-| `triggerCronTask` | `input: TriggerCronTaskInput, output: TriggerCronTaskOutput, _context: CronContext, metr...` | `Promise<boolean>` | — |
-| `listCronTaskRuns` | `input: ListCronTaskRunsInput, output: ListCronTaskRunsOutput, _context: CronContext, me...` | `Promise<boolean>` | — |
+| `triggerCronTask` | `input: TriggerCronTaskInput, output: TriggerCronTaskOutput, _context: CronContext, _met...` | `Promise<boolean>` | — |
+| `listCronTaskRuns` | `input: ListCronTaskRunsInput, output: ListCronTaskRunsOutput, _context: CronContext, _m...` | `Promise<boolean>` | — |

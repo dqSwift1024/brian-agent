@@ -8,6 +8,7 @@ export {
   OperationType,
   VisualScope,
 } from './QueryObjects';
+export { toDataObject, newRecord, newPatch } from './RecordBuilder';
 export type {
   Condition,
   OrderBy,

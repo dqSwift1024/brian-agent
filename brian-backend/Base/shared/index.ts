@@ -71,3 +71,7 @@ export type { PlatformInfo, LoadResult } from './native/NativeLoader';
 // Prompt 模板配置键常量
 export { PROMPT_SLOTS } from './prompt/PromptConfigKeys';
 export type { PromptSlot } from './prompt/PromptConfigKeys';
+
+// LLM 调用 + JSON 解析公共封装
+export { callLLMJson } from './llm/CallLLMJson';
+export type { CallLLMJsonOptions } from './llm/CallLLMJson';
