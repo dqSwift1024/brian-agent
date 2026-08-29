@@ -8,6 +8,7 @@
  * 3. MQCoreProvider 无 DB 表依赖，无需 SchemaInitializer 或 initialize 步骤。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { MQAccess } from '@brian-agent/base';
 import { AopProxy, type Logger } from '@brian-agent/base';
 import { MQCoreService } from '../application/MQCoreService';
@@ -34,15 +35,13 @@ import {
  * const startOutput = new StartWorkerOutput();
  * await mqCore.startWorker(
  *   { queue: 'tasks', handler: async (msg) => { ... } },
- *   new MQCoreContext(),
- *   startOutput,
+ *   startOutput, new MQCoreContext(),
  * );
  * // 稍后停止
  * const stopOutput = new StopWorkerOutput();
  * await mqCore.stopWorker(
  *   { identifier: startOutput.worker_id },
- *   new MQCoreContext(),
- *   stopOutput,
+ *   stopOutput, new MQCoreContext(),
  * );
  * ```
  */
@@ -59,29 +58,20 @@ export class MQCoreAccess {
   }
 
   /** 启动一个轮询消费工作器 */
-  async startWorker(
-    input: StartWorkerInput,
-    context: MQCoreContext,
-    output: StartWorkerOutput,
+  async startWorker(input: StartWorkerInput, output: StartWorkerOutput, context: MQCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.startWorker(input, context, output);
+    return this.service.startWorker(input, output, context, metrics, report);
   }
 
   /** 停止工作器（按 ID 或队列名称） */
-  async stopWorker(
-    input: StopWorkerInput,
-    context: MQCoreContext,
-    output: StopWorkerOutput,
+  async stopWorker(input: StopWorkerInput, output: StopWorkerOutput, context: MQCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.stopWorker(input, context, output);
+    return this.service.stopWorker(input, output, context, metrics, report);
   }
 
   /** 查询运行中的工作器 */
-  async soWorker(
-    input: SoWorkerInput,
-    context: MQCoreContext,
-    output: SoWorkerOutput,
+  async soWorker(input: SoWorkerInput, output: SoWorkerOutput, context: MQCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soWorker(input, context, output);
+    return this.service.soWorker(input, output, context, metrics, report);
   }
 }

@@ -2,6 +2,7 @@
  * @fileoverview CDTCoreProvider 接入层。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, CDTAccess } from '@brian-agent/base';
 import { AopProxy, type Logger } from '@brian-agent/base';
 import { CDTCoreSchemaInitializer } from '../infrastructure/CDTCoreSchemaInitializer';
@@ -33,43 +34,43 @@ export class CDTCoreAccess {
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
-  async navigate(i: CDTCoreNavigateInput, c: CDTCoreContext, o: CDTCoreNavigateOutput) {
-    return this.service.navigate(i, c, o);
+  async navigate(i: CDTCoreNavigateInput, o: CDTCoreNavigateOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.navigate(i, o, c, metrics, report);
   }
 
-  async typeText(i: CDTCoreTypeTextInput, c: CDTCoreContext, o: CDTCoreTypeTextOutput) {
-    return this.service.typeText(i, c, o);
+  async typeText(i: CDTCoreTypeTextInput, o: CDTCoreTypeTextOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.typeText(i, o, c, metrics, report);
   }
 
-  async click(i: CDTCoreClickInput, c: CDTCoreContext, o: CDTCoreClickOutput) {
-    return this.service.click(i, c, o);
+  async click(i: CDTCoreClickInput, o: CDTCoreClickOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.click(i, o, c, metrics, report);
   }
 
-  async scroll(i: CDTCoreScrollInput, c: CDTCoreContext, o: CDTCoreScrollOutput) {
-    return this.service.scroll(i, c, o);
+  async scroll(i: CDTCoreScrollInput, o: CDTCoreScrollOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.scroll(i, o, c, metrics, report);
   }
 
-  async evaluate(i: CDTCoreEvaluateInput, c: CDTCoreContext, o: CDTCoreEvaluateOutput) {
-    return this.service.evaluate(i, c, o);
+  async evaluate(i: CDTCoreEvaluateInput, o: CDTCoreEvaluateOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.evaluate(i, o, c, metrics, report);
   }
 
-  async login(i: CDTCoreLoginInput, c: CDTCoreContext, o: CDTCoreLoginOutput) {
-    return this.service.login(i, c, o);
+  async login(i: CDTCoreLoginInput, o: CDTCoreLoginOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.login(i, o, c, metrics, report);
   }
 
-  async getLoginState(i: CDTCoreGetLoginStateInput, c: CDTCoreContext, o: CDTCoreGetLoginStateOutput) {
-    return this.service.getLoginState(i, c, o);
+  async getLoginState(i: CDTCoreGetLoginStateInput, o: CDTCoreGetLoginStateOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.getLoginState(i, o, c, metrics, report);
   }
 
-  async getCookies(i: CDTCoreGetCookiesInput, c: CDTCoreContext, o: CDTCoreGetCookiesOutput) {
-    return this.service.getCookies(i, c, o);
+  async getCookies(i: CDTCoreGetCookiesInput, o: CDTCoreGetCookiesOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.getCookies(i, o, c, metrics, report);
   }
 
-  async saveSession(i: CDTCoreSaveSessionInput, c: CDTCoreContext, o: CDTCoreSaveSessionOutput) {
-    return this.service.saveSession(i, c, o);
+  async saveSession(i: CDTCoreSaveSessionInput, o: CDTCoreSaveSessionOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.saveSession(i, o, c, metrics, report);
   }
 
-  async restoreSession(i: CDTCoreRestoreSessionInput, c: CDTCoreContext, o: CDTCoreRestoreSessionOutput) {
-    return this.service.restoreSession(i, c, o);
+  async restoreSession(i: CDTCoreRestoreSessionInput, o: CDTCoreRestoreSessionOutput, c: CDTCoreContext, metrics?: Metrics, report?: Report) {
+    return this.service.restoreSession(i, o, c, metrics, report);
   }
 }

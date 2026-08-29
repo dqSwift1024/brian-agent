@@ -7,6 +7,7 @@
  * 实现所有用例：matchSoul / optSoul / ageSoul / soSoulRule / updateSoulRule / configSoulCore。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -113,10 +114,7 @@ export class SoulCoreService {
   /**
    * 为 Agent 匹配 Soul（persona，三层统一匹配/选择逻辑）。
    */
-  async matchSoul(
-    input: MatchSoulInput,
-    _context: SoulCoreContext,
-    output: MatchSoulOutput,
+  async matchSoul(input: MatchSoulInput, output: MatchSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { agent_id, context_id, interact_id, task_content, task_domain } = input;
     if (!agent_id) {
@@ -131,8 +129,7 @@ export class SoulCoreService {
     const soOutput = new SoSoulOutput();
     await this.soulAccess.soSoul(
       { conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }] },
-      new SoulContext(),
-      soOutput,
+      soOutput, new SoulContext(),
     );
     const availableSouls = soOutput.list;
 
@@ -186,10 +183,7 @@ export class SoulCoreService {
    * 4. 若候选更好则更新 agent_soul；
    * 5. 记录使用到 soul_core_usage。
    */
-  async optSoul(
-    input: OptSoulInput,
-    _context: SoulCoreContext,
-    output: OptSoulOutput,
+  async optSoul(input: OptSoulInput, output: OptSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { agent_id, soul_id } = input;
     if (!agent_id) {
@@ -239,8 +233,7 @@ export class SoulCoreService {
     // 5. 记录使用到 Soul Provider（Base 层）
     await this.soulAccess.recordSoulUsage(
       { soul_id } as RecordSoulUsageInput,
-      new SoulContext(),
-      new RecordSoulUsageOutput(),
+      new RecordSoulUsageOutput(), new SoulContext(),
     );
 
     // 6. 记录使用到 soul_core_usage
@@ -257,10 +250,7 @@ export class SoulCoreService {
   /**
    * 依据 soul_opt_rule 规则老化不活跃的 Soul。
    */
-  async ageSoul(
-    _input: AgeSoulInput,
-    _context: SoulCoreContext,
-    output: AgeSoulOutput,
+  async ageSoul(_input: AgeSoulInput, output: AgeSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const engine = new AgingEngine(this.relationDb);
     const count = await engine.age({
@@ -273,8 +263,7 @@ export class SoulCoreService {
         const updateOutput = new UpdateSoulOutput();
         await this.soulAccess.updateSoul(
           { conditions: [{ field: 'id', operator: Operator.EQ, value: entityId }], data: { enable: false } },
-          new SoulContext(),
-          updateOutput,
+          updateOutput, new SoulContext(),
         );
       },
     });
@@ -289,10 +278,7 @@ export class SoulCoreService {
   /**
    * 查询 Soul 优化规则。
    */
-  async soSoulRule(
-    input: SoSoulRuleInput,
-    _context: SoulCoreContext,
-    output: SoSoulRuleOutput,
+  async soSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(SOUL_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -315,10 +301,7 @@ export class SoulCoreService {
   /**
    * 批量更新 Soul 优化规则（事务）。
    */
-  async updateSoulRule(
-    input: UpdateSoulRuleInput,
-    _context: SoulCoreContext,
-    _output: UpdateSoulRuleOutput,
+  async updateSoulRule(input: UpdateSoulRuleInput, _output: UpdateSoulRuleOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.operations || input.operations.length === 0) {
       throw new ValidationError('updateSoulRule 需要提供 operations');
@@ -390,8 +373,7 @@ export class SoulCoreService {
   //         const getPromptOutput = new GetPromptOutput();
   //         await this.promptsAccess.soPromptById(
   //           { id: input.prompt_template_id } as GetPromptInput,
-  //           new PromptContext(),
-  //           getPromptOutput,
+  //           getPromptOutput, new PromptContext(),
   //         );
   //         if (!getPromptOutput.prompt) {
   //           throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -422,10 +404,7 @@ export class SoulCoreService {
   // }
 
   // ===== 修改后的方法 =====
-  async configSoulCore(
-    input: ConfigSoulCoreInput,
-    _context: SoulCoreContext,
-    output: ConfigSoulCoreOutput,
+  async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
@@ -449,8 +428,7 @@ export class SoulCoreService {
           const getPromptOutput = new GetPromptOutput();
           await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -533,8 +511,7 @@ export class SoulCoreService {
     const getOutput = new GetSoulOutput();
     await this.soulAccess.soSoulById(
       { id: soulId } as GetSoulInput,
-      new SoulContext(),
-      getOutput,
+      getOutput, new SoulContext(),
     );
     if (!getOutput.soul) return null;
     return {
@@ -592,8 +569,7 @@ export class SoulCoreService {
       try {
         ok = await this.llmAccess.execLLM(
           { id: llmId, prompt: generationPrompt },
-          new LLMContext(),
-          llmOutput,
+          llmOutput, new LLMContext(),
         );
       } catch {
         break;
@@ -622,8 +598,7 @@ export class SoulCoreService {
           soul_usage: this.asTrimmedString(parsed.soul_usage) || '通用对话、信息查询、任务辅助',
         },
       } as AddSoulInput,
-      new SoulContext(),
-      addOutput,
+      addOutput, new SoulContext(),
     );
 
     return addOutput.id;
@@ -670,8 +645,7 @@ export class SoulCoreService {
           id: config.prompt_template_id,
           variables: selectionVariables,
         } as ExecPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       selectionPrompt = execPromptOutput.prompt;
       if (!selectionPrompt) selectionPrompt = this.renderDefault(selectionVariables);
@@ -690,8 +664,7 @@ export class SoulCoreService {
           temperature: 0.1,
           max_tokens: 256,
         } as ExecLLMInput,
-        new LLMContext(),
-        execLLMOutput,
+        execLLMOutput, new LLMContext(),
       );
     } catch {
       ok = false;
@@ -781,8 +754,7 @@ export class SoulCoreService {
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
       { id: llmId, prompt, temperature: 0.1, max_tokens: 256 },
-      new LLMContext(),
-      llmOutput,
+      llmOutput, new LLMContext(),
     );
     if (!ok) {
       throw new ProcessingError(

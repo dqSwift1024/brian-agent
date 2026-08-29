@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -57,7 +58,7 @@ describe('MCPCoreProvider', () => {
   describe('configMCPCore', () => {
     it('should return default config when no config set', async () => {
       const output = new ConfigMcpCoreOutput();
-      await mcpCore.configMCPCore(new ConfigMcpCoreInput(), new McpCoreContext(), output);
+      await mcpCore.configMCPCore(new ConfigMcpCoreInput(), output, new McpCoreContext());
       expect(output.config).not.toBeNull();
       expect(output.config!.regen_rate).toBeGreaterThanOrEqual(0);
       expect(output.config!.prompt_template_id).toBeDefined();
@@ -67,7 +68,7 @@ describe('MCPCoreProvider', () => {
       const input = new ConfigMcpCoreInput();
       input.regen_rate = 150;
       await expect(
-        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+        mcpCore.configMCPCore(input, new ConfigMcpCoreOutput(), new McpCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -75,7 +76,7 @@ describe('MCPCoreProvider', () => {
       const input = new ConfigMcpCoreInput();
       input.regen_rate = -5;
       await expect(
-        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+        mcpCore.configMCPCore(input, new ConfigMcpCoreOutput(), new McpCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -83,7 +84,7 @@ describe('MCPCoreProvider', () => {
       const input = new ConfigMcpCoreInput();
       input.regen_rate = 50;
       const output = new ConfigMcpCoreOutput();
-      await mcpCore.configMCPCore(input, new McpCoreContext(), output);
+      await mcpCore.configMCPCore(input, output, new McpCoreContext());
       expect(output.config!.regen_rate).toBe(50);
     });
 
@@ -92,13 +93,13 @@ describe('MCPCoreProvider', () => {
       const addInput = new AddPromptInput();
       addInput.data = { prompt_template_title: 'Test MCP Prompt', prompt_template: 'test template' };
       const addOutput = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      await promptsAccess.addPrompt(addInput, addOutput, new PromptContext());
       const realId = addOutput.id;
 
       const input = new ConfigMcpCoreInput();
       input.prompt_template_id = realId;
       const output = new ConfigMcpCoreOutput();
-      await mcpCore.configMCPCore(input, new McpCoreContext(), output);
+      await mcpCore.configMCPCore(input, output, new McpCoreContext());
       expect(output.config!.prompt_template_id).toBe(realId);
     });
 
@@ -106,28 +107,27 @@ describe('MCPCoreProvider', () => {
       const input = new ConfigMcpCoreInput();
       input.prompt_template_id = IdGenerator.generate();
       await expect(
-        mcpCore.configMCPCore(input, new McpCoreContext(), new ConfigMcpCoreOutput()),
+        mcpCore.configMCPCore(input, new ConfigMcpCoreOutput(), new McpCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('should preserve existing values when not specified', async () => {
       await mcpCore.configMCPCore(
         { regen_rate: 30 } as ConfigMcpCoreInput,
-        new McpCoreContext(),
-        new ConfigMcpCoreOutput(),
+        new ConfigMcpCoreOutput(), new McpCoreContext(),
       );
 
       const input = new ConfigMcpCoreInput();
       input.regen_rate = 60;
       const output = new ConfigMcpCoreOutput();
-      await mcpCore.configMCPCore(input, new McpCoreContext(), output);
+      await mcpCore.configMCPCore(input, output, new McpCoreContext());
 
       expect(output.config!.regen_rate).toBe(60);
     });
 
     it('should set elapsed_ms on output', async () => {
       const output = new ConfigMcpCoreOutput();
-      await mcpCore.configMCPCore(new ConfigMcpCoreInput(), new McpCoreContext(), output);
+      await mcpCore.configMCPCore(new ConfigMcpCoreInput(), output, new McpCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
   });
@@ -137,7 +137,7 @@ describe('MCPCoreProvider', () => {
       const input = new MatchMcpInput();
       input.agent_id = 'agent-1';
       const output = new MatchMcpOutput();
-      const result = await mcpCore.matchMCP(input, new McpCoreContext(), output);
+      const result = await mcpCore.matchMCP(input, output, new McpCoreContext());
       expect(result).toBe(true);
       expect(output.mcp_ids).toEqual([]);
       expect(output.mcp_details).toEqual([]);
@@ -179,7 +179,7 @@ describe('MCPCoreProvider', () => {
       const input = new MatchMcpInput();
       input.agent_id = 'agent-cached';
       const output = new MatchMcpOutput();
-      await mcpCore.matchMCP(input, new McpCoreContext(), output);
+      await mcpCore.matchMCP(input, output, new McpCoreContext());
       expect(output.mcp_ids).toContain('mcp-1');
     });
   });
@@ -190,7 +190,7 @@ describe('MCPCoreProvider', () => {
       input.agent_id = 'agent-opt';
       input.mcp_id = 'mcp-opt-1';
       const output = new OptMcpOutput();
-      const result = await mcpCore.optMCP(input, new McpCoreContext(), output);
+      const result = await mcpCore.optMCP(input, output, new McpCoreContext());
       expect(result).toBe(true);
       expect(output.id).toBeTruthy();
     });
@@ -201,10 +201,10 @@ describe('MCPCoreProvider', () => {
       input.mcp_id = 'mcp-idempotent';
 
       const out1 = new OptMcpOutput();
-      await mcpCore.optMCP(input, new McpCoreContext(), out1);
+      await mcpCore.optMCP(input, out1, new McpCoreContext());
 
       const out2 = new OptMcpOutput();
-      await mcpCore.optMCP(input, new McpCoreContext(), out2);
+      await mcpCore.optMCP(input, out2, new McpCoreContext());
 
       expect(out1.id).toBe(out2.id);
     });
@@ -215,13 +215,13 @@ describe('MCPCoreProvider', () => {
       mcp1.agent_id = agentId;
       mcp1.mcp_id = 'mcp-multi-1';
       const out1 = new OptMcpOutput();
-      await mcpCore.optMCP(mcp1, new McpCoreContext(), out1);
+      await mcpCore.optMCP(mcp1, out1, new McpCoreContext());
 
       const mcp2 = new OptMcpInput();
       mcp2.agent_id = agentId;
       mcp2.mcp_id = 'mcp-multi-2';
       const out2 = new OptMcpOutput();
-      await mcpCore.optMCP(mcp2, new McpCoreContext(), out2);
+      await mcpCore.optMCP(mcp2, out2, new McpCoreContext());
 
       expect(out1.id).not.toBe(out2.id);
     });

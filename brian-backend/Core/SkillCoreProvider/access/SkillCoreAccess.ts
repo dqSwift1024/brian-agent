@@ -9,6 +9,7 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SkillAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -47,8 +48,7 @@ import {
  * const output = new MatchSkillOutput();
  * await skillCore.matchSkill(
  *   { agent_id: '...', context_id: '...', interact_id: '...' },
- *   new SkillCoreContext(),
- *   output,
+ *   output, new SkillCoreContext(),
  * );
  * ```
  */
@@ -82,56 +82,38 @@ export class SkillCoreAccess {
   }
 
   /** 匹配 Skill（带缓存与 LLM 排序） */
-  async matchSkill(
-    input: MatchSkillInput,
-    context: SkillCoreContext,
-    output: MatchSkillOutput,
+  async matchSkill(input: MatchSkillInput, output: MatchSkillOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.matchSkill(input, context, output);
+    return this.service.matchSkill(input, output, context, metrics, report);
   }
 
   /** 自动绑定 Skill 并记录使用 */
-  async optSkill(
-    input: OptSkillInput,
-    context: SkillCoreContext,
-    output: OptSkillOutput,
+  async optSkill(input: OptSkillInput, output: OptSkillOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.optSkill(input, context, output);
+    return this.service.optSkill(input, output, context, metrics, report);
   }
 
   /** 年龄化过期 Skill */
-  async ageSkill(
-    input: AgeSkillInput,
-    context: SkillCoreContext,
-    output: AgeSkillOutput,
+  async ageSkill(input: AgeSkillInput, output: AgeSkillOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.ageSkill(input, context, output);
+    return this.service.ageSkill(input, output, context, metrics, report);
   }
 
   /** 查询 Skill 优化规则 */
-  async soSkillRule(
-    input: SoSkillRuleInput,
-    context: SkillCoreContext,
-    output: SoSkillRuleOutput,
+  async soSkillRule(input: SoSkillRuleInput, output: SoSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soSkillRule(input, context, output);
+    return this.service.soSkillRule(input, output, context, metrics, report);
   }
 
   /** 批量更新 Skill 优化规则 */
-  async updateSkillRule(
-    input: UpdateSkillRuleInput,
-    context: SkillCoreContext,
-    output: UpdateSkillRuleOutput,
+  async updateSkillRule(input: UpdateSkillRuleInput, output: UpdateSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSkillRule(input, context, output);
+    return this.service.updateSkillRule(input, output, context, metrics, report);
   }
 
   /** 返回 skill_core_config 配置 */
-  async configSkillCore(
-    input: ConfigSkillCoreInput,
-    context: SkillCoreContext,
-    output: ConfigSkillCoreOutput,
+  async configSkillCore(input: ConfigSkillCoreInput, output: ConfigSkillCoreOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configSkillCore(input, context, output);
+    return this.service.configSkillCore(input, output, context, metrics, report);
   }
 }

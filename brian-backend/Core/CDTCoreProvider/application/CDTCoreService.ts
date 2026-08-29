@@ -4,6 +4,7 @@
  * 基于 CDTProvider 提供拟人化浏览器操作、登录支持与会话持久化。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import { IdGenerator, ValidationError, NotFoundError, Operator } from '@brian-agent/base';
 import type { CDTAccess } from '@brian-agent/base';
@@ -50,7 +51,7 @@ export class CDTCoreService {
   /** 确保 CDT 已启动 */
   private async ensureCDT(): Promise<boolean> {
     const startOutput = new StartCDTOutput();
-    await this.cdtAccess.startCDT(new StartCDTInput(), this.cdtContext, startOutput);
+    await this.cdtAccess.startCDT(new StartCDTInput(), startOutput, this.cdtContext);
     return !startOutput.error;
   }
 
@@ -58,7 +59,7 @@ export class CDTCoreService {
   private async exec(method: string, params?: Record<string, unknown>): Promise<ExecCDPOutput> {
     const input = Object.assign(new ExecCDPInput(), { method, params });
     const output = new ExecCDPOutput();
-    await this.cdtAccess.execCDP(input, this.cdtContext, output);
+    await this.cdtAccess.execCDP(input, output, this.cdtContext);
     return output;
   }
 
@@ -66,10 +67,7 @@ export class CDTCoreService {
   // 页面导航
   // ============================================================
 
-  async navigate(
-    input: CDTCoreNavigateInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreNavigateOutput,
+  async navigate(input: CDTCoreNavigateInput, output: CDTCoreNavigateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.url) throw new ValidationError('url 不能为空');
 
@@ -92,10 +90,7 @@ export class CDTCoreService {
   // 拟人化输入
   // ============================================================
 
-  async typeText(
-    input: CDTCoreTypeTextInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreTypeTextOutput,
+  async typeText(input: CDTCoreTypeTextInput, output: CDTCoreTypeTextOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.selector) throw new ValidationError('selector 不能为空');
     if (!input.text) throw new ValidationError('text 不能为空');
@@ -134,10 +129,7 @@ export class CDTCoreService {
   // 拟人化点击
   // ============================================================
 
-  async click(
-    input: CDTCoreClickInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreClickOutput,
+  async click(input: CDTCoreClickInput, output: CDTCoreClickOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.selector) throw new ValidationError('selector 不能为空');
 
@@ -193,10 +185,7 @@ export class CDTCoreService {
   // 滚动
   // ============================================================
 
-  async scroll(
-    input: CDTCoreScrollInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreScrollOutput,
+  async scroll(input: CDTCoreScrollInput, output: CDTCoreScrollOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.ensureCDT();
 
@@ -222,10 +211,7 @@ export class CDTCoreService {
   // 执行 JavaScript
   // ============================================================
 
-  async evaluate(
-    input: CDTCoreEvaluateInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreEvaluateOutput,
+  async evaluate(input: CDTCoreEvaluateInput, output: CDTCoreEvaluateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.expression) throw new ValidationError('expression 不能为空');
 
@@ -249,10 +235,7 @@ export class CDTCoreService {
   // 登录（含验证码支持）
   // ============================================================
 
-  async login(
-    input: CDTCoreLoginInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreLoginOutput,
+  async login(input: CDTCoreLoginInput, output: CDTCoreLoginOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.domain) throw new ValidationError('domain 不能为空');
     if (!input.loginUrl) throw new ValidationError('loginUrl 不能为空');
@@ -262,8 +245,7 @@ export class CDTCoreService {
     // 导航到登录页面
     await this.navigate(
       Object.assign(new CDTCoreNavigateInput(), { url: input.loginUrl }),
-      new CDTCoreContext(),
-      new CDTCoreNavigateOutput(),
+      new CDTCoreNavigateOutput(), new CDTCoreContext(),
     );
 
     await this.humanDelay(1000, 2000);
@@ -312,8 +294,7 @@ export class CDTCoreService {
     if (input.usernameField && input.username) {
       await this.typeText(
         Object.assign(new CDTCoreTypeTextInput(), { selector: input.usernameField, text: input.username }),
-        new CDTCoreContext(),
-        new CDTCoreTypeTextOutput(),
+        new CDTCoreTypeTextOutput(), new CDTCoreContext(),
       );
       await this.humanDelay(500, 1000);
     }
@@ -322,8 +303,7 @@ export class CDTCoreService {
     if (input.passwordField && input.password) {
       await this.typeText(
         Object.assign(new CDTCoreTypeTextInput(), { selector: input.passwordField, text: input.password }),
-        new CDTCoreContext(),
-        new CDTCoreTypeTextOutput(),
+        new CDTCoreTypeTextOutput(), new CDTCoreContext(),
       );
       await this.humanDelay(500, 1500);
     }
@@ -332,8 +312,7 @@ export class CDTCoreService {
     if (input.submitSelector) {
       await this.click(
         Object.assign(new CDTCoreClickInput(), { selector: input.submitSelector }),
-        new CDTCoreContext(),
-        new CDTCoreClickOutput(),
+        new CDTCoreClickOutput(), new CDTCoreContext(),
       );
     }
 
@@ -357,8 +336,7 @@ export class CDTCoreService {
     const cookiesOut = new CDTCoreGetCookiesOutput();
     await this.getCookies(
       new CDTCoreGetCookiesInput(),
-      new CDTCoreContext(),
-      cookiesOut,
+      cookiesOut, new CDTCoreContext(),
     );
 
     const sessionId = IdGenerator.generate();
@@ -419,10 +397,7 @@ export class CDTCoreService {
   // 登录状态查询
   // ============================================================
 
-  async getLoginState(
-    input: CDTCoreGetLoginStateInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreGetLoginStateOutput,
+  async getLoginState(input: CDTCoreGetLoginStateInput, output: CDTCoreGetLoginStateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = this.relationDb.queryRaw<CDTLoginCredentialRecord>(
       `SELECT * FROM "${CDT_LOGIN_CREDENTIAL_TABLE}" WHERE "domain" = ? ORDER BY "last_login_time" DESC LIMIT 1`,
@@ -445,10 +420,7 @@ export class CDTCoreService {
   // Cookies 管理
   // ============================================================
 
-  async getCookies(
-    _input: CDTCoreGetCookiesInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreGetCookiesOutput,
+  async getCookies(_input: CDTCoreGetCookiesInput, output: CDTCoreGetCookiesOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.ensureCDT();
 
@@ -468,10 +440,7 @@ export class CDTCoreService {
   // 会话保存
   // ============================================================
 
-  async saveSession(
-    input: CDTCoreSaveSessionInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreSaveSessionOutput,
+  async saveSession(input: CDTCoreSaveSessionInput, output: CDTCoreSaveSessionOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.sessionName) throw new ValidationError('sessionName 不能为空');
 
@@ -516,10 +485,7 @@ export class CDTCoreService {
   // 会话恢复
   // ============================================================
 
-  async restoreSession(
-    input: CDTCoreRestoreSessionInput,
-    _ctx: CDTCoreContext,
-    output: CDTCoreRestoreSessionOutput,
+  async restoreSession(input: CDTCoreRestoreSessionInput, output: CDTCoreRestoreSessionOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.sessionName) throw new ValidationError('sessionName 不能为空');
 
@@ -541,8 +507,7 @@ export class CDTCoreService {
     if (record.last_url) {
       await this.navigate(
         Object.assign(new CDTCoreNavigateInput(), { url: record.last_url, waitForLoad: true }),
-        new CDTCoreContext(),
-        new CDTCoreNavigateOutput(),
+        new CDTCoreNavigateOutput(), new CDTCoreContext(),
       );
     }
 

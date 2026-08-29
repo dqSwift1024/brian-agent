@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -39,7 +40,7 @@ describe('MQCoreProvider', () => {
   });
 
   afterEach(async () => {
-    try { await mqCore.stopWorker({ identifier: 'test-queue' }, new MQCoreContext(), new StopWorkerOutput()); } catch { /* ignore */ }
+    try { await mqCore.stopWorker({ identifier: 'test-queue' }, new StopWorkerOutput(), new MQCoreContext()); } catch { /* ignore */ }
     try { await relationDb.closeDB(); } catch { /* ignore */ }
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
@@ -53,7 +54,7 @@ describe('MQCoreProvider', () => {
       input.interval = 500;
       const output = new StartWorkerOutput();
 
-      const result = await mqCore.startWorker(input, new MQCoreContext(), output);
+      const result = await mqCore.startWorker(input, output, new MQCoreContext());
       expect(result).toBe(true);
       expect(output.worker_id).toBeTruthy();
       expect(typeof output.worker_id).toBe('string');
@@ -66,7 +67,7 @@ describe('MQCoreProvider', () => {
       input.handler = handler;
       const output = new StartWorkerOutput();
 
-      await mqCore.startWorker(input, new MQCoreContext(), output);
+      await mqCore.startWorker(input, output, new MQCoreContext());
       expect(output.worker_id).toBeTruthy();
     });
 
@@ -77,19 +78,19 @@ describe('MQCoreProvider', () => {
       input1.handler = handler;
       input1.interval = 999;
       const output1 = new StartWorkerOutput();
-      await mqCore.startWorker(input1, new MQCoreContext(), output1);
+      await mqCore.startWorker(input1, output1, new MQCoreContext());
 
       const input2 = new StartWorkerInput();
       input2.queue = 'shared-queue';
       input2.handler = handler;
       input2.interval = 999;
       const output2 = new StartWorkerOutput();
-      await mqCore.startWorker(input2, new MQCoreContext(), output2);
+      await mqCore.startWorker(input2, output2, new MQCoreContext());
 
       expect(output1.worker_id).not.toBe(output2.worker_id);
 
       const soOutput = new SoWorkerOutput();
-      await mqCore.soWorker({ queue: 'shared-queue' }, new MQCoreContext(), soOutput);
+      await mqCore.soWorker({ queue: 'shared-queue' }, soOutput, new MQCoreContext());
       expect(soOutput.workers.length).toBe(2);
     });
 
@@ -105,15 +106,15 @@ describe('MQCoreProvider', () => {
       input.handler = handler;
       input.interval = 100;
       const output = new StartWorkerOutput();
-      await mqCore.startWorker(input, new MQCoreContext(), output);
+      await mqCore.startWorker(input, output, new MQCoreContext());
 
       const pubInput = new SendMQInput();
       pubInput.data = { queue: 'process-queue', payload: 'test message 1' };
-      await mqAccess.sendMQ(pubInput, new MQContext(), new SendMQOutput());
+      await mqAccess.sendMQ(pubInput, new SendMQOutput(), new MQContext());
 
       const pubInput2 = new SendMQInput();
       pubInput2.data = { queue: 'process-queue', payload: 'test message 2' };
-      await mqAccess.sendMQ(pubInput2, new MQContext(), new SendMQOutput());
+      await mqAccess.sendMQ(pubInput2, new SendMQOutput(), new MQContext());
 
       await new Promise((r) => setTimeout(r, 500));
 
@@ -129,12 +130,12 @@ describe('MQCoreProvider', () => {
       startInput.handler = handler;
       startInput.interval = 999;
       const startOutput = new StartWorkerOutput();
-      await mqCore.startWorker(startInput, new MQCoreContext(), startOutput);
+      await mqCore.startWorker(startInput, startOutput, new MQCoreContext());
 
       const stopInput = new StopWorkerInput();
       stopInput.identifier = startOutput.worker_id;
       const stopOutput = new StopWorkerOutput();
-      const result = await mqCore.stopWorker(stopInput, new MQCoreContext(), stopOutput);
+      const result = await mqCore.stopWorker(stopInput, stopOutput, new MQCoreContext());
       expect(result).toBe(true);
       expect(stopOutput.stopped_count).toBe(1);
     });
@@ -146,13 +147,13 @@ describe('MQCoreProvider', () => {
         input.queue = 'batch-queue';
         input.handler = handler;
         input.interval = 999;
-        await mqCore.startWorker(input, new MQCoreContext(), new StartWorkerOutput());
+        await mqCore.startWorker(input, new StartWorkerOutput(), new MQCoreContext());
       }
 
       const stopInput = new StopWorkerInput();
       stopInput.identifier = 'batch-queue';
       const stopOutput = new StopWorkerOutput();
-      await mqCore.stopWorker(stopInput, new MQCoreContext(), stopOutput);
+      await mqCore.stopWorker(stopInput, stopOutput, new MQCoreContext());
       expect(stopOutput.stopped_count).toBe(3);
     });
 
@@ -160,7 +161,7 @@ describe('MQCoreProvider', () => {
       const stopInput = new StopWorkerInput();
       stopInput.identifier = 'unknown-worker-id';
       const stopOutput = new StopWorkerOutput();
-      const result = await mqCore.stopWorker(stopInput, new MQCoreContext(), stopOutput);
+      const result = await mqCore.stopWorker(stopInput, stopOutput, new MQCoreContext());
       expect(result).toBe(true);
       expect(stopOutput.stopped_count).toBe(0);
     });
@@ -170,7 +171,7 @@ describe('MQCoreProvider', () => {
     it('should return empty list when no workers', async () => {
       const input = new SoWorkerInput();
       const output = new SoWorkerOutput();
-      await mqCore.soWorker(input, new MQCoreContext(), output);
+      await mqCore.soWorker(input, output, new MQCoreContext());
       expect(output.workers).toEqual([]);
     });
 
@@ -181,17 +182,17 @@ describe('MQCoreProvider', () => {
       s1.handler = handler;
       s1.interval = 999;
       const o1 = new StartWorkerOutput();
-      await mqCore.startWorker(s1, new MQCoreContext(), o1);
+      await mqCore.startWorker(s1, o1, new MQCoreContext());
 
       const s2 = new StartWorkerInput();
       s2.queue = 'q2';
       s2.handler = handler;
       s2.interval = 999;
       const o2 = new StartWorkerOutput();
-      await mqCore.startWorker(s2, new MQCoreContext(), o2);
+      await mqCore.startWorker(s2, o2, new MQCoreContext());
 
       const soOutput = new SoWorkerOutput();
-      await mqCore.soWorker(new SoWorkerInput(), new MQCoreContext(), soOutput);
+      await mqCore.soWorker(new SoWorkerInput(), soOutput, new MQCoreContext());
       expect(soOutput.workers.length).toBe(2);
     });
 
@@ -201,18 +202,18 @@ describe('MQCoreProvider', () => {
       s1.queue = 'filter-q1';
       s1.handler = handler;
       s1.interval = 999;
-      await mqCore.startWorker(s1, new MQCoreContext(), new StartWorkerOutput());
+      await mqCore.startWorker(s1, new StartWorkerOutput(), new MQCoreContext());
 
       const s2 = new StartWorkerInput();
       s2.queue = 'filter-q2';
       s2.handler = handler;
       s2.interval = 999;
-      await mqCore.startWorker(s2, new MQCoreContext(), new StartWorkerOutput());
+      await mqCore.startWorker(s2, new StartWorkerOutput(), new MQCoreContext());
 
       const soInput = new SoWorkerInput();
       soInput.queue = 'filter-q1';
       const soOutput = new SoWorkerOutput();
-      await mqCore.soWorker(soInput, new MQCoreContext(), soOutput);
+      await mqCore.soWorker(soInput, soOutput, new MQCoreContext());
       expect(soOutput.workers.length).toBe(1);
       expect(soOutput.workers[0].queue).toBe('filter-q1');
     });
@@ -224,10 +225,10 @@ describe('MQCoreProvider', () => {
       s1.handler = handler;
       s1.interval = 999;
       const o1 = new StartWorkerOutput();
-      await mqCore.startWorker(s1, new MQCoreContext(), o1);
+      await mqCore.startWorker(s1, o1, new MQCoreContext());
 
       const soOutput = new SoWorkerOutput();
-      await mqCore.soWorker(new SoWorkerInput(), new MQCoreContext(), soOutput);
+      await mqCore.soWorker(new SoWorkerInput(), soOutput, new MQCoreContext());
       expect(soOutput.workers[0]).toHaveProperty('worker_id');
       expect(soOutput.workers[0]).toHaveProperty('queue');
       expect(soOutput.workers[0]).toHaveProperty('started_at');
@@ -244,7 +245,7 @@ describe('MQCoreProvider', () => {
       input.interval = 999;
       const output = new StartWorkerOutput();
 
-      await mqCore.startWorker(input, new MQCoreContext(), output);
+      await mqCore.startWorker(input, output, new MQCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
   });

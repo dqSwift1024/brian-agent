@@ -7,6 +7,7 @@
  * 实现所有用例：matchSkill / optSkill / ageSkill / soSkillRule / updateSkillRule / configSkillCore。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SkillAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -94,10 +95,7 @@ export class SkillCoreService {
   /**
    * 为 Agent 匹配 Skill（三层统一匹配/选择/自生成逻辑）。
    */
-  async matchSkill(
-    input: MatchSkillInput,
-    _context: SkillCoreContext,
-    output: MatchSkillOutput,
+  async matchSkill(input: MatchSkillInput, output: MatchSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { agent_id, context_id, interact_id } = input;
     if (!agent_id) {
@@ -112,8 +110,7 @@ export class SkillCoreService {
     const skillOutput = new SoSkillOutput();
     await this.skillAccess.soSkill(
       { conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }] },
-      new SkillContext(),
-      skillOutput,
+      skillOutput, new SkillContext(),
     );
     const availableSkills = skillOutput.list;
 
@@ -162,8 +159,7 @@ export class SkillCoreService {
               enable: true,
             },
           } as any,
-          new SkillContext(),
-          addOut as any,
+          addOut as any, new SkillContext(),
         );
         const newSkillId = (addOut as any).id;
         if (newSkillId) {
@@ -192,10 +188,7 @@ export class SkillCoreService {
    * 若 agent_id + skill_id 在 agent_skill 中不存在则新增；
    * 无论新增或已有，均在 skill_usage 中记录本次使用。
    */
-  async optSkill(
-    input: OptSkillInput,
-    _context: SkillCoreContext,
-    output: OptSkillOutput,
+  async optSkill(input: OptSkillInput, output: OptSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { agent_id, skill_id } = input;
     if (!agent_id) {
@@ -226,10 +219,7 @@ export class SkillCoreService {
    * 对每条规则，统计在最近 days 天内 usage 次数不足 min_usage_count 的 skill，
    * 调用 SkillAccess.updateSkill 将其置为禁用（enable=false）。
    */
-  async ageSkill(
-    _input: AgeSkillInput,
-    _context: SkillCoreContext,
-    output: AgeSkillOutput,
+  async ageSkill(_input: AgeSkillInput, output: AgeSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const engine = new AgingEngine(this.relationDb);
     const count = await engine.age({
@@ -242,8 +232,7 @@ export class SkillCoreService {
         const updateOutput = new UpdateSkillOutput();
         await this.skillAccess.updateSkill(
           { id: entityId, data: { enable: false } },
-          new SkillContext(),
-          updateOutput,
+          updateOutput, new SkillContext(),
         );
       },
     });
@@ -258,10 +247,7 @@ export class SkillCoreService {
   /**
    * 查询 Skill 优化规则。
    */
-  async soSkillRule(
-    input: SoSkillRuleInput,
-    _context: SkillCoreContext,
-    output: SoSkillRuleOutput,
+  async soSkillRule(input: SoSkillRuleInput, output: SoSkillRuleOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(SKILL_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -284,10 +270,7 @@ export class SkillCoreService {
   /**
    * 批量更新 Skill 优化规则（事务）。
    */
-  async updateSkillRule(
-    input: UpdateSkillRuleInput,
-    _context: SkillCoreContext,
-    _output: UpdateSkillRuleOutput,
+  async updateSkillRule(input: UpdateSkillRuleInput, _output: UpdateSkillRuleOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.operations || input.operations.length === 0) {
       throw new ValidationError('operations 为必填');
@@ -337,10 +320,7 @@ export class SkillCoreService {
   /**
    * 获取或更新 skill_core_config 配置（SET 语义）。
    */
-  async configSkillCore(
-    input: ConfigSkillCoreInput,
-    _context: SkillCoreContext,
-    output: ConfigSkillCoreOutput,
+  async configSkillCore(input: ConfigSkillCoreInput, output: ConfigSkillCoreOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.getConfig();
     const now = IdGenerator.now();
@@ -364,8 +344,7 @@ export class SkillCoreService {
           const getPromptOutput = new GetPromptOutput();
           await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -480,8 +459,7 @@ export class SkillCoreService {
       const promptOutput = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         { id, variables },
-        new PromptContext(),
-        promptOutput,
+        promptOutput, new PromptContext(),
       );
       if (promptOutput.prompt) return promptOutput.prompt;
     } catch {
@@ -497,8 +475,7 @@ export class SkillCoreService {
     try {
       const ok = await this.llmAccess.execLLM(
         { id: '', prompt },
-        new LLMContext(),
-        llmOutput,
+        llmOutput, new LLMContext(),
       );
       if (!ok) return '';
       return llmOutput.result || '';
@@ -564,8 +541,7 @@ export class SkillCoreService {
             { field: 'id', operator: Operator.EQ, value: b.skill_id },
           ],
         },
-        new SkillContext(),
-        skillOutput,
+        skillOutput, new SkillContext(),
       );
       if (skillOutput.list.length > 0) {
         result.push({

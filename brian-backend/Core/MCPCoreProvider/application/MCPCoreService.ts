@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type {
   RelationDBAccess,
   MCPAccess,
@@ -58,10 +59,7 @@ export class MCPCoreService {
   /**
    * 为 Agent 匹配 MCP（三层统一匹配/选择逻辑，第3层除外：MCP 没有匹配不可用 MCP）。
    */
-  async matchMCP(
-    input: MatchMcpInput,
-    _context: McpCoreContext,
-    output: MatchMcpOutput,
+  async matchMCP(input: MatchMcpInput, output: MatchMcpOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const regenRate = config.regen_rate;
@@ -104,10 +102,7 @@ export class MCPCoreService {
     return true;
   }
 
-  async optMCP(
-    input: OptMcpInput,
-    _context: McpCoreContext,
-    output: OptMcpOutput,
+  async optMCP(input: OptMcpInput, output: OptMcpOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(AGENT_MCP_TABLE, [
       { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
@@ -136,10 +131,7 @@ export class MCPCoreService {
     return true;
   }
 
-  async configMCPCore(
-    input: ConfigMcpCoreInput,
-    _context: McpCoreContext,
-    output: ConfigMcpCoreOutput,
+  async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.getConfig();
     const now = IdGenerator.now();
@@ -163,8 +155,7 @@ export class MCPCoreService {
           const getPromptOutput = new GetPromptOutput();
           await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -223,7 +214,7 @@ export class MCPCoreService {
       { field: 'enable', operator: Operator.EQ, value: 1 },
     ];
     const soOutput = new SoMcpOutput();
-    await this.mcpAccess.soMcp(soInput, new McpContext(), soOutput);
+    await this.mcpAccess.soMcp(soInput, soOutput, new McpContext());
     return soOutput.list.filter((r) => String(r.status) === 'running');
   }
 
@@ -235,7 +226,7 @@ export class MCPCoreService {
       ];
     }
     const soOutput = new SoMcpOutput();
-    await this.mcpAccess.soMcp(soInput, new McpContext(), soOutput);
+    await this.mcpAccess.soMcp(soInput, soOutput, new McpContext());
     return soOutput.list;
   }
 
@@ -264,8 +255,7 @@ export class MCPCoreService {
       const execPromptOutput = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         execPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       prompt = execPromptOutput.prompt;
       if (!prompt) {
@@ -283,8 +273,7 @@ export class MCPCoreService {
     const execOutput = new ExecLLMOutput();
     await this.llmAccess.execLLM(
       execInput,
-      new LLMContext(),
-      execOutput,
+      execOutput, new LLMContext(),
     );
 
     return this.parseLLMRanking(execOutput.result, mcps);

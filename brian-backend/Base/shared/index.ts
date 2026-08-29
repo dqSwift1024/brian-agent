@@ -17,6 +17,10 @@
 export { Input } from './base/Input';
 export { Context } from './base/Context';
 export { Output } from './base/Output';
+export { Metrics } from './base/Metrics';
+export type { MetricsLogger } from './base/Metrics';
+export { Report } from './base/Report';
+export type { ReportChannel, ReportMeta } from './base/Report';
 export { InfoType, CollectionSource, ContextSource } from './base/InfoEnums';
 export {
   HandleResultType,

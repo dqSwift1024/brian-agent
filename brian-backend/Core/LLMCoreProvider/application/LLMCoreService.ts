@@ -7,6 +7,7 @@
  * 实现所有用例：matchLLM / limitLLM / checkLLMQuota / configLLMCore / recordLLMUsage。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { IdGenerator, Operator } from '@brian-agent/base';
 import {
@@ -97,10 +98,7 @@ export class LLMCoreService {
   /**
    * 为指定 Agent 匹配合适的 LLM 提供商（三层统一匹配/选择逻辑）。
    */
-  async matchLLM(
-    input: MatchLLMInput,
-    _context: LLMCoreContext,
-    output: MatchLLMOutput,
+  async matchLLM(input: MatchLLMInput, output: MatchLLMOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.agent_id) {
       throw new ValidationError('matchLLM 需要提供 agent_id');
@@ -112,7 +110,7 @@ export class LLMCoreService {
 
     // 搜索可用 LLM
     const soOutput = new SoLLMOutput();
-    await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), soOutput);
+    await this.llmAccess.soLLM({} as SoLLMInput, soOutput, new LLMContext());
     const availableLLMs = soOutput.list;
 
     // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
@@ -157,8 +155,7 @@ export class LLMCoreService {
           id: config.prompt_template_id,
           variables: selectionVariables,
         } as ExecPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       selectionPrompt = execPromptOutput.prompt;
       if (!selectionPrompt) {
@@ -177,8 +174,7 @@ export class LLMCoreService {
         temperature: 0.1,
         max_tokens: 256,
       } as ExecLLMInput,
-      new LLMContext(),
-      execLLMOutput,
+      execLLMOutput, new LLMContext(),
     );
 
     let selectedLLMId = this.parseSelectionResult(
@@ -210,10 +206,7 @@ export class LLMCoreService {
    *
    * 采用 upsert 语义：若提供商已存在配额记录则更新，否则新建。
    */
-  async limitLLM(
-    input: LimitLLMInput,
-    _context: LLMCoreContext,
-    output: LimitLLMOutput,
+  async limitLLM(input: LimitLLMInput, output: LimitLLMOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('limitLLM 需要提供 llm_provider_id');
@@ -273,10 +266,7 @@ export class LLMCoreService {
    *
    * 读取配额限制与实际用量，返回每个周期（日/周/月）的配额状态。
    */
-  async checkLLMQuota(
-    input: CheckLLMQuotaInput,
-    _context: LLMCoreContext,
-    output: CheckLLMQuotaOutput,
+  async checkLLMQuota(input: CheckLLMQuotaInput, output: CheckLLMQuotaOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('checkLLMQuota 需要提供 llm_provider_id');
@@ -323,10 +313,7 @@ export class LLMCoreService {
    *
    * 支持配置 regen_rate 和 prompt_template_id。
    */
-  async configLLMCore(
-    input: ConfigLLMCoreInput,
-    _context: LLMCoreContext,
-    output: ConfigLLMCoreOutput,
+  async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
@@ -350,8 +337,7 @@ export class LLMCoreService {
           const getPromptOutput = new GetPromptOutput();
           await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -388,10 +374,7 @@ export class LLMCoreService {
   /**
    * 记录一次 LLM 调用的用量，用于配额统计。
    */
-  async recordLLMUsage(
-    input: RecordLLMUsageInput,
-    _context: LLMCoreContext,
-    output: RecordLLMUsageOutput,
+  async recordLLMUsage(input: RecordLLMUsageInput, output: RecordLLMUsageOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('recordLLMUsage 需要提供 llm_provider_id');
@@ -461,8 +444,7 @@ export class LLMCoreService {
     const soOutput = new SoLLMOutput();
     await this.llmAccess.soLLM(
       { conditions: [{ field: 'id', operator: Operator.EQ, value: llmId }] } as SoLLMInput,
-      new LLMContext(),
-      soOutput,
+      soOutput, new LLMContext(),
     );
     const llm = soOutput.list[0];
     if (!llm) return null;
