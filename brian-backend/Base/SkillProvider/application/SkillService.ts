@@ -21,29 +21,7 @@ import {
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
-import {
-  SkillContext,
-  SkillData,
-  SkillRecord,
-  FileEntry,
-  AddSkillInput,
-  AddSkillOutput,
-  GetSkillInput,
-  GetSkillOutput,
-  UpdateSkillInput,
-  UpdateSkillOutput,
-  DelSkillInput,
-  DelSkillOutput,
-  SoSkillInput,
-  SoSkillOutput,
-  ExecSkillInput,
-  ExecSkillOutput,
-  EnableSkillInput,
-  EnableSkillOutput,
-  SKILL_TABLE,
-  SKILL_USAGE_TABLE,
-  SKILL_CONFIG_TABLE,
-} from '../domain/types';
+import { SkillContext, SkillRecord, FileEntry, AddSkillInput, AddSkillOutput, GetSkillInput, GetSkillOutput, UpdateSkillInput, UpdateSkillOutput, DelSkillInput, DelSkillOutput, SoSkillInput, SoSkillOutput, ExecSkillInput, ExecSkillOutput, EnableSkillInput, EnableSkillOutput, SKILL_TABLE, SKILL_USAGE_TABLE, SKILL_CONFIG_TABLE } from '../domain/types';
 
 const JS_SANDBOX_TIMEOUT_MS = 5000;
 const LOCAL_SANDBOX_TIMEOUT_MS = 15000;
@@ -117,7 +95,7 @@ export class SkillService {
   // Skill 管理
   // -------------------------------------------------------------------------
 
-  async addSkill(input: AddSkillInput, output: AddSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async addSkill(input: AddSkillInput, output: AddSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -152,7 +130,7 @@ export class SkillService {
     return true;
   }
 
-  async soSkillById(input: GetSkillInput, output: GetSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async soSkillById(input: GetSkillInput, output: GetSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -166,7 +144,7 @@ export class SkillService {
     return true;
   }
 
-  async updateSkill(input: UpdateSkillInput, output: UpdateSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async updateSkill(input: UpdateSkillInput, output: UpdateSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -190,7 +168,7 @@ export class SkillService {
     return true;
   }
 
-  async delSkill(input: DelSkillInput, output: DelSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async delSkill(input: DelSkillInput, output: DelSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -223,7 +201,7 @@ export class SkillService {
     return true;
   }
 
-  async soSkill(input: SoSkillInput, output: SoSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async soSkill(input: SoSkillInput, output: SoSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const conditions: Condition[] = [];
@@ -293,7 +271,7 @@ export class SkillService {
     return lastResult;
   }
 
-  async execSkill(input: ExecSkillInput, output: ExecSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async execSkill(input: ExecSkillInput, output: ExecSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) throw new ValidationError('id 为必填');
@@ -356,7 +334,7 @@ export class SkillService {
   // 可视化与运维
   // -------------------------------------------------------------------------
 
-  async enableSkill(input: EnableSkillInput, _output: EnableSkillOutput, _context: SkillContext, metrics?: Metrics, report?: Report,
+  async enableSkill(input: EnableSkillInput, _output: EnableSkillOutput, _context: SkillContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = input.enable;
     await this.config.set(

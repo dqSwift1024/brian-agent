@@ -20,10 +20,7 @@ import {
   PinInfoInput, PinInfoOutput,
   InfoCoreContext,
 } from '@brian-agent/core';
-import type { WriterAgentAccess } from '@brian-agent/agent';
-import { SaveUserProfileInput, SaveUserProfileOutput, WriterAgentContext } from '@brian-agent/agent';
-import type { EvolutorAgentAccess } from '@brian-agent/agent';
-import { GetEvaluationInput, GetEvaluationOutput, EvolutorAgentContext } from '@brian-agent/agent';
+import type { WriterAgentAccess, EvolutorAgentAccess } from '@brian-agent/agent';
 import type { OrchestrationEntryAccess } from '@brian-agent/orchestration';
 import {
   OrchestrationEntryContext, ReceiveWorkInput, ReceiveWorkOutput,
@@ -62,99 +59,6 @@ export class ChatService {
     private readonly logger?: Logger,
     private readonly streamAccess?: StreamAccess,
   ) {}
-
-  // ===== 原始 submitWork 与 openChatStream 实现（保留作为参考） =====
-  /*
-  async submitWork(input: SubmitWorkInput, output: SubmitWorkOutput, context: ChatContext, metrics?: Metrics, report?: Report,
-  ): Promise<boolean> {
-    if (!input.session_id) {
-      throw new ValidationError('session_id is required');
-    }
-    if (!input.msg_content || input.msg_content.trim() === '') {
-      throw new ValidationError('msg_content cannot be empty');
-    }
-
-    const overflowInput = Object.assign(new CheckSessionOverflowInput(), {
-      session_id: input.session_id,
-    });
-    const overflowOutput = new CheckSessionOverflowOutput();
-    await this.checkSessionOverflow(overflowInput, overflowOutput, context, metrics, report);
-    if (overflowOutput.is_overflowed) {
-      throw new ValidationError(`Session ${input.session_id} has exceeded message limit`);
-    }
-
-    const workId = IdGenerator.generate();
-    const interactId = IdGenerator.generate();
-
-    let userProfile: Record<string, unknown> | undefined;
-    try {
-      const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
-      await this.writerAgent.soUserProfile(
-        Object.assign(new (await this.getWriterProfileInputClass())(), {
-          session_id: input.session_id,
-        }),
-        new (await this.getWriterAgentContextClass())(),
-        profileOut,
-      );
-      userProfile = profileOut.user_profile;
-    } catch {
-      / * best-effort * /
-    }
-
-    const citingMsgIds = Array.from(new Set([
-      ...(input.citing_msg_ids ?? []),
-      ...(input.selected_msg_ids ?? []),
-    ]));
-
-    const rwInput = Object.assign(new ReceiveWorkInput(), {
-      session_id: input.session_id,
-      user_query: input.msg_content,
-      force_orchestration_strategy: input.force_orchestration_strategy,
-      user_profile: userProfile,
-      citing_msg_ids: citingMsgIds,
-      selected_msg_ids: input.selected_msg_ids ?? [],
-    });
-    const rwOutput = new ReceiveWorkOutput();
-    const rwContext = Object.assign(new OrchestrationEntryContext(), {
-      session_id: input.session_id,
-      work_id: workId,
-      interact_id: interactId,
-    });
-
-    let workOk = false;
-    try {
-      workOk = await this.orchestrationEntry.receiveWork(rwInput, rwOutput, rwContext, metrics, report);
-    } catch (err: unknown) {
-      this.logger?.error?.('submitWork: orchestration failed', {
-        session_id: input.session_id,
-        work_id: workId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      output.work_id = workId;
-      output.interact_id = interactId;
-      return false;
-    }
-
-    const finalResponse = rwOutput.final_response || '';
-
-    try {
-      const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
-      await this.evolutorAgent.soEvaluation(
-        Object.assign(new (await this.getEvalInputClass())(), {
-          conditions: [{ field: 'work_id', operator: 'EQ', value: workId }],
-        }),
-        new (await this.getEvolutorAgentContextClass())(),
-        evalOut,
-      );
-    } catch {
-      / * best-effort * /
-    }
-
-    output.work_id = workId;
-    output.interact_id = interactId;
-    return workOk;
-  }
-  */
 
   // ===== 修改后的 submitWork 与 openChatStream 实现：增加第一条消息自动生成会话名称（50字截断，若已有名称则不覆盖） =====
   async submitWork(input: SubmitWorkInput, output: SubmitWorkOutput, context: ChatContext, metrics?: Metrics, report?: Report,
@@ -229,8 +133,6 @@ export class ChatService {
       output.interact_id = interactId;
       return false;
     }
-
-    const finalResponse = rwOutput.final_response || '';
 
     try {
       const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
@@ -355,7 +257,7 @@ export class ChatService {
     });
 
     const startedAt = Date.now();
-    let tokenUsage: Record<string, unknown> = {};
+    const tokenUsage: Record<string, unknown> = {};
     let workOk = false;
     try {
       workOk = await this.orchestrationEntry.receiveWork(rwInput, rwOutput, rwContext, metrics, report);
@@ -436,7 +338,7 @@ export class ChatService {
     return true;
   }
 
-  async createSession(input: CreateSessionInput, output: CreateSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async createSession(input: CreateSessionInput, output: CreateSessionOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sessionId = IdGenerator.generate();
     const now = IdGenerator.now();
@@ -462,18 +364,11 @@ export class ChatService {
     return true;
   }
 
-  async deleteSession(input: DeleteSessionInput, output: DeleteSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async deleteSession(input: DeleteSessionInput, output: DeleteSessionOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_ids || input.session_ids.length === 0) {
       throw new ValidationError('session_ids must be a non-empty array');
     }
-
-    // ===== 原始实现（保留参考）：仅删除 chat_session / info_raw / info_graph 三张表 =====
-    // for (const sessionId of input.session_ids) {
-    //   const delSessionInput = Object.assign(new DeleteDBInput(), { table: 'chat_session', conditions: [...] });
-    //   ... deleteDB(chat_session), deleteDB(info_raw), deleteDB(info_graph)
-    // }
-    // ===== 修改后：级联清理按 info_id 关联的派生表，避免孤儿数据 =====
 
     let deletedCount = 0;
 
@@ -523,18 +418,11 @@ export class ChatService {
     return true;
   }
 
-  async soSession(input: SearchSessionInput, output: SearchSessionOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async soSession(input: SearchSessionInput, output: SearchSessionOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
 
     if (input.keyword) {
-      // ===== 原始实现（保留参考）：仅按 session_title 模糊匹配 =====
-      // conditions.push({
-      //   field: 'session_title',
-      //   operator: Operator.LIKE,
-      //   value: `%${input.keyword}%`,
-      // });
-      // ===== 修改后：全文搜索，会话标题或消息内容（info_raw.info）命中 =====
       const kw = `%${input.keyword}%`;
       const matchedRows = this.relationDb.queryRaw<{ session_id: string }>(
         `SELECT "session_id" FROM "chat_session" WHERE "session_title" LIKE ? UNION SELECT DISTINCT "session_id" FROM "info_raw" WHERE "info" LIKE ?`,
@@ -554,14 +442,6 @@ export class ChatService {
     }
 
     if (input.start_time !== undefined || input.end_time !== undefined) {
-      // ===== 原始实现（保留参考）：按会话创建时间 chat_session.created 过滤 =====
-      // if (input.start_time !== undefined) {
-      //   conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
-      // }
-      // if (input.end_time !== undefined) {
-      //   conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
-      // }
-      // ===== 修改后：按消息时间 info_raw.created 过滤，命中在该时间段内有对话（REQUEST/RESPONSE 等）的会话 =====
       const timeConds: string[] = [];
       const timeArgs: unknown[] = [];
       if (input.start_time !== undefined) {
@@ -784,7 +664,7 @@ export class ChatService {
     return true;
   }
 
-  async soSessionDetail(input: GetSessionDetailInput, output: GetSessionDetailOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async soSessionDetail(input: GetSessionDetailInput, output: GetSessionDetailOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -823,7 +703,7 @@ export class ChatService {
     return true;
   }
 
-  async updateSessionTitle(input: UpdateSessionTitleInput, output: UpdateSessionTitleOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async updateSessionTitle(input: UpdateSessionTitleInput, _output: UpdateSessionTitleOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -854,7 +734,7 @@ export class ChatService {
     return true;
   }
 
-  async checkSessionOverflow(input: CheckSessionOverflowInput, output: CheckSessionOverflowOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async checkSessionOverflow(input: CheckSessionOverflowInput, output: CheckSessionOverflowOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let maxMessages = 1000;
     try {
@@ -891,7 +771,7 @@ export class ChatService {
     return true;
   }
 
-  async soChatHistory(input: GetChatHistoryInput, output: GetChatHistoryOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async soChatHistory(input: GetChatHistoryInput, output: GetChatHistoryOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let lastN = input.lastN;
     if (lastN === undefined) {
@@ -982,7 +862,7 @@ export class ChatService {
     return true;
   }
 
-  async soMessage(input: SearchMessageInput, output: SearchMessageOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async soMessage(input: SearchMessageInput, output: SearchMessageOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.keyword || input.keyword.trim() === '') {
       throw new ValidationError('keyword cannot be empty');
@@ -1046,7 +926,7 @@ export class ChatService {
     return true;
   }
 
-  async pinMessage(input: PinMessageInput, output: PinMessageOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async pinMessage(input: PinMessageInput, output: PinMessageOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('info_id is required');
@@ -1093,7 +973,7 @@ export class ChatService {
     return true;
   }
 
-  async soMessageGraph(input: GetMessageGraphInput, output: GetMessageGraphOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async soMessageGraph(input: GetMessageGraphInput, output: GetMessageGraphOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -1231,7 +1111,7 @@ export class ChatService {
     return ok;
   }
 
-  async configChat(input: ConfigChatInput, output: ConfigChatOutput, _context: ChatContext, metrics?: Metrics, report?: Report,
+  async configChat(input: ConfigChatInput, output: ConfigChatOutput, _context: ChatContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'chat_config' },

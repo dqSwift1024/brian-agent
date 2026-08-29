@@ -62,36 +62,4 @@ describe('ConfigHelper', () => {
     });
   });
 
-  describe('loadConfigRecord', () => {
-    it('should return null for empty table', async () => {
-      const record = await loadConfigRecord(dbAccess, TEST_TABLE);
-      expect(record).toBeNull();
-    });
-
-    it('should return first record', async () => {
-      await ensureDefaultConfig(dbAccess, TEST_TABLE, [
-        { field: 'key', value: 'my_key' },
-      ]);
-
-      const record = await loadConfigRecord(dbAccess, TEST_TABLE);
-      expect(record).not.toBeNull();
-      expect(record!['key']).toBe('my_key');
-    });
-  });
-
-  describe('requireRecord', () => {
-    it('should return record when not null', () => {
-      const record = { name: 'test' };
-      const result = requireRecord(record, 'Test');
-      expect(result).toBe(record);
-    });
-
-    it('should throw when record is null', () => {
-      expect(() => requireRecord(null, 'TestResource')).toThrow('TestResource 记录不存在');
-    });
-
-    it('should throw when record is undefined', () => {
-      expect(() => requireRecord(undefined, 'TestResource')).toThrow('TestResource 记录不存在');
-    });
-  });
 });

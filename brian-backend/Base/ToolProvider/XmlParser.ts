@@ -216,7 +216,7 @@ export class XmlParser {
   /** 解码 XML 实体 */
   static decodeEntities(text: string): string {
     if (!text) return text;
-    return text.replace(/&(lt|gt|amp|quot|apos|#34|#39);/g, (m, key: string) => {
+    return text.replace(/&(lt|gt|amp|quot|apos|#34|#39);/g, (m, _key: string) => {
       return XmlParser.ENTITIES[m] ?? m;
     });
   }

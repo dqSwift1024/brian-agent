@@ -204,54 +204,8 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 写入日志到 SQLite（addLog） */
-  // ===== 原始方法（保留作为参考）=====
-  // async addLog(
-  //   input: AddLogInput,
-  //   _context: LogContext,
-  //   output: AddLogOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   const data = input.data;
-  //   if (!data.level) {
-  //     data.level = this.defaultLevel;
-  //   }
-  //   if (!data.source) {
-  //     throw new ValidationError('source 不能为空');
-  //   }
-  //   if (!data.message) {
-  //     throw new ValidationError('message 不能为空');
-  //   }
-  //
-  //   const logId = IdGenerator.generate();
-  //   const now = IdGenerator.now();
-  //
-  //   try {
-  //     await this.relationDb.insert(LOG_RECORD_TABLE, [
-  //       { field: 'id', value: logId },
-  //       { field: 'created', value: now },
-  //       { field: 'updated', value: now },
-  //       { field: 'level', value: data.level },
-  //       { field: 'source', value: data.source },
-  //       { field: 'message', value: data.message },
-  //       { field: 'trace_id', value: data.trace_id ?? null },
-  //       { field: 'caller', value: data.caller ?? null },
-  //       { field: 'work_id', value: data.work_id ?? null },
-  //       { field: 'interact_id', value: data.interact_id ?? null },
-  //       { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
-  //       { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
-  //     ]);
-  //   } catch {
-  //     // SQLite 写入失败不影响业务
-  //   }
-  //
-  //   this.scheduleAging();
-  //
-  //   output.id = logId;
-  //   return true;
-  // }
-
   // ===== 修改后的方法（增加 min_level 过滤）=====
-  async addLog(input: AddLogInput, output: AddLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async addLog(input: AddLogInput, output: AddLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -372,7 +326,7 @@ export class LogService {
   }
 
   /** 搜索日志（soLog）- 从 SQLite 查询并过滤 */
-  async soLog(input: SoLogInput, output: SoLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async soLog(input: SoLogInput, output: SoLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -419,7 +373,7 @@ export class LogService {
   }
 
   /** 删除日志（delLog）- 从 SQLite 删除 */
-  async delLog(input: DelLogInput, output: DelLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async delLog(input: DelLogInput, output: DelLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -454,7 +408,7 @@ export class LogService {
   }
 
   /** 统计日志数量（countLog）- 从 SQLite 统计 */
-  async countLog(input: CountLogInput, output: CountLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async countLog(input: CountLogInput, output: CountLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -484,7 +438,7 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 可视化数据（visualizedLog） */
-  async visualizedLog(input: VisualizedLogInput, output: VisualizedLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async visualizedLog(input: VisualizedLogInput, output: VisualizedLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -546,7 +500,7 @@ export class LogService {
   }
 
   /** 配置日志记录规则（enableLog） */
-  async enableLog(input: EnableLogInput, _output: EnableLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async enableLog(input: EnableLogInput, _output: EnableLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.rules || input.rules.length === 0) {
       throw new ValidationError('rules 不能为空');
@@ -588,7 +542,7 @@ export class LogService {
   }
 
   /** 配置日志组件（configLog） */
-  async configLog(input: ConfigLogInput, output: ConfigLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
+  async configLog(input: ConfigLogInput, output: ConfigLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let agingChanged = false;
     if (input.enabled !== undefined) {

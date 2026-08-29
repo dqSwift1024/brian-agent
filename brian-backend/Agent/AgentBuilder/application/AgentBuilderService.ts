@@ -66,7 +66,7 @@ export class AgentBuilderService {
     private readonly streamAccess?: StreamAccess,
   ) {}
 
-  async buildAgent(input: BuildAgentInput, output: BuildAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
+  async buildAgent(input: BuildAgentInput, output: BuildAgentOutput, ctx: AgentBuilderContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const libCtx = this.toLibCtx(ctx, input.interact_id);
@@ -306,7 +306,7 @@ export class AgentBuilderService {
    * 由 EvolutorAgent 在 need_optimize 时调用。
    * 重新匹配策略与 Core 组件，并将变更写回 agent 表与 Core 绑定表。
    */
-  async optimizeAgent(input: OptimizeAgentInput, output: OptimizeAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
+  async optimizeAgent(input: OptimizeAgentInput, output: OptimizeAgentOutput, ctx: AgentBuilderContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     if (!config?.auto_optimize) {
@@ -454,7 +454,7 @@ export class AgentBuilderService {
     INTENT: { strategyLabel: 'CoT', signatureKey: 'intent', defaultName: '需求理解 Agent' },
   };
 
-  async buildSystemAgent(input: BuildSystemAgentInput, output: BuildSystemAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
+  async buildSystemAgent(input: BuildSystemAgentInput, output: BuildSystemAgentOutput, ctx: AgentBuilderContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const agentType = input.agent_type;
     const config = AgentBuilderService.SYSTEM_AGENT_CONFIG[agentType];
@@ -477,7 +477,8 @@ export class AgentBuilderService {
 
     const agentId = IdGenerator.generate();
     // LLM 绑定只存在于 LLMProvider 的 agent_llm，构建时经 matchLLM 写入（此处解析仅用于任务分析）
-    const llmId = await this.matchLlmForAgent(agentId, ctx.interact_id || '');
+    // matchLLM 有副作用：写入 agent_llm 绑定（返回值此处不使用）
+    await this.matchLlmForAgent(agentId, ctx.interact_id || '');
     let soulId = '';
     if (agentType !== 'SUMMARY' && agentType !== 'INTENT') {
       const soulOut = new MatchSoulOutput();
@@ -526,7 +527,7 @@ export class AgentBuilderService {
     return true;
   }
 
-  async configAgentBuilder(input: ConfigAgentBuilderInput, output: ConfigAgentBuilderOutput, _ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
+  async configAgentBuilder(input: ConfigAgentBuilderInput, output: ConfigAgentBuilderOutput, _ctx: AgentBuilderContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {

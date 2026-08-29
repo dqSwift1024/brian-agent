@@ -134,7 +134,7 @@ export class VisualizationService {
     private readonly logger?: Logger,
   ) {}
 
-  async soVisualizedMessages(input: GetVisualizedMessagesInput, output: GetVisualizedMessagesOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soVisualizedMessages(input: GetVisualizedMessagesInput, output: GetVisualizedMessagesOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const lastN = input.lastN ?? 50;
     const pageCurrent = input.page_current ?? 1;
@@ -219,7 +219,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soVisualizedMessageGraph(input: GetVisualizedMessageGraphInput, output: GetVisualizedMessageGraphOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soVisualizedMessageGraph(input: GetVisualizedMessageGraphInput, output: GetVisualizedMessageGraphOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const maxNodes = input.max_nodes ?? config.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH;
@@ -300,7 +300,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soVisualizedAgentDAG(input: GetVisualizedAgentDAGInput, output: GetVisualizedAgentDAGOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soVisualizedAgentDAG(input: GetVisualizedAgentDAGInput, output: GetVisualizedAgentDAGOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const resolveContent = input.resolve_content ?? (config.resolve_content_by_default === 1);
@@ -331,7 +331,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soVisualizedWorkFlow(input: GetVisualizedWorkFlowInput, output: GetVisualizedWorkFlowOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soVisualizedWorkFlow(input: GetVisualizedWorkFlowInput, output: GetVisualizedWorkFlowOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const wfOut = new VisualizeWorkFlowOutput();
     try {
@@ -374,7 +374,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soAgentTrace(input: GetAgentTraceInput, output: GetAgentTraceOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soAgentTrace(input: GetAgentTraceInput, output: GetAgentTraceOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const traceId = input.trace_id ?? '';
     const traceOut = new GetTraceOutput();
@@ -467,7 +467,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soVisualizedMessageDAG(input: GetVisualizedMessageDAGInput, output: GetVisualizedMessageDAGOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soVisualizedMessageDAG(input: GetVisualizedMessageDAGInput, output: GetVisualizedMessageDAGOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const maxNodes = input.max_nodes ?? config.max_nodes_per_graph ?? DEFAULT_MAX_NODES_PER_GRAPH;
@@ -711,7 +711,7 @@ export class VisualizationService {
     };
   }
 
-  async soResource(input: GetResourceInput, output: GetResourceOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soResource(input: GetResourceInput, output: GetResourceOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { resource_type, resource_id } = input;
 
@@ -839,7 +839,7 @@ export class VisualizationService {
     return true;
   }
 
-  async configVisualization(input: ConfigVisualizationInput, output: ConfigVisualizationOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async configVisualization(input: ConfigVisualizationInput, output: ConfigVisualizationOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfigFull();
 
@@ -910,7 +910,7 @@ export class VisualizationService {
     return true;
   }
 
-  async soGraphVisualizationConfig(input: GraphVisualizationConfigInput, output: GraphVisualizationConfigOutput, _ctx: VisualizationContext, metrics?: Metrics, report?: Report,
+  async soGraphVisualizationConfig(input: GraphVisualizationConfigInput, output: GraphVisualizationConfigOutput, _ctx: VisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const isKeyword = input.graph_type === 'keyword';

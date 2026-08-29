@@ -61,7 +61,7 @@ export class OrchestrationStrategyService {
     private readonly logger?: Logger,
   ) {}
 
-  async startOrchestration(input: StartOrchestrationInput, output: StartOrchestrationOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async startOrchestration(input: StartOrchestrationInput, output: StartOrchestrationOutput, _context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const def = await this.resolveStrategyDef(input.strategy);
     if (!def) {
@@ -101,7 +101,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async executeSimpleStrategy(input: ExecuteSimpleStrategyInput, output: ExecuteSimpleStrategyOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async executeSimpleStrategy(input: ExecuteSimpleStrategyInput, output: ExecuteSimpleStrategyOutput, context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const executionId = IdGenerator.generate();
     const now = IdGenerator.now();
@@ -373,7 +373,6 @@ export class OrchestrationStrategyService {
     } catch (_err: unknown) {
       const failedInfo = (_err as Record<string, unknown> | null) ?? {};
       const errMsg = String((failedInfo.reason as string) ?? (_err instanceof Error ? _err.message : String(_err)));
-      const failedAgentId = (failedInfo.agent_id as string) ?? '';
       const failedTaskId = (failedInfo.task_id as string) ?? '';
       const completedResults = (failedInfo.completed_results as Array<{ agent_id: string; task_id: string }>) ?? [];
 
@@ -424,7 +423,7 @@ export class OrchestrationStrategyService {
     }
 
     let completedCount = 0;
-    for (const ar of execDagOutput.agent_results) {
+    for (const _ar of execDagOutput.agent_results) {
       completedCount++;
       const updCountData: DataObject[] = [
         { field: 'completed_task_count', value: completedCount },
@@ -464,7 +463,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async executePostProcessing(input: ExecutePostProcessingInput, output: ExecutePostProcessingOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async executePostProcessing(input: ExecutePostProcessingInput, output: ExecutePostProcessingOutput, context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const updWriteData: DataObject[] = [
       { field: 'status', value: 'WRITING' },
@@ -606,7 +605,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async addStrategy(input: AddOrchestrationStrategyInput, output: AddOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async addStrategy(input: AddOrchestrationStrategyInput, output: AddOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_label) {
       throw new ValidationError('strategy_label is required');
@@ -664,7 +663,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async handleDAGFailure(input: HandleDAGFailureInput, output: HandleDAGFailureOutput, context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async handleDAGFailure(input: HandleDAGFailureInput, output: HandleDAGFailureOutput, context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selWorkInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -846,7 +845,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async soStrategyById(input: GetOrchestrationStrategyInput, output: GetOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async soStrategyById(input: GetOrchestrationStrategyInput, output: GetOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.strategy_id) {
       const selOneInput = Object.assign(new SelectOneDBInput(), {
@@ -888,7 +887,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async updateStrategy(input: UpdateOrchestrationStrategyInput, output: UpdateOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async updateStrategy(input: UpdateOrchestrationStrategyInput, _output: UpdateOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -1008,7 +1007,7 @@ export class OrchestrationStrategyService {
     return byIdRow?.jsonnode_definition ? (byIdRow.jsonnode_definition as string) : null;
   }
 
-  async configOrchestrationStrategy(input: ConfigOrchestrationStrategyInput, output: ConfigOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, metrics?: Metrics, report?: Report,
+  async configOrchestrationStrategy(input: ConfigOrchestrationStrategyInput, output: ConfigOrchestrationStrategyOutput, _context: OrchestrationStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },

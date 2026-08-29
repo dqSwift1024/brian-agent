@@ -31,51 +31,9 @@ import {
 } from '../../shared/errors';
 import { ExecRequestInput, ExecRequestOutput, HttpContext } from '../../ToolProvider/domain/HttpTypes';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
-import { Operator, Logic, Direction } from '../../shared/query';
+import { Operator, Direction } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
-import {
-  LLMContext,
-  LLMProviderData,
-  LLMData,
-  LLMProviderRecord,
-  LLMCacheRecord,
-  LLMAvailableRecord,
-  AddLLMProviderInput,
-  AddLLMProviderOutput,
-  UpdateLLMProviderInput,
-  UpdateLLMProviderOutput,
-  DelLLMProviderInput,
-  DelLLMProviderOutput,
-  SoLLMProviderInput,
-  SoLLMProviderOutput,
-  TestLLMProviderInput,
-  TestLLMProviderOutput,
-  ListLLMInput,
-  ListLLMOutput,
-  AddLLMInput,
-  AddLLMOutput,
-  DelLLMInput,
-  DelLLMOutput,
-  UpdateLLMInput,
-  UpdateLLMOutput,
-  SoLLMInput,
-  SoLLMOutput,
-  ExecLLMInput,
-  ExecLLMOutput,
-  EmbedLLMInput,
-  EmbedLLMOutput,
-  GenLLMAttrInput,
-  GenLLMAttrOutput,
-  VisualizedLLMInput,
-  VisualizedLLMOutput,
-  EnableLLMInput,
-  EnableLLMOutput,
-  LLM_PROVIDER_TABLE,
-  LLM_CACHE_TABLE,
-  LLM_AVAILABLE_TABLE,
-  LLM_USAGE_TABLE,
-  LLM_CONFIG_TABLE,
-} from '../domain/types';
+import { LLMContext, LLMProviderRecord, LLMCacheRecord, LLMAvailableRecord, AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput, DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput, ListLLMInput, ListLLMOutput, AddLLMInput, AddLLMOutput, DelLLMInput, DelLLMOutput, UpdateLLMInput, UpdateLLMOutput, SoLLMInput, SoLLMOutput, ExecLLMInput, ExecLLMOutput, EmbedLLMInput, EmbedLLMOutput, GenLLMAttrInput, GenLLMAttrOutput, VisualizedLLMInput, VisualizedLLMOutput, EnableLLMInput, EnableLLMOutput, LLM_PROVIDER_TABLE, LLM_CACHE_TABLE, LLM_AVAILABLE_TABLE, LLM_USAGE_TABLE, LLM_CONFIG_TABLE } from '../domain/types';
 import { LLMStrategyFactory } from './strategies';
 
 /** testLLMProvider 默认连接超时时间（毫秒） */
@@ -89,15 +47,6 @@ const MODELS_CACHE_TTL_MS = 3600000;
 
 /** execLLM 默认请求超时时间（毫秒） */
 const EXEC_TIMEOUT_MS = 120000;
-
-/** OpenAI 兼容 API 路径：模型列表 */
-const MODELS_PATH = 'v1/models';
-
-/** OpenAI 兼容 API 路径：对话补全 */
-const CHAT_PATH = 'v1/chat/completions';
-
-/** OpenAI 兼容 API 路径：向量化（embedding） */
-const EMBED_PATH = 'v1/embeddings';
 
 /**
  * LLMProvider 应用服务。
@@ -240,7 +189,7 @@ export class LLMService {
    *
    * PRD 3.1.1 条：向系统中新增一个 LLM 提供商。
    */
-  async addLLMProvider(input: AddLLMProviderInput, output: AddLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async addLLMProvider(input: AddLLMProviderInput, output: AddLLMProviderOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -293,7 +242,7 @@ export class LLMService {
    * PRD 3.1.2 条：支持按 ID 或按条件更新。
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    */
-  async updateLLMProvider(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async updateLLMProvider(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -357,7 +306,7 @@ export class LLMService {
    * PRD 3.1.3 条：支持按 ID 批量删除或按条件删除。
    * 级联清理该提供商下关联的 LLM 模型记录（llm_model 表）。
    */
-  async delLLMProvider(input: DelLLMProviderInput, output: DelLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async delLLMProvider(input: DelLLMProviderInput, output: DelLLMProviderOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -417,7 +366,7 @@ export class LLMService {
    * PRD 3.1.4 条：支持关键词、条件过滤、排序、分页。
    * 关键词匹配 llm_provider_title。
    */
-  async soLLMProvider(input: SoLLMProviderInput, output: SoLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async soLLMProvider(input: SoLLMProviderInput, output: SoLLMProviderOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -455,64 +404,8 @@ export class LLMService {
    * 使用 HTTP GET 请求，只要收到响应即视为连通（connected=true），
    * 网络错误或超时视为不可达（connected=false）。
    */
-  // ===== 原始方法（保留作为参考）=====
-  // async testLLMProvider(
-  //   input: TestLLMProviderInput,
-  //   _context: LLMContext,
-  //   output: TestLLMProviderOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   if (!input.id) {
-  //     throw new ValidationError('id 不能为空');
-  //   }
-  //
-  //   const row = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: input.id },
-  //   ]);
-  //   if (!row) {
-  //     throw new NotFoundError('LLMProvider', input.id);
-  //   }
-  //   const provider = row as unknown as LLMProviderRecord;
-  //
-  //   const start = Date.now();
-  //   let testUrl = provider.llm_provider_url;
-  //   const isGoogle =
-  //     provider.llm_provider_title?.toLowerCase().includes('google') ||
-  //     testUrl.includes('googleapis.com');
-  //
-  //   const headers: Record<string, string> = {};
-  //   if (provider.api_key) {
-  //     if (isGoogle) {
-  //       headers['x-goog-api-key'] = provider.api_key;
-  //       if (!testUrl.includes('key=')) {
-  //         testUrl += (testUrl.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
-  //       }
-  //     } else {
-  //       headers['Authorization'] = `Bearer ${provider.api_key}`;
-  //       headers['x-api-key'] = provider.api_key;
-  //     }
-  //   }
-  //   try {
-  //     const res = await this.fetchWithTimeout(
-  //       testUrl,
-  //       { method: 'GET', headers },
-  //       TEST_TIMEOUT_MS,
-  //     );
-  //     output.response_time_ms = Date.now() - start;
-  //     output.status_code = res.status;
-  //     // 只要收到 HTTP 响应即视为连通（即使状态码非 2xx）
-  //     output.connected = true;
-  //   } catch (err) {
-  //     output.response_time_ms = Date.now() - start;
-  //     output.connected = false;
-  //     output.error = err instanceof Error ? err.message : String(err);
-  //     output.error_code = 'CONNECT_ERROR';
-  //   }
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
-  async testLLMProvider(input: TestLLMProviderInput, output: TestLLMProviderOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async testLLMProvider(input: TestLLMProviderInput, output: TestLLMProviderOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -555,154 +448,6 @@ export class LLMService {
     return true;
   }
 
-  // ===== 原始方法（保留作为参考）=====
-  // async listLLM(
-  //   input: ListLLMInput,
-  //   _context: LLMContext,
-  //   output: ListLLMOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   if (!input.llm_provider_id) {
-  //     throw new ValidationError('llm_provider_id 不能为空');
-  //   }
-  //
-  //   const row = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: input.llm_provider_id },
-  //   ]);
-  //   if (!row) {
-  //     throw new NotFoundError('LLMProvider', input.llm_provider_id);
-  //   }
-  //   const provider = row as unknown as LLMProviderRecord;
-  //
-  //   // 缓存命中：跳过远程请求，直接返回本地模型列表
-  //   const cacheAge = !input.force && provider.models_fetched_at
-  //     ? IdGenerator.now() - provider.models_fetched_at
-  //     : Infinity;
-  //   if (cacheAge < MODELS_CACHE_TTL_MS) {
-  //     const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
-  //       conditions: [
-  //         { field: 'llm_provider_id', operator: Operator.EQ, value: input.llm_provider_id },
-  //       ],
-  //       order_by: [{ field: 'llm_title', direction: Direction.ASC }],
-  //     });
-  //     output.list = rows as unknown as LLMCacheRecord[];
-  //     output.cached = true;
-  //     return true;
-  //   }
-  //
-  //   const modelsPath = provider.models_path || MODELS_PATH;
-  //   const url = this.buildEndpoint(provider.llm_provider_url, modelsPath);
-  //
-  //   let models: Array<{
-  //     id?: string;
-  //     owned_by?: string;
-  //     created?: number;
-  //   }> = [];
-  //   const headers: Record<string, string> = {};
-  //   if (provider.api_key) {
-  //     headers['Authorization'] = `Bearer ${provider.api_key}`;
-  //   }
-  //   try {
-  //     const res = await this.fetchWithTimeout(
-  //       url,
-  //       { method: 'GET', headers },
-  //       LIST_TIMEOUT_MS,
-  //     );
-  //     if (!res.ok) {
-  //       output.error = `获取模型列表失败: HTTP ${res.status}`;
-  //       output.error_code = 'REMOTE_ERROR';
-  //       await this.updateModelsCacheTimestamp(input.llm_provider_id);
-  //       return false;
-  //     }
-  //     const json = (await res.json()) as {
-  //       data?: Array<Record<string, unknown>>;
-  //     };
-  //     models = json.data ?? [];
-  //   } catch (err) {
-  //     output.error = err instanceof Error ? err.message : String(err);
-  //     output.error_code = 'CONNECT_ERROR';
-  //     await this.updateModelsCacheTimestamp(input.llm_provider_id);
-  //     return false;
-  //   }
-  //
-  //   // upsert 到 llm_model 表（按 llm_provider_id + llm_title 判重）
-  //   const now = IdGenerator.now();
-  //   for (const m of models) {
-  //     const modelId = String(m.id ?? '');
-  //     if (!modelId) continue;
-  //     const rawM = m as Record<string, unknown>;
-  //     const brief = rawM.owned_by ? `owned_by: ${String(rawM.owned_by)}` : null;
-  //     const tl = rawM.token_limits as Record<string, unknown> | undefined;
-  //     const topProvider = rawM.top_provider as Record<string, unknown> | undefined;
-  //     const maxTokens = Number(rawM.context_length || tl?.context_window
-  //       || rawM.max_tokens || rawM.max_completion_tokens
-  //       || (topProvider?.max_completion_tokens) || 0);
-  //     const existing = await this.relationDb.selectOne(LLM_CACHE_TABLE, [
-  //       {
-  //         field: 'llm_provider_id',
-  //         operator: Operator.EQ,
-  //         value: input.llm_provider_id,
-  //       },
-  //       { field: 'llm_title', operator: Operator.EQ, value: modelId },
-  //     ]);
-  //
-  //     if (existing) {
-  //       await this.relationDb.update(
-  //         LLM_CACHE_TABLE,
-  //         [
-  //           { field: 'llm_brief', value: brief },
-  //           { field: 'llm_param', value: JSON.stringify(m) },
-  //           { field: 'max_tokens', value: maxTokens },
-  //           { field: 'llm_param', value: JSON.stringify(m) },
-  //           { field: 'updated', value: now },
-  //         ],
-  //         [
-  //           {
-  //             field: 'llm_provider_id',
-  //             operator: Operator.EQ,
-  //             value: input.llm_provider_id,
-  //           },
-  //           { field: 'llm_title', operator: Operator.EQ, value: modelId },
-  //         ],
-  //       );
-  //     } else {
-  //       const id = IdGenerator.generate();
-  //       try {
-  //         await this.relationDb.insert(LLM_CACHE_TABLE, [
-  //           { field: 'id', value: id },
-  //           { field: 'created', value: now },
-  //           { field: 'updated', value: now },
-  //           { field: 'llm_provider_id', value: input.llm_provider_id },
-  //           { field: 'llm_title', value: modelId },
-  //           { field: 'llm_brief', value: brief },
-  //           { field: 'llm_param', value: JSON.stringify(m) },
-  //           { field: 'max_tokens', value: maxTokens },
-  //           { field: 'llm_param', value: JSON.stringify(m) },
-  //         ]);
-  //       } catch {
-  //         // skip duplicate insert
-  //       }
-  //     }
-  //   }
-  //
-  //   // 更新模型列表缓存时间
-  //   await this.updateModelsCacheTimestamp(input.llm_provider_id);
-  //
-  //   // 返回该提供商下所有模型
-  //   const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
-  //     conditions: [
-  //       {
-  //         field: 'llm_provider_id',
-  //         operator: Operator.EQ,
-  //         value: input.llm_provider_id,
-  //       },
-  //     ],
-  //     order_by: [{ field: 'llm_title', direction: Direction.ASC }],
-  //   });
-  //   output.list = rows as unknown as LLMCacheRecord[];
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
   /**
    * 获取 LLM 模型列表（listLLM）。
@@ -711,7 +456,7 @@ export class LLMService {
    * 支持 OpenAI 兼容格式 (json.data) 与 Google / 统一格式 (json.models) 的动态解析。
    * 仅在请求成功时更新缓存时间戳。
    */
-  async listLLM(input: ListLLMInput, output: ListLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async listLLM(input: ListLLMInput, output: ListLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.llm_provider_id) {
@@ -898,7 +643,7 @@ export class LLMService {
    *
    * PRD 3.2.1 条：将一个 LLM 模型添加到启用列表（llm_enable 表）。
    */
-  async addLLM(input: AddLLMInput, output: AddLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async addLLM(input: AddLLMInput, output: AddLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -934,7 +679,7 @@ export class LLMService {
    *
    * PRD 3.2.2 条：支持按 ID 批量删除或按条件删除。
    */
-  async delLLM(input: DelLLMInput, output: DelLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async delLLM(input: DelLLMInput, output: DelLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -1030,7 +775,7 @@ export class LLMService {
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    * llm_provider_id 为引用字段，不可通过本方法修改。
    */
-  async updateLLM(input: UpdateLLMInput, output: UpdateLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async updateLLM(input: UpdateLLMInput, output: UpdateLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -1073,7 +818,7 @@ export class LLMService {
    * 支持关键词搜索 llm_title、条件过滤、排序、分页。
    * 合并了原 soLLMById 的功能。
    */
-  async soLLM(input: SoLLMInput, output: SoLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async soLLM(input: SoLLMInput, output: SoLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -1125,206 +870,9 @@ export class LLMService {
    * - max_tokens: 最大 Token 数（可选，未指定时使用模型默认 max_tokens）
    * - extra: 其他参数原样传入请求体
    */
-  // ===== 原始方法（保留作为参考）=====
-  // async execLLM(
-  //   input: ExecLLMInput,
-  //   _context: LLMContext,
-  //   output: ExecLLMOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   if (!input.id) {
-  //     // 1. 优先使用已启用的系统默认模型（is_default=1 且 enable=1）
-  //     const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //       { field: 'is_default', operator: Operator.EQ, value: 1 },
-  //       { field: 'enable', operator: Operator.EQ, value: 1 },
-  //     ]);
-  //     if (defaultLLM) {
-  //       input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
-  //     } else {
-  //       // 2. 兜底使用首个已启用的可用模型（enable=1）
-  //       const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //         { field: 'enable', operator: Operator.EQ, value: 1 },
-  //       ]);
-  //       if (firstEnabled) {
-  //         input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
-  //       } else {
-  //         throw new ValidationError('id 不能为空，且无可用模型');
-  //       }
-  //     }
-  //   }
-  //   const prompt = String(input.prompt ?? '');
-  //   if (!prompt) {
-  //     throw new ValidationError('prompt 不能为空');
-  //   }
-  //
-  //   const startTime = Date.now();
-  //
-  //   const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: input.id },
-  //   ]);
-  //   if (!llmRow) {
-  //     throw new NotFoundError('LLM', input.id);
-  //   }
-  //   const llm = llmRow as unknown as LLMAvailableRecord;
-  //   if (!llm.enable) {
-  //     throw new ValidationError(`LLM ${input.id} 已禁用`);
-  //   }
-  //
-  //   const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
-  //   ]);
-  //   if (!providerRow) {
-  //     throw new NotFoundError('LLMProvider', llm.llm_provider_id);
-  //   }
-  //   const provider = providerRow as unknown as LLMProviderRecord;
-  //   if (!provider.enable) {
-  //     throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
-  //   }
-  //
-  //   const body: Record<string, unknown> = {
-  //     model: llm.llm_title,
-  //     messages: [{ role: 'user', content: prompt }],
-  //   };
-  //   if (input.system) {
-  //     (body.messages as Array<Record<string, unknown>>).unshift(
-  //       { role: 'system', content: input.system },
-  //     );
-  //   }
-  //   if (input.temperature !== undefined) {
-  //     body.temperature = input.temperature;
-  //   }
-  //   if (input.max_tokens !== undefined) {
-  //     body.max_tokens = input.max_tokens;
-  //   } else if (llm.max_tokens) {
-  //     body.max_tokens = llm.max_tokens;
-  //   }
-  //   // 透传其他参数（extra 中的参数原样进入请求体）
-  //   if (input.extra) {
-  //     for (const [k, v] of Object.entries(input.extra)) {
-  //       if (!['prompt', 'system', 'temperature', 'max_tokens', 'model', 'messages', 'api_key'].includes(k)) {
-  //         body[k] = v;
-  //       }
-  //     }
-  //   }
-  //
-  //   const chatPath = provider.chat_path || CHAT_PATH;
-  //   let url = this.buildEndpoint(provider.llm_provider_url, chatPath);
-  //   const isGoogle =
-  //     provider.llm_provider_title?.toLowerCase().includes('google') ||
-  //     url.includes('googleapis.com');
-  //
-  //   const headers: Record<string, string> = {
-  //     'Content-Type': 'application/json',
-  //   };
-  //   if (provider.api_key) {
-  //     if (isGoogle) {
-  //       headers['x-goog-api-key'] = provider.api_key;
-  //       if (!url.includes('key=')) {
-  //         url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(provider.api_key)}`;
-  //       }
-  //     } else {
-  //       headers['Authorization'] = `Bearer ${provider.api_key}`;
-  //     }
-  //   }
-  //   try {
-  //     const res = await this.fetchWithTimeout(
-  //       url,
-  //       {
-  //         method: 'POST',
-  //         headers,
-  //         body: JSON.stringify(body),
-  //       },
-  //       EXEC_TIMEOUT_MS,
-  //     );
-  //     if (!res.ok) {
-  //       const text = await res.text();
-  //       output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
-  //       output.error_code = 'REMOTE_ERROR';
-  //       output.duration_ms = Date.now() - startTime;
-  //       return false;
-  //     }
-  //     const text = await res.text();
-  //     output.raw_response = text;
-  //     let json: {
-  //       choices?: Array<{
-  //         message?: { content?: string };
-  //       }>;
-  //       usage?: { prompt_tokens?: number; completion_tokens?: number };
-  //     } = {};
-  //     try {
-  //       json = JSON.parse(text) as typeof json;
-  //     } catch {
-  //       json = {};
-  //     }
-  //     output.result = (json.choices?.[0]?.message?.content ?? '') as string;
-  //     output.input_prompt = prompt;
-  //     output.input_tokens = json.usage?.prompt_tokens ?? 0;
-  //     output.output_tokens = json.usage?.completion_tokens ?? 0;
-  //     output.duration_ms = Date.now() - startTime;
-  //   } catch (err) {
-  //     output.error = err instanceof Error ? err.message : String(err);
-  //     output.error_code = 'CONNECT_ERROR';
-  //     output.duration_ms = Date.now() - startTime;
-  //     return false;
-  //   }
-  //
-  //   // 成功后更新 llm_usage 表当天的 usage_count 与 token 用量
-  //   await this.upsertUsage(input.id, output.input_tokens, output.output_tokens);
-  //   return true;
-  // }
-
-  // ===== 原始方法（保留作为参考）：单模型直接调用，无故障自动降级机制 =====
-  // async execLLM(
-  //   input: ExecLLMInput,
-  //   _context: LLMContext,
-  //   output: ExecLLMOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   if (!input.id) {
-  //     const defaultLLM = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //       { field: 'is_default', operator: Operator.EQ, value: 1 },
-  //       { field: 'enable', operator: Operator.EQ, value: 1 },
-  //     ]);
-  //     if (defaultLLM) {
-  //       input.id = (defaultLLM as unknown as LLMAvailableRecord).id;
-  //     } else {
-  //       const firstEnabled = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //         { field: 'enable', operator: Operator.EQ, value: 1 },
-  //       ]);
-  //       if (firstEnabled) {
-  //         input.id = (firstEnabled as unknown as LLMAvailableRecord).id;
-  //       } else {
-  //         throw new ValidationError('id 不能为空，且无可用模型');
-  //       }
-  //     }
-  //   }
-  //   const prompt = String(input.prompt ?? '');
-  //   if (!prompt) {
-  //     throw new ValidationError('prompt 不能为空');
-  //   }
-  //   const startTime = Date.now();
-  //   const llmRow = await this.relationDb.selectOne(LLM_AVAILABLE_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: input.id },
-  //   ]);
-  //   if (!llmRow) throw new NotFoundError('LLM', input.id);
-  //   const llm = llmRow as unknown as LLMAvailableRecord;
-  //   if (!llm.enable) throw new ValidationError(`LLM ${input.id} 已禁用`);
-  //   const providerRow = await this.relationDb.selectOne(LLM_PROVIDER_TABLE, [
-  //     { field: 'id', operator: Operator.EQ, value: llm.llm_provider_id },
-  //   ]);
-  //   if (!providerRow) throw new NotFoundError('LLMProvider', llm.llm_provider_id);
-  //   const provider = providerRow as unknown as LLMProviderRecord;
-  //   if (!provider.enable) throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
-  //   const strategy = LLMStrategyFactory.soStrategyById(provider);
-  //   const req = strategy.buildChatRequest(provider, llm, input);
-  //   const res = await this.fetchWithTimeout(req.url, { method: req.method, headers: req.headers, body: req.body }, EXEC_TIMEOUT_MS);
-  //   ...
-  //   return true;
-  // }
-
   // ===== 修改后的方法：支持模型故障自动降级回退（指定模型 -> 默认模型 -> 启用模型1 -> 启用模型2 ...） =====
   // 当 input.no_fallback 为 true 时，仅尝试指定模型，不降级到其他模型
-  async execLLM(input: ExecLLMInput, output: ExecLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async execLLM(input: ExecLLMInput, output: ExecLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const prompt = String(input.prompt ?? '');
@@ -1602,7 +1150,7 @@ export class LLMService {
    * 4. 调用向量化 API，解析 data[0].embedding 作为结果；
    * 5. 更新 llm_usage 表当天 usage_count。
    */
-  async embedLLM(input: EmbedLLMInput, output: EmbedLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async embedLLM(input: EmbedLLMInput, output: EmbedLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -1700,7 +1248,7 @@ export class LLMService {
    * 3. 调用大模型生成「简介」与「模型用途」（模型选择：默认模型 → 启用的第一个模型）；
    * 4. 解析 JSON 结果并保存到 llm_available（llm_brief / model_usage）。
    */
-  async genLLMAttr(input: GenLLMAttrInput, output: GenLLMAttrOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async genLLMAttr(input: GenLLMAttrInput, output: GenLLMAttrOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -1828,7 +1376,7 @@ export class LLMService {
    * - volume：数据量（提供商数、模型数、启用 LLM 数、调用记录数）；
    * - diskUsage：占用磁盘空间（基于 SQLite page_size * page_count）。
    */
-  async visualizedLLM(input: VisualizedLLMInput, output: VisualizedLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async visualizedLLM(input: VisualizedLLMInput, output: VisualizedLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -1885,7 +1433,7 @@ export class LLMService {
    *
    * 注：closeLLM 为终态操作，执行后不可通过本方法恢复，需重新初始化组件。
    */
-  async enableLLM(input: EnableLLMInput, _output: EnableLLMOutput, _context: LLMContext, metrics?: Metrics, report?: Report,
+  async enableLLM(input: EnableLLMInput, _output: EnableLLMOutput, _context: LLMContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(

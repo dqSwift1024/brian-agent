@@ -68,7 +68,7 @@ export class IntentAgentService {
     return true;
   }
 
-  async understandRequirement(input: UnderstandRequirementInput, output: UnderstandRequirementOutput, _ctx: IntentAgentContext, metrics?: Metrics, report?: Report,
+  async understandRequirement(input: UnderstandRequirementInput, output: UnderstandRequirementOutput, _ctx: IntentAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.user_query || !input.user_query.trim()) {
       output.understood_requirement = input.user_query ?? '';

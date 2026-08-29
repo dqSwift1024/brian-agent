@@ -33,7 +33,7 @@ export class StreamAccess {
     this.service = new StreamService(relationDb, logger);
   }
 
-  async registerStream(input: RegisterStreamInput, output: RegisterStreamOutput, _context: StreamContext, metrics?: Metrics, report?: Report,
+  async registerStream(input: RegisterStreamInput, output: RegisterStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.registerStream(input, output);
   }
@@ -46,7 +46,7 @@ export class StreamAccess {
     return this.service.pushStream(input, output);
   }
 
-  async closeStream(input: CloseStreamInput, output: CloseStreamOutput, _context: StreamContext, metrics?: Metrics, report?: Report,
+  async closeStream(input: CloseStreamInput, output: CloseStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.closeStream(input, output);
   }
@@ -58,7 +58,7 @@ export class StreamAccess {
     return this.service.soStreamStats(output);
   }
 
-  async configStream(input: ConfigStreamInput, output: ConfigStreamOutput, _context: StreamContext, metrics?: Metrics, report?: Report,
+  async configStream(input: ConfigStreamInput, output: ConfigStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.configStream(input, output);
   }

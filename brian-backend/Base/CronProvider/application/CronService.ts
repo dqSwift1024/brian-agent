@@ -175,7 +175,7 @@ export class CronService {
    *
    * @param manual 是否手动触发（手动触发不推进 next_run）
    */
-  private async executeTask(name: string, handler: CronHandler, manual: boolean): Promise<CronTaskRunRecord> {
+  private async executeTask(name: string, handler: CronHandler, _manual: boolean): Promise<CronTaskRunRecord> {
     const task = this.getTaskRow(name);
     if (!task) throw new NotFoundError('定时任务', name);
 

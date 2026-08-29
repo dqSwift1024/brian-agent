@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, CollectionSource, ContextSource, Operator } from './Base';
+import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, Operator } from '@brian-agent/base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
@@ -144,25 +144,12 @@ import {
   GetConfigItemInput, GetConfigItemOutput,
   UpdateConfigInput, UpdateConfigOutput,
 } from './Application/Config/domain/types';
+import { ALL_CONFIG_REGISTRATIONS } from './Application/Config/domain/configRegistrations';
 
 // Provider value types (need runtime instantiation)
-import {
-  LLMContext, ListLLMInput, ListLLMOutput, AddLLMProviderInput, AddLLMProviderOutput,
-  UpdateLLMProviderInput, UpdateLLMProviderOutput, DelLLMProviderInput, DelLLMProviderOutput,
-  SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput,
-  GetLLMInput, GetLLMOutput, DelLLMInput, DelLLMOutput,
-  UpdateLLMInput, UpdateLLMOutput, AddLLMInput, AddLLMOutput,
-  GenLLMAttrInput, GenLLMAttrOutput,
-} from './Base/LLMProvider';
-import {
-  SoulContext, SoSoulInput, SoSoulOutput, AddSoulInput, AddSoulOutput,
-  UpdateSoulInput, UpdateSoulOutput, DelSoulInput, DelSoulOutput, GetSoulInput, GetSoulOutput,
-} from './Base/SoulProvider';
-import {
-  SkillContext, SoSkillInput, SoSkillOutput, AddSkillInput, AddSkillOutput,
-  UpdateSkillInput, UpdateSkillOutput, DelSkillInput, DelSkillOutput, GetSkillInput, GetSkillOutput,
-  ExecSkillInput, ExecSkillOutput,
-} from './Base/SkillProvider';
+import { LLMContext, ListLLMInput, ListLLMOutput, AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput, DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput, GetLLMInput, GetLLMOutput, GenLLMAttrInput, GenLLMAttrOutput, LLMCacheRecord } from './Base/LLMProvider';
+import { SoulContext, SoSoulInput, SoSoulOutput, AddSoulInput, AddSoulOutput, UpdateSoulInput, UpdateSoulOutput, DelSoulInput, DelSoulOutput } from './Base/SoulProvider';
+import { SkillContext, SoSkillInput, SoSkillOutput, AddSkillInput, AddSkillOutput, UpdateSkillInput, UpdateSkillOutput, DelSkillInput, DelSkillOutput, ExecSkillInput, ExecSkillOutput } from './Base/SkillProvider';
 import {
   McpContext, ListMcpInput, ListMcpOutput,
   SoMcpProviderInput, SoMcpProviderOutput,
@@ -203,9 +190,19 @@ import {
   UpdateSessionTitleInput, UpdateSessionTitleOutput,
 } from './Application/Chat/domain/types';
 
-import { AopProxy } from './Base/shared/aop/AopProxy';
+// 标准签名适配：execRequest(Input, Output, Context, ...) 简化为请求对象风格（模块级，路由层使用）
+let _httpAccessRef: HttpAccess | null = null;
+const httpReq = async (req: { url: string; method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number }) => {
+  const out = new ExecRequestOutput();
+  const access = _httpAccessRef ?? new HttpAccess();
+  await access.execRequest(
+    Object.assign(new ExecRequestInput(), { url: req.url, method: req.method, headers: req.headers, body: req.body, timeout_ms: req.timeoutMs }),
+    out, new HttpContext(),
+  );
+  return out.response;
+};
 
-let _seq = 0;
+const _seq = 0;
 // 数据目录：优先环境变量（打包模式由打包入口注入到可执行文件旁），否则退回源码目录
 const DATA_DIR = process.env.BRIAN_DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -288,7 +285,7 @@ function createLogger(logAccess?: LogAccess): any {
   };
 }
 
-function addColIfMissing(relationDb: any, table: string, column: string, type: string): void {
+function addColIfMissing(relationDb: import('./Base/RelationDBProvider/access/RelationDBAccess').RelationDBAccess, table: string, column: string, type: string): void {
   try { relationDb.executeRaw(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`); } catch { /* exists */ }
 }
 
@@ -380,7 +377,7 @@ function computeMemoryConfidence(infoType: string, tags: string[], infoLength: n
 }
 
 /** 批量查询 info_tag，返回 info_id → tag[] 映射 */
-function queryInfoTagsByInfoIds(relationDb: any, infoIds: string[]): Map<string, string[]> {
+function queryInfoTagsByInfoIds(relationDb: import('./Base/RelationDBProvider/access/RelationDBAccess').RelationDBAccess, infoIds: string[]): Map<string, string[]> {
   const tagMap = new Map<string, string[]>();
   if (infoIds.length === 0) return tagMap;
   const tagRows = relationDb.queryRaw<{ info_id: string; tag: string }>(
@@ -400,7 +397,7 @@ function queryInfoTagsByInfoIds(relationDb: any, infoIds: string[]): Map<string,
  * 向量维度统一由配置系统（info_core.vector_config.dimension）管理，向量表（LanceDB）
  * 按其创建；此处仅在 infoCore 初始化后从 SQLite 读取，作为向量表的维度来源。
  */
-function readVectorDimension(relationDb: any): number {
+function readVectorDimension(relationDb: import('./Base/RelationDBProvider/access/RelationDBAccess').RelationDBAccess): number {
   try {
     const rows = relationDb.queryRaw<{ dimension: number }>(
       'SELECT "dimension" FROM "info_vector_config" LIMIT 1', [],
@@ -427,14 +424,14 @@ async function buildCooccurGraphFromGraphDB(
   edgeType: string,
   limit = 100,
 ): Promise<{ nodes: Array<{ id: string; name: string; weight: number; degree: number }>; edges: Array<{ source: string; target: string; weight: number }> }> {
-  const { GraphContext, SelectGraphInput, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
+  const { GraphContext, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
 
   // 1. 读节点（GraphDB，含频次属性 freq）
   const nodeOut = new SelectGraphOutput();
   await ctx.graphDBAccess.selectGraph(
-    { target: GraphTarget.NODE, node_type: nodeType } as SelectGraphInput,
-    new GraphContext(),
+    { target: GraphTarget.NODE, node_type: nodeType },
     nodeOut,
+    new GraphContext(),
   );
   const allNodes = (nodeOut.list as Array<{ id: string; content?: Record<string, unknown> }>)
     .map((n) => ({ id: n.id, text: String(n.content?.[textField] ?? ''), freq: Number(n.content?.['freq'] ?? 0) }))
@@ -447,9 +444,9 @@ async function buildCooccurGraphFromGraphDB(
   // 2. 读共现边（GraphDB），只保留两端都在保留节点集合内的边
   const edgeOut = new SelectGraphOutput();
   await ctx.graphDBAccess.selectGraph(
-    { target: GraphTarget.EDGE, edge_type: edgeType } as SelectGraphInput,
-    new GraphContext(),
+    { target: GraphTarget.EDGE, edge_type: edgeType },
     edgeOut,
+    new GraphContext(),
   );
   const rawEdges = (edgeOut.list as Array<{ from_node_id: string; to_node_id: string; weight: number }>)
     .filter((e) => keptIds.has(e.from_node_id) && keptIds.has(e.to_node_id));
@@ -550,15 +547,8 @@ async function buildContext() {
     { config_key: 'http_timeout_ms', config_value: '60000', value_type: 'INT', description: 'HTTP 请求默认超时时间（毫秒）' },
   ]);
   const httpAccess = new HttpAccess(toolConfigService);
+  _httpAccessRef = httpAccess;
   // 标准签名适配：execRequest(Input, Output, Context, ...) 简化为请求对象风格
-  const httpReq = async (req: { url: string; method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number }) => {
-    const out = new ExecRequestOutput();
-    await httpAccess.execRequest(
-      Object.assign(new ExecRequestInput(), { url: req.url, method: req.method, headers: req.headers, body: req.body, timeout_ms: req.timeoutMs }),
-      out, new HttpContext(),
-    );
-    return out.response;
-  };
   const streamAccess = new StreamAccess(relationDb, logger);
 
   // ---- Core Providers ----
@@ -568,7 +558,7 @@ async function buildContext() {
   // 存量数据回填：重建 GraphDB 共现边（cooccur），使「系统健康」GraphDB 的边数与标签图一致
   try {
     const rebuildOut = new RebuildCooccurGraphOutput();
-    await infoCore.rebuildCooccurGraph(new RebuildCooccurGraphInput(), new InfoCoreContext(), rebuildOut);
+    await infoCore.rebuildCooccurGraph(new RebuildCooccurGraphInput(), rebuildOut, new InfoCoreContext());
     if ((rebuildOut.rebuilt_edges ?? 0) > 0 || (rebuildOut.deleted_edges ?? 0) > 0) {
       logger.info('[startup] rebuild cooccur edges', `deleted=${rebuildOut.deleted_edges} rebuilt=${rebuildOut.rebuilt_edges}`);
     }
@@ -579,7 +569,7 @@ async function buildContext() {
   // 存量数据迁移：旧 info_graph 表引用边迁移到 GraphDB（CITATION），并删除旧表
   try {
     const citeOut = new RebuildCitationGraphOutput();
-    await infoCore.rebuildCitationGraph(new RebuildCitationGraphInput(), new InfoCoreContext(), citeOut);
+    await infoCore.rebuildCitationGraph(new RebuildCitationGraphInput(), citeOut, new InfoCoreContext());
     if ((citeOut.migrated_edges ?? 0) > 0 || citeOut.dropped_table) {
       logger.info('[startup] migrate citation edges', `migrated=${citeOut.migrated_edges} dropped_table=${citeOut.dropped_table}`);
     }
@@ -783,7 +773,7 @@ async function buildContext() {
   // 启动时清理过期信息（InfoCore.delInfo，清空超过 alive_max_days 的 info 内容，保留记录用于摘要回退）
   try {
     const delOut = new DelInfoOutput();
-    await infoCore.delInfo(new DelInfoInput(), new InfoCoreContext(), delOut);
+    await infoCore.delInfo(new DelInfoInput(), delOut, new InfoCoreContext());
     if (delOut.deleted_count > 0) logger.info('[startup] Info cleanup', `清理了 ${delOut.deleted_count} 条过期信息`);
   } catch (e) {
     logger.warn('[startup] Info cleanup failed', String(e));
@@ -798,7 +788,7 @@ async function buildContext() {
     setTimeout(() => {
       try {
         const delOut = new DelInfoOutput();
-        infoCore.delInfo(new DelInfoInput(), new InfoCoreContext(), delOut).then(() => {
+        infoCore.delInfo(new DelInfoInput(), delOut, new InfoCoreContext()).then(() => {
           if (delOut.deleted_count > 0) logger.info('[cron] Info cleanup', `清理了 ${delOut.deleted_count} 条过期信息`);
         }).catch(() => {});
       } catch { /* ignore */ }
@@ -825,11 +815,11 @@ async function buildContext() {
     setTimeout(() => {
       try {
         const skillOut = new AgeSkillOutput();
-        skillCore.ageSkill(new AgeSkillInput(), new SkillCoreContext(), skillOut).then(() => {
+        skillCore.ageSkill(new AgeSkillInput(), skillOut, new SkillCoreContext()).then(() => {
           if (skillOut.aged_count > 0) logger.info('[cron] Skill aging', `老化 ${skillOut.aged_count} 个 Skill`);
         }).catch(() => {});
         const soulOut = new AgeSoulOutput();
-        soulCore.ageSoul(new AgeSoulInput(), new SoulCoreContext(), soulOut).then(() => {
+        soulCore.ageSoul(new AgeSoulInput(), soulOut, new SoulCoreContext()).then(() => {
           if (soulOut.aged_count > 0) logger.info('[cron] Soul aging', `老化 ${soulOut.aged_count} 个 Soul`);
         }).catch(() => {});
       } catch { /* ignore */ }
@@ -942,7 +932,7 @@ async function rebuildPromptFromRef(
 }
 
 async function buildThinkingBlocksAndDag(
-  relationDb: any,
+  relationDb: import('./Base/RelationDBProvider/access/RelationDBAccess').RelationDBAccess,
   infoCore: any,
   workIds: string[],
   promptsAccess?: any,
@@ -987,12 +977,6 @@ async function buildThinkingBlocksAndDag(
       const wId = String(dRow.work_id ?? '');
       let dagObj: any = undefined;
       try { if (dRow.agent_dag_json) dagObj = JSON.parse(String(dRow.agent_dag_json)); } catch { /* ignore */ }
-
-      // ===== 原始 task_dag 解析（保留参考）：仅用于节点命名 =====
-      // /*
-      // let taskDagObj: any = undefined;
-      // try { if (dRow.task_dag) taskDagObj = JSON.parse(String(dRow.task_dag)); } catch { /* ignore */ }
-      // */
 
       // ===== 修改后：解析 agent_plan.task_dag 得到 Planner 的任务级拆解（Task DAG），
       //      并随 workDagMap 一起下发供"思考过程"弹窗展示 Planning 策略拆解 =====
@@ -1155,7 +1139,7 @@ async function buildThinkingBlocksAndDag(
       }
     }
 
-    let agentIndexCounter = new Map<string, number>();
+    const agentIndexCounter = new Map<string, number>();
 
     // 预查询每个 work 的上下文三对象（source_ids_map / content_map / attribute_map），
     // 由 InfoCoreProvider.soContextByWork 从 info_context_source 表 + info_raw 回查得到。
@@ -1165,7 +1149,7 @@ async function buildThinkingBlocksAndDag(
         if (!wid) continue;
         try {
           const soOut: any = { source_ids_map: {}, content_map: {}, attribute_map: {} };
-          await infoCore.soContextByWork({ work_id: wid }, new InfoCoreContext(), soOut);
+          await infoCore.soContextByWork({ work_id: wid }, soOut, new InfoCoreContext());
           workContextTriplesMap.set(wid, soOut);
         } catch { /* ignore */ }
       }
@@ -1181,7 +1165,7 @@ async function buildThinkingBlocksAndDag(
       }
 
       const agentId = String(row.agent_id ?? '');
-      let rawAgentName = String(row.agent_name ?? '');
+      const rawAgentName = String(row.agent_name ?? '');
 
       // 优先使用数据库记录的具有业务特性的 agent_name，严格消除 UUID
       let agentName = rawAgentName;
@@ -1217,50 +1201,11 @@ async function buildThinkingBlocksAndDag(
       const strategyDisplay = realStrategy === 'PLANNING'
         ? 'Planning 策略 (任务分解)'
         : (realStrategy === 'SIMPLE' ? 'Simple 策略 (直接推理)' : (realStrategy || 'Simple 策略 (直接推理)'));
-      let contextData: any = {
+      const contextData: any = {
         strategy: strategyDisplay,
         userProfile: { language: 'zh-CN', format: 'MARKDOWN', style: 'clear' },
         citingMessages: [],
       };
-
-      // ===== 原始代码（保留参考）=====
-      // if (row.task_content) {
-      //   try {
-      //     const parsedTask = JSON.parse(String(row.task_content));
-      //     if (parsedTask && typeof parsedTask === 'object') {
-      //       if (parsedTask.user_query) {
-      //         inputQuery = String(parsedTask.user_query);
-      //       } else if (parsedTask.task_content) {
-      //         inputQuery = String(parsedTask.task_content);
-      //       } else {
-      //         inputQuery = String(row.task_content);
-      //       }
-      //       if (Array.isArray(parsedTask.session_context)) {
-      //         contextData.citingMessages = parsedTask.session_context;
-      //       }
-      //       if (parsedTask.context_categories) {
-      //         contextData.categories = parsedTask.context_categories;
-      //         if (Array.isArray(parsedTask.context_categories.citing)) contextData.citingMessages = parsedTask.context_categories.citing;
-      //         if (Array.isArray(parsedTask.context_categories.timeline)) contextData.timelineMessages = parsedTask.context_categories.timeline;
-      //         if (Array.isArray(parsedTask.context_categories.pinned)) contextData.pinnedMessages = parsedTask.context_categories.pinned;
-      //         if (Array.isArray(parsedTask.context_categories.similarity)) contextData.similarityMessages = parsedTask.context_categories.similarity;
-      //         if (Array.isArray(parsedTask.context_categories.tag_relative)) contextData.tagRelativeMessages = parsedTask.context_categories.tag_relative;
-      //         if (Array.isArray(parsedTask.context_categories.keyword)) contextData.keywordMessages = parsedTask.context_categories.keyword;
-      //         if (Array.isArray(parsedTask.context_categories.random)) contextData.randomMessages = parsedTask.context_categories.random;
-      //       }
-      //       if (parsedTask.context_category_ids) {
-      //         contextData.categoryIds = parsedTask.context_category_ids;
-      //       }
-      //       if (parsedTask.user_profile) {
-      //         contextData.userProfile = parsedTask.user_profile;
-      //       }
-      //     } else {
-      //       inputQuery = String(row.task_content);
-      //     }
-      //   } catch {
-      //     inputQuery = String(row.task_content);
-      //   }
-      // }
 
       // ===== 修改后的代码：task_content 为纯任务内容（不再拼 work_context 前缀），
       //      上下文改经 InfoCoreProvider.soContextByWork(work_id) 从 info_context_source 表 + info_raw 回查 =====
@@ -1304,10 +1249,6 @@ async function buildThinkingBlocksAndDag(
         contextData.tagRelativeMessages = toMessages('TAG_RELATIVE');
         contextData.keywordMessages = toMessages('KEYWORD');
         contextData.randomMessages = toMessages('RANDOM');
-        // ===== 原始代码（保留参考）：直接下发 sourceIdsMap（大写 key），与前端期望的小写 key 不一致 =====
-        // contextData.categoryIds = sourceIdsMap;
-        // ===== 修改后：将大写来源 key 映射为前端 ThinkingContext 期望的小写分类 key，
-        //       CUSTOM → selected（手动勾选），其余与分类名一致 =====
         contextData.categoryIds = {
           selected: sourceIdsMap.CUSTOM ?? sourceIdsMap.SELECTED ?? [],
           citing: sourceIdsMap.CITING ?? [],
@@ -1446,12 +1387,6 @@ async function buildThinkingBlocksAndDag(
       if (!fullRawResponse) {
         fullRawResponse = outputAnswer || '';
       }
-      // ===== 原始代码（保留参考）=====
-      // if (sumInputTokens === 0 && sumOutputTokens === 0 && tokenUsage > 0) {
-      //   sumInputTokens = Math.round(tokenUsage * 0.7);
-      //   sumOutputTokens = Math.max(0, tokenUsage - sumInputTokens);
-      // }
-
       // ===== 修改后的代码：精准/估算 Token 用量，防止非零 Token 显示为 0 =====
       if (sumInputTokens === 0 && sumOutputTokens === 0) {
         if (tokenUsage > 0) {
@@ -1604,7 +1539,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const i = Object.assign(new GraphVisualizationConfigInput(), { graph_type: graphType });
         const o = new GraphVisualizationConfigOutput();
         const c = new VisualizationContext();
-        await ctx.visualizationAccess.soGraphVisualizationConfig(i, c, o);
+        await ctx.visualizationAccess.soGraphVisualizationConfig(i, o, c);
         sendJson(res, 200, {
           graph_repulsion: o.graph_repulsion,
           graph_spring_strength: o.graph_spring_strength,
@@ -1621,7 +1556,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         const o = new ConfigVisualizationOutput();
         const c = new VisualizationContext();
-        await ctx.visualizationAccess.configVisualization(i, c, o);
+        await ctx.visualizationAccess.configVisualization(i, o, c);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'GET' && pathname.startsWith('/api/config/item/')) {
@@ -1692,7 +1627,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         )[0];
         let restored = 0;
         if (defaultSnapshot) {
-          const defaultData = JSON.parse(defaultSnapshot.snapshot_data) as Record<string, unknown[]>;
+          const defaultData = JSON.parse(defaultSnapshot.snapshot_data) as Record<string, Array<Record<string, unknown>>>;
           for (const [table, rows] of Object.entries(defaultData)) {
             if (!rows || rows.length === 0) continue;
             const cols = Object.keys(rows[0]);
@@ -1757,7 +1692,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           try { ctx.relationDb.executeRaw(`DELETE FROM "${t.name}"`, []); } catch { /* ok */ }
         }
         // 恢复快照数据
-        for (const [table, rows] of Object.entries(data)) {
+        for (const [table, rows] of Object.entries(data as Record<string, Array<Record<string, unknown>>>)) {
           if (!rows || rows.length === 0) continue;
           const cols = Object.keys(rows[0]);
           const placeholders = cols.map(() => '?').join(', ');
@@ -1926,7 +1861,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new AddLLMProviderOutput();
         const context = new LLMContext();
         await ctx.configAccess.addLLMProvider(input, output, context);
-        sendJson(res, 200, { id: output.provider_id, name: body.llm_provider_title || 'new-provider' });
+        sendJson(res, 200, { id: output.id, name: body.llm_provider_title || 'new-provider' });
 
       } else if (method === 'PUT' && pathname.startsWith('/api/config/provider/')) {
         const id = pathname.split('/api/config/provider/')[1];
@@ -1950,11 +1885,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const fetchOutput = new ListLLMOutput();
         const fetchCtx = new LLMContext();
         const ok = await ctx.configAccess.listLLM(fetchInput, fetchOutput, fetchCtx);
-        const models = (fetchOutput.list || []).map((m: Record<string, unknown>) => ({
+        const models = (fetchOutput.list || []).map((m: LLMCacheRecord) => ({
           id: m.llm_title || m.id,
-          name: m.llm_title || m.name || '',
-          brief: m.llm_brief || m.brief || '',
-          features: (m as any).llm_param ? JSON.parse((m as any).llm_param) : {},
+          name: m.llm_title,
+          brief: m.llm_brief || '',
+          features: m.llm_param ? (() => { try { return JSON.parse(m.llm_param); } catch { return {}; } })() : {},
         }));
         sendJson(res, ok ? 200 : 502, {
           models,
@@ -1966,7 +1901,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && /\/api\/config\/provider\/[^/]+\/models$/.test(pathname)) {
         const id = pathname.split('/').filter(Boolean).slice(-2, -1)[0] || '';
-        const rows = ctx.relationDb.queryRaw<{ llm_title: string; llm_brief: string | null; features: string | null }>(
+        const rows = ctx.relationDb.queryRaw<{ llm_title: string; llm_brief: string | null; features: string | null; llm_param: string | null }>(
           'SELECT "llm_title", "llm_brief", "features" FROM "llm_cache" WHERE "llm_provider_id" = ? ORDER BY "llm_title" ASC', [id],
         );
         const enabledRows = ctx.relationDb.queryRaw<{ llm_title: string }>(
@@ -2216,7 +2151,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             ok = r.ok;
             statusMsg = ok ? 'Smithery API 可达' : `HTTP ${r.status}`;
           } else if (provId === 'aliyun_bailian') {
-            const r = await httpReq({ url: 'https://dashscope.aliyuncs.com', timeoutMs: 5000 });
+            await httpReq({ url: 'https://dashscope.aliyuncs.com', timeoutMs: 5000 });
             latency = Date.now() - start;
             ok = true;
             statusMsg = 'DashScope API 可达';
@@ -2346,7 +2281,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             // Other markets: delegate to existing MCPAccess via ConfigAccess
             const installIn = Object.assign(new InstallMcpInput(), { mcp_provider_id: provId, mcp_id: toolId });
             const installOut = new InstallMcpOutput();
-            await ctx.configAccess.installMcp(installIn, new McpContext(), installOut);
+            await ctx.configAccess.installMcp(installIn, installOut, new McpContext());
             sendJson(res, 200, { success: true, id: installOut.id });
           }
         } catch (e: unknown) {
@@ -2392,10 +2327,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.agentStrategy.toggleStrategy(input, output, context);
         sendJson(res, 200, { success: true, enable: output.enable });
 
-      // ===== 原始 POST /api/agent（桩实现，保留作为参考）=====
-      // } else if (method === 'POST' && pathname === '/api/agent') {
-      //   sendJson(res, 200, { id: `agent-${++_seq}`, name: body.name || 'new-agent' });
-
       // ===== 修改后：真实创建 Agent =====
       } else if (method === 'POST' && pathname === '/api/agent') {
         const b = (body || {}) as Record<string, unknown>;
@@ -2431,7 +2362,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         try {
           const addOut = new AddAgentOutput();
-          const ok = await ctx.agentLibrary.addAgent(addIn, new AgentLibraryContext(), addOut);
+          const ok = await ctx.agentLibrary.addAgent(addIn, addOut, new AgentLibraryContext());
           if (!ok) throw new Error('addAgent failed');
           sendJson(res, 200, { id: agentId, agent_id: agentId, name: addIn.agent_name, success: true });
         } catch (e: unknown) {
@@ -2445,10 +2376,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new AgentLibraryContext();
         await ctx.agentLibrary.toggleAgent(input, output, context);
         sendJson(res, 200, { success: true, enable: output.enable });
-
-      // ===== 原始 PUT /api/agent/{id}（桩实现，保留作为参考）=====
-      // } else if (method === 'PUT' && pathname.startsWith('/api/agent/')) {
-      //   sendJson(res, 200, { success: true });
 
       // ===== 修改后：真实更新 Agent =====
       } else if (method === 'PUT' && pathname.startsWith('/api/agent/')) {
@@ -2535,7 +2462,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // 通过 soMcp 获取实例（其 status 已被实时进程状态覆盖，而非 DB 残留值）
         const soIn = new SoMcpInput();
         const soOut = new SoMcpOutput();
-        await ctx.mcpAccess.soMcp(soIn, new McpContext(), soOut);
+        await ctx.mcpAccess.soMcp(soIn, soOut, new McpContext());
         sendJson(res, 200, { installed: (soOut.list || []).map(r => ({
           id: r.id,
           displayName: r.mcp_title,
@@ -2572,14 +2499,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && pathname === '/api/mcp/market') {
         const provOut = new SoMcpProviderOutput();
-        await ctx.mcpAccess.soMcpProvider(Object.assign(new SoMcpProviderInput(), {}), new McpContext(), provOut);
+        await ctx.mcpAccess.soMcpProvider(Object.assign(new SoMcpProviderInput(), {}), provOut, new McpContext());
         const market: { id: string; name: string; url: string }[] = [];
         for (const p of provOut.list || []) {
           try {
             const listOut = new ListMcpOutput();
-            await ctx.mcpAccess.listMcp(Object.assign(new ListMcpInput(), { mcp_provider_id: p.id }), new McpContext(), listOut);
+            await ctx.mcpAccess.listMcp(Object.assign(new ListMcpInput(), { mcp_provider_id: p.id }), listOut, new McpContext());
             for (const m of listOut.list || []) {
-              market.push({ id: (m as Record<string,unknown>).id as string, name: (m as Record<string,unknown>).mcp_title as string || '', url: (p as Record<string,unknown>).mcp_provider_url as string || '' });
+              market.push({ id: String((p as unknown as Record<string, unknown>).id ?? (m as unknown as Record<string, unknown>).id ?? ''), name: String((m as unknown as Record<string, unknown>).mcp_title ?? ''), url: String((p as unknown as Record<string, unknown>).mcp_provider_url ?? '') });
             }
           } catch { /* best-effort */ }
         }
@@ -2592,7 +2519,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const installIn = Object.assign(new InstallMcpInput(), { mcp_provider_id: provId, mcp_id: mcpId });
         const installOut = new InstallMcpOutput();
         const insCtx = new McpContext();
-        await ctx.mcpAccess.installMcp(installIn, insCtx, installOut);
+        await ctx.mcpAccess.installMcp(installIn, installOut, insCtx);
         sendJson(res, 200, { success: true, id: installOut.id });
 
       } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/toggle$/.test(pathname)) {
@@ -2641,27 +2568,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
 
       // ===== Chat Routes =====
-      // ===== 原始代码（保留作为参考）：未显式透传 sessionTitle 字段 =====
-      /*
-      } else if (method === 'GET' && pathname === '/api/chat/list') {
-        const input = Object.assign(new SearchSessionInput(), {
-          keyword: params.get('keyword') || undefined,
-          start_time: params.get('start_time') ? parseInt(params.get('start_time')!, 10) : undefined,
-          end_time: params.get('end_time') ? parseInt(params.get('end_time')!, 10) : undefined,
-        });
-        const output = new SearchSessionOutput();
-        const context = new ChatContext();
-        await ctx.chatAccess.soSession(input, context, output);
-        sendJson(res, 200, {
-          sessions: (output.sessions || []).map((s) => ({
-            sessionId: s.session_id,
-            lastMessage: s.last_message || s.session_title || '',
-            lastTime: s.last_message_time,
-            messageCount: s.message_count,
-          })),
-          total: output.total,
-        });
-      */
       // ===== 修改后代码：增加透传 sessionTitle 字段供前端统一使用会话名称 =====
       } else if (method === 'GET' && pathname === '/api/chat/list') {
         const input = Object.assign(new SearchSessionInput(), {
@@ -2698,28 +2604,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
         await ctx.chatAccess.soChatHistory(input, output, context);
 
-        // ===== 原始代码（保留作为参考）：仅保留一问(REQUEST)一答(RESPONSE)，未填充思考 Blocks =====
-        /*
-        sendJson(res, 200, {
-          messages: (output.messages || [])
-            .filter((m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE)
-            .map((m) => ({
-              id: m.info_id,
-              role: m.info_creator_role === 'USER' ? 'user' : 'assistant',
-              content: m.info,
-              timestamp: m.created,
-              pin: m.pin,
-              workId: m.work_id,
-              traceId: m.work_id || m.interact_id || m.info_id,
-              citingCount: m.citing_count ?? 0,
-              citedCount: m.cited_count ?? 0,
-              citingInfoIds: m.citing_info_ids ?? [],
-              citedInfoIds: m.cited_info_ids ?? [],
-              citingIds: m.cited_info_ids ?? [],
-            })),
-        });
-        */
-
         // ===== 修改后代码：精准关联各 Work 的 Agent 执行与 Trace 迭代步骤，解析具名标题、多 Agent DAG 网络、上下文、Input、Output 与步骤 =====
         const rawMessages = (output.messages || []).filter(
           (m) => m.info_type === InfoType.REQUEST || m.info_type === InfoType.RESPONSE
@@ -2733,8 +2617,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           rawMessages.filter((m) => m.info_type === InfoType.RESPONSE && m.work_id).map((m) => String(m.work_id))
         );
 
-        // ===== 原始内联实现（保留参考）：思考过程重建逻辑已抽取为顶层函数 buildThinkingBlocksAndDag，
-        //      该函数完整保留原有从数据表采集重建 ThinkingChain Blocks 的逻辑，供 history 与 thinking 接口复用 =====
         const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, allWorkIds, ctx.promptsAccess, ctx.soulAccess);
 
         const messages = rawMessages.map((m) => {
@@ -2797,19 +2679,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
 
         // 有参数但反查不到 work_id 时，返回空结果（而非 400）
-        // ===== 原始实现（保留参考）：仅返回 ThinkingChain Blocks =====
-        // const { workBlocksMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
-        // const blocks = workBlocksMap.get(workId) ?? [];
-        // sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks });
-
-        // ===== 原始实现（保留参考）：同时完整查询并下发 Blocks 与 Planning DAG =====
-        /*
-        const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, workId ? [workId] : []);
-        const blocks = workBlocksMap.get(workId) ?? [];
-        const dag = workDagMap.get(workId);
-        sendJson(res, 200, { work_id: workId, interact_id: interactId, count: blocks.length, blocks, dag: dag ?? null });
-        */
-
         // ===== 修改后：支持模块化独立查询（module=dag / module=blocks / module=all），实现各模块独立加载与渐进式展示 =====
         const reqModule = String(params.get('module') ?? 'all').toLowerCase();
         const { workBlocksMap, workDagMap } = await buildThinkingBlocksAndDag(ctx.relationDb, ctx.infoCore, workId ? [workId] : [], ctx.promptsAccess, ctx.soulAccess);
@@ -2917,16 +2786,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         if (!sessionId) { sendJson(res, 400, { error: 'session_id is required' }); return; }
         if (!msgContent.trim()) { sendJson(res, 400, { error: 'msg_content cannot be empty' }); return; }
 
-        // 读取心跳间隔（chat_config.sse_heartbeat_interval_ms，默认 30000ms）
-        let heartbeatIntervalMs = 30000;
-        try {
-          const cfgRows = ctx.relationDb.queryRaw<{ sse_heartbeat_interval_ms: number }>(
-            'SELECT "sse_heartbeat_interval_ms" FROM "chat_config" LIMIT 1', [],
-          );
-          if (cfgRows.length > 0 && Number(cfgRows[0].sse_heartbeat_interval_ms) > 0) {
-            heartbeatIntervalMs = Number(cfgRows[0].sse_heartbeat_interval_ms);
-          }
-        } catch { /* use default */ }
 
         res.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -2981,7 +2840,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const streamOutput = new OpenChatStreamOutput();
 
         try {
-          await ctx.chatAccess.openChatStream(streamInput, streamOutput, new ChatContext(), onEvent);
+          await ctx.chatAccess.openChatStream(streamInput, streamOutput, new ChatContext(), undefined, undefined, onEvent);
         } catch (err: any) {
           await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
             error_message: err?.message || 'Stream failed',
@@ -3204,8 +3063,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const dagOut = Object.assign({}, { agent_dag_structure: {} as Record<string, unknown> });
         await ctx.orchestrationVisualization.visualizeAgentDAG(
           Object.assign({}, { work_id: workId }),
-          Object.assign({}, {}),
           dagOut,
+          Object.assign({}, {}) as import('./Orchestration/OrchestrationVisualization/domain/types').OrchestrationVisualizationContext,
         );
         const graph = (dagOut.agent_dag_structure?.graph ?? {}) as Record<string, unknown>;
         const dagNodes = (graph.nodes ?? []) as Array<Record<string, unknown>>;
@@ -3405,7 +3264,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const onlyActive = body.only_active !== false;
         const fanOutLimit = 500; // θ = 500, PRD 扇出熔断阈值
         try {
-          const { GraphContext, SelectGraphInput, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
+          const { GraphContext, SelectGraphOutput, GraphTarget } = await import('./Base/GraphDBProvider/domain/types');
           // 1. 搜索匹配的标签文本
           const matchedTags = ctx.relationDb.queryRaw<{ tag: string; info_id: string }>(
             'SELECT DISTINCT "tag", "info_id" FROM "info_tag" WHERE "tag" LIKE ? LIMIT 20',
@@ -3425,7 +3284,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const findTagNodeId = async (tagText: string): Promise<string> => {
             const out = new SelectGraphOutput();
             await ctx.graphDBAccess.selectGraph(
-              { target: GraphTarget.NODE, node_type: 'Tag' } as SelectGraphInput, out, new GraphContext(),
+              { target: GraphTarget.NODE, node_type: 'Tag' }, out, new GraphContext(),
             );
             for (const node of out.list as Array<{ id: string; content: Record<string, unknown> }>) {
               if (node.content?.['tag'] === tagText) return node.id;
@@ -3442,7 +3301,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                 { field: 'from_node_id', operator: Operator.IN, value: frontier },
                 { field: 'to_node_id', operator: Operator.IN, value: frontier, logic: 'OR' },
               ],
-            } as SelectGraphInput, out, new GraphContext());
+            }, out, new GraphContext());
             return (out.list as Array<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: boolean }>)
               .filter((e) => !onlyActive || e.is_active)
               .slice(0, fanOutLimit);
@@ -3531,7 +3390,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         let backendMode = bodyMode ? mapLearningMode(bodyMode) : 'ALL';
         if (!bodyMode) {
           const cfgOut = new ConfigSelfLearningOutput();
-          await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+          await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), cfgOut, new SelfLearningContext());
           backendMode = mapLearningMode(String((cfgOut.config as Record<string, unknown>).learning_mode || 'ALL'));
         }
         await ctx.selfLearningAccess.startLearning(
@@ -3573,7 +3432,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && pathname === '/api/learning/stop') {
         // 仅停止手动触发的学习模式，不停止系统启动时自动开启的随机触发（RANDOM）
         const cfgOut = new ConfigSelfLearningOutput();
-        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), cfgOut, new SelfLearningContext());
         const storedMode = String((cfgOut.config as Record<string, unknown>).learning_mode || 'ALL');
         const backendMode = mapLearningMode(storedMode) === 'ALL' ? 'DOCUMENT' : mapLearningMode(storedMode);
         await ctx.selfLearningAccess.stopLearning(
@@ -3621,9 +3480,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'GET' && pathname === '/api/learning/progress-enhanced') {
         const progressOut = new GetLearningProgressOutput();
-        await ctx.selfLearningAccess.soLearningProgress(new GetLearningProgressInput(), new SelfLearningContext(), progressOut);
+        await ctx.selfLearningAccess.soLearningProgress(new GetLearningProgressInput(), progressOut, new SelfLearningContext());
         const cfgOut = new ConfigSelfLearningOutput();
-        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), new SelfLearningContext(), cfgOut);
+        await ctx.selfLearningAccess.configSelfLearning(new ConfigSelfLearningInput(), cfgOut, new SelfLearningContext());
         const cfg = cfgOut.config || {};
         sendJson(res, 200, {
           mode: String(cfg.learning_mode || 'from-conversation'),
@@ -3644,8 +3503,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const progressOut = new GetLearningProgressOutput();
         await ctx.selfLearningAccess.soLearningProgress(
           Object.assign(new GetLearningProgressInput(), { source: backendSource }),
-          new SelfLearningContext(),
           progressOut,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { tasks: progressOut.task_queue || [] });
 
@@ -3755,8 +3614,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             library_name: nameVal || undefined,
             enable_self_learning: true,
           }),
-          new SelfLearningContext(),
           addOut,
+          new SelfLearningContext(),
         );
         sendJson(res, 201, { id: addOut.library_id, name: nameVal, path: pathVal, fileCount: addOut.file_count });
 
@@ -3999,10 +3858,10 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const { GraphContext, VisualizedGraphInput, VisualizedGraphOutput } = await import('./Base/GraphDBProvider/domain/types');
           const o = new VisualizedGraphOutput();
-          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'health' }), new GraphContext(), o);
+          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'health' }), o, new GraphContext());
           const d = o.data || {};
           const vo = new VisualizedGraphOutput();
-          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'volume' }), new GraphContext(), vo);
+          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'volume' }), vo, new GraphContext());
           const vd = vo.data || {};
           components.push({
             name: 'GraphDB',
@@ -4018,10 +3877,10 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const { VectorContext, VisualizedVectorInput, VisualizedVectorOutput } = await import('./Base/VectorDBProvider/domain/types');
           const o = new VisualizedVectorOutput();
-          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'health' }), new VectorContext(), o);
+          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'health' }), o, new VectorContext());
           const d = o.data || {};
           const vo = new VisualizedVectorOutput();
-          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'volume' }), new VectorContext(), vo);
+          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'volume' }), vo, new VectorContext());
           const vd = vo.data || {};
           components.push({
             name: 'VectorDB',
@@ -4037,7 +3896,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const { VisualizedLLMInput, VisualizedLLMOutput } = await import('./Base/LLMProvider/domain/types');
           const o = new VisualizedLLMOutput();
-          await ctx.llmAccess.visualizedLLM(Object.assign(new VisualizedLLMInput(), { scope: 'health' }), new LLMContext(), o);
+          await ctx.llmAccess.visualizedLLM(Object.assign(new VisualizedLLMInput(), { scope: 'health' }), o, new LLMContext());
           const d = o.data || {};
           const enabledProviderCount = await ctx.relationDb.count('llm_provider', [
             { field: 'enable', operator: Operator.EQ, value: 1 },
@@ -4073,7 +3932,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         // MQ
         try {
           const o = new GetQueueStatsOutput();
-          await ctx.mqAccess.soQueueStats(new GetQueueStatsInput(), new MQContext(), o);
+          await ctx.mqAccess.soQueueStats(new GetQueueStatsInput(), o, new MQContext());
           const s = o.stats || {};
           components.push({
             name: 'MQ', status: 'healthy', message: `${s.total ?? 0} 条消息`,
@@ -4209,26 +4068,26 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && pathname === '/api/cdt/start') {
         const { CDTContext, StartCDTInput, StartCDTOutput } = await import('./Base/CDTProvider/domain/types');
         const o = new StartCDTOutput();
-        await ctx.cdtAccess.startCDT(new StartCDTInput(), new CDTContext(), o);
+        await ctx.cdtAccess.startCDT(new StartCDTInput(), o, new CDTContext());
         sendJson(res, o.error ? 500 : 200, o);
 
       } else if (method === 'POST' && pathname === '/api/cdt/stop') {
         const { CDTContext, StopCDTInput, StopCDTOutput } = await import('./Base/CDTProvider/domain/types');
         const o = new StopCDTOutput();
-        await ctx.cdtAccess.stopCDT(new StopCDTInput(), new CDTContext(), o);
+        await ctx.cdtAccess.stopCDT(new StopCDTInput(), o, new CDTContext());
         sendJson(res, 200, o);
 
       } else if (method === 'GET' && pathname === '/api/cdt/status') {
         const { CDTContext, IsCDTRunningInput, IsCDTRunningOutput } = await import('./Base/CDTProvider/domain/types');
         const o = new IsCDTRunningOutput();
-        await ctx.cdtAccess.isCDTRunning(new IsCDTRunningInput(), new CDTContext(), o);
+        await ctx.cdtAccess.isCDTRunning(new IsCDTRunningInput(), o, new CDTContext());
         sendJson(res, 200, o);
 
       } else if (method === 'POST' && pathname === '/api/cdt/navigate') {
         const { CDTCoreContext, CDTCoreNavigateInput, CDTCoreNavigateOutput } = await import('./Core/CDTCoreProvider/domain/types');
         const i = Object.assign(new CDTCoreNavigateInput(), body);
         const o = new CDTCoreNavigateOutput();
-        await ctx.cdtCore.navigate(i, new CDTCoreContext(), o);
+        await ctx.cdtCore.navigate(i, o, new CDTCoreContext());
         await ctx.cdtAccess.injectAntiDetection();
         sendJson(res, o.error ? 500 : 200, o);
 
@@ -4248,7 +4107,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const { CDTCoreContext, CDTCoreEvaluateInput, CDTCoreEvaluateOutput } = await import('./Core/CDTCoreProvider/domain/types');
         const i = Object.assign(new CDTCoreEvaluateInput(), body);
         const o = new CDTCoreEvaluateOutput();
-        await ctx.cdtCore.evaluate(i, new CDTCoreContext(), o);
+        await ctx.cdtCore.evaluate(i, o, new CDTCoreContext());
         sendJson(res, o.error ? 500 : 200, o);
 
       } else if (method === 'GET' && pathname === '/api/cdt/screencast/start') {
@@ -4328,7 +4187,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && pathname === '/api/cdt/cookies') {
         const { CDTCoreContext, CDTCoreGetCookiesInput, CDTCoreGetCookiesOutput } = await import('./Core/CDTCoreProvider/domain/types');
         const o = new CDTCoreGetCookiesOutput();
-        await ctx.cdtCore.getCookies(new CDTCoreGetCookiesInput(), new CDTCoreContext(), o);
+        await ctx.cdtCore.getCookies(new CDTCoreGetCookiesInput(), o, new CDTCoreContext());
         sendJson(res, 200, o);
 
       // ---- Visualization Routes ----
@@ -4344,7 +4203,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           page_size: params.get('page_size') ? parseInt(params.get('page_size')!, 10) : undefined,
         });
         const o = new GetVisualizedMessagesOutput();
-        await ctx.visualizationAccess.soVisualizedMessages(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessages(i, o, new VisualizationContext());
         sendJson(res, 200, { messages: o.messages, total: o.total });
 
       } else if (method === 'GET' && pathname === '/api/visualization/message-graph') {
@@ -4353,7 +4212,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
         });
         const o = new GetVisualizedMessageGraphOutput();
-        await ctx.visualizationAccess.soVisualizedMessageGraph(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessageGraph(i, o, new VisualizationContext());
         sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/dag')) {
@@ -4363,14 +4222,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           resolve_content: params.get('resolve_content') !== 'false',
         });
         const o = new GetVisualizedAgentDAGOutput();
-        await ctx.visualizationAccess.soVisualizedAgentDAG(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedAgentDAG(i, o, new VisualizationContext());
         sendJson(res, 200, o.dag);
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/work/') && pathname.endsWith('/timeline')) {
         const workId = pathname.split('/')[4] || '';
         const i = Object.assign(new GetVisualizedWorkFlowInput(), { work_id: workId });
         const o = new GetVisualizedWorkFlowOutput();
-        await ctx.visualizationAccess.soVisualizedWorkFlow(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedWorkFlow(i, o, new VisualizationContext());
         sendJson(res, 200, o.timeline);
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/agent/') && pathname.endsWith('/trace')) {
@@ -4380,7 +4239,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           trace_id: params.get('trace_id') || undefined,
         });
         const o = new GetAgentTraceOutput();
-        await ctx.visualizationAccess.soAgentTrace(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soAgentTrace(i, o, new VisualizationContext());
         sendJson(res, 200, o.trace);
 
       } else if (method === 'GET' && pathname === '/api/visualization/message-dag') {
@@ -4392,7 +4251,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           max_nodes: params.get('max_nodes') ? parseInt(params.get('max_nodes')!, 10) : undefined,
         });
         const o = new GetVisualizedMessageDAGOutput();
-        await ctx.visualizationAccess.soVisualizedMessageDAG(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soVisualizedMessageDAG(i, o, new VisualizationContext());
         sendJson(res, 200, { session_id: o.session_id, graph: o.graph, metadata: o.metadata });
 
       } else if (method === 'GET' && pathname.startsWith('/api/visualization/resource/')) {
@@ -4401,7 +4260,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const resourceId = parts[4] || '';
         const i = Object.assign(new GetResourceInput(), { resource_type: resourceType, resource_id: resourceId });
         const o = new GetResourceOutput();
-        await ctx.visualizationAccess.soResource(i, new VisualizationContext(), o);
+        await ctx.visualizationAccess.soResource(i, o, new VisualizationContext());
         sendJson(res, 200, o.resource);
 
       // ---- VectorDB Search Routes ----
@@ -4676,7 +4535,7 @@ async function main() {
       import('./Base/CDTProvider/domain/types').then(async (t) => {
         const { CDTContext, StartCDTInput, StartCDTOutput } = t;
         const o = new StartCDTOutput();
-        await ctx.cdtAccess.startCDT(new StartCDTInput(), new CDTContext(), o);
+        await ctx.cdtAccess.startCDT(new StartCDTInput(), o, new CDTContext());
         if (!o.error) {
           fileLogger.info(`[dev-server] CDT started on port ${o.port}, endpoint: ${o.endpoint}`);
         } else {

@@ -19,30 +19,7 @@ import {
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, DataObject, OrderBy, Page } from '../../shared/query';
-import {
-  SoulContext,
-  SoulData,
-  SoulRecord,
-  AddSoulInput,
-  AddSoulOutput,
-  DelSoulInput,
-  DelSoulOutput,
-  UpdateSoulInput,
-  UpdateSoulOutput,
-  GetSoulInput,
-  GetSoulOutput,
-  SoSoulInput,
-  SoSoulOutput,
-  EnableSoulInput,
-  EnableSoulOutput,
-  CloseSoulInput,
-  CloseSoulOutput,
-  RecordSoulUsageInput,
-  RecordSoulUsageOutput,
-  SOUL_TABLE,
-  SOUL_USAGE_TABLE,
-  SOUL_CONFIG_TABLE,
-} from '../domain/types';
+import { SoulContext, SoulRecord, AddSoulInput, AddSoulOutput, DelSoulInput, DelSoulOutput, UpdateSoulInput, UpdateSoulOutput, GetSoulInput, GetSoulOutput, SoSoulInput, SoSoulOutput, EnableSoulInput, EnableSoulOutput, CloseSoulInput, CloseSoulOutput, RecordSoulUsageInput, RecordSoulUsageOutput, SOUL_TABLE, SOUL_USAGE_TABLE, SOUL_CONFIG_TABLE } from '../domain/types';
 
 /**
  * SoulProvider 应用服务。
@@ -102,7 +79,7 @@ export class SoulService {
    *
    * PRD 3.1.1 条。
    */
-  async addSoul(input: AddSoulInput, output: AddSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async addSoul(input: AddSoulInput, output: AddSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -128,7 +105,7 @@ export class SoulService {
    *
    * PRD 3.1.2 条：支持按 ID 批量删除或按条件删除。
    */
-  async delSoul(input: DelSoulInput, output: DelSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async delSoul(input: DelSoulInput, output: DelSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -158,7 +135,7 @@ export class SoulService {
    * PRD 3.1.3 条：支持按 ID 或按条件更新。
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    */
-  async updateSoul(input: UpdateSoulInput, output: UpdateSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async updateSoul(input: UpdateSoulInput, output: UpdateSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -197,7 +174,7 @@ export class SoulService {
    *
    * PRD 3.1.4 条：按 ID 或按条件获取第一条。
    */
-  async soSoulById(input: GetSoulInput, output: GetSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async soSoulById(input: GetSoulInput, output: GetSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -220,7 +197,7 @@ export class SoulService {
    * 关键词匹配 soul_content 与 soul_brief。
    * 若按使用频率排序，联表查询 soul_usage 统计表。
    */
-  async soSoul(input: SoSoulInput, output: SoSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async soSoul(input: SoSoulInput, output: SoSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -429,7 +406,7 @@ export class SoulService {
    *
    * 注：closeSoul 为终态操作，执行后不可通过本方法恢复，需重新初始化组件。
    */
-  async enableSoul(input: EnableSoulInput, _output: EnableSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async enableSoul(input: EnableSoulInput, _output: EnableSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(
@@ -455,7 +432,7 @@ export class SoulService {
    * SoulProvider 不持有独立数据库连接（使用 RelationDBProvider 的共享连接），
    * 本方法仅标记终态，后续所有操作将抛出错误。
    */
-  async closeSoul(_input: CloseSoulInput, _output: CloseSoulOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async closeSoul(_input: CloseSoulInput, _output: CloseSoulOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;
@@ -472,7 +449,7 @@ export class SoulService {
    * 按天统计指定 Soul 的使用次数，采用 upsert 语义：
    * 若当天记录已存在则 usage_count + 1，否则新增一条记录。
    */
-  async recordSoulUsage(input: RecordSoulUsageInput, _output: RecordSoulUsageOutput, _context: SoulContext, metrics?: Metrics, report?: Report,
+  async recordSoulUsage(input: RecordSoulUsageInput, _output: RecordSoulUsageOutput, _context: SoulContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.soul_id) {

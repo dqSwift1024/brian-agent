@@ -27,7 +27,7 @@ import { DelFolderInput, DelFolderOutput, DelItemInput, DelItemOutput } from '..
 export class BookmarkService {
   constructor(private readonly relationDb: RelationDBAccess) {}
 
-  async soTree(input: SoTreeInput, output: SoTreeOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async soTree(_input: SoTreeInput, output: SoTreeOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const folders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT * FROM "${BOOKMARK_FOLDER_TABLE}" ORDER BY "sort_order", "created"`,
       [],
@@ -58,7 +58,7 @@ export class BookmarkService {
     return true;
   }
 
-  async soFlatFolders(input: SoFlatFoldersInput, output: SoFlatFoldersOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async soFlatFolders(_input: SoFlatFoldersInput, output: SoFlatFoldersOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.folders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT * FROM "${BOOKMARK_FOLDER_TABLE}" ORDER BY "name"`,
       [],
@@ -114,7 +114,7 @@ export class BookmarkService {
     return true;
   }
 
-  async updateFolder(input: UpdateFolderInput, output: UpdateFolderOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async updateFolder(input: UpdateFolderInput, _output: UpdateFolderOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.update(
       BOOKMARK_FOLDER_TABLE,
       [
@@ -126,7 +126,7 @@ export class BookmarkService {
     return true;
   }
 
-  async updateItem(input: UpdateItemInput, output: UpdateItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async updateItem(input: UpdateItemInput, _output: UpdateItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.update(
       BOOKMARK_ITEM_TABLE,
       [
@@ -139,7 +139,7 @@ export class BookmarkService {
     return true;
   }
 
-  async delFolder(input: DelFolderInput, output: DelFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async delFolder(input: DelFolderInput, _output: DelFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const childFolders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT "id" FROM "${BOOKMARK_FOLDER_TABLE}" WHERE "parent_id" = ?`,
       [input.id],
@@ -161,14 +161,14 @@ export class BookmarkService {
     return true;
   }
 
-  async delItem(input: DelItemInput, output: DelItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async delItem(input: DelItemInput, _output: DelItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.delete(BOOKMARK_ITEM_TABLE, [
       { field: 'id', operator: Operator.EQ, value: input.id },
     ]);
     return true;
   }
 
-  async moveItem(input: MoveItemInput, output: MoveItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async moveItem(input: MoveItemInput, _output: MoveItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const nextOrder = this.relationDb.queryRaw<{ c: number }>(
       `SELECT COUNT(*) as c FROM "${BOOKMARK_ITEM_TABLE}" WHERE "folder_id" = ?`,
       [input.target_folder_id],

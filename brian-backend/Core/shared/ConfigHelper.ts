@@ -5,7 +5,6 @@
  */
 
 import type { RelationDBAccess } from '@brian-agent/base';
-import { Operator } from '@brian-agent/base';
 import type { DataObject } from '@brian-agent/base';
 import { IdGenerator } from '@brian-agent/base';
 
@@ -32,27 +31,4 @@ export async function ensureDefaultConfig(
     ];
     await relationDb.insert(tableName, record);
   }
-}
-
-/**
- * 从配置表加载第一条记录（用于单行配置表）。
- */
-export async function loadConfigRecord(
-  relationDb: RelationDBAccess,
-  tableName: string,
-): Promise<Record<string, unknown> | null> {
-  return relationDb.selectOne(tableName, []);
-}
-
-/**
- * 确认记录不为 null 的辅助函数。
- */
-export function requireRecord<T extends Record<string, unknown>>(
-  record: T | null | undefined,
-  resourceName: string,
-): T {
-  if (record == null) {
-    throw new Error(`${resourceName} 记录不存在`);
-  }
-  return record;
 }

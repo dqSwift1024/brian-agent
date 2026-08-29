@@ -31,7 +31,7 @@ export class OrchestrationVisualizationService {
     private readonly logger?: Logger,
   ) {}
 
-  async visualizeAgentDAG(input: VisualizeAgentDAGInput, output: VisualizeAgentDAGOutput, context: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
+  async visualizeAgentDAG(input: VisualizeAgentDAGInput, output: VisualizeAgentDAGOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const workId = input.work_id;
 
@@ -45,8 +45,8 @@ export class OrchestrationVisualizationService {
     const nodes: Record<string, unknown>[] = [];
     const edges: Record<string, unknown>[] = [];
 
-    let agentIds: string[] = [];
-    let taskAgentMap = new Map<string, string>(); // agent_id → task_id
+    const agentIds: string[] = [];
+    const taskAgentMap = new Map<string, string>(); // agent_id → task_id
 
     if (strategy === 'PLANNING') {
       const planId = await this.getPlanIdForWork(workId);
@@ -197,7 +197,7 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async visualizeWorkFlow(input: VisualizeWorkFlowInput, output: VisualizeWorkFlowOutput, _context: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
+  async visualizeWorkFlow(input: VisualizeWorkFlowInput, output: VisualizeWorkFlowOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const workId = input.work_id;
 
@@ -341,7 +341,7 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async soAgentNodeDetail(input: GetAgentNodeDetailInput, output: GetAgentNodeDetailOutput, _context: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
+  async soAgentNodeDetail(input: GetAgentNodeDetailInput, output: GetAgentNodeDetailOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { work_id: workId, agent_id: agentId } = input;
 
@@ -404,7 +404,7 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async configOrchestrationVisualization(input: ConfigOrchestrationVisualizationInput, output: ConfigOrchestrationVisualizationOutput, _context: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
+  async configOrchestrationVisualization(input: ConfigOrchestrationVisualizationInput, output: ConfigOrchestrationVisualizationOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },

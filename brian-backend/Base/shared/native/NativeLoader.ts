@@ -107,6 +107,7 @@ export class NativeLoader {
     const abiMatchPath = join(basePath, 'prebuilt', platformDir, abiDir, fileName);
     if (existsSync(abiMatchPath)) {
       return {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         exports: require(abiMatchPath),
         resolvedPath: abiMatchPath,
         matchType: 'abi',
@@ -117,6 +118,7 @@ export class NativeLoader {
     const platformMatchPath = join(basePath, 'prebuilt', platformDir, fileName);
     if (existsSync(platformMatchPath)) {
       return {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         exports: require(platformMatchPath),
         resolvedPath: platformMatchPath,
         matchType: 'platform',
@@ -127,6 +129,7 @@ export class NativeLoader {
     const legacyPath = join(basePath, 'out', fileName);
     if (existsSync(legacyPath)) {
       return {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         exports: require(legacyPath),
         resolvedPath: legacyPath,
         matchType: 'legacy',

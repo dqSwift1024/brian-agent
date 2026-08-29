@@ -19,7 +19,5 @@
   "include": [
     "shared/src/**/*"
   ],
-  "references": [
-    { "path": "./backend/tsconfig.json" }
-  ]
+  "references": []
 }

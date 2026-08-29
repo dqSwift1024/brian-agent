@@ -9,10 +9,11 @@
  */
 
 import { Metrics, Report } from '@brian-agent/base';
-import type { RelationDBAccess, Logger, IdGenerator, CronAccess } from '@brian-agent/base';
+import type { RelationDBAccess, CronAccess } from '@brian-agent/base';
+import { IdGenerator } from '@brian-agent/base';
 import { GetCronTaskInput, GetCronTaskOutput, CronContext, SetCronTaskInput, SetCronTaskOutput } from '@brian-agent/base';
 import { Operator, ValidationError, NotFoundError } from '@brian-agent/base';
-import type { DataObject, Condition } from '@brian-agent/base';
+import type { DataObject } from '@brian-agent/base';
 import {
   ConfigService as BaseConfigService,
   LLM_CONFIG_TABLE,
@@ -36,20 +37,8 @@ import {
   SoInfoTagConfigOutput, SoInfoSummaryConfigOutput, SoInfoConfigOutput,
   SoInfoVectorConfigOutput, SoInfoContextConfigOutput,
 } from '@brian-agent/core';
-import type {
-  ConfigLLMCoreInput, LLMCoreContext,
-  LimitLLMInput, LimitLLMOutput, CheckLLMQuotaInput, CheckLLMQuotaOutput,
-} from '@brian-agent/core';
-import type {
-  UpdateInfoTagConfigInput, UpdateInfoTagConfigOutput,
-  UpdateInfoSummaryConfigInput, UpdateInfoSummaryConfigOutput,
-  UpdateInfoConfigInput, UpdateInfoConfigOutput,
-  UpdateInfoVectorConfigInput, UpdateInfoVectorConfigOutput,
-  UpdateInfoContextConfigInput, UpdateInfoContextConfigOutput,
-  SoInfoTagConfigInput, SoInfoSummaryConfigInput,
-  SoInfoConfigInput, SoInfoVectorConfigInput, SoInfoContextConfigInput,
-  InfoCoreContext,
-} from '@brian-agent/core';
+import type { ConfigLLMCoreInput, LLMCoreContext } from '@brian-agent/core';
+import type { SoInfoTagConfigInput, SoInfoSummaryConfigInput, SoInfoConfigInput, SoInfoVectorConfigInput, SoInfoContextConfigInput, InfoCoreContext } from '@brian-agent/core';
 import type {
   ConfigMcpCoreInput, McpCoreContext,
 } from '@brian-agent/core';
@@ -70,57 +59,14 @@ import type {
   PlannerAgentAccess,
 } from '@brian-agent/agent';
 import type {
-  ConfigWriterAgentInput, ConfigWriterAgentOutput, WriterAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigEvolutorAgentInput, ConfigEvolutorAgentOutput, EvolutorAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigPlannerAgentInput, ConfigPlannerAgentOutput, PlannerAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentLibraryInput, ConfigAgentLibraryOutput, AgentLibraryContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentBuilderInput, ConfigAgentBuilderOutput, AgentBuilderContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentExecutionInput, ConfigAgentExecutionOutput, AgentExecutionContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentStrategyInput, ConfigAgentStrategyOutput, AgentStrategyContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentContextInput, ConfigAgentContextOutput, AgentContextContext,
-} from '@brian-agent/agent';
-
-import type {
   OrchestrationEntryAccess, OrchestrationStrategyAccess,
   OrchestrationExecutionAccess, OrchestrationVisualizationAccess, JSONNodeAccess,
 } from '@brian-agent/orchestration';
 import type {
-  ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput, OrchestrationEntryContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationStrategyInput, ConfigOrchestrationStrategyOutput, OrchestrationStrategyContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationExecutionInput, ConfigOrchestrationExecutionOutput, OrchestrationExecutionContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationVisualizationInput, ConfigOrchestrationVisualizationOutput, OrchestrationVisualizationContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigJSONNodeInput, ConfigJSONNodeOutput, JSONNodeContext,
-} from '@brian-agent/orchestration';
-
-import type {
   LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
   MQAccess, GraphDBAccess, VectorDBAccess,
 } from '@brian-agent/base';
-import type {
-  ConfigLogInput, ConfigLogOutput, LogContext,
-} from '@brian-agent/base';
+import type { ConfigLogInput, LogContext } from '@brian-agent/base';
 import type {
   AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput,
   DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput,
@@ -155,8 +101,6 @@ import type {
   PromptContext,
 } from '@brian-agent/base';
 import { PROMPT_SLOTS } from '@brian-agent/base';
-
-import type { Input, Context, Output } from '@brian-agent/base';
 
 import {
   ConfigContext,
@@ -308,7 +252,7 @@ export class ConfigService {
   // updateLayerPrivilege
   // =========================================================================
 
-  async updateLayerPrivilege(input: UpdateLayerPrivilegeInput, output: UpdateLayerPrivilegeOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async updateLayerPrivilege(input: UpdateLayerPrivilegeInput, output: UpdateLayerPrivilegeOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.layer || !VALID_LAYERS.includes(input.layer as any)) {
       throw new ValidationError(`layer 必须是 ${VALID_LAYERS.join('/')} 之一`);
@@ -350,7 +294,7 @@ export class ConfigService {
   // updateModulePrivilege
   // =========================================================================
 
-  async updateModulePrivilege(input: UpdateModulePrivilegeInput, output: UpdateModulePrivilegeOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async updateModulePrivilege(input: UpdateModulePrivilegeInput, output: UpdateModulePrivilegeOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.module) {
       throw new ValidationError('module 不能为空');
@@ -417,7 +361,7 @@ export class ConfigService {
   // soConfigDetail
   // =========================================================================
 
-  async soConfigDetail(input: GetConfigDetailInput, output: GetConfigDetailOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async soConfigDetail(input: GetConfigDetailInput, output: GetConfigDetailOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const layerRows = await this.relationDb.select(CONFIG_LAYER_PRIVILEGE_TABLE);
     const moduleRows = await this.relationDb.select(CONFIG_MODULE_PRIVILEGE_TABLE);
@@ -546,7 +490,7 @@ export class ConfigService {
   // soConfigItem
   // =========================================================================
 
-  async soConfigItem(input: GetConfigItemInput, output: GetConfigItemOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async soConfigItem(input: GetConfigItemInput, output: GetConfigItemOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -604,7 +548,7 @@ export class ConfigService {
   // updateConfig
   // =========================================================================
 
-  async updateConfig(input: UpdateConfigInput, output: UpdateConfigOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async updateConfig(input: UpdateConfigInput, _output: UpdateConfigOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -648,7 +592,7 @@ export class ConfigService {
   // configConfig (self-config)
   // =========================================================================
 
-  async configConfig(input: ConfigConfigInput, output: ConfigConfigOutput, _context: ConfigContext, metrics?: Metrics, report?: Report,
+  async configConfig(input: ConfigConfigInput, output: ConfigConfigOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(CONFIG_CONFIG_TABLE, []);
     const now = Date.now();
@@ -686,7 +630,6 @@ export class ConfigService {
   // =========================================================================
 
   private generateId(): string {
-    const { IdGenerator } = require('@brian-agent/base');
     return IdGenerator.generate();
   }
 

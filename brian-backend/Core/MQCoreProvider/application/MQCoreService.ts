@@ -82,7 +82,7 @@ export class MQCoreService {
    *
    * @returns worker_id 写入 output.worker_id
    */
-  async startWorker(input: StartWorkerInput, output: StartWorkerOutput, _context: MQCoreContext, metrics?: Metrics, report?: Report,
+  async startWorker(input: StartWorkerInput, output: StartWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { queue, handler } = input;
     const interval = input.interval ?? 1000;
@@ -120,7 +120,7 @@ export class MQCoreService {
    * @param input.identifier 工作器 ID 或队列名
    * @returns 停止数量写入 output.stopped_count
    */
-  async stopWorker(input: StopWorkerInput, output: StopWorkerOutput, _context: MQCoreContext, metrics?: Metrics, report?: Report,
+  async stopWorker(input: StopWorkerInput, output: StopWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const identifier = input.identifier;
     let stoppedCount = 0;
@@ -158,7 +158,7 @@ export class MQCoreService {
    * @param input.queue 可选队列名，不指定则返回全部
    * @returns 工作器列表写入 output.workers
    */
-  async soWorker(input: SoWorkerInput, output: SoWorkerOutput, _context: MQCoreContext, metrics?: Metrics, report?: Report,
+  async soWorker(input: SoWorkerInput, output: SoWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const queueFilter = input.queue;
     const result: WorkerInfo[] = [];

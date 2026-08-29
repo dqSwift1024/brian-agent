@@ -44,16 +44,7 @@ import {
   RecordSystemAgentExecutionInput, RecordSystemAgentExecutionOutput,
   type AgentDAG, type TaskDAG,
 } from '../../OrchestrationExecution/domain/types';
-import {
-  JSONNodeContext, JSONNodeConfig, NodeHandler,
-  JSONNodeDefinition, NodeExecutionTrace,
-  ExecJSONNodeInput, ExecJSONNodeOutput,
-  GetJSONNodeTraceInput, GetJSONNodeTraceOutput,
-  RegisterNodeTypeInput, RegisterNodeTypeOutput,
-  ValidateJSONNodeInput, ValidateJSONNodeOutput,
-  ConfigJSONNodeInput, ConfigJSONNodeOutput,
-  BUILTIN_NODE_TYPES,
-} from '../domain/types';
+import { JSONNodeContext, JSONNodeConfig, NodeHandler, NodeExecutionTrace, ExecJSONNodeInput, ExecJSONNodeOutput, GetJSONNodeTraceInput, GetJSONNodeTraceOutput, RegisterNodeTypeInput, RegisterNodeTypeOutput, ValidateJSONNodeInput, ValidateJSONNodeOutput, ConfigJSONNodeInput, ConfigJSONNodeOutput, BUILTIN_NODE_TYPES } from '../domain/types';
 import { selectOrchestrationStrategy } from '../../shared/strategySelector';
 
 export class JSONNodeService {
@@ -107,153 +98,6 @@ export class JSONNodeService {
     this.nodeTypeRegistry.set('INVOKE', (sd, p, c) => this.handleInvoke(sd, p, c));
   }
 
-  // ===== 原始方法（保留作为参考） =====
-  // async execJSONNode(
-  //   input: ExecJSONNodeInput,
-  //   context: JSONNodeContext,
-  //   output: ExecJSONNodeOutput,
-  // ): Promise<boolean> {
-  //   const def = input.jsonnode_definition;
-  //   const sharedData: Record<string, unknown> = {
-  //     ...(input.initial_data ?? {}),
-  //   };
-  //   context.work_id = context.work_id ?? (sharedData.work_id as string);
-  //   context.interact_id = context.interact_id ?? (sharedData.interact_id as string);
-  //   context.session_id = context.session_id ?? (sharedData.session_id as string);
-  //   const trace: NodeExecutionTrace[] = [];
-  //
-  //   const nodeMap = new Map(def.nodes.map((n) => [n.node_id, n]));
-  //   if (!nodeMap.has(def.start_node)) {
-  //     output.error = `start_node "${def.start_node}" not found in nodes`;
-  //     return false;
-  //   }
-  //
-  //   for (const node of def.nodes) {
-  //     const nextIds: string[] = [];
-  //     if (node.on_error) nextIds.push(node.on_error);
-  //     if (node.next) nextIds.push(node.next);
-  //     if (node.true_next) nextIds.push(node.true_next);
-  //     if (node.false_next) nextIds.push(node.false_next);
-  //     for (const nid of nextIds) {
-  //       if (!nodeMap.has(nid)) {
-  //         output.error = `node "${node.node_id}" references unknown node_id "${nid}"`;
-  //         return false;
-  //       }
-  //     }
-  //   }
-  //
-  //   let currentNode = nodeMap.get(def.start_node) ?? null;
-  //   let depth = 0;
-  //   const maxDepth = this.config.max_execution_depth;
-  //
-  //   while (currentNode && depth < maxDepth) {
-  //     const node = currentNode;
-  //     depth++;
-  //     const handler = this.nodeTypeRegistry.get(node.node_type);
-  //     if (!handler) {
-  //       this.logger?.error?.('JSONNode: unknown node_type', { node_type: node.node_type });
-  //       currentNode = node.on_error ? (nodeMap.get(node.on_error) ?? null) : null;
-  //       continue;
-  //     }
-  //
-  //     const startedAt = Date.now();
-  //     const traceEntry: NodeExecutionTrace = {
-  //       node_id: node.node_id,
-  //       node_type: node.node_type,
-  //       status: 'RUNNING',
-  //       elapsed_ms: 0,
-  //     };
-  //
-  //     const sId = (sharedData.session_id as string) ?? context.session_id ?? '';
-  //     const wId = (sharedData.work_id as string) ?? context.work_id ?? '';
-  //     const iId = (sharedData.interact_id as string) ?? context.interact_id ?? '';
-  //
-  //     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
-  //       await this.streamAccess.pushEvent(sId, 'dag_node_start', 'DAG', {
-  //         node_id: node.node_id,
-  //         node_type: node.node_type,
-  //         params: node.params,
-  //       }, { work_id: wId, interact_id: iId, node_id: node.node_id });
-  //     }
-  //
-  //     try {
-  //       const timeoutMs = this.config.node_timeout_ms;
-  //       if (timeoutMs > 0) {
-  //         await Promise.race([
-  //           handler(sharedData, node.params, context),
-  //           new Promise<void>((_, reject) => {
-  //             setTimeout(() => reject(new Error(`Node execution timeout after ${timeoutMs}ms`)), timeoutMs);
-  //           }),
-  //         ]);
-  //       } else {
-  //         await handler(sharedData, node.params, context);
-  //       }
-  //       traceEntry.status = 'SUCCESS';
-  //       traceEntry.elapsed_ms = Date.now() - startedAt;
-  //       trace.push(traceEntry);
-  //
-  //       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
-  //         await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
-  //           node_id: node.node_id,
-  //           node_type: node.node_type,
-  //           status: 'SUCCESS',
-  //           elapsed_ms: traceEntry.elapsed_ms,
-  //         }, { work_id: wId, interact_id: iId, node_id: node.node_id });
-  //       }
-  //
-  //       if (this.config.trace_enabled) {
-  //         await this.saveTrace(input.orchestration_id, traceEntry);
-  //       }
-  //
-  //       if (node.node_type === 'CONDITION') {
-  //         const condResult = sharedData._condition_result as boolean;
-  //         const nextId = condResult ? node.true_next : node.false_next;
-  //         currentNode = nextId ? (nodeMap.get(nextId) ?? null) : null;
-  //       } else {
-  //         currentNode = node.next ? (nodeMap.get(node.next) ?? null) : null;
-  //       }
-  //     } catch (err: unknown) {
-  //       traceEntry.status = 'ERROR';
-  //       traceEntry.elapsed_ms = Date.now() - startedAt;
-  //       const errorMsg = err instanceof Error ? err.message : String(err);
-  //       traceEntry.error = errorMsg;
-  //       trace.push(traceEntry);
-  //
-  //       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sId) {
-  //         await this.streamAccess.pushEvent(sId, 'dag_node_end', 'DAG', {
-  //           node_id: node.node_id,
-  //           node_type: node.node_type,
-  //           status: 'ERROR',
-  //           error: errorMsg,
-  //           elapsed_ms: traceEntry.elapsed_ms,
-  //         }, { work_id: wId, interact_id: iId, node_id: node.node_id });
-  //       }
-  //
-  //       if (this.config.trace_enabled) {
-  //         await this.saveTrace(input.orchestration_id, traceEntry);
-  //       }
-  //
-  //       sharedData._error = errorMsg;
-  //       this.logger?.error?.('JSONNode: node execution failed', {
-  //         node_id: node.node_id,
-  //         node_type: node.node_type,
-  //         error: errorMsg,
-  //       });
-  //       if (node.on_error && node.on_error !== node.node_id) {
-  //         currentNode = nodeMap.get(node.on_error) ?? null;
-  //       } else {
-  //         if (node.on_error === node.node_id) {
-  //           this.logger?.error?.('JSONNode: on_error self-loop detected, terminating', { node_id: node.node_id });
-  //         }
-  //         currentNode = null;
-  //       }
-  //     }
-  //   }
-  //
-  //   output.shared_data = sharedData;
-  //   return true;
-  // }
-
   private async ensureConfigLoaded(): Promise<void> {
     try {
       const selInput = Object.assign(new SelectOneDBInput(), {
@@ -277,7 +121,7 @@ export class JSONNodeService {
   }
 
   // ===== 修改后的方法 =====
-  async execJSONNode(input: ExecJSONNodeInput, output: ExecJSONNodeOutput, context: JSONNodeContext, metrics?: Metrics, report?: Report,
+  async execJSONNode(input: ExecJSONNodeInput, output: ExecJSONNodeOutput, context: JSONNodeContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.ensureConfigLoaded();
     const def = input.jsonnode_definition;
@@ -439,7 +283,7 @@ export class JSONNodeService {
     return true;
   }
 
-  async soJSONNodeTrace(input: GetJSONNodeTraceInput, output: GetJSONNodeTraceOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
+  async soJSONNodeTrace(input: GetJSONNodeTraceInput, output: GetJSONNodeTraceOutput, _context: JSONNodeContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -455,7 +299,7 @@ export class JSONNodeService {
     return true;
   }
 
-  registerNodeType(input: RegisterNodeTypeInput, output: RegisterNodeTypeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
+  registerNodeType(input: RegisterNodeTypeInput, output: RegisterNodeTypeOutput, _context: JSONNodeContext, _metrics?: Metrics, _report?: Report,
   ): boolean {
     output.registered = false;
     if (!input.node_type) {
@@ -472,7 +316,7 @@ export class JSONNodeService {
     return true;
   }
 
-  validate(input: ValidateJSONNodeInput, output: ValidateJSONNodeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
+  validate(input: ValidateJSONNodeInput, output: ValidateJSONNodeOutput, _context: JSONNodeContext, _metrics?: Metrics, _report?: Report,
   ): boolean {
     const errors: string[] = [];
     const def = input.jsonnode_definition;
@@ -549,7 +393,7 @@ export class JSONNodeService {
     return true;
   }
 
-  async configJSONNode(input: ConfigJSONNodeInput, output: ConfigJSONNodeOutput, _context: JSONNodeContext, metrics?: Metrics, report?: Report,
+  async configJSONNode(input: ConfigJSONNodeInput, output: ConfigJSONNodeOutput, _context: JSONNodeContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.max_execution_depth !== undefined && input.max_execution_depth <= 0) {
       throw new ValidationError('max_execution_depth must be positive');
@@ -703,12 +547,6 @@ export class JSONNodeService {
     let contextAttributeMap: unknown = undefined;
     try {
       const selectedMsgIds = Array.isArray(sharedData.selected_msg_ids) ? sharedData.selected_msg_ids as string[] : undefined;
-      // ===== 原始代码（保留作为参考）=====
-      // const ctxInfoInput = Object.assign(new ContextInfoInput(), {
-      //   session_id: sessionId,
-      //   selected_msg_ids: selectedMsgIds,
-      // });
-
       // ===== 修改后的代码：传入 user_query 以支撑向量/关键词/标签召回 =====
       const userQuery = typeof sharedData.user_query === 'string' ? sharedData.user_query : undefined;
       const ctxInfoInput = Object.assign(new ContextInfoInput(), {
@@ -774,20 +612,6 @@ export class JSONNodeService {
     };
 
     // 上下文构建过程与结果：流式推送给前端，但不存入消息表 info_raw（避免内容膨胀）
-    // ===== 原始代码（保留参考）=====
-    // if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
-    //   await this.streamAccess.pushEvent(sessionId, 'context_built', 'CONTEXT', {
-    //     recent_works_count: recentWorks.length,
-    //     user_profile_present: Boolean(userProfile && Object.keys(userProfile).length > 0),
-    //     session_context_count: Array.isArray(sessionContext) ? sessionContext.length : 0,
-    //     created_at: IdGenerator.now(),
-    //   }, {
-    //     work_id: workId,
-    //     interact_id: (sharedData.interact_id as string) ?? context.interact_id ?? '',
-    //     node_id: 'BUILD_WORK_CONTEXT',
-    //   });
-    // }
-
     // ===== 修改后的代码：将完整上下文分类与 ID 映射表通过 context_built 事件透传给前端 =====
     if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && sessionId) {
       await this.streamAccess.pushEvent(sessionId, 'context_built', 'CONTEXT', {

@@ -4,7 +4,6 @@
  * 展示「思考过程」时，用落库的 PromptReference（模板引用 + 小变量）+ 外部补充的
  * 上下文（context_data）与历史（history），经 PromptProvider 重建完整 prompt。
  */
-import { Metrics, Report } from '@brian-agent/base';
 import {
   PromptsAccess, SoulAccess,
   ExecPromptInput, ExecPromptOutput, PromptContext,

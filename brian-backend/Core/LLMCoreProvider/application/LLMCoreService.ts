@@ -15,13 +15,7 @@ import {
   NotFoundError,
 } from '../../shared/errors';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 import type { LLMProviderQuotaRecord, LLMCoreConfigRecord } from '../domain/types';
 import {
   LLMCoreContext,
@@ -40,15 +34,7 @@ import {
   LLM_PROVIDER_QUOTA_TABLE,
   LLM_CORE_USAGE_TABLE,
 } from '../domain/types';
-import {
-  SoLLMInput,
-  SoLLMOutput,
-  GetLLMInput,
-  GetLLMOutput,
-  ExecLLMInput,
-  ExecLLMOutput,
-  LLMContext,
-} from '@brian-agent/base';
+import { SoLLMInput, SoLLMOutput, ExecLLMInput, ExecLLMOutput, LLMContext } from '@brian-agent/base';
 import {
   GetPromptInput,
   GetPromptOutput,
@@ -98,7 +84,7 @@ export class LLMCoreService {
   /**
    * 为指定 Agent 匹配合适的 LLM 提供商（三层统一匹配/选择逻辑）。
    */
-  async matchLLM(input: MatchLLMInput, output: MatchLLMOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
+  async matchLLM(input: MatchLLMInput, output: MatchLLMOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.agent_id) {
       throw new ValidationError('matchLLM 需要提供 agent_id');
@@ -106,7 +92,6 @@ export class LLMCoreService {
 
     const config = await this.getCoreConfig();
     const regenRate = config?.regen_rate ?? 75;
-    const similarityThreshold = config?.similarity_threshold ?? 0.7;
 
     // 搜索可用 LLM
     const soOutput = new SoLLMOutput();
@@ -206,7 +191,7 @@ export class LLMCoreService {
    *
    * 采用 upsert 语义：若提供商已存在配额记录则更新，否则新建。
    */
-  async limitLLM(input: LimitLLMInput, output: LimitLLMOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
+  async limitLLM(input: LimitLLMInput, output: LimitLLMOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('limitLLM 需要提供 llm_provider_id');
@@ -266,7 +251,7 @@ export class LLMCoreService {
    *
    * 读取配额限制与实际用量，返回每个周期（日/周/月）的配额状态。
    */
-  async checkLLMQuota(input: CheckLLMQuotaInput, output: CheckLLMQuotaOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
+  async checkLLMQuota(input: CheckLLMQuotaInput, output: CheckLLMQuotaOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('checkLLMQuota 需要提供 llm_provider_id');
@@ -313,7 +298,7 @@ export class LLMCoreService {
    *
    * 支持配置 regen_rate 和 prompt_template_id。
    */
-  async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
+  async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();
@@ -374,7 +359,7 @@ export class LLMCoreService {
   /**
    * 记录一次 LLM 调用的用量，用于配额统计。
    */
-  async recordLLMUsage(input: RecordLLMUsageInput, output: RecordLLMUsageOutput, _context: LLMCoreContext, metrics?: Metrics, report?: Report,
+  async recordLLMUsage(input: RecordLLMUsageInput, output: RecordLLMUsageOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('recordLLMUsage 需要提供 llm_provider_id');

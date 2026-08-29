@@ -12,8 +12,6 @@
  * - afterExecute 记录方法执行完成（level=INFO 或 ERROR）；
  */
 
-import { Metrics } from '../../shared/base/Metrics';
-import { Report } from '../../shared/base/Report';
 import type { Interceptor, InterceptContext } from '../../shared/aop/Interceptor';
 import type { LogService } from '../application/LogService';
 import type { LogData } from '../domain/types';

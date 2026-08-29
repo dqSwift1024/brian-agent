@@ -27,13 +27,13 @@ export class SystemMonitorAccess {
   }
 
   /** 采集 CPU 使用率（%） */
-  async soCpuUsage(input: SoCpuUsageInput, output: SoCpuUsageOutput, _context: SystemMonitorContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async soCpuUsage(_input: SoCpuUsageInput, output: SoCpuUsageOutput, _context: SystemMonitorContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.percent = this.service.getCpuUsagePercent();
     return true;
   }
 
   /** 采集内存使用率（%） */
-  async soMemoryUsage(input: SoMemoryUsageInput, output: SoMemoryUsageOutput, _context: SystemMonitorContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async soMemoryUsage(_input: SoMemoryUsageInput, output: SoMemoryUsageOutput, _context: SystemMonitorContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.percent = this.service.getMemoryUsagePercent();
     return true;
   }

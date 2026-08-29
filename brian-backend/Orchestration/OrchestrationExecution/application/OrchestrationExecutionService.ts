@@ -112,7 +112,7 @@ export class OrchestrationExecutionService {
   // buildAgentDAG
   // -------------------------------------------------------------------------
 
-  async buildAgentDAG(input: BuildAgentDAGInput, output: BuildAgentDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async buildAgentDAG(input: BuildAgentDAGInput, output: BuildAgentDAGOutput, context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.ensureConfigLoaded();
     const { plan_id, task_dag, interact_id, force_new } = input;
@@ -165,36 +165,6 @@ export class OrchestrationExecutionService {
       })());
     }
     await Promise.all(workers);
-
-    // ===== 原始实现（保留参考）：直接插入所有边，跨 plan 复用同一对 Agent 时可能触发唯一索引冲突 =====
-    // const agentEdges: AgentEdge[] = [];
-    // for (const edge of edges) {
-    //   const fromAgentId = taskAgentMap[edge.from_task_id];
-    //   const toAgentId = taskAgentMap[edge.to_task_id];
-    //   if (fromAgentId && toAgentId) {
-    //     const edgeId = IdGenerator.generate();
-    //     const edgeNow = IdGenerator.now();
-    //
-    //     const insInput = Object.assign(new InsertDBInput(), {
-    //       table: ORCHESTRATION_AGENT_DAG_TABLE,
-    //       data: [
-    //         { field: 'id', value: edgeId },
-    //         { field: 'created', value: edgeNow },
-    //         { field: 'updated', value: edgeNow },
-    //         { field: 'plan_id', value: plan_id },
-    //         { field: 'from_agent_id', value: fromAgentId },
-    //         { field: 'to_agent_id', value: toAgentId },
-    //       ] as DataObject[],
-    //     });
-    //     await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
-    //
-    //     agentEdges.push({
-    //       from_agent_id: fromAgentId,
-    //       to_agent_id: toAgentId,
-    //       data_dependency: `task_${edge.from_task_id} → task_${edge.to_task_id}`,
-    //     });
-    //   }
-    // }
 
     // ===== 修改后实现：task 级边与 agent 级边分离 =====
     // 执行拓扑以 task 级边（from_task_id/to_task_id）为权威来源，规避多 task 复用同一 Agent
@@ -506,30 +476,6 @@ export class OrchestrationExecutionService {
 
       // Agent 执行完成事件：前端据此将对应 AgentDAG 节点 / 工作 Agent 标记为执行成功（绿色）
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
-        // ===== 原始代码（保留参考）=====
-        // let totalTokens = 0;
-        // try {
-        //   if (execOutput.trace_id) {
-        //     const traceRows = this.relationDb.queryRaw<{ total_token_usage: number }>(
-        //       `SELECT "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
-        //       [execOutput.trace_id],
-        //     );
-        //     if (traceRows.length > 0) totalTokens = Number(traceRows[0].total_token_usage ?? 0);
-        //   }
-        // } catch { /* best-effort */ }
-        // await this.streamAccess.pushEvent(context.session_id, 'agent_output', 'TRACE', {
-        //   agent_id,
-        //   answer: execOutput.answer,
-        //   iterations: execOutput.iterations,
-        //   elapsed_ms: elapsed,
-        //   token_usage: totalTokens,
-        // }, {
-        //   work_id,
-        //   interact_id,
-        //   agent_id,
-        //   node_id: 'ANSWER',
-        // });
-
         // ===== 修改后的代码：提取输入与输出 Token 细项并在 agent_output 事件中透传 =====
         let totalTokens = 0;
         let inputTokens = 0;
@@ -641,7 +587,7 @@ export class OrchestrationExecutionService {
   // execSingleAgent 的 RUNNING→COMPLETED 生命周期；此处仅记录其完成态执行结果，
   // 写入与 execSingleAgent 相同的 orchestration_agent_execution 表，供
   // buildThinkingBlocksAndDag 统一采集展示，保证与其他 Agent 采集方式一致。
-  async recordSystemAgentExecution(input: RecordSystemAgentExecutionInput, _output: RecordSystemAgentExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async recordSystemAgentExecution(input: RecordSystemAgentExecutionInput, _output: RecordSystemAgentExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const now = IdGenerator.now();
     const insInput = Object.assign(new InsertDBInput(), {
@@ -671,285 +617,6 @@ export class OrchestrationExecutionService {
   // -------------------------------------------------------------------------
   // execDAG
   // -------------------------------------------------------------------------
-
-  // ===== 原始 execDAG 方法（保留作为参考） =====
-  /*
-  async originalExecDAG(input: ExecDAGInput, output: ExecDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
-  ): Promise<boolean> {
-    const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
-    const concurrency = max_concurrent ?? this.config.max_concurrent;
-    const timeoutMs = dag_timeout_ms ?? this.config.dag_timeout_ms;
-
-    const nodes = agent_dag.agent_nodes;
-    const edges = agent_dag.agent_edges;
-
-    const adjList = new Map<string, string[]>();
-    const indegree = new Map<string, number>();
-
-    for (const node of nodes) {
-      adjList.set(node.agent_id, []);
-      indegree.set(node.agent_id, 0);
-    }
-
-    for (const edge of edges) {
-      const neighbors = adjList.get(edge.from_agent_id);
-      if (neighbors) {
-        neighbors.push(edge.to_agent_id);
-      }
-      indegree.set(edge.to_agent_id, (indegree.get(edge.to_agent_id) ?? 0) + 1);
-    }
-
-    const incomingMap = new Map<string, string[]>();
-    for (const node of nodes) {
-      incomingMap.set(node.agent_id, []);
-    }
-    for (const edge of edges) {
-      const parents = incomingMap.get(edge.to_agent_id);
-      if (parents) {
-        parents.push(edge.from_agent_id);
-      }
-    }
-
-    const readyQueue: AgentNode[] = nodes.filter((n) => indegree.get(n.agent_id) === 0);
-
-    const agentOutputs: Record<string, string> = {};
-    const results: AgentResult[] = [];
-    const nodeMap = new Map(nodes.map((n) => [n.agent_id, n]));
-
-    const dagStartedAt = Date.now();
-    let failedCount = 0;
-
-    const execOne = async (agentNode: AgentNode): Promise<AgentResult> => {
-      let enhancedContent = agentNode.task_content;
-
-      if (concurrency === 1) {
-        const upstreamAgentIds = incomingMap.get(agentNode.agent_id) ?? [];
-        const upstreamOutputs: string[] = [];
-        for (const upId of upstreamAgentIds) {
-          const upOutput = agentOutputs[upId];
-          if (upOutput) {
-            const summary = upOutput.slice(0, 500);
-            upstreamOutputs.push(summary);
-          }
-        }
-        if (upstreamOutputs.length > 0) {
-          const upstreamSummary = upstreamOutputs.join('\n');
-          enhancedContent = `上游Agent完成的工作摘要：\n${upstreamSummary}\n---\n当前任务：${agentNode.task_content}`;
-        }
-      }
-
-      const singleInput = Object.assign(new ExecSingleAgentInput(), {
-        work_id,
-        interact_id: context.interact_id ?? '',
-        agent_id: agentNode.agent_id,
-        task_content: enhancedContent,
-        plan_id: agent_dag.plan_id,
-        task_id: agentNode.task_id,
-        work_context: work_context,
-        trace_id: input.trace_id,
-      });
-      const singleOutput = new ExecSingleAgentOutput();
-      const ok = await this.execSingleAgent(singleInput, singleOutput, context, metrics, report);
-
-      if (!ok) {
-        failedCount++;
-
-        const updExecInput = Object.assign(new UpdateDBInput(), {
-          table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-          data: [
-            { field: 'status', value: 'EXEC_FAILED' },
-            { field: 'updated', value: IdGenerator.now() },
-          ] as DataObject[],
-          conditions: [
-            { field: 'work_id', operator: Operator.EQ, value: work_id },
-            { field: 'agent_id', operator: Operator.EQ, value: agentNode.agent_id },
-            { field: 'status', operator: Operator.EQ, value: 'RUNNING' },
-          ] as Condition[],
-        });
-        await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-
-        throw {
-          failed: true,
-          agent_id: agentNode.agent_id,
-          task_id: agentNode.task_id,
-          reason: 'Agent execution failed',
-          failed_count: failedCount,
-          completed_results: results.slice(),
-        };
-      }
-
-      agentOutputs[agentNode.agent_id] = singleOutput.answer;
-
-      return {
-        agent_id: agentNode.agent_id,
-        task_id: agentNode.task_id,
-        answer: singleOutput.answer,
-        trace_id: singleOutput.trace_id,
-        iterations: singleOutput.iterations,
-        elapsed_ms: singleOutput.elapsed_ms,
-        status: 'COMPLETED',
-        handle_result_type: HandleResultType.CORRECT,
-      };
-    };
-
-    while (readyQueue.length > 0) {
-      const elapsed = Date.now() - dagStartedAt;
-      if (timeoutMs > 0 && elapsed >= timeoutMs) {
-        const cancelOps: Operation[] = [];
-        const now = IdGenerator.now();
-        const readyAgentIds: string[] = [];
-        for (const node of readyQueue) {
-          readyAgentIds.push(node.agent_id);
-          cancelOps.push({
-            type: OperationType.UPDATE,
-            table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-            data: [
-              { field: 'status', value: 'CANCELLED' },
-              { field: 'error_info', value: 'DAG timeout exceeded' },
-              { field: 'updated', value: now },
-            ] as DataObject[],
-            conditions: [
-              { field: 'work_id', operator: Operator.EQ, value: work_id },
-              { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-            ] as Condition[],
-          });
-        }
-        const pendingAgents: typeof nodes = [];
-        for (const node of nodes) {
-          const isPending = indegree.get(node.agent_id)! > 0 && !agentOutputs[node.agent_id];
-          if (isPending) {
-            pendingAgents.push(node);
-            cancelOps.push({
-              type: OperationType.UPDATE,
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: now },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-          }
-        }
-
-        let transactionOk = false;
-        try {
-          if (cancelOps.length > 0) {
-            transactionOk = this.relationDb.transactionRaw(cancelOps);
-          } else {
-            transactionOk = true;
-          }
-        } catch {
-          transactionOk = false;
-        }
-        if (!transactionOk) {
-          for (const node of readyQueue) {
-            const updExecInput = Object.assign(new UpdateDBInput(), {
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: IdGenerator.now() },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-          }
-          for (const node of pendingAgents) {
-            const updExecInput = Object.assign(new UpdateDBInput(), {
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: IdGenerator.now() },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-            failedCount++;
-          }
-          break;
-        }
-
-        failedCount += pendingAgents.length;
-        break;
-      }
-
-      const batch = readyQueue.splice(0, Math.max(1, concurrency));
-
-      if (batch.length === 1) {
-        try {
-          const result = await execOne(batch[0]);
-          results.push(result);
-          const downstreamIds = adjList.get(batch[0].agent_id) ?? [];
-          for (const downId of downstreamIds) {
-            const deg = (indegree.get(downId) ?? 1) - 1;
-            indegree.set(downId, deg);
-            if (deg === 0) {
-              const downNode = nodeMap.get(downId);
-              if (downNode) {
-                readyQueue.push(downNode);
-              }
-            }
-          }
-        } catch (err: unknown) {
-          throw err;
-        }
-      } else {
-        const settled = await Promise.allSettled(batch.map((n) => execOne(n)));
-        let batchFailure: unknown = null;
-
-        for (let i = 0; i < settled.length; i++) {
-          const s = settled[i];
-          if (s.status === 'fulfilled') {
-            results.push(s.value);
-            const downstreamIds = adjList.get(batch[i].agent_id) ?? [];
-            for (const downId of downstreamIds) {
-              const deg = (indegree.get(downId) ?? 1) - 1;
-              indegree.set(downId, deg);
-              if (deg === 0) {
-                const downNode = nodeMap.get(downId);
-                if (downNode) {
-                  readyQueue.push(downNode);
-                }
-              }
-            }
-          } else {
-            batchFailure = s.reason;
-          }
-        }
-
-        if (batchFailure) {
-          const err = batchFailure as Record<string, unknown>;
-          throw {
-            failed: true,
-            agent_id: (err.agent_id as string) ?? '',
-            task_id: (err.task_id as string) ?? '',
-            reason: (err.reason as string) ?? 'Agent execution failed',
-            failed_count: failedCount,
-            completed_results: results.slice(),
-          };
-        }
-
-        continue;
-      }
-    }
-
-    output.agent_results = results;
-    output.total_elapsed_ms = Date.now() - dagStartedAt;
-    output.failed_count = failedCount;
-    return true;
-  }
-  */
 
   // ===== 修改后的 execDAG 方法（重构：基于 DagScheduler 的任务级拓扑调度） =====
   async execDAG(input: ExecDAGInput, output: ExecDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
@@ -1175,7 +842,7 @@ export class OrchestrationExecutionService {
   // soDAGProgress
   // -------------------------------------------------------------------------
 
-  async soDAGProgress(input: GetDAGProgressInput, output: GetDAGProgressOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async soDAGProgress(input: GetDAGProgressInput, output: GetDAGProgressOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selExecInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -1250,7 +917,7 @@ export class OrchestrationExecutionService {
   // cancelExecution
   // -------------------------------------------------------------------------
 
-  async cancelExecution(input: CancelExecutionInput, output: CancelExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async cancelExecution(input: CancelExecutionInput, output: CancelExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.mqCore) {
       try {
@@ -1304,7 +971,7 @@ export class OrchestrationExecutionService {
   // soExecQueueStatus
   // -------------------------------------------------------------------------
 
-  async soExecQueueStatus(_input: GetOrchestrationExecQueueStatusInput, output: GetOrchestrationExecQueueStatusOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async soExecQueueStatus(_input: GetOrchestrationExecQueueStatusInput, output: GetOrchestrationExecQueueStatusOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     try {
       const execSelInput = Object.assign(new SelectDBInput(), {
@@ -1380,7 +1047,7 @@ export class OrchestrationExecutionService {
   // configOrchestrationExecution
   // -------------------------------------------------------------------------
 
-  async configOrchestrationExecution(input: ConfigOrchestrationExecutionInput, output: ConfigOrchestrationExecutionOutput, _context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
+  async configOrchestrationExecution(input: ConfigOrchestrationExecutionInput, output: ConfigOrchestrationExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.max_concurrent !== undefined && input.max_concurrent <= 0) {
       throw new ValidationError('max_concurrent must be positive');

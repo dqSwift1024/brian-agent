@@ -3,9 +3,9 @@ import { ref, computed, onMounted } from 'vue'
 import {
   Server, Cpu, Bot, Workflow, AppWindow,
   Plug, Database, Boxes, Table2, Send, MessageSquare,
-  Heart, Wand2, Brain, GraduationCap, HardDrive,
-  Lightbulb, Library, RefreshCw, Briefcase,
-  Settings, User, MessageCircle, Sparkles,
+  Heart, Wand2, Brain, GraduationCap,
+  Library, RefreshCw,
+  Settings, User, MessageCircle,
   ChevronRight, ArrowLeft, Trash2, Loader2, AlertCircle,
   Star, FlaskConical, X, Save, Layers, FileText,
   Play, Eye, Code2, GitBranch,

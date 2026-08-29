@@ -398,10 +398,6 @@ function scrollMemoryNavToActive(dateKey: string) {
   document.getElementById(`memory-nav-${dateKey}`)?.scrollIntoView({ block: 'nearest' })
 }
 
-function scrollToMemoryDate(dateKey: string) {
-  clickDateNav(dateKey)
-}
-
 function onMemoryScroll() {
   const groupEls = Array.from(document.querySelectorAll<HTMLElement>('[data-memory-date]'))
   if (groupEls.length === 0) return

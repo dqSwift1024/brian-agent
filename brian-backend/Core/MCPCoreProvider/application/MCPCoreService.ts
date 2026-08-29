@@ -1,12 +1,5 @@
 import { Metrics, Report } from '@brian-agent/base';
-import type {
-  RelationDBAccess,
-  MCPAccess,
-  LLMAccess,
-  PromptsAccess,
-  Condition,
-  DataObject,
-} from '@brian-agent/base';
+import type { RelationDBAccess, MCPAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   Operator,
   IdGenerator,
@@ -26,13 +19,7 @@ import {
   McpInstallRecord,
   PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 import {
   McpCoreContext,
   McpCoreConfigRecord,
@@ -59,11 +46,10 @@ export class MCPCoreService {
   /**
    * 为 Agent 匹配 MCP（三层统一匹配/选择逻辑，第3层除外：MCP 没有匹配不可用 MCP）。
    */
-  async matchMCP(input: MatchMcpInput, output: MatchMcpOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
+  async matchMCP(input: MatchMcpInput, output: MatchMcpOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const regenRate = config.regen_rate;
-    const similarityThreshold = config.similarity_threshold ?? 0.7;
 
     const availableMcps = await this.getAvailableMcps();
 
@@ -102,7 +88,7 @@ export class MCPCoreService {
     return true;
   }
 
-  async optMCP(input: OptMcpInput, output: OptMcpOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
+  async optMCP(input: OptMcpInput, output: OptMcpOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(AGENT_MCP_TABLE, [
       { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
@@ -131,7 +117,7 @@ export class MCPCoreService {
     return true;
   }
 
-  async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, _context: McpCoreContext, metrics?: Metrics, report?: Report,
+  async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.getConfig();
     const now = IdGenerator.now();
@@ -236,7 +222,7 @@ export class MCPCoreService {
     promptTemplateId: string,
   ): Promise<string[]> {
     const mcpDescriptions = mcps.map(
-      (m, i) =>
+      (m) =>
         `"${m.id}": ${m.mcp_title}${m.mcp_brief ? ` - ${m.mcp_brief}` : ''}`,
     );
 

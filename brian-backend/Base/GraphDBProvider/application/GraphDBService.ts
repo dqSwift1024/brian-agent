@@ -34,50 +34,7 @@ import {
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, OrderBy, Page } from '../../shared/query';
-import {
-  GraphContext,
-  GraphNodeData,
-  GraphEdgeData,
-  GraphNodeRecord,
-  GraphEdgeRecord,
-  GraphTarget,
-  GraphDirection,
-  AddGraphNodeInput,
-  AddGraphNodeOutput,
-  GetGraphNodeInput,
-  GetGraphNodeOutput,
-  UpdateGraphNodeInput,
-  UpdateGraphNodeOutput,
-  DelGraphNodeInput,
-  DelGraphNodeOutput,
-  AddGraphEdgeInput,
-  AddGraphEdgeOutput,
-  GetGraphEdgeInput,
-  GetGraphEdgeOutput,
-  UpdateGraphEdgeInput,
-  UpdateGraphEdgeOutput,
-  DelGraphEdgeInput,
-  DelGraphEdgeOutput,
-  SelectGraphInput,
-  SelectGraphOutput,
-  GetGraphNeighborsInput,
-  GetGraphNeighborsOutput,
-  ActivateGraphEdgeInput,
-  ActivateGraphEdgeOutput,
-  AgeGraphEdgeInput,
-  AgeGraphEdgeOutput,
-  VisualizedGraphInput,
-  VisualizedGraphOutput,
-  EnableGraphDBInput,
-  EnableGraphDBOutput,
-  CloseGraphDBInput,
-  CloseGraphDBOutput,
-  GRAPH_NODE_TABLE,
-  GRAPH_EDGE_TABLE,
-  GRAPH_ACTIVATION_EVENT_TABLE,
-  GRAPH_EDGE_DAILY_ACTIVATION_TABLE,
-  GRAPHDB_CONFIG_TABLE,
-} from '../domain/types';
+import { GraphContext, GraphNodeRecord, GraphEdgeRecord, GraphTarget, GraphDirection, AddGraphNodeInput, AddGraphNodeOutput, GetGraphNodeInput, GetGraphNodeOutput, UpdateGraphNodeInput, UpdateGraphNodeOutput, DelGraphNodeInput, DelGraphNodeOutput, AddGraphEdgeInput, AddGraphEdgeOutput, GetGraphEdgeInput, GetGraphEdgeOutput, UpdateGraphEdgeInput, UpdateGraphEdgeOutput, DelGraphEdgeInput, DelGraphEdgeOutput, SelectGraphInput, SelectGraphOutput, GetGraphNeighborsInput, GetGraphNeighborsOutput, ActivateGraphEdgeInput, ActivateGraphEdgeOutput, AgeGraphEdgeInput, AgeGraphEdgeOutput, VisualizedGraphInput, VisualizedGraphOutput, EnableGraphDBInput, EnableGraphDBOutput, CloseGraphDBInput, CloseGraphDBOutput, GRAPH_NODE_TABLE, GRAPH_EDGE_TABLE, GRAPH_ACTIVATION_EVENT_TABLE, GRAPH_EDGE_DAILY_ACTIVATION_TABLE, GRAPHDB_CONFIG_TABLE } from '../domain/types';
 
 /** 一天对应的毫秒数 */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -398,7 +355,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（id 节点 ID）
    */
-  async addGraphNode(input: AddGraphNodeInput, output: AddGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async addGraphNode(input: AddGraphNodeInput, output: AddGraphNodeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -442,7 +399,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（node 节点信息）
    */
-  async soGraphNode(input: GetGraphNodeInput, output: GetGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async soGraphNode(input: GetGraphNodeInput, output: GetGraphNodeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -468,7 +425,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async updateGraphNode(input: UpdateGraphNodeInput, output: UpdateGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async updateGraphNode(input: UpdateGraphNodeInput, output: UpdateGraphNodeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -521,7 +478,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async delGraphNode(input: DelGraphNodeInput, output: DelGraphNodeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async delGraphNode(input: DelGraphNodeInput, output: DelGraphNodeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids || input.ids.length === 0) {
@@ -582,7 +539,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（id 边 ID）
    */
-  async addGraphEdge(input: AddGraphEdgeInput, output: AddGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async addGraphEdge(input: AddGraphEdgeInput, output: AddGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -644,7 +601,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（edge 边信息）
    */
-  async soGraphEdge(input: GetGraphEdgeInput, output: GetGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async soGraphEdge(input: GetGraphEdgeInput, output: GetGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -674,7 +631,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async updateGraphEdge(input: UpdateGraphEdgeInput, output: UpdateGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async updateGraphEdge(input: UpdateGraphEdgeInput, output: UpdateGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -787,7 +744,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（affected_rows 影响行数）
    */
-  async delGraphEdge(input: DelGraphEdgeInput, output: DelGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async delGraphEdge(input: DelGraphEdgeInput, output: DelGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids || input.ids.length === 0) {
@@ -932,7 +889,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（list 结果列表，total 总数）
    */
-  async selectGraph(input: SelectGraphInput, output: SelectGraphOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async selectGraph(input: SelectGraphInput, output: SelectGraphOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const target = String(input.target);
@@ -1011,7 +968,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（list 邻居节点列表）
    */
-  async soGraphNeighbors(input: GetGraphNeighborsInput, output: GetGraphNeighborsOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async soGraphNeighbors(input: GetGraphNeighborsInput, output: GetGraphNeighborsOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.node_id) {
@@ -1085,7 +1042,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async activateGraphEdge(input: ActivateGraphEdgeInput, _output: ActivateGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async activateGraphEdge(input: ActivateGraphEdgeInput, _output: ActivateGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.edge_id) {
@@ -1182,7 +1139,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（aged_count 老化的边数量）
    */
-  async ageGraphEdge(_input: AgeGraphEdgeInput, output: AgeGraphEdgeOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async ageGraphEdge(_input: AgeGraphEdgeInput, output: AgeGraphEdgeOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -1271,7 +1228,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参（data 可视化数据）
    */
-  async visualizedGraph(input: VisualizedGraphInput, output: VisualizedGraphOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async visualizedGraph(input: VisualizedGraphInput, output: VisualizedGraphOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -1339,7 +1296,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async enableGraphDB(input: EnableGraphDBInput, _output: EnableGraphDBOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async enableGraphDB(input: EnableGraphDBInput, _output: EnableGraphDBOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(
@@ -1373,7 +1330,7 @@ export class GraphDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async closeGraphDB(_input: CloseGraphDBInput, _output: CloseGraphDBOutput, _context: GraphContext, metrics?: Metrics, report?: Report,
+  async closeGraphDB(_input: CloseGraphDBInput, _output: CloseGraphDBOutput, _context: GraphContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;

@@ -74,27 +74,27 @@ export class CronAccess {
     return true;
   }
 
-  async soCronTask(input: GetCronTaskInput, output: GetCronTaskOutput, _context: CronContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async soCronTask(input: GetCronTaskInput, output: GetCronTaskOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.task = this.service.getTask(input.name);
     return true;
   }
 
-  async setCronTask(input: SetCronTaskInput, output: SetCronTaskOutput, _context: CronContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async setCronTask(input: SetCronTaskInput, output: SetCronTaskOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.task = this.service.setCron(input.name, input.cron);
     return true;
   }
 
-  async setCronTaskEnabled(input: SetCronTaskEnabledInput, output: SetCronTaskEnabledOutput, _context: CronContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async setCronTaskEnabled(input: SetCronTaskEnabledInput, output: SetCronTaskEnabledOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.task = this.service.setEnabled(input.name, input.enabled);
     return true;
   }
 
-  async triggerCronTask(input: TriggerCronTaskInput, output: TriggerCronTaskOutput, _context: CronContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async triggerCronTask(input: TriggerCronTaskInput, output: TriggerCronTaskOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.run = await this.service.trigger(input.name);
     return true;
   }
 
-  async listCronTaskRuns(input: ListCronTaskRunsInput, output: ListCronTaskRunsOutput, _context: CronContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async listCronTaskRuns(input: ListCronTaskRunsInput, output: ListCronTaskRunsOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.runs = this.service.listRuns(input.name, input.limit ?? 50);
     return true;
   }

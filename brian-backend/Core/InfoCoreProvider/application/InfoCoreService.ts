@@ -18,159 +18,14 @@ import type {
   VectorDBAccess,
   GraphDBAccess,
 } from '@brian-agent/base';
-import {
-  IdGenerator,
-  Operator,
-  GraphDirection,
-  InfoType,
-  CollectionSource,
-  ContextSource,
-  HandleResultType,
-  DEFAULT_HANDLE_RESULT_TYPE,
-  RecursiveTextSplitter,
-} from '@brian-agent/base';
+import { IdGenerator, Operator, GraphDirection, InfoType, CollectionSource, HandleResultType, DEFAULT_HANDLE_RESULT_TYPE, RecursiveTextSplitter } from '@brian-agent/base';
 import type { Condition } from '@brian-agent/base';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
-import {
-  ValidationError,
-  NotFoundError,
-  ProcessingError,
-} from '../../shared/errors';
-import {
-  InfoCoreContext,
-  SaveInfoInput,
-  SaveInfoOutput,
-  PinInfoInput,
-  PinInfoOutput,
-  ProcessInfoInput,
-  VectorInfoOutput,
-  TagInfoOutput,
-  SummaryInfoOutput,
-  KeywordInfoOutput,
-  GraphTagInput,
-  GraphTagOutput,
-  RebuildCooccurGraphInput,
-  RebuildCooccurGraphOutput,
-  LastNInfoInput,
-  LastNInfoOutput,
-  GraphNInfoInput,
-  GraphNInfoOutput,
-  SimilarKInfoInput,
-  SimilarKInfoOutput,
-  KeywordKInfoInput,
-  KeywordKInfoOutput,
-  RelationKInfoInput,
-  RelationKInfoOutput,
-  GraphInfoInput,
-  GraphInfoOutput,
-  SoCitationEdgesInput,
-  SoCitationEdgesOutput,
-  DelInfoGraphInput,
-  DelInfoGraphOutput,
-  ClearGraphInput,
-  ClearGraphOutput,
-  RebuildCitationGraphInput,
-  RebuildCitationGraphOutput,
-  ContextInfoInput,
-  ContextInfoOutput,
-  ContextInfoCategories,
-  SoContextByWorkInput,
-  SoContextByWorkOutput,
-  SoInfoTagConfigInput,
-  SoInfoTagConfigOutput,
-  UpdateInfoTagConfigInput,
-  UpdateInfoTagConfigOutput,
-  SoInfoSummaryConfigInput,
-  SoInfoSummaryConfigOutput,
-  UpdateInfoSummaryConfigInput,
-  UpdateInfoSummaryConfigOutput,
-  SoInfoConfigInput,
-  SoInfoConfigOutput,
-  UpdateInfoConfigInput,
-  UpdateInfoConfigOutput,
-  SoInfoVectorConfigInput,
-  SoInfoVectorConfigOutput,
-  UpdateInfoVectorConfigInput,
-  UpdateInfoVectorConfigOutput,
-  SoInfoContextConfigInput,
-  SoInfoContextConfigOutput,
-  UpdateInfoContextConfigInput,
-  UpdateInfoContextConfigOutput,
-  DelInfoInput,
-  DelInfoOutput,
-  UpdateInfoInput,
-  UpdateInfoOutput,
-  DelInfoByWorkInput,
-  DelInfoByWorkOutput,
-  ExistInfoInput,
-  ExistInfoOutput,
-  INFO_RAW_TABLE,
-  INFO_CONTEXT_SOURCE_TABLE,
-  INFO_VECTOR_TABLE,
-  INFO_TAG_TABLE,
-  INFO_SUMMARY_TABLE,
-  INFO_KEYWORD_TABLE,
-  INFO_TAG_CONFIG_TABLE,
-  INFO_SUMMARY_CONFIG_TABLE,
-  INFO_CONFIG_TABLE,
-  INFO_VECTOR_CONFIG_TABLE,
-  INFO_CONTEXT_CONFIG_TABLE,
-} from '../domain/types';
-import type {
-  InfoRawRecord,
-  InfoTagRecord,
-  InfoSummaryRecord,
-  InfoTagConfigRecord,
-  InfoSummaryConfigRecord,
-  InfoConfigRecord,
-  InfoVectorConfigRecord,
-  InfoContextConfigRecord,
-  ContextCollectionSource,
-  ContextInfoItem,
-  ContextSourceIdMap,
-  ContextContentMap,
-  ContextAttributeMap,
-} from '../domain/types';
-import {
-  ExecLLMInput,
-  ExecLLMOutput,
-  EmbedLLMInput,
-  EmbedLLMOutput,
-  LLMContext,
-  PromptContext,
-  VectorContext,
-  AddVectorInput,
-  AddVectorOutput,
-  SoVectorInput,
-  SoVectorOutput,
-  GetVectorInput,
-  GetVectorOutput,
-  DelVectorInput,
-  DelVectorOutput,
-  GraphContext,
-  AddGraphNodeInput,
-  AddGraphNodeOutput,
-  UpdateGraphNodeInput,
-  UpdateGraphNodeOutput,
-  AddGraphEdgeInput,
-  AddGraphEdgeOutput,
-  UpdateGraphEdgeInput,
-  UpdateGraphEdgeOutput,
-  DelGraphEdgeInput,
-  DelGraphEdgeOutput,
-  DelGraphNodeInput,
-  DelGraphNodeOutput,
-  GraphTarget,
-  SelectGraphInput,
-  SelectGraphOutput,
-  GetGraphNeighborsInput,
-  GetGraphNeighborsOutput,
-  GetGraphNodeInput,
-  GetGraphNodeOutput,
-  ActivateGraphEdgeInput,
-  ActivateGraphEdgeOutput,
-} from '@brian-agent/base';
+import { ValidationError, NotFoundError } from '../../shared/errors';
+import { InfoCoreContext, SaveInfoInput, SaveInfoOutput, PinInfoInput, PinInfoOutput, ProcessInfoInput, VectorInfoOutput, TagInfoOutput, SummaryInfoOutput, KeywordInfoOutput, GraphTagInput, GraphTagOutput, RebuildCooccurGraphInput, RebuildCooccurGraphOutput, LastNInfoInput, LastNInfoOutput, GraphNInfoInput, GraphNInfoOutput, SimilarKInfoInput, SimilarKInfoOutput, KeywordKInfoInput, KeywordKInfoOutput, RelationKInfoInput, RelationKInfoOutput, GraphInfoInput, GraphInfoOutput, SoCitationEdgesInput, SoCitationEdgesOutput, DelInfoGraphInput, DelInfoGraphOutput, ClearGraphInput, ClearGraphOutput, RebuildCitationGraphInput, RebuildCitationGraphOutput, ContextInfoInput, ContextInfoOutput, SoContextByWorkInput, SoContextByWorkOutput, SoInfoTagConfigInput, SoInfoTagConfigOutput, UpdateInfoTagConfigInput, UpdateInfoTagConfigOutput, SoInfoSummaryConfigInput, SoInfoSummaryConfigOutput, UpdateInfoSummaryConfigInput, UpdateInfoSummaryConfigOutput, SoInfoConfigInput, SoInfoConfigOutput, UpdateInfoConfigInput, UpdateInfoConfigOutput, SoInfoVectorConfigInput, SoInfoVectorConfigOutput, UpdateInfoVectorConfigInput, UpdateInfoVectorConfigOutput, SoInfoContextConfigInput, SoInfoContextConfigOutput, UpdateInfoContextConfigInput, UpdateInfoContextConfigOutput, DelInfoInput, DelInfoOutput, UpdateInfoInput, UpdateInfoOutput, DelInfoByWorkInput, DelInfoByWorkOutput, ExistInfoInput, ExistInfoOutput, INFO_RAW_TABLE, INFO_CONTEXT_SOURCE_TABLE, INFO_VECTOR_TABLE, INFO_TAG_TABLE, INFO_SUMMARY_TABLE, INFO_KEYWORD_TABLE, INFO_TAG_CONFIG_TABLE, INFO_SUMMARY_CONFIG_TABLE, INFO_CONFIG_TABLE, INFO_VECTOR_CONFIG_TABLE, INFO_CONTEXT_CONFIG_TABLE } from '../domain/types';
+import type { InfoRawRecord, InfoSummaryRecord, InfoTagConfigRecord, InfoSummaryConfigRecord, InfoConfigRecord, InfoVectorConfigRecord, InfoContextConfigRecord, ContextCollectionSource, ContextInfoItem, ContextSourceIdMap, ContextContentMap, ContextAttributeMap } from '../domain/types';
+import { ExecLLMInput, ExecLLMOutput, EmbedLLMInput, EmbedLLMOutput, LLMContext, PromptContext, VectorContext, AddVectorInput, AddVectorOutput, SoVectorInput, SoVectorOutput, GetVectorInput, GetVectorOutput, GraphContext, AddGraphNodeInput, AddGraphNodeOutput, UpdateGraphNodeInput, UpdateGraphNodeOutput, AddGraphEdgeInput, AddGraphEdgeOutput, UpdateGraphEdgeInput, UpdateGraphEdgeOutput, DelGraphNodeInput, DelGraphNodeOutput, GraphTarget, SelectGraphInput, SelectGraphOutput, GetGraphNeighborsInput, GetGraphNeighborsOutput, GetGraphNodeInput, GetGraphNodeOutput } from '@brian-agent/base';
 import type {
   VectorObject,
   VectorRecord,
@@ -362,7 +217,7 @@ export class InfoCoreService {
   /**
    * 切换 pin 状态。
    */
-  async pinInfo(input: PinInfoInput, output: PinInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async pinInfo(input: PinInfoInput, _output: PinInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('pinInfo 需要提供 info_id');
@@ -394,7 +249,7 @@ export class InfoCoreService {
    * 向量化信息：按 chunk_size 分块（考虑分隔符与重叠覆盖率）后逐块生成 embedding，
    * 写入 LanceDB（向量唯一存储，不再落 SQLite）。
    */
-  async vectorInfo(input: ProcessInfoInput, output: VectorInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async vectorInfo(input: ProcessInfoInput, output: VectorInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('vectorInfo 需要提供 info_id');
@@ -433,7 +288,7 @@ export class InfoCoreService {
    * 2. 调用 LLM 提取 topK 标签。
    * 3. 为每个标签插入 info_tag 表并维护 info_tag_vector。
    */
-  async tagInfo(input: ProcessInfoInput, output: TagInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async tagInfo(input: ProcessInfoInput, output: TagInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('tagInfo 需要提供 info_id');
@@ -493,7 +348,7 @@ export class InfoCoreService {
   /**
    * 使用 LLM 生成摘要。
    */
-  async summaryInfo(input: ProcessInfoInput, output: SummaryInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async summaryInfo(input: ProcessInfoInput, output: SummaryInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('summaryInfo 需要提供 info_id');
@@ -515,16 +370,6 @@ export class InfoCoreService {
       throw new NotFoundError('信息', input.info_id);
     }
 
-    // ===== 原始代码（保留作为参考） =====
-    /*
-    // 内容未超过阈值时直接以原文作为摘要；否则调用 LLM 生成
-    let summary: string;
-    if (infoRow.info.length <= (summaryConfig.threshold ?? 100)) {
-      summary = infoRow.info;
-    } else {
-      summary = await this.generateSummary(infoRow.info, summaryConfig);
-    }
-    */
     // ===== 修改后的代码：统一摘要生成逻辑，InfoCore 不再自行调用 LLM 生成摘要（由 SummaryAgent 统一生成） =====
     let summary: string;
     if (infoRow.info.length <= (summaryConfig.threshold ?? 100)) {
@@ -554,7 +399,7 @@ export class InfoCoreService {
   /**
    * 提取关键词（nodejieba 中文分词 + FTS5 存储）。
    */
-  async keywordInfo(input: ProcessInfoInput, output: KeywordInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async keywordInfo(input: ProcessInfoInput, output: KeywordInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('keywordInfo 需要提供 info_id');
@@ -598,7 +443,7 @@ export class InfoCoreService {
    * 4. 通过 VectorDBProvider.soVector 搜索语义最相似的 top_k 个 tag_id
    * 5. 对每个相似 tag 创建/更新 `similarTo` 边至 GraphDB
    */
-  async graphTag(input: GraphTagInput, output: GraphTagOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async graphTag(input: GraphTagInput, output: GraphTagOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.tag_id) {
       throw new ValidationError('graphTag 需要提供 tag_id');
@@ -637,7 +482,7 @@ export class InfoCoreService {
    * 该过程幂等，可与增量 buildCooccurEdges 配合使用（tagInfo 在保存时实时建边，
    * 本方法负责历史标签的一次性回填）。
    */
-  async rebuildCooccurGraph(_input: RebuildCooccurGraphInput, output: RebuildCooccurGraphOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async rebuildCooccurGraph(_input: RebuildCooccurGraphInput, output: RebuildCooccurGraphOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 标签共现边
     const tagResult = await this.rebuildCooccurForSource(INFO_TAG_TABLE, 'tag', 'Tag', 'tag', COOCCUR_EDGE_TYPE);
@@ -734,7 +579,7 @@ export class InfoCoreService {
    * 时间线搜索：返回最近 N 条信息记录。
    * 若 info 已被老化清空，回退查询 info_summary 表获取摘要替代。
    */
-  async lastNInfo(input: LastNInfoInput, output: LastNInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async lastNInfo(input: LastNInfoInput, output: LastNInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.lastN || input.lastN <= 0) {
       throw new ValidationError('lastNInfo 需要提供 lastN > 0');
@@ -793,7 +638,7 @@ export class InfoCoreService {
   /**
    * 图邻居搜索：通过 GraphDB 查找相关节点。
    */
-  async graphNInfo(input: GraphNInfoInput, output: GraphNInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async graphNInfo(input: GraphNInfoInput, output: GraphNInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id || !input.lastN) {
       throw new ValidationError('graphNInfo 需要提供 info_id 和 lastN');
@@ -847,7 +692,7 @@ export class InfoCoreService {
    * 返回语义最相似的 topK 条信息记录（含归一化相似度分数 score）。
    * 阈值 similarity_threshold 为归一化值 0-100。
    */
-  async similarKInfo(input: SimilarKInfoInput, output: SimilarKInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async similarKInfo(input: SimilarKInfoInput, output: SimilarKInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info || !input.topK) {
       throw new ValidationError('similarKInfo 需要提供 info 和 topK');
@@ -880,7 +725,7 @@ export class InfoCoreService {
    * PRD 2.5.4：nodejieba 分词得到关键词列表后，使用 SQLite FTS5 MATCH 语法在
    * info_keyword 虚拟表中执行全文搜索，按 bm25 相关性评分降序返回匹配信息。
    */
-  async keywordKInfo(input: KeywordKInfoInput, output: KeywordKInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async keywordKInfo(input: KeywordKInfoInput, output: KeywordKInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info) {
       throw new ValidationError('keywordKInfo 需要提供 info');
@@ -965,7 +810,7 @@ export class InfoCoreService {
    * 权重口径：以 similarTo 边的 weight（向量相似度）作为标签相关度，沿标签图扩散到目标信息，
    * 按累计相关度降序返回 topN 条，使标签图召回真正按相关性排序（而非时间倒序）。
    */
-  async relationKInfo(input: RelationKInfoInput, output: RelationKInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async relationKInfo(input: RelationKInfoInput, output: RelationKInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id || !input.topN) {
       throw new ValidationError('relationKInfo 需要提供 info_id 和 topN');
@@ -1087,7 +932,7 @@ export class InfoCoreService {
   /**
    * 会话图可视化：构建 session 内信息引用图。
    */
-  async graphInfo(input: GraphInfoInput, output: GraphInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async graphInfo(input: GraphInfoInput, output: GraphInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('graphInfo 需要提供 session_id');
@@ -1164,7 +1009,7 @@ export class InfoCoreService {
    * 返回 info_id 维度的引用关系（citing → cited）。可选按 session_id / citing_info_id /
    * cited_info_id 过滤；session_id 取自边 properties 中记录的引用方（citing）所属会话。
    */
-  async soCitationEdges(input: SoCitationEdgesInput, output: SoCitationEdgesOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soCitationEdges(input: SoCitationEdgesInput, output: SoCitationEdgesOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selOut = new SelectGraphOutput();
     await this.graphDb.selectGraph(
@@ -1190,7 +1035,7 @@ export class InfoCoreService {
    *
    * 供删除记忆 / 删除会话时调用，替代旧 info_graph 表的级联清理。
    */
-  async delInfoGraph(input: DelInfoGraphInput, output: DelInfoGraphOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async delInfoGraph(input: DelInfoGraphInput, output: DelInfoGraphOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const infoIds = (input.info_ids ?? []).map((x) => String(x)).filter(Boolean);
     if (infoIds.length === 0) {
@@ -1216,7 +1061,7 @@ export class InfoCoreService {
    * 一键清理某类文本图（如标签图 / 关键词图）：删除该 node_type 的所有节点，
    * 级联删除关联的边与激活数据。
    */
-  async clearGraph(input: ClearGraphInput, output: ClearGraphOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async clearGraph(input: ClearGraphInput, output: ClearGraphOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const nodeType = String(input.node_type ?? '').trim();
     if (!nodeType) {
@@ -1244,7 +1089,7 @@ export class InfoCoreService {
    * 旧实现把 info 引用边存在 RelationDB 的 info_graph 表；本方法将存量引用边迁移为
    * GraphDB 的 CITATION 边（info 节点 + 边），随后 DROP 旧表，实现图结构收敛到 GraphDB。
    */
-  async rebuildCitationGraph(_input: RebuildCitationGraphInput, output: RebuildCitationGraphOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async rebuildCitationGraph(_input: RebuildCitationGraphInput, output: RebuildCitationGraphOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let legacyRows: Array<Record<string, unknown>> = [];
     try {
@@ -1289,483 +1134,6 @@ export class InfoCoreService {
    * f. Keyword  — keywordKInfo（关键词相关消息）
    * g. Random   — 随机抽样
    */
-  // ===== 原始方法（保留作为参考）=====
-  // async context(
-  //   input: ContextInfoInput,
-  //   _context: InfoCoreContext,
-  //   output: ContextInfoOutput,
-  // ): Promise<boolean> {
-  //   if (!input.session_id) {
-  //     throw new ValidationError('context 需要提供 session_id');
-  //   }
-  //
-  //   const contextConfig = await this.getInfoContextConfig();
-  //   if (!contextConfig) {
-  //     const fallback = await this.lastNInfoTimeline(input.session_id, 100);
-  //     output.list = fallback;
-  //     return true;
-  //   }
-  //
-  //   // 1. 先收集钉住消息
-  //   const pinnedItems: InfoRawRecord[] = [];
-  //   const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
-  //     conditions: [
-  //       { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-  //       { field: 'pin', operator: Operator.EQ, value: 1 },
-  //     ],
-  //     order_by: [{ field: 'created', direction: 'DESC' }],
-  //   });
-  //   for (const row of pinnedRows) {
-  //     const record = this.toInfoRawRecord(row);
-  //     if (!record.info || record.info === '') {
-  //       const summary = await this.getInfoSummaryRow(record.info_id);
-  //       if (summary) record.info = `[摘要] ${summary.summary}`;
-  //       else continue;
-  //     }
-  //     pinnedItems.push(record);
-  //   }
-  //
-  //   // 2. 时间线消息
-  //   const timelineItems = await this.lastNInfoTimeline(input.session_id, contextConfig.base_timeline_count);
-  //   const timelineMap = new Map<string, InfoRawRecord>();
-  //   for (const item of timelineItems) {
-  //     timelineMap.set(item.info_id, item);
-  //   }
-  //
-  //   const timelineActual = timelineMap.size;
-  //   let remaining = (contextConfig.total || 1000) - pinnedItems.length;
-  //   if (remaining <= 0) {
-  //     output.list = pinnedItems.slice(0, contextConfig.total);
-  //     return true;
-  //   }
-  //
-  //   // 3. 按比例动态分配
-  //   let tagCount = 0, simCount = 0, kwCount = 0, randCount = 0;
-  //   remaining -= timelineActual;
-  //   if (remaining > 0) {
-  //     tagCount = Math.min(contextConfig.base_tag_relative_count, remaining);
-  //     remaining -= tagCount;
-  //   }
-  //   if (remaining > 0) {
-  //     simCount = Math.min(contextConfig.base_similarity_count, remaining);
-  //     remaining -= simCount;
-  //   }
-  //   if (remaining > 0) {
-  //     kwCount = Math.min(contextConfig.base_keyword_count, remaining);
-  //     remaining -= kwCount;
-  //   }
-  //   if (remaining > 0) {
-  //     randCount = Math.min(contextConfig.base_random_count, remaining);
-  //   }
-  //
-  //   const mergedMap = new Map<string, InfoRawRecord>();
-  //   for (const item of timelineItems) {
-  //     mergedMap.set(item.info_id, item);
-  //   }
-  //
-  //   // 4. 辅助来源
-  //   if (input.info_id && (tagCount > 0 || simCount > 0 || kwCount > 0)) {
-  //     const infoRow = await this.getInfoByInfoId(input.info_id);
-  //     if (infoRow) {
-  //       if (tagCount > 0) {
-  //         try {
-  //           const relInput = new RelationKInfoInput();
-  //           relInput.info_id = input.info_id;
-  //           relInput.topN = tagCount;
-  //           const relOutput = new RelationKInfoOutput();
-  //           await this.relationKInfo(relInput, relOutput, _context, metrics, report);
-  //           for (const item of relOutput.list) {
-  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
-  //           }
-  //         } catch { /* 忽略 */ }
-  //       }
-  //       if (simCount > 0) {
-  //         try {
-  //           const simInput = new SimilarKInfoInput();
-  //           simInput.info = infoRow.info;
-  //           simInput.topK = simCount;
-  //           const simOutput = new SimilarKInfoOutput();
-  //           await this.similarKInfo(simInput, simOutput, _context, metrics, report);
-  //           for (const item of simOutput.list) {
-  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
-  //           }
-  //         } catch { /* 忽略 */ }
-  //       }
-  //       if (kwCount > 0) {
-  //         try {
-  //           const kwInput = new KeywordKInfoInput();
-  //           kwInput.info = infoRow.info;
-  //           const kwOutput = new KeywordKInfoOutput();
-  //           await this.keywordKInfo(kwInput, kwOutput, _context, metrics, report);
-  //           const topKw = kwOutput.list.slice(0, kwCount);
-  //           for (const item of topKw) {
-  //             if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
-  //           }
-  //         } catch { /* 忽略 */ }
-  //       }
-  //     }
-  //   }
-  //
-  //   if (randCount > 0) {
-  //     try {
-  //       const randomItems = await this.randomSampleInfos(input.session_id, randCount);
-  //       for (const item of randomItems) {
-  //         if (!mergedMap.has(item.info_id)) mergedMap.set(item.info_id, item);
-  //       }
-  //     } catch { /* 忽略 */ }
-  //   }
-  //
-  //   // 5. 上下文内容回退：已老化信息使用摘要替代
-  //   for (const [infoId, item] of mergedMap) {
-  //     if (!item.info || item.info === '') {
-  //       const summary = await this.getInfoSummaryRow(infoId);
-  //       if (summary) {
-  //         item.info = `[摘要] ${summary.summary}`;
-  //       }
-  //     }
-  //   }
-  //
-  //   // 6. 排序：钉住 → 时间线 → tag → similarity → keyword → random
-  //   const sorted = [...mergedMap.values()].sort((a, b) => b.created - a.created);
-  //   const result = [...pinnedItems, ...sorted];
-  //   output.list = result.slice(0, contextConfig.total);
-  //
-  //   return true;
-  // }
-
-  // ===== 原始代码（保留作为参考）=====
-  // async context(
-  //   input: ContextInfoInput,
-  //   _context: InfoCoreContext,
-  //   output: ContextInfoOutput,
-  // ): Promise<boolean> {
-  //   if (!input.session_id) {
-  //     throw new ValidationError('context 需要提供 session_id');
-  //   }
-  //
-  //   const contextConfig = await this.getInfoContextConfig();
-  //   const maxTotal = contextConfig?.total || 1000;
-  //   const priorityOrderStr = contextConfig?.priority_order || 'PINNED,TIMELINE,TAG_RELATIVE,SIMILARITY,KEYWORD,RANDOM';
-  //   const customIds = input.custom_info_ids || input.selected_msg_ids || [];
-  //   const isCustomMode = input.mode === 'CUSTOM' || customIds.length > 0;
-  //
-  //   // Helper: 将 raw record 转为标准 ContextInfoItem
-  //   const toContextItem = async (
-  //     raw: InfoRawRecord,
-  //     collectionSource: ContextCollectionSource,
-  //   ): Promise<ContextInfoItem> => {
-  //     let summaryText = '';
-  //     try {
-  //       const summaryRow = await this.getInfoSummaryRow(raw.info_id);
-  //       if (summaryRow?.summary) {
-  //         summaryText = summaryRow.summary;
-  //       }
-  //     } catch { /* best-effort */ }
-  //
-  //     let contentText = raw.info || '';
-  //     if (!contentText && summaryText) {
-  //       contentText = `[摘要] ${summaryText}`;
-  //     }
-  //
-  //     return {
-  //       id: raw.id || raw.info_id,
-  //       info_id: raw.info_id,
-  //       session_id: raw.session_id,
-  //       work_id: raw.work_id || '',
-  //       interact_id: raw.interact_id || '',
-  //       info_type: raw.info_type || InfoType.REQUEST,
-  //       info_creator_role: raw.info_creator_role,
-  //       info_creator_id: raw.info_creator_id,
-  //       info: contentText,
-  //       content: contentText,
-  //       summary: summaryText,
-  //       summary_length: summaryText.length,
-  //       info_length: contentText.length,
-  //       content_length: contentText.length,
-  //       collection_source: collectionSource,
-  //       source: collectionSource,
-  //       pin: raw.pin ? 1 : 0,
-  //       created: raw.created,
-  //       updated: raw.updated,
-  //     };
-  //   };
-  //
-  //   // 1. 自定义构建模式 (CUSTOM)
-  //   if (isCustomMode) {
-  //     // 1.1 收集钉住消息 (PINNED)
-  //     const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
-  //       conditions: [
-  //         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-  //         { field: 'pin', operator: Operator.EQ, value: 1 },
-  //       ],
-  //       order_by: [{ field: 'created', direction: 'DESC' }],
-  //     });
-  //     const pinnedItems: ContextInfoItem[] = [];
-  //     const pinnedIdSet = new Set<string>();
-  //     for (const row of pinnedRows) {
-  //       const raw = this.toInfoRawRecord(row);
-  //       const item = await toContextItem(raw, CollectionSource.PINNED);
-  //       pinnedItems.push(item);
-  //       pinnedIdSet.add(item.info_id);
-  //     }
-  //
-  //     // 1.2 收集传入指定消息 (CUSTOM)
-  //     const customItems: ContextInfoItem[] = [];
-  //     const seenCustomIds = new Set<string>();
-  //     for (const msgId of customIds) {
-  //       if (!msgId || seenCustomIds.has(msgId) || pinnedIdSet.has(msgId)) continue;
-  //       seenCustomIds.add(msgId);
-  //       const row = await this.getInfoByInfoId(msgId);
-  //       if (row && row.session_id === input.session_id) {
-  //         const item = await toContextItem(row, CollectionSource.CUSTOM);
-  //         customItems.push(item);
-  //       }
-  //     }
-  //     // 按时间倒序排序
-  //     customItems.sort((a, b) => b.created - a.created);
-  //
-  //     const resultList = [...pinnedItems, ...customItems].slice(0, maxTotal);
-  //
-  //     output.list = resultList;
-  //     const categories: ContextInfoCategories = {
-  //       selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
-  //       pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
-  //       timeline: [],
-  //       citing: [],
-  //       tag_relative: [],
-  //       similarity: [],
-  //       keyword: [],
-  //       random: [],
-  //     };
-  //     output.categories = categories;
-  //     output.category_ids = {
-  //       selected: categories.selected.map((i: ContextInfoItem) => i.info_id),
-  //       pinned: categories.pinned.map((i: ContextInfoItem) => i.info_id),
-  //       timeline: [],
-  //       citing: [],
-  //       tag_relative: [],
-  //       similarity: [],
-  //       keyword: [],
-  //       random: [],
-  //     };
-  //     output.sources_summary = {
-  //       selected: categories.selected.length,
-  //       pinned: categories.pinned.length,
-  //       timeline: 0,
-  //       citing: 0,
-  //       tag_relative: 0,
-  //       similarity: 0,
-  //       keyword: 0,
-  //       random: 0,
-  //     };
-  //     return true;
-  //   }
-  //
-  //   // 2. 默认构建模式 (DEFAULT)
-  //   const timelineLimit = contextConfig?.base_timeline_count ?? 500;
-  //   const tagLimit = contextConfig?.base_tag_relative_count ?? 200;
-  //   const simLimit = contextConfig?.base_similarity_count ?? 150;
-  //   const kwLimit = contextConfig?.base_keyword_count ?? 100;
-  //   const randLimit = contextConfig?.base_random_count ?? 50;
-  //   const calculatedPercent = maxTotal > 0 ? Math.floor((randLimit / maxTotal) * 100) : 0;
-  //   const randomMaxPercent = contextConfig?.random_max_percent ?? calculatedPercent;
-  //
-  //   // 2.1 收集各维度候选原始消息
-  //   // PINNED (会话内钉住消息)
-  //   const pinnedRows = await this.relationDb.select(INFO_RAW_TABLE, {
-  //     conditions: [
-  //       { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-  //       { field: 'pin', operator: Operator.EQ, value: 1 },
-  //     ],
-  //     order_by: [{ field: 'created', direction: 'DESC' }],
-  //   });
-  //   const pinnedCandidates = pinnedRows.map((r) => this.toInfoRawRecord(r));
-  //
-  //   // CITING (引用消息，会话内) vs TIMELINE (时间线消息，会话内) 二选一
-  //   const citingCandidates: InfoRawRecord[] = [];
-  //   const citedMsgIds = input.selected_msg_ids || input.custom_info_ids || [];
-  //   if (citedMsgIds.length > 0) {
-  //     for (const msgId of citedMsgIds) {
-  //       const r = await this.getInfoByInfoId(msgId);
-  //       if (r && r.session_id === input.session_id) {
-  //         citingCandidates.push(r);
-  //       }
-  //     }
-  //   }
-  //
-  //   // TIMELINE (会话内时间线消息)
-  //   const timelineCandidates: InfoRawRecord[] = [];
-  //   if (citingCandidates.length === 0) {
-  //     const tl = await this.lastNInfoTimeline(input.session_id, timelineLimit);
-  //     for (const item of tl) timelineCandidates.push(item);
-  //   }
-  //
-  //   // 获取参考文本（参考 input.info_id，若无则使用最新的用户消息）
-  //   let refInfoRow: InfoRawRecord | null = null;
-  //   if (input.info_id) {
-  //     refInfoRow = await this.getInfoByInfoId(input.info_id);
-  //   }
-  //   if (!refInfoRow && (citingCandidates.length > 0 || timelineCandidates.length > 0)) {
-  //     const candidates = citingCandidates.length > 0 ? citingCandidates : timelineCandidates;
-  //     refInfoRow = candidates.find((t) => t.info_type === InfoType.REQUEST) || candidates[0] || null;
-  //   }
-  //   const refText = refInfoRow?.info || '';
-  //
-  //   // TAG_RELATIVE (全系统标签相关性)
-  //   const tagCandidates: InfoRawRecord[] = [];
-  //   if (refInfoRow && tagLimit > 0) {
-  //     try {
-  //       const relInput = new RelationKInfoInput();
-  //       relInput.info_id = refInfoRow.info_id;
-  //       relInput.topN = tagLimit;
-  //       const relOutput = new RelationKInfoOutput();
-  //       await this.relationKInfo(relInput, relOutput, _context, metrics, report);
-  //       for (const item of relOutput.list) {
-  //         tagCandidates.push(item);
-  //       }
-  //     } catch { /* ignore */ }
-  //   }
-  //
-  //   // SIMILARITY (全系统向量相似度)
-  //   const simCandidates: InfoRawRecord[] = [];
-  //   if (refText && simLimit > 0) {
-  //     try {
-  //       const simInput = new SimilarKInfoInput();
-  //       simInput.info = refText;
-  //       simInput.topK = simLimit;
-  //       const simOutput = new SimilarKInfoOutput();
-  //       await this.similarKInfo(simInput, simOutput, _context, metrics, report);
-  //       for (const item of simOutput.list) {
-  //         simCandidates.push(item);
-  //       }
-  //     } catch { /* ignore */ }
-  //   }
-  //
-  //   // KEYWORD (全系统关键词相关性)
-  //   const kwCandidates: InfoRawRecord[] = [];
-  //   if (refText && kwLimit > 0) {
-  //     try {
-  //       const kwInput = new KeywordKInfoInput();
-  //       kwInput.info = refText;
-  //       const kwOutput = new KeywordKInfoOutput();
-  //       await this.keywordKInfo(kwInput, kwOutput, _context, metrics, report);
-  //       for (const item of kwOutput.list.slice(0, kwLimit)) {
-  //         kwCandidates.push(item);
-  //       }
-  //     } catch { /* ignore */ }
-  //   }
-  //
-  //   // RANDOM (会话内随机消息，受配置中心最大百分比上限约束)
-  //   let randCandidates: InfoRawRecord[] = [];
-  //   if (randLimit > 0 && randomMaxPercent > 0) {
-  //     try {
-  //       const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
-  //         conditions: [
-  //           { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-  //         ],
-  //       });
-  //       const sessionCandidates = sessionAllRows.map((r) => this.toInfoRawRecord(r));
-  //
-  //       const effectivePercent = randomMaxPercent;
-  //       const maxByPercent = Math.max(1, Math.floor(maxTotal * (effectivePercent / 100)));
-  //       const finalRandCount = Math.min(randLimit, maxByPercent);
-  //
-  //       if (finalRandCount > 0 && sessionCandidates.length > 0) {
-  //         const shuffled = [...sessionCandidates];
-  //         for (let i = shuffled.length - 1; i > 0; i--) {
-  //           const j = Math.floor(Math.random() * (i + 1));
-  //           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  //         }
-  //         randCandidates = shuffled.slice(0, finalRandCount);
-  //       }
-  //     } catch { /* ignore */ }
-  //   }
-  //
-  //   // 2.2 组装候选映射表
-  //   const candidatesMap = new Map<ContextCollectionSource, InfoRawRecord[]>([
-  //     [CollectionSource.PINNED, pinnedCandidates],
-  //     [CollectionSource.CITING, citingCandidates],
-  //     [CollectionSource.TIMELINE, timelineCandidates],
-  //     [CollectionSource.TAG_RELATIVE, tagCandidates],
-  //     [CollectionSource.SIMILARITY, simCandidates],
-  //     [CollectionSource.KEYWORD, kwCandidates],
-  //     [CollectionSource.RANDOM, randCandidates],
-  //   ]);
-  //
-  //   // 2.3 解析优先级顺序
-  //   const rawPriority = priorityOrderStr.split(',').map((s) => s.trim().toUpperCase() as ContextCollectionSource);
-  //   const validSources: ContextCollectionSource[] = [
-  //     CollectionSource.PINNED,
-  //     CollectionSource.CITING,
-  //     CollectionSource.TIMELINE,
-  //     CollectionSource.TAG_RELATIVE,
-  //     CollectionSource.SIMILARITY,
-  //     CollectionSource.KEYWORD,
-  //     CollectionSource.RANDOM,
-  //   ];
-  //   const priorityList: ContextCollectionSource[] = [];
-  //   for (const src of rawPriority) {
-  //     if (validSources.includes(src) && !priorityList.includes(src)) {
-  //       priorityList.push(src);
-  //     }
-  //   }
-  //
-  //   // 2.4 按优先级依次收集去重
-  //   const seenIds = new Set<string>();
-  //   const collectedItems: ContextInfoItem[] = [];
-  //
-  //   for (const sourceKey of priorityList) {
-  //     const candidates = candidatesMap.get(sourceKey) || [];
-  //     for (const cand of candidates) {
-  //       if (!cand || !cand.info_id || seenIds.has(cand.info_id)) {
-  //         continue;
-  //       }
-  //       seenIds.add(cand.info_id);
-  //       const item = await toContextItem(cand, sourceKey);
-  //       collectedItems.push(item);
-  //     }
-  //   }
-  //
-  //   // 2.5 截取 total 条
-  //   const resultList = collectedItems.slice(0, maxTotal);
-  //
-  //   output.list = resultList;
-  //   output.categories = {
-  //     selected: resultList.filter((i) => i.collection_source === CollectionSource.CUSTOM),
-  //     pinned: resultList.filter((i) => i.collection_source === CollectionSource.PINNED),
-  //     timeline: resultList.filter((i) => i.collection_source === CollectionSource.TIMELINE),
-  //     citing: resultList.filter((i) => i.collection_source === CollectionSource.CITING),
-  //     tag_relative: resultList.filter((i) => i.collection_source === CollectionSource.TAG_RELATIVE),
-  //     similarity: resultList.filter((i) => i.collection_source === CollectionSource.SIMILARITY),
-  //     keyword: resultList.filter((i) => i.collection_source === CollectionSource.KEYWORD),
-  //     random: resultList.filter((i) => i.collection_source === CollectionSource.RANDOM),
-  //   };
-  //
-  //   output.category_ids = {
-  //     selected: output.categories.selected.map((i) => i.info_id),
-  //     pinned: output.categories.pinned.map((i) => i.info_id),
-  //     timeline: output.categories.timeline.map((i) => i.info_id),
-  //     citing: output.categories.citing.map((i) => i.info_id),
-  //     tag_relative: output.categories.tag_relative.map((i) => i.info_id),
-  //     similarity: output.categories.similarity.map((i) => i.info_id),
-  //     keyword: output.categories.keyword.map((i) => i.info_id),
-  //     random: output.categories.random.map((i) => i.info_id),
-  //   };
-  //
-  //   output.sources_summary = {
-  //     selected: output.categories.selected.length,
-  //     pinned: output.categories.pinned.length,
-  //     timeline: output.categories.timeline.length,
-  //     citing: output.categories.citing.length,
-  //     tag_relative: output.categories.tag_relative.length,
-  //     similarity: output.categories.similarity.length,
-  //     keyword: output.categories.keyword.length,
-  //     random: output.categories.random.length,
-  //   };
-  //
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
   async context(input: ContextInfoInput, output: ContextInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
@@ -2133,7 +1501,7 @@ const rawPriority = priorityOrderStr
    * 1. 从 info_context_source 表读取 work_id 下各来源的 info_id 列表。
    * 2. 回查 info_raw 补内容与属性（info 已老化清空时回退摘要）。
    */
-  async soContextByWork(input: SoContextByWorkInput, output: SoContextByWorkOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soContextByWork(input: SoContextByWorkInput, output: SoContextByWorkOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) {
       throw new ValidationError('soContextByWork 需要提供 work_id');
@@ -2195,14 +1563,14 @@ const rawPriority = priorityOrderStr
   // =========================================================================
 
   /** 获取标签配置 */
-  async soInfoTagConfig(_input: SoInfoTagConfigInput, output: SoInfoTagConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soInfoTagConfig(_input: SoInfoTagConfigInput, output: SoInfoTagConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.config = await this.getInfoTagConfig();
     return true;
   }
 
   /** 更新标签配置（upsert） */
-  async updateInfoTagConfig(input: UpdateInfoTagConfigInput, output: UpdateInfoTagConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfoTagConfig(input: UpdateInfoTagConfigInput, _output: UpdateInfoTagConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.llm_id) {
       const llmOutput = new GetLLMOutput();
@@ -2238,14 +1606,14 @@ const rawPriority = priorityOrderStr
   }
 
   /** 获取摘要配置 */
-  async soInfoSummaryConfig(_input: SoInfoSummaryConfigInput, output: SoInfoSummaryConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soInfoSummaryConfig(_input: SoInfoSummaryConfigInput, output: SoInfoSummaryConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.config = await this.getInfoSummaryConfig();
     return true;
   }
 
   /** 更新摘要配置 */
-  async updateInfoSummaryConfig(input: UpdateInfoSummaryConfigInput, output: UpdateInfoSummaryConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfoSummaryConfig(input: UpdateInfoSummaryConfigInput, _output: UpdateInfoSummaryConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.llm_id) {
       const llmOutput = new GetLLMOutput();
@@ -2277,14 +1645,14 @@ const rawPriority = priorityOrderStr
   }
 
   /** 获取全局配置 */
-  async soInfoConfig(_input: SoInfoConfigInput, output: SoInfoConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soInfoConfig(_input: SoInfoConfigInput, output: SoInfoConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.config = await this.getInfoConfig();
     return true;
   }
 
   /** 更新全局配置 */
-  async updateInfoConfig(input: UpdateInfoConfigInput, output: UpdateInfoConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfoConfig(input: UpdateInfoConfigInput, _output: UpdateInfoConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.alive_max_days !== undefined) {
       if (!Number.isInteger(input.alive_max_days) || input.alive_max_days < 1) {
@@ -2300,14 +1668,14 @@ const rawPriority = priorityOrderStr
   }
 
   /** 获取向量配置 */
-  async soInfoVectorConfig(_input: SoInfoVectorConfigInput, output: SoInfoVectorConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soInfoVectorConfig(_input: SoInfoVectorConfigInput, output: SoInfoVectorConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.config = await this.getInfoVectorConfig();
     return true;
   }
 
   /** 更新向量配置 */
-  async updateInfoVectorConfig(input: UpdateInfoVectorConfigInput, output: UpdateInfoVectorConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfoVectorConfig(input: UpdateInfoVectorConfigInput, _output: UpdateInfoVectorConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.dimension !== undefined) {
       const vectorCount = await this.vectorDb.soVectorCount();
@@ -2348,14 +1716,14 @@ const rawPriority = priorityOrderStr
   }
 
   /** 获取上下文构建配置 */
-  async soInfoContextConfig(_input: SoInfoContextConfigInput, output: SoInfoContextConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async soInfoContextConfig(_input: SoInfoContextConfigInput, output: SoInfoContextConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.config = await this.getInfoContextConfig();
     return true;
   }
 
   /** 更新上下文构建配置 */
-  async updateInfoContextConfig(input: UpdateInfoContextConfigInput, output: UpdateInfoContextConfigOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfoContextConfig(input: UpdateInfoContextConfigInput, _output: UpdateInfoContextConfigOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const assertNonNegativeInt = (val: number | undefined, label: string) => {
       if (val !== undefined && (!Number.isInteger(val) || val < 0)) {
@@ -2482,7 +1850,7 @@ const rawPriority = priorityOrderStr
   /**
    * 改写指定 work 下某 info_type 的 info 内容（如需求确认 APPROVE 时用理解后的需求替换原始 REQUEST）。
    */
-  async updateInfo(input: UpdateInfoInput, output: UpdateInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async updateInfo(input: UpdateInfoInput, output: UpdateInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.work_id || !input.info) {
       throw new ValidationError('updateInfo 需要提供 work_id 和 info');
@@ -2509,7 +1877,7 @@ const rawPriority = priorityOrderStr
    * 级联清理 info_raw 主表与 info_tag / info_summary / info_keyword / info_vector
    * 派生表，并删除 GraphDB 中该信息的引用节点与边（共享的标签/关键词文本节点不在此清理）。
    */
-  async delInfoByWork(input: DelInfoByWorkInput, output: DelInfoByWorkOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async delInfoByWork(input: DelInfoByWorkInput, output: DelInfoByWorkOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) {
       throw new ValidationError('delInfoByWork 需要提供 work_id');
@@ -2541,7 +1909,7 @@ const rawPriority = priorityOrderStr
   // =========================================================================
 
   /** 检查 info_vector 是否存在 */
-  async existVectorInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async existVectorInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('existVectorInfo 需要提供 info_id');
@@ -2552,7 +1920,7 @@ const rawPriority = priorityOrderStr
   }
 
   /** 检查 info_tag 是否存在 */
-  async existTagInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async existTagInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('existTagInfo 需要提供 info_id');
@@ -2563,7 +1931,7 @@ const rawPriority = priorityOrderStr
   }
 
   /** 检查 info_summary 是否存在 */
-  async existSummaryInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, metrics?: Metrics, report?: Report,
+  async existSummaryInfo(input: ExistInfoInput, output: ExistInfoOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.info_id) {
       throw new ValidationError('existSummaryInfo 需要提供 info_id');
@@ -2768,7 +2136,7 @@ const rawPriority = priorityOrderStr
   }
 
   /** 获取标签向量：优先复用 LanceDB 中已有向量，否则即时生成。 */
-  private async getTagEmbedding(tag: string, tagConfig: InfoTagConfigRecord): Promise<number[]> {
+  private async getTagEmbedding(tag: string, _tagConfig: InfoTagConfigRecord): Promise<number[]> {
     const existing = await this.getVectorRecord(this.tagVectorId(tag));
     if (existing && existing.embedding.length > 0) return existing.embedding;
     const vectorConfig = await this.getInfoVectorConfig();
@@ -3071,43 +2439,6 @@ const rawPriority = priorityOrderStr
       return [];
     }
   }
-
-  // ===== 原始代码（保留作为参考，已停用：摘要生成统一由 SummaryAgent 负责） =====
-  /*
-  private async generateSummary(
-    text: string,
-    summaryConfig: InfoSummaryConfigRecord,
-  ): Promise<string> {
-    try {
-      if (!summaryConfig.llm_id || !summaryConfig.prompt_template_id) return '';
-
-      const promptOut = new ExecPromptOutput();
-      const ok = await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), {
-          id: summaryConfig.prompt_template_id,
-          variables: { text },
-        }),
-        promptOut, new PromptContext(),
-      );
-      if (!ok || !promptOut.prompt) return '';
-
-      const execOutput = new ExecLLMOutput();
-      await this.llmAccess.execLLM(
-        Object.assign(new ExecLLMInput(), {
-          id: summaryConfig.llm_id,
-          prompt: promptOut.prompt,
-          temperature: 0.3,
-          max_tokens: 512,
-        }),
-        execOutput, new LLMContext(),
-      );
-
-      return execOutput.result.trim();
-    } catch {
-      return '';
-    }
-  }
-  */
 
   // =========================================================================
   // Private: Keyword extraction

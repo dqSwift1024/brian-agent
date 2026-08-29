@@ -1,13 +1,6 @@
 import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
-import {
-  Operator, ValidationError,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  SoSoulInput, SoSoulOutput, AddSoulInput, AddSoulOutput,
-  GetSoulInput, GetSoulOutput, SoulContext,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-} from '@brian-agent/base';
+import { Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, SoSoulOutput, AddSoulOutput, GetSoulInput, GetSoulOutput, SoulContext, PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   InfoCoreContext, SoInfoSummaryConfigInput, SoInfoSummaryConfigOutput,
@@ -68,7 +61,7 @@ export class SummaryAgentService {
     return true;
   }
 
-  async generateSummary(input: GenerateSummaryInput, output: GenerateSummaryOutput, _ctx: SummaryAgentContext, metrics?: Metrics, report?: Report,
+  async generateSummary(input: GenerateSummaryInput, output: GenerateSummaryOutput, _ctx: SummaryAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const cfgOut = new SoInfoSummaryConfigOutput();
     await this.infoCore.soInfoSummaryConfig(new SoInfoSummaryConfigInput(), cfgOut, new InfoCoreContext());

@@ -23,56 +23,7 @@ import { ComponentDisabledError, ValidationError, NotFoundError } from '../../sh
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
-import {
-  McpContext,
-  McpProviderData,
-  McpData,
-  McpProviderRecord,
-  McpInstallRecord,
-  AddMcpProviderInput,
-  AddMcpProviderOutput,
-  DelMcpProviderInput,
-  DelMcpProviderOutput,
-  UpdateMcpProviderInput,
-  UpdateMcpProviderOutput,
-  SoMcpProviderInput,
-  SoMcpProviderOutput,
-  TestMcpProviderInput,
-  TestMcpProviderOutput,
-  ListMcpInput,
-  ListMcpOutput,
-  InstallMcpInput,
-  InstallMcpOutput,
-  StartMcpInput,
-  StartMcpOutput,
-  StopMcpInput,
-  StopMcpOutput,
-  StartMcpsInput,
-  StartMcpsOutput,
-  RefreshMcpStatusInput,
-  RefreshMcpStatusOutput,
-  UninstallMcpInput,
-  UninstallMcpOutput,
-  UpdateMcpInput,
-  UpdateMcpOutput,
-  UpgradeMcpInput,
-  UpgradeMcpOutput,
-  GetMcpInput,
-  GetMcpOutput,
-  SoMcpInput,
-  SoMcpOutput,
-  ExecMcpInput,
-  ExecMcpOutput,
-  EnableMCPInput,
-  EnableMCPOutput,
-  GetMcpUsageInput,
-  GetMcpUsageOutput,
-  MCP_PROVIDER_TABLE,
-  MCP_CACHE_TABLE,
-  MCP_INSTALL_TABLE,
-  MCP_USAGE_TABLE,
-  MCP_CONFIG_TABLE,
-} from '../domain/types';
+import { McpContext, McpProviderRecord, McpInstallRecord, AddMcpProviderInput, AddMcpProviderOutput, DelMcpProviderInput, DelMcpProviderOutput, UpdateMcpProviderInput, UpdateMcpProviderOutput, SoMcpProviderInput, SoMcpProviderOutput, TestMcpProviderInput, TestMcpProviderOutput, ListMcpInput, ListMcpOutput, InstallMcpInput, InstallMcpOutput, StartMcpInput, StartMcpOutput, StopMcpInput, StopMcpOutput, StartMcpsInput, StartMcpsOutput, RefreshMcpStatusInput, RefreshMcpStatusOutput, UninstallMcpInput, UninstallMcpOutput, UpdateMcpInput, UpdateMcpOutput, UpgradeMcpInput, UpgradeMcpOutput, GetMcpInput, GetMcpOutput, SoMcpInput, SoMcpOutput, ExecMcpInput, ExecMcpOutput, EnableMCPInput, EnableMCPOutput, GetMcpUsageInput, GetMcpUsageOutput, MCP_PROVIDER_TABLE, MCP_CACHE_TABLE, MCP_INSTALL_TABLE, MCP_USAGE_TABLE, MCP_CONFIG_TABLE } from '../domain/types';
 
 /**
  * MCPProvider 应用服务。
@@ -240,7 +191,7 @@ export class MCPService {
   // -------------------------------------------------------------------------
 
   /** 新增 MCP 提供商（PRD 3.1.1） */
-  async addMcpProvider(input: AddMcpProviderInput, output: AddMcpProviderOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async addMcpProvider(input: AddMcpProviderInput, output: AddMcpProviderOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const d = input.data;
@@ -261,7 +212,7 @@ export class MCPService {
   }
 
   /** 删除 MCP 提供商（PRD 3.1.2）- 级联清理 mcp_cache 和 mcp_install */
-  async delMcpProvider(input: DelMcpProviderInput, output: DelMcpProviderOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async delMcpProvider(input: DelMcpProviderInput, output: DelMcpProviderOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -295,7 +246,7 @@ export class MCPService {
   }
 
   /** 更新 MCP 提供商（PRD 3.1.3） */
-  async updateMcpProvider(input: UpdateMcpProviderInput, _output: UpdateMcpProviderOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async updateMcpProvider(input: UpdateMcpProviderInput, _output: UpdateMcpProviderOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data: DataObject[] = [{ field: 'updated', value: IdGenerator.now() }];
@@ -321,7 +272,7 @@ export class MCPService {
   }
 
   /** 搜索 MCP 提供商（PRD 3.1.4） */
-  async soMcpProvider(input: SoMcpProviderInput, output: SoMcpProviderOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async soMcpProvider(input: SoMcpProviderInput, output: SoMcpProviderOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const conditions: Condition[] = [];
@@ -349,7 +300,7 @@ export class MCPService {
   }
 
   /** 测试 MCP 提供商连接（PRD 3.1.5） */
-  async testMcpProvider(input: TestMcpProviderInput, output: TestMcpProviderOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async testMcpProvider(input: TestMcpProviderInput, output: TestMcpProviderOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const provider = await this.relationDb.selectOne(MCP_PROVIDER_TABLE, [
@@ -370,7 +321,7 @@ export class MCPService {
   }
 
   /** 获取 MCP 列表（PRD 3.1.6）- 优先从缓存读取，过期则调用提供商 API */
-  async listMcp(input: ListMcpInput, output: ListMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async listMcp(input: ListMcpInput, output: ListMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const cacheTtl = await this.config.getInt('cache_ttl', 86400);
@@ -457,7 +408,7 @@ export class MCPService {
   // -------------------------------------------------------------------------
 
   /** 安装 MCP（PRD 3.2.1）- 通过 npm 安装并生成命令 */
-  async installMcp(input: InstallMcpInput, output: InstallMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async installMcp(input: InstallMcpInput, output: InstallMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     // 从 mcp_cache 获取 MCP 信息
@@ -541,7 +492,7 @@ export class MCPService {
   }
 
   /** 启动 MCP（PRD 3.2.2）- 后台启动进程并跟踪 */
-  async startMcp(input: StartMcpInput, _output: StartMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async startMcp(input: StartMcpInput, _output: StartMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
@@ -578,7 +529,7 @@ export class MCPService {
   }
 
   /** 关闭 MCP（PRD 3.2.3） */
-  async stopMcp(input: StopMcpInput, _output: StopMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async stopMcp(input: StopMcpInput, _output: StopMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
@@ -675,7 +626,7 @@ export class MCPService {
   }
 
   /** 刷新本机所有已安装 MCP 的安装状态与运行状态 */
-  async refreshMcpStatus(_input: RefreshMcpStatusInput, output: RefreshMcpStatusOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async refreshMcpStatus(_input: RefreshMcpStatusInput, output: RefreshMcpStatusOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     // 1. 同步 npm 安装状态（清理已卸载、更新版本号）
@@ -696,7 +647,7 @@ export class MCPService {
   }
 
   /** 卸载 MCP（PRD 3.2.4）- 运行卸载命令并删除记录 */
-  async uninstallMcp(input: UninstallMcpInput, _output: UninstallMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async uninstallMcp(input: UninstallMcpInput, _output: UninstallMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
@@ -722,7 +673,7 @@ export class MCPService {
   }
 
   /** 更新 MCP（PRD 3.2.5） */
-  async updateMcp(input: UpdateMcpInput, _output: UpdateMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async updateMcp(input: UpdateMcpInput, _output: UpdateMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data: DataObject[] = [{ field: 'updated', value: IdGenerator.now() }];
@@ -766,7 +717,7 @@ export class MCPService {
   }
 
   /** 升级 MCP（PRD 3.2.5）- 重新执行 npm 安装命令更新到最新版本 */
-  async upgradeMcp(input: UpgradeMcpInput, output: UpgradeMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async upgradeMcp(input: UpgradeMcpInput, output: UpgradeMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
@@ -793,7 +744,7 @@ export class MCPService {
   }
 
   /** 获取 MCP（PRD 3.2.6） */
-  async soMcpById(input: GetMcpInput, output: GetMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async soMcpById(input: GetMcpInput, output: GetMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -808,7 +759,7 @@ export class MCPService {
   }
 
   /** 搜索 MCP（PRD 3.2.7） */
-  async soMcp(input: SoMcpInput, output: SoMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async soMcp(input: SoMcpInput, output: SoMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const conditions: Condition[] = [];
@@ -851,7 +802,7 @@ export class MCPService {
   // -------------------------------------------------------------------------
 
   /** 调用 MCP（PRD 3.3.1） */
-  async execMcp(input: ExecMcpInput, output: ExecMcpOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async execMcp(input: ExecMcpInput, output: ExecMcpOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const mcp = await this.relationDb.selectOne(MCP_INSTALL_TABLE, [
@@ -910,7 +861,7 @@ export class MCPService {
   // -------------------------------------------------------------------------
 
   /** 启用/禁用 MCP 组件（PRD 3.4.2） */
-  async enableMCP(input: EnableMCPInput, _output: EnableMCPOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async enableMCP(input: EnableMCPInput, _output: EnableMCPOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = input.enable;
     await this.config.set(
@@ -923,7 +874,7 @@ export class MCPService {
   }
 
   /** 获取 MCP 调用统计（PRD 3.4.2） */
-  async soMcpUsage(input: GetMcpUsageInput, output: GetMcpUsageOutput, _context: McpContext, metrics?: Metrics, report?: Report,
+  async soMcpUsage(input: GetMcpUsageInput, output: GetMcpUsageOutput, _context: McpContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const conditions: Condition[] = [];

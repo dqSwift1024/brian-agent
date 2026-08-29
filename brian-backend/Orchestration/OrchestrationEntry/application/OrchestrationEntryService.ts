@@ -365,7 +365,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async selectOrchestrationStrategy(input: SelectOrchestrationStrategyInput, output: SelectOrchestrationStrategyOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async selectOrchestrationStrategy(input: SelectOrchestrationStrategyInput, output: SelectOrchestrationStrategyOutput, _context: OrchestrationEntryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!this.llmAccess || !this.promptsAccess) {
       output.strategy = 'SIMPLE';
@@ -540,69 +540,8 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  // ===== 原始方法（保留作为参考）=====
-  // async buildWorkContext(
-  //   input: BuildWorkContextInput,
-  //   _context: OrchestrationEntryContext,
-  //   output: BuildWorkContextOutput,
-  // ): Promise<boolean> {
-  //   if (!input.session_id || !input.work_id) {
-  //     return false;
-  //   }
-  //   let sessionContext: Record<string, unknown> = {};
-  //   try {
-  //     const ctxInfoInput = Object.assign(new ContextInfoInput(), {
-  //       session_id: input.session_id,
-  //     });
-  //     const ctxInfoOutput = new ContextInfoOutput();
-  //     await this.infoCore.context(ctxInfoInput, ctxInfoOutput, Object.assign(new InfoCoreContext(), { session_id: input.session_id }) as InfoCoreContext);
-  //     sessionContext = ctxInfoOutput.list as unknown as Record<string, unknown>;
-  //   } catch { /* degrade gracefully */ }
-  //
-  //   let userProfile: Record<string, unknown> = {};
-  //   try {
-  //     const profileInput = Object.assign(new GetUserProfileInput(), {
-  //       session_id: input.session_id,
-  //     });
-  //     const profileOutput = new GetUserProfileOutput();
-  //     await this.writerAgent.soUserProfile(profileInput, profileOutput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext);
-  //     userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
-  //   } catch { /* degrade gracefully */ }
-  //
-  //   const maxRecent = input.max_recent_works ?? await this.getConfigValue('max_recent_works', 5);
-  //   const recentSelInput = Object.assign(new SelectDBInput(), {
-  //     query_param: {
-  //       table: 'orchestration_work',
-  //       conditions: [
-  //         { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-  //         { field: 'status', operator: Operator.EQ, value: 'COMPLETED' },
-  //       ] as Condition[],
-  //       page: { current: 1, size: maxRecent },
-  //     },
-  //   });
-  //   const recentSelOutput = Object.assign(new SelectDBOutput(), {});
-  //   await this.relationDb.selectDB(recentSelInput, new DBContext(), recentSelOutput);
-  //
-  //   const recentWorks = recentSelOutput.rows.map((row) => ({
-  //     user_query: row.user_query,
-  //     response_summary: ((row.final_response as string) ?? '').slice(0, 200),
-  //   }));
-  //
-  //   output.work_context = {
-  //     work_id: input.work_id,
-  //     session_id: input.session_id,
-  //     user_query: input.user_query,
-  //     session_context: sessionContext,
-  //     user_profile: userProfile,
-  //     recent_works: recentWorks,
-  //     created_at: IdGenerator.now(),
-  //     metadata: { orchestration_version: '1.0' },
-  //   };
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
-  async buildWorkContext(input: BuildWorkContextInput, output: BuildWorkContextOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async buildWorkContext(input: BuildWorkContextInput, output: BuildWorkContextOutput, _context: OrchestrationEntryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id || !input.work_id) {
       return false;
@@ -614,12 +553,6 @@ export class OrchestrationEntryService {
     let contextContentMap: unknown = undefined;
     let contextAttributeMap: unknown = undefined;
     try {
-      // ===== 原始代码（保留作为参考）=====
-      // const ctxInfoInput = Object.assign(new ContextInfoInput(), {
-      //   session_id: input.session_id,
-      //   selected_msg_ids: input.selected_msg_ids,
-      // });
-
       // ===== 修改后的代码：传入 info: input.user_query 以支撑向量/关键词/标签召回 =====
       // 注：此处入口级构建在 SAVE_USER_INPUT 之前执行，当前 REQUEST 尚未落库，快照的 CURRENT 会误识别，
       //     故不落盘快照（persist_snapshot: false）；权威快照由 JSONNode BUILD_WORK_CONTEXT 在
@@ -689,7 +622,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async soWorkStatus(input: GetWorkStatusInput, output: GetWorkStatusOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async soWorkStatus(input: GetWorkStatusInput, output: GetWorkStatusOutput, _context: OrchestrationEntryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
     if (input.work_id) conditions.push({ field: 'work_id', operator: Operator.EQ, value: input.work_id });
@@ -723,7 +656,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async cancelWork(input: CancelWorkInput, output: CancelWorkOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async cancelWork(input: CancelWorkInput, output: CancelWorkOutput, _context: OrchestrationEntryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -775,7 +708,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async configOrchestrationEntry(input: ConfigOrchestrationEntryInput, output: ConfigOrchestrationEntryOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async configOrchestrationEntry(input: ConfigOrchestrationEntryInput, output: ConfigOrchestrationEntryOutput, _context: OrchestrationEntryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },
@@ -829,7 +762,7 @@ export class OrchestrationEntryService {
     return true;
   }
 
-  async confirmIntent(input: ConfirmIntentInput, output: ConfirmIntentOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async confirmIntent(input: ConfirmIntentInput, output: ConfirmIntentOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.action) throw new ValidationError('action is required');
@@ -923,7 +856,7 @@ export class OrchestrationEntryService {
    * 与 confirmIntent 类似，但以「原始需求 + 用户补充参数」作为重入的 user_query，
    * 并透传原 work_id / interact_id / trace_id 保证幂等与历史一致。
    */
-  async submitClarification(input: SubmitClarificationInput, output: SubmitClarificationOutput, context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
+  async submitClarification(input: SubmitClarificationInput, output: SubmitClarificationOutput, _context: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) throw new ValidationError('work_id is required');
     if (!input.answers || !Array.isArray(input.answers) || input.answers.length === 0) {

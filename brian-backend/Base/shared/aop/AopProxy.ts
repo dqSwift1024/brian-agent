@@ -13,6 +13,8 @@
  * 日志切面功能通过 LogInterceptor 在 beforeExecute 和 afterExecute 中实现。
  */
 
+// ConsoleLogger 为无 logger 注入时的兜底输出通道，允许使用 console
+/* eslint-disable no-console */
 import type { Interceptor, InterceptContext } from './Interceptor';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Metrics } from '../base/Metrics';

@@ -12,35 +12,8 @@ import type { RelationDBAccess } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
 import type { PromptsAccess } from '@brian-agent/base';
-import {
-  SoulContext,
-  AddSoulInput,
-  AddSoulOutput,
-  GetSoulInput,
-  GetSoulOutput,
-  UpdateSoulInput,
-  UpdateSoulOutput,
-  SoSoulInput,
-  SoSoulOutput,
-  RecordSoulUsageInput,
-  RecordSoulUsageOutput,
-  PromptContext,
-  GetPromptInput,
-  GetPromptOutput,
-  ExecPromptInput,
-  ExecPromptOutput,
-  LLMContext,
-  ExecLLMInput,
-  ExecLLMOutput,
-  Operator,
-  OperationType,
-  IdGenerator,
-  JsonParser,
-  ValidationError,
-  NotFoundError,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-} from '@brian-agent/base';
-import type { Condition, DataObject, Operation, OrderBy, Page } from '@brian-agent/base';
+import { SoulContext, AddSoulInput, AddSoulOutput, GetSoulInput, GetSoulOutput, UpdateSoulOutput, SoSoulOutput, RecordSoulUsageInput, RecordSoulUsageOutput, PromptContext, GetPromptInput, GetPromptOutput, ExecPromptInput, ExecPromptOutput, LLMContext, ExecLLMInput, ExecLLMOutput, Operator, OperationType, IdGenerator, JsonParser, ValidationError, NotFoundError, PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '@brian-agent/base';
+import type { DataObject } from '@brian-agent/base';
 import {
   SoulCoreContext,
   SoulCoreConfigRecord,
@@ -67,13 +40,7 @@ import {
 import { ProcessingError } from '../../shared/errors';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { AgingEngine } from '../../shared/AgingEngine';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 
 /**
  * SoulCoreProvider 应用服务。
@@ -114,7 +81,7 @@ export class SoulCoreService {
   /**
    * 为 Agent 匹配 Soul（persona，三层统一匹配/选择逻辑）。
    */
-  async matchSoul(input: MatchSoulInput, output: MatchSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async matchSoul(input: MatchSoulInput, output: MatchSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, context_id, interact_id, task_content, task_domain } = input;
     if (!agent_id) {
@@ -123,7 +90,6 @@ export class SoulCoreService {
 
     const config = await this.getCoreConfig();
     const regenRate = config?.regen_rate ?? 75;
-    const similarityThreshold = config?.similarity_threshold ?? 0.7;
 
     // 获取可用 Soul 列表
     const soOutput = new SoSoulOutput();
@@ -183,7 +149,7 @@ export class SoulCoreService {
    * 4. 若候选更好则更新 agent_soul；
    * 5. 记录使用到 soul_core_usage。
    */
-  async optSoul(input: OptSoulInput, output: OptSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async optSoul(input: OptSoulInput, output: OptSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, soul_id } = input;
     if (!agent_id) {
@@ -250,7 +216,7 @@ export class SoulCoreService {
   /**
    * 依据 soul_opt_rule 规则老化不活跃的 Soul。
    */
-  async ageSoul(_input: AgeSoulInput, output: AgeSoulOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async ageSoul(_input: AgeSoulInput, output: AgeSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const engine = new AgingEngine(this.relationDb);
     const count = await engine.age({
@@ -278,7 +244,7 @@ export class SoulCoreService {
   /**
    * 查询 Soul 优化规则。
    */
-  async soSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async soSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(SOUL_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -301,7 +267,7 @@ export class SoulCoreService {
   /**
    * 批量更新 Soul 优化规则（事务）。
    */
-  async updateSoulRule(input: UpdateSoulRuleInput, _output: UpdateSoulRuleOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async updateSoulRule(input: UpdateSoulRuleInput, _output: UpdateSoulRuleOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.operations || input.operations.length === 0) {
       throw new ValidationError('updateSoulRule 需要提供 operations');
@@ -351,60 +317,8 @@ export class SoulCoreService {
   /**
    * 获取或更新 soul_core_config 配置（SET 语义）。
    */
-  // ===== 原始方法（保留作为参考）=====
-  // async configSoulCore(
-  //   input: ConfigSoulCoreInput,
-  //   _context: SoulCoreContext,
-  //   output: ConfigSoulCoreOutput,
-  // ): Promise<boolean> {
-  //   const existing = await this.getCoreConfig();
-  //   const now = IdGenerator.now();
-  //
-  //   if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
-  //     const updateData: Array<{ field: string; value: unknown }> = [];
-  //     if (input.regen_rate !== undefined) {
-  //       if (input.regen_rate < 0 || input.regen_rate > 100) {
-  //         throw new ValidationError('regen_rate 必须在 0-100 之间');
-  //       }
-  //       updateData.push({ field: 'regen_rate', value: input.regen_rate });
-  //     }
-  //     if (input.prompt_template_id !== undefined) {
-  //       if (input.prompt_template_id) {
-  //         const getPromptOutput = new GetPromptOutput();
-  //         await this.promptsAccess.soPromptById(
-  //           { id: input.prompt_template_id } as GetPromptInput,
-  //           getPromptOutput, new PromptContext(),
-  //         );
-  //         if (!getPromptOutput.prompt) {
-  //           throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
-  //         }
-  //       }
-  //       updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
-  //     }
-  //     updateData.push({ field: 'updated', value: now });
-  //
-  //     if (existing?.id) {
-  //       await this.relationDb.update(
-  //         SOUL_CORE_CONFIG_TABLE,
-  //         updateData,
-  //         [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-  //       );
-  //     } else {
-  //       await this.relationDb.insert(SOUL_CORE_CONFIG_TABLE, [
-  //         { field: 'id', value: IdGenerator.generate() },
-  //         { field: 'created', value: now },
-  //         ...updateData,
-  //       ]);
-  //     }
-  //     this.configCache = null;
-  //   }
-  //
-  //   output.config = await this.getCoreConfig();
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
-  async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, _context: SoulCoreContext, metrics?: Metrics, report?: Report,
+  async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.getCoreConfig();
     const now = IdGenerator.now();

@@ -12,28 +12,7 @@ import type { RelationDBAccess } from '@brian-agent/base';
 import type { SkillAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
 import type { PromptsAccess } from '@brian-agent/base';
-import {
-  SkillContext,
-  SoSkillInput,
-  SoSkillOutput,
-  UpdateSkillInput,
-  UpdateSkillOutput,
-  PromptContext,
-  GetPromptInput,
-  GetPromptOutput,
-  ExecPromptInput,
-  ExecPromptOutput,
-  LLMContext,
-  ExecLLMInput,
-  ExecLLMOutput,
-  Operator,
-  OperationType,
-  IdGenerator,
-  JsonParser,
-  ValidationError,
-  NotFoundError,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-} from '@brian-agent/base';
+import { SkillContext, SoSkillOutput, UpdateSkillOutput, PromptContext, GetPromptInput, GetPromptOutput, ExecPromptOutput, LLMContext, ExecLLMOutput, Operator, OperationType, IdGenerator, JsonParser, ValidationError, PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '@brian-agent/base';
 import type { DataObject } from '@brian-agent/base';
 import {
   SkillCoreContext,
@@ -60,13 +39,7 @@ import {
 } from '../domain/types';
 import { ProcessingError } from '../../shared/errors';
 import { AgingEngine } from '../../shared/AgingEngine';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 
 /**
  * SkillCoreProvider 应用服务。
@@ -95,7 +68,7 @@ export class SkillCoreService {
   /**
    * 为 Agent 匹配 Skill（三层统一匹配/选择/自生成逻辑）。
    */
-  async matchSkill(input: MatchSkillInput, output: MatchSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async matchSkill(input: MatchSkillInput, output: MatchSkillOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, context_id, interact_id } = input;
     if (!agent_id) {
@@ -104,7 +77,6 @@ export class SkillCoreService {
 
     const config = await this.getConfig();
     const regenRate = config.regen_rate ?? 75;
-    const similarityThreshold = config.similarity_threshold ?? 0.7;
 
     // 获取可用 Skill 列表
     const skillOutput = new SoSkillOutput();
@@ -188,7 +160,7 @@ export class SkillCoreService {
    * 若 agent_id + skill_id 在 agent_skill 中不存在则新增；
    * 无论新增或已有，均在 skill_usage 中记录本次使用。
    */
-  async optSkill(input: OptSkillInput, output: OptSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async optSkill(input: OptSkillInput, output: OptSkillOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, skill_id } = input;
     if (!agent_id) {
@@ -219,7 +191,7 @@ export class SkillCoreService {
    * 对每条规则，统计在最近 days 天内 usage 次数不足 min_usage_count 的 skill，
    * 调用 SkillAccess.updateSkill 将其置为禁用（enable=false）。
    */
-  async ageSkill(_input: AgeSkillInput, output: AgeSkillOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async ageSkill(_input: AgeSkillInput, output: AgeSkillOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const engine = new AgingEngine(this.relationDb);
     const count = await engine.age({
@@ -247,7 +219,7 @@ export class SkillCoreService {
   /**
    * 查询 Skill 优化规则。
    */
-  async soSkillRule(input: SoSkillRuleInput, output: SoSkillRuleOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async soSkillRule(input: SoSkillRuleInput, output: SoSkillRuleOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(SKILL_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -270,7 +242,7 @@ export class SkillCoreService {
   /**
    * 批量更新 Skill 优化规则（事务）。
    */
-  async updateSkillRule(input: UpdateSkillRuleInput, _output: UpdateSkillRuleOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async updateSkillRule(input: UpdateSkillRuleInput, _output: UpdateSkillRuleOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.operations || input.operations.length === 0) {
       throw new ValidationError('operations 为必填');
@@ -320,7 +292,7 @@ export class SkillCoreService {
   /**
    * 获取或更新 skill_core_config 配置（SET 语义）。
    */
-  async configSkillCore(input: ConfigSkillCoreInput, output: ConfigSkillCoreOutput, _context: SkillCoreContext, metrics?: Metrics, report?: Report,
+  async configSkillCore(input: ConfigSkillCoreInput, output: ConfigSkillCoreOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.getConfig();
     const now = IdGenerator.now();

@@ -58,7 +58,7 @@ export class AgentStrategyService {
    * 多候选时优先用 prompt 模板做决策；无可用 LLM 绑定时回退第一候选。
    * Agent 层不自选 llm_model。
    */
-  async matchStrategy(input: MatchStrategyInput, output: MatchStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async matchStrategy(input: MatchStrategyInput, output: MatchStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(AGENT_STRATEGY_TABLE, {
       conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }],
@@ -136,7 +136,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async soStrategyById(input: GetStrategyInput, output: GetStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async soStrategyById(input: GetStrategyInput, output: GetStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
       { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
@@ -149,7 +149,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async soStrategy(input: SoStrategyInput, output: SoStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async soStrategy(input: SoStrategyInput, output: SoStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(AGENT_STRATEGY_TABLE, {
       conditions: input.conditions,
@@ -160,7 +160,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async addStrategy(input: AddStrategyInput, output: AddStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async addStrategy(input: AddStrategyInput, output: AddStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_label) throw new ValidationError('strategy_label 为必填');
     if (input.suitable_complexity_min > input.suitable_complexity_max) {
@@ -191,7 +191,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async updateStrategy(input: UpdateStrategyInput, _output: UpdateStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async updateStrategy(input: UpdateStrategyInput, _output: UpdateStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
       { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
@@ -220,7 +220,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async toggleStrategy(input: ToggleStrategyInput, output: ToggleStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async toggleStrategy(input: ToggleStrategyInput, output: ToggleStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_id) throw new ValidationError('strategy_id 为必填');
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
@@ -242,7 +242,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async configAgentStrategy(input: ConfigAgentStrategyInput, output: ConfigAgentStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
+  async configAgentStrategy(input: ConfigAgentStrategyInput, output: ConfigAgentStrategyOutput, _ctx: AgentStrategyContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {

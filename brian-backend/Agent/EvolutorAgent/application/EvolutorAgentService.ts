@@ -85,7 +85,7 @@ export class EvolutorAgentService {
     this.traceStore = new TraceStore(relationDb);
   }
 
-  async evalWorkAgent(input: EvalWorkAgentInput, output: EvalWorkAgentOutput, ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async evalWorkAgent(input: EvalWorkAgentInput, output: EvalWorkAgentOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
     if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
@@ -227,7 +227,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async evalWriterAgent(input: EvalWriterAgentInput, output: EvalWriterAgentOutput, ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async evalWriterAgent(input: EvalWriterAgentInput, output: EvalWriterAgentOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
     if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
@@ -414,7 +414,7 @@ export class EvolutorAgentService {
     }
   }
 
-  async startEvalSchedule(input: StartEvalScheduleInput, output: StartEvalScheduleOutput, ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async startEvalSchedule(input: StartEvalScheduleInput, output: StartEvalScheduleOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const interval = input.interval_ms ?? config?.eval_schedule_interval_ms ?? 3600000;
@@ -560,7 +560,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async stopEvalSchedule(input: StopEvalScheduleInput, _output: StopEvalScheduleOutput, _ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async stopEvalSchedule(input: StopEvalScheduleInput, _output: StopEvalScheduleOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const id = (input as { worker_id?: string }).worker_id || this.scheduleWorkerId || EVAL_SCHEDULE_QUEUE;
     const stopOut = new StopWorkerOutput();
@@ -572,7 +572,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async soEvaluation(input: GetEvaluationInput, output: GetEvaluationOutput, _ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async soEvaluation(input: GetEvaluationInput, output: GetEvaluationOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = [...(input.conditions ?? [])];
     if (input.agent_id) {
@@ -590,7 +590,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async soEvolutionReport(input: GetEvolutionReportInput, output: GetEvolutionReportOutput, _ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async soEvolutionReport(input: GetEvolutionReportInput, output: GetEvolutionReportOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const getOut = new GetAgentOutput();
     await this.agentLibrary.soAgent(
@@ -656,7 +656,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async configEvolutorAgent(input: ConfigEvolutorAgentInput, output: ConfigEvolutorAgentOutput, _ctx: EvolutorAgentContext, metrics?: Metrics, report?: Report,
+  async configEvolutorAgent(input: ConfigEvolutorAgentInput, output: ConfigEvolutorAgentOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {

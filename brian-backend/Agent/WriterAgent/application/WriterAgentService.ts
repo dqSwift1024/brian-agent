@@ -1,22 +1,9 @@
 ﻿import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { Metrics, Report } from '@brian-agent/base';
-import {
-  IdGenerator, Operator, ValidationError,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  SoPromptInput, SoPromptOutput,
-  GetSoulInput, GetSoulOutput, SoulContext,
-  InfoType,
-  HandleResultType,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-  type DataObject,
-} from '@brian-agent/base';
+import { IdGenerator, Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, SoPromptInput, SoPromptOutput, GetSoulInput, GetSoulOutput, SoulContext, HandleResultType, PROMPT_IDS, getBuiltinTemplate, renderTemplate, type DataObject } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
-import {
-  SaveInfoInput, SaveInfoOutput, ContextInfoInput, ContextInfoOutput, InfoCoreContext,
-  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
-} from '@brian-agent/core';
+import { ContextInfoInput, ContextInfoOutput, InfoCoreContext, MatchLLMInput, MatchLLMOutput, LLMCoreContext } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import {
@@ -36,7 +23,6 @@ import {
   GetAgentInput, GetAgentOutput, RecordAgentUsageInput, RecordAgentUsageOutput,
   AgentLibraryContext,
 } from '../../AgentLibrary/domain/types';
-import { parseJsonObject } from '../../shared/signature';
 import { formatContextCategories } from '@brian-agent/base';
 import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
 import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
@@ -62,163 +48,8 @@ export class WriterAgentService {
     this.traceStore = new TraceStore(relationDb);
   }
 
-  // ===== 原始 write 方法（保留作为参考） =====
-  /*
-  async originalWrite(input: WriteInput, output: WriteOutput, ctx: WriterAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
-    const builderCtx = Object.assign(new AgentBuilderContext(), {
-      session_id: ctx.session_id,
-      work_id: input.work_id || ctx.work_id,
-      interact_id: input.interact_id || ctx.interact_id,
-    });
-    const buildOut = new BuildSystemAgentOutput();
-    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'WRITER' }), builderCtx, buildOut);
-    if (!buildOut.agent_id) throw new ValidationError('buildWriterAgent failed');
-
-    const libCtx = Object.assign(new AgentLibraryContext(), builderCtx);
-    const getOut = new GetAgentOutput();
-    await this.agentLibrary.soAgent(
-      Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      libCtx,
-      getOut,
-    );
-    const agent = getOut.agents[0];
-
-    let preferences = input.user_preferences;
-    if (!preferences && ctx.session_id) {
-      const profile = await this.loadProfile(ctx.session_id);
-      if (profile) {
-        preferences = {
-          language: profile.language,
-          style: profile.style,
-          depth: profile.depth,
-          format: profile.format,
-        };
-      }
-    }
-    const config = await this.getConfig();
-    if (!preferences) {
-      preferences = {
-        language: config?.default_language ?? 'zh-CN',
-        style: config?.default_style ?? 'clear',
-        depth: config?.default_depth ?? 'medium',
-        format: config?.default_format ?? 'MARKDOWN',
-      };
-    }
-
-    let contextExtra = '';
-    if (ctx.session_id) {
-      try {
-        const ctxOut = new ContextInfoOutput();
-        // ===== 原始代码（保留作为参考）=====
-        // await this.infoCore.context(
-        //   Object.assign(new ContextInfoInput(), {
-        //     session_id: ctx.session_id,
-        //     selected_msg_ids: ctx.selected_msg_ids,
-        //   }),
-        //   new InfoCoreContext(),
-        //   ctxOut,
-        // );
-
-        // ===== 修改后的代码：传入 info: input.user_query =====
-        await this.infoCore.context(
-          Object.assign(new ContextInfoInput(), {
-            session_id: ctx.session_id,
-            work_id: ctx.work_id || '',
-            selected_msg_ids: ctx.selected_msg_ids,
-            info: input.user_query,
-            persist_snapshot: false,
-          }),
-          new InfoCoreContext(),
-          ctxOut,
-        );
-        // ===== 原始方法（保留作为参考）=====
-        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
-
-        // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
-        contextExtra = formatContextCategories(ctxOut);
-      } catch { }
-    }
-
-    const results = input.agent_results
-      .map((r) => `[${r.agent_id}] ${r.task_content}: ${r.result}`)
-      .join('\n');
-
-    let response = '';
-    let tokens = 0;
-    let llmId = config?.llm_id || '';
-    if (!llmId && agent?.agent_id && this.llmCore) {
-      llmId = await this.resolveLlm(agent.agent_id);
-    }
-
-    let system = '';
-    if (agent?.soul_id && this.soulAccess) {
-      try {
-        const soulOut = new GetSoulOutput();
-        await this.soulAccess.soSoulById(
-          Object.assign(new GetSoulInput(), { id: agent.soul_id }),
-          new SoulContext(),
-          soulOut,
-        );
-        system = soulOut.soul?.soul_content ?? soulOut.soul?.soul_brief ?? '';
-      } catch { }
-    }
-
-    const prompt = await this.renderPrompt(
-      config?.write_prompt_template_id,
-      PROMPT_IDS.writer,
-      {
-        task_content: input.user_query,
-        preferences: JSON.stringify(preferences),
-        context_data: contextExtra,
-        agent_results: results,
-        soul: system,
-      },
-    );
-
-    const llmOut = new ExecLLMOutput();
-    const ok = await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), {
-        id: llmId,
-        prompt,
-        ...(system ? { system } : {}),
-      }),
-      new LLMContext(),
-      llmOut,
-    );
-    if (!ok) {
-      response = `Summary: ${input.user_query.slice(0, 100)}\n\nResults:\n${results}`;
-      output.blocks = [{
-        id: IdGenerator.generate(),
-        type: 'text_paragraph' as const,
-        content: response,
-        meta: { streaming_status: 'completed' as const },
-      }];
-    } else {
-      tokens = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
-      const blocks = this.parseBlocks(llmOut.result);
-      response = blocks.map(b => b.content).join('\n\n');
-      output.blocks = blocks;
-    }
-
-    await this.agentLibrary.recordAgentUsage(
-      Object.assign(new RecordAgentUsageInput(), {
-        agent_id: buildOut.agent_id,
-        work_id: input.work_id || ctx.work_id || '',
-        interact_id: input.interact_id || ctx.interact_id || '',
-      }),
-      libCtx,
-      new RecordAgentUsageOutput(),
-    );
-
-    output.response = response;
-    output.response_format = preferences.format || 'MARKDOWN';
-    output.token_usage = tokens;
-    return true;
-  }
-  */
-
   // ===== 修改后的 write 方法：支持兼容兼顾 r.answer 和 r.result 字段 =====
-  async execWrite(input: WriteInput, output: WriteOutput, ctx: WriterAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async execWrite(input: WriteInput, output: WriteOutput, ctx: WriterAgentContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const startedAt = IdGenerator.now();
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
@@ -264,16 +95,6 @@ export class WriterAgentService {
     if (ctx.session_id) {
       try {
         const ctxOut = new ContextInfoOutput();
-        // ===== 原始代码（保留作为参考）=====
-        // await this.infoCore.context(
-        //   Object.assign(new ContextInfoInput(), {
-        //     session_id: ctx.session_id,
-        //     selected_msg_ids: ctx.selected_msg_ids,
-        //   }),
-        //   new InfoCoreContext(),
-        //   ctxOut,
-        // );
-
         // ===== 修改后的代码：传入 info: input.user_query =====
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
@@ -286,9 +107,6 @@ export class WriterAgentService {
           ctxOut,
           new InfoCoreContext(),
         );
-        // ===== 原始方法（保留作为参考）=====
-        // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
-
         // ===== 修改后的方法：结构化分类包裹与属性脱敏 =====
         contextExtra = formatContextCategories(ctxOut);
       } catch { /* best-effort */ }
@@ -475,7 +293,7 @@ export class WriterAgentService {
     }
   }
 
-  async saveUserProfile(input: SaveUserProfileInput, _output: SaveUserProfileOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
+  async saveUserProfile(input: SaveUserProfileInput, _output: SaveUserProfileOutput, _ctx: WriterAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) throw new ValidationError('session_id 为必填');
     if (input.language !== undefined && !LANGUAGE_ENUM.includes(input.language)) {
@@ -524,7 +342,7 @@ export class WriterAgentService {
     return true;
   }
 
-  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
+  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: WriterAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const profile = await this.loadProfile(input.session_id);
     if (profile) {
@@ -539,7 +357,7 @@ export class WriterAgentService {
     return true;
   }
 
-  async configWriterAgent(input: ConfigWriterAgentInput, output: ConfigWriterAgentOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
+  async configWriterAgent(input: ConfigWriterAgentInput, output: ConfigWriterAgentOutput, _ctx: WriterAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {

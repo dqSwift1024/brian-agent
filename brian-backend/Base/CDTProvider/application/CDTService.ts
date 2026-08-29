@@ -12,12 +12,7 @@ import { join } from 'path';
 import http from 'http';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
-import {
-  ComponentDisabledError,
-  ValidationError,
-  NotFoundError,
-} from '../../shared/errors';
-import { IdGenerator } from '../../ToolProvider/IdGenerator';
+import { ComponentDisabledError } from '../../shared/errors';
 import type { Logger } from '../../shared/aop/AopProxy';
 import {
   CDTContext,
@@ -160,7 +155,7 @@ export class CDTService {
   // 进程生命周期
   // ============================================================
 
-  async startCDT(_input: StartCDTInput, output: StartCDTOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
+  async startCDT(_input: StartCDTInput, output: StartCDTOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!this.enabled) throw new ComponentDisabledError('CDTProvider');
 
@@ -263,7 +258,7 @@ export class CDTService {
     return true;
   }
 
-  async stopCDT(_input: StopCDTInput, output: StopCDTOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
+  async stopCDT(_input: StopCDTInput, _output: StopCDTOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.stopCommandWs();
     this.stopKeepAlive();
@@ -275,13 +270,13 @@ export class CDTService {
     return true;
   }
 
-  async soCDTEndpoint(_input: GetCDTEndpointInput, output: GetCDTEndpointOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
+  async soCDTEndpoint(_input: GetCDTEndpointInput, output: GetCDTEndpointOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.endpoint = this.endpoint;
     return true;
   }
 
-  async isCDTRunning(_input: IsCDTRunningInput, output: IsCDTRunningOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
+  async isCDTRunning(_input: IsCDTRunningInput, output: IsCDTRunningOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const alive = this.isProcessAlive();
     output.running = alive;
@@ -294,7 +289,7 @@ export class CDTService {
   // CDP 通信
   // ============================================================
 
-  async execCDP(input: ExecCDPInput, output: ExecCDPOutput, _ctx: CDTContext, metrics?: Metrics, report?: Report,
+  async execCDP(input: ExecCDPInput, output: ExecCDPOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!this.endpoint) {
       output.error = 'CDT 未启动';
@@ -369,6 +364,7 @@ export class CDTService {
     if (!this.endpoint) return false;
     this.stopScreencast();
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const { WebSocket } = require('ws') as typeof import('ws');
     const ws = new WebSocket(this.endpoint);
 
@@ -625,6 +621,7 @@ export class CDTService {
     this.stopKeepAlive();
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { WebSocket } = require('ws') as typeof import('ws');
       const ws = new WebSocket(this.endpoint);
 
@@ -735,6 +732,7 @@ export class CDTService {
   private connectWebSocket(): Promise<import('ws').WebSocket> {
     return new Promise((resolve, reject) => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { WebSocket } = require('ws') as typeof import('ws');
         const ws = new WebSocket(this.endpoint);
         ws.once('open', () => resolve(ws));

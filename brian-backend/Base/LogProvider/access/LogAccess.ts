@@ -44,13 +44,6 @@ export class LogAccess {
   /** 专用于日志的 RelationDB 实例 */
   private readonly relationDb: RelationDBAccess;
 
-  // ===== 原始构造函数（保留作为参考）=====
-  // constructor(relationDb: RelationDBAccess, logger?: Logger) {
-  //   new LogSchemaInitializer(relationDb).init();
-  //   this.rawService = new LogService(relationDb);
-  //   this.service = AopProxy.wrap(this.rawService, { logger });
-  // }
-
   // ===== 修改后的构造函数 =====
   constructor(
     relationDbOrOptions?: RelationDBAccess | SQLiteRelationDBOptions | string,

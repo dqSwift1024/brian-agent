@@ -1,22 +1,12 @@
 import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
-import {
-  IdGenerator, Operator, Direction, ValidationError, DataObject as DataObjectType,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  NotFoundError, JsonParser,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-  type DataObject,
-} from '@brian-agent/base';
+import { IdGenerator, Operator, Direction, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, JsonParser, PROMPT_IDS, getBuiltinTemplate, renderTemplate, type DataObject } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   LastNInfoInput, LastNInfoOutput, RelationKInfoInput, RelationKInfoOutput, InfoCoreContext,
   SoCitationEdgesInput, SoCitationEdgesOutput,
 } from '@brian-agent/core';
-import {
-  MatchLLMInput, MatchLLMOutput, CheckLLMQuotaInput, CheckLLMQuotaOutput,
-  RecordLLMUsageInput, RecordLLMUsageOutput, LLMCoreContext,
-} from '@brian-agent/core';
+import { MatchLLMInput, MatchLLMOutput, RecordLLMUsageInput, RecordLLMUsageOutput, LLMCoreContext } from '@brian-agent/core';
 import type { WriterAgentAccess } from '@brian-agent/agent';
 import {
   SaveUserProfileInput, SaveUserProfileOutput, GetUserProfileInput as WriterGetUserProfileInput,
@@ -60,7 +50,7 @@ export class UserProfileService {
     private readonly logger?: { error?: (msg: string, meta?: Record<string, unknown>) => void },
   ) {}
 
-  async configProfileDirection(input: ConfigProfileDirectionInput, _output: ConfigProfileDirectionOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async configProfileDirection(input: ConfigProfileDirectionInput, _output: ConfigProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     for (const dir of input.directions) {
       const existing = await this.relationDb.selectOne(USER_PROFILE_DIRECTION_TABLE, [
@@ -102,7 +92,7 @@ export class UserProfileService {
     return true;
   }
 
-  async deleteProfileDirection(input: DeleteProfileDirectionInput, _output: DeleteProfileDirectionOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async deleteProfileDirection(input: DeleteProfileDirectionInput, _output: DeleteProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.relationDb.delete(USER_PROFILE_DIRECTION_TABLE, [
       { field: 'direction_key', operator: Operator.EQ, value: input.direction_key },
@@ -110,7 +100,7 @@ export class UserProfileService {
     return true;
   }
 
-  async soProfileDirection(_input: GetProfileDirectionInput, output: GetProfileDirectionOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async soProfileDirection(_input: GetProfileDirectionInput, output: GetProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.queryTable(USER_PROFILE_DIRECTION_TABLE, [], [
       { field: 'weight', direction: Direction.DESC },
@@ -119,7 +109,7 @@ export class UserProfileService {
     return true;
   }
 
-  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sessionId = input.session_id;
     output.session_id = sessionId;
@@ -221,7 +211,7 @@ export class UserProfileService {
     return true;
   }
 
-  async generateProfile(input: GenerateProfileInput, output: GenerateProfileOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async generateProfile(input: GenerateProfileInput, output: GenerateProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sessionId = input.session_id;
     const config = await this.getConfig();
@@ -349,7 +339,7 @@ export class UserProfileService {
     return true;
   }
 
-  async saveUserPreference(input: SaveUserPreferenceInput, _output: SaveUserPreferenceOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async saveUserPreference(input: SaveUserPreferenceInput, _output: SaveUserPreferenceOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -393,7 +383,7 @@ export class UserProfileService {
     return true;
   }
 
-  async soProfileHistory(input: GetProfileHistoryInput, output: GetProfileHistoryOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async soProfileHistory(input: GetProfileHistoryInput, output: GetProfileHistoryOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const limit = input.limit ?? 20;
     const conditions = input.session_id
@@ -416,7 +406,7 @@ export class UserProfileService {
     return true;
   }
 
-  async soProfileByVersion(input: GetProfileByVersionInput, output: GetProfileByVersionOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async soProfileByVersion(input: GetProfileByVersionInput, output: GetProfileByVersionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = input.session_id
       ? [
@@ -471,7 +461,7 @@ export class UserProfileService {
     return true;
   }
 
-  async resetUserProfile(input: ResetUserProfileInput, output: ResetUserProfileOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async resetUserProfile(input: ResetUserProfileInput, output: ResetUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = input.session_id
       ? [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }]
@@ -494,7 +484,7 @@ export class UserProfileService {
     return true;
   }
 
-  async configUserProfile(input: ConfigUserProfileInput, output: ConfigUserProfileOutput, _ctx: UserProfileContext, metrics?: Metrics, report?: Report,
+  async configUserProfile(input: ConfigUserProfileInput, output: ConfigUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfigRecord();
     const now = IdGenerator.now();
@@ -790,10 +780,14 @@ export class UserProfileService {
       try { value = JSON.parse(String(d.dimension_value ?? 'null')); } catch { value = d.dimension_value; }
       try { evidence = JSON.parse(String(d.evidence ?? '[]')); } catch { evidence = d.evidence; }
 
+      const fallbackEvidence = [{ source: 'generated_profile', version: latestRecord.version }];
+      const evidenceList = Array.isArray(evidence) && evidence.length > 0
+        ? (evidence as Array<Record<string, unknown>>)
+        : fallbackEvidence;
       return {
         value,
         confidence: Number(d.confidence),
-        evidence: [{ source: 'generated_profile', version: latestRecord.version }],
+        evidence: evidenceList,
       };
     } catch {
       return { value: null, confidence: 0, evidence: [{ source: 'error' }] };
@@ -807,7 +801,7 @@ export class UserProfileService {
     } | null,
   ): Promise<{ value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }> {
     const evidence: Array<Record<string, unknown>> = [];
-    let value: unknown = writerPreferences?.language ?? 'zh-CN';
+    const value: unknown = writerPreferences?.language ?? 'zh-CN';
 
     if (writerPreferences?.language) {
       evidence.push({ source: 'writer_agent', type: 'explicit', value: writerPreferences.language });

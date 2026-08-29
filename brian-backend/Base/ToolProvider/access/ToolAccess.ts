@@ -39,7 +39,7 @@ export class ToolAccess {
   private readonly service = new ToolService();
 
   /** 生成一个 UUID v4 */
-  async generateId(input: GenerateIdInput, output: GenerateIdOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async generateId(_input: GenerateIdInput, output: GenerateIdOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.id = this.service.generateId();
     return true;
   }
@@ -51,13 +51,13 @@ export class ToolAccess {
   }
 
   /** 当前毫秒时间戳 */
-  async now(input: NowInput, output: NowOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async now(_input: NowInput, output: NowOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.ms = this.service.now();
     return true;
   }
 
   /** 当天日期（YYYY-MM-DD） */
-  async today(input: TodayInput, output: TodayOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+  async today(_input: TodayInput, output: TodayOutput, _context: ToolContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.date = this.service.today();
     return true;
   }

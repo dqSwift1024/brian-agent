@@ -6,7 +6,7 @@
 
 import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
-import { IdGenerator, ValidationError, NotFoundError, Operator } from '@brian-agent/base';
+import { IdGenerator, ValidationError, Operator } from '@brian-agent/base';
 import type { CDTAccess } from '@brian-agent/base';
 import {
   ExecCDPInput, ExecCDPOutput, CDTContext,
@@ -67,7 +67,7 @@ export class CDTCoreService {
   // 页面导航
   // ============================================================
 
-  async navigate(input: CDTCoreNavigateInput, output: CDTCoreNavigateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async navigate(input: CDTCoreNavigateInput, output: CDTCoreNavigateOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.url) throw new ValidationError('url 不能为空');
 
@@ -90,7 +90,7 @@ export class CDTCoreService {
   // 拟人化输入
   // ============================================================
 
-  async typeText(input: CDTCoreTypeTextInput, output: CDTCoreTypeTextOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async typeText(input: CDTCoreTypeTextInput, output: CDTCoreTypeTextOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.selector) throw new ValidationError('selector 不能为空');
     if (!input.text) throw new ValidationError('text 不能为空');
@@ -129,7 +129,7 @@ export class CDTCoreService {
   // 拟人化点击
   // ============================================================
 
-  async click(input: CDTCoreClickInput, output: CDTCoreClickOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async click(input: CDTCoreClickInput, output: CDTCoreClickOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.selector) throw new ValidationError('selector 不能为空');
 
@@ -185,7 +185,7 @@ export class CDTCoreService {
   // 滚动
   // ============================================================
 
-  async scroll(input: CDTCoreScrollInput, output: CDTCoreScrollOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async scroll(input: CDTCoreScrollInput, _output: CDTCoreScrollOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.ensureCDT();
 
@@ -211,7 +211,7 @@ export class CDTCoreService {
   // 执行 JavaScript
   // ============================================================
 
-  async evaluate(input: CDTCoreEvaluateInput, output: CDTCoreEvaluateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async evaluate(input: CDTCoreEvaluateInput, output: CDTCoreEvaluateOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.expression) throw new ValidationError('expression 不能为空');
 
@@ -235,7 +235,7 @@ export class CDTCoreService {
   // 登录（含验证码支持）
   // ============================================================
 
-  async login(input: CDTCoreLoginInput, output: CDTCoreLoginOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async login(input: CDTCoreLoginInput, output: CDTCoreLoginOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.domain) throw new ValidationError('domain 不能为空');
     if (!input.loginUrl) throw new ValidationError('loginUrl 不能为空');
@@ -397,7 +397,7 @@ export class CDTCoreService {
   // 登录状态查询
   // ============================================================
 
-  async getLoginState(input: CDTCoreGetLoginStateInput, output: CDTCoreGetLoginStateOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async getLoginState(input: CDTCoreGetLoginStateInput, output: CDTCoreGetLoginStateOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = this.relationDb.queryRaw<CDTLoginCredentialRecord>(
       `SELECT * FROM "${CDT_LOGIN_CREDENTIAL_TABLE}" WHERE "domain" = ? ORDER BY "last_login_time" DESC LIMIT 1`,
@@ -420,7 +420,7 @@ export class CDTCoreService {
   // Cookies 管理
   // ============================================================
 
-  async getCookies(_input: CDTCoreGetCookiesInput, output: CDTCoreGetCookiesOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async getCookies(_input: CDTCoreGetCookiesInput, output: CDTCoreGetCookiesOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.ensureCDT();
 
@@ -440,7 +440,7 @@ export class CDTCoreService {
   // 会话保存
   // ============================================================
 
-  async saveSession(input: CDTCoreSaveSessionInput, output: CDTCoreSaveSessionOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async saveSession(input: CDTCoreSaveSessionInput, output: CDTCoreSaveSessionOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.sessionName) throw new ValidationError('sessionName 不能为空');
 
@@ -485,7 +485,7 @@ export class CDTCoreService {
   // 会话恢复
   // ============================================================
 
-  async restoreSession(input: CDTCoreRestoreSessionInput, output: CDTCoreRestoreSessionOutput, _ctx: CDTCoreContext, metrics?: Metrics, report?: Report,
+  async restoreSession(input: CDTCoreRestoreSessionInput, output: CDTCoreRestoreSessionOutput, _ctx: CDTCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.sessionName) throw new ValidationError('sessionName 不能为空');
 

@@ -77,7 +77,7 @@ export class PlannerAgentService {
     private readonly llmCore?: LLMCoreAccess,
   ) {}
 
-  async execPlan(input: PlanInput, output: PlanOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async execPlan(input: PlanInput, output: PlanOutput, ctx: PlannerAgentContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const planCtx = await this.decomposeOnce(input, ctx);
     output.plan_id = await this.persistPlan(planCtx.dag, input.work_id, input.interact_id, ctx, '');
     output.task_dag = planCtx.dag;
@@ -89,7 +89,7 @@ export class PlannerAgentService {
    * 层级规划：LLM 单次产出层级 DAG 后，对仍复杂（complexity >= threshold）的叶子任务
    * 递归调用 LLM 继续拆解，直到所有叶子任务为「小任务」或达到最大深度。
    */
-  async planHierarchical(input: PlanHierarchicalInput, output: PlanHierarchicalOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report,
+  async planHierarchical(input: PlanHierarchicalInput, output: PlanHierarchicalOutput, ctx: PlannerAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const planCtx = await this.decomposeOnce(input, ctx);
     const maxDepth = input.max_depth ?? MAX_DECOMPOSE_DEPTH;
@@ -370,7 +370,7 @@ export class PlannerAgentService {
    */
   private static readonly MAX_TOTAL_REPLAN_DEPTH = 4;
 
-  async replan(input: ReplanInput, output: ReplanOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async replan(input: ReplanInput, output: ReplanOutput, ctx: PlannerAgentContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_PLAN_TABLE, [
       { field: 'plan_id', operator: Operator.EQ, value: input.plan_id },
     ]);
@@ -424,7 +424,7 @@ export class PlannerAgentService {
     return true;
   }
 
-  async soPlan(input: GetPlanInput, output: GetPlanOutput, _ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+  async soPlan(input: GetPlanInput, output: GetPlanOutput, _ctx: PlannerAgentContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     if (input.plan_id) {
       const row = await this.relationDb.selectOne(AGENT_PLAN_TABLE, [
         { field: 'plan_id', operator: Operator.EQ, value: input.plan_id },
@@ -443,7 +443,7 @@ export class PlannerAgentService {
     return true;
   }
 
-  async configPlannerAgent(input: ConfigPlannerAgentInput, output: ConfigPlannerAgentOutput, _ctx: PlannerAgentContext, metrics?: Metrics, report?: Report,
+  async configPlannerAgent(input: ConfigPlannerAgentInput, output: ConfigPlannerAgentOutput, _ctx: PlannerAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {

@@ -26,7 +26,7 @@ export class AgentContextService {
    * 按 work_id 查询该次问答的上下文（三对象结构），历史上下文查看入口。
    * 上下文来源关系由 InfoCoreProvider 落盘到 info_context_source 表。
    */
-  async soContextDetail(input: GetContextDetailInput, output: GetContextDetailOutput, _ctx: AgentContextContext, metrics?: Metrics, report?: Report,
+  async soContextDetail(input: GetContextDetailInput, output: GetContextDetailOutput, _ctx: AgentContextContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) {
       throw new ValidationError('work_id 为必填');
@@ -43,7 +43,7 @@ export class AgentContextService {
     return true;
   }
 
-  async configAgentContext(input: ConfigAgentContextInput, output: ConfigAgentContextOutput, _ctx: AgentContextContext, metrics?: Metrics, report?: Report,
+  async configAgentContext(input: ConfigAgentContextInput, output: ConfigAgentContextOutput, _ctx: AgentContextContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 校验 max_context_items：必须为正整数
     if (input.max_context_items !== undefined) {
