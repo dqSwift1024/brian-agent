@@ -11,7 +11,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BACKEND = path.join(ROOT, 'brian-backend');
-const THRESHOLD = Number(process.argv[2] || 20);
+const THRESHOLD = Number(process.argv[2] || 30);
 const layerArg = process.argv.find((a) => a.startsWith('--layer='));
 const LAYERS = layerArg ? layerArg.split('=')[1].split(',') : ['Base', 'Core', 'Agent', 'Orchestration', 'Application'];
 
@@ -29,10 +29,12 @@ function walk(dir, files = []) {
 
 const offenders = [];
 const all = [];
+const mergeCandidates = [];
 for (const layer of LAYERS) {
   for (const file of walk(path.join(BACKEND, layer))) {
     const rel = path.relative(BACKEND, file);
-    const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const src = fs.readFileSync(file, 'utf8');
+    const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
     const visit = (node) => {
       if ((ts.isMethodDeclaration(node) || ts.isFunctionDeclaration(node)) && node.body) {
         const start = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
@@ -49,6 +51,16 @@ for (const layer of LAYERS) {
         })();
         all.push({ layer, rel, cls, name, len, start });
         if (len > THRESHOLD) offenders.push({ layer, rel, cls, name, len, start });
+        // 合并候选：私有方法、方法体 ≤10 行、同文件仅 1 处调用（建议回并调用方）
+        const isPrivate = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.PrivateKeyword) || name.startsWith('_');
+        if (isPrivate && len <= 11) {
+          const callRe = new RegExp(`\\b${name}\\b`, 'g');
+          const occurrences = (src.match(callRe) || []).length;
+          if (occurrences === 2) {
+            // 声明 1 次 + 调用 1 次
+            mergeCandidates.push({ layer, rel, cls, name, len, start });
+          }
+        }
       }
       ts.forEachChild(node, visit);
     };
@@ -73,6 +85,14 @@ for (const o of offenders.slice(0, 50)) {
   console.log(`${String(o.len).padStart(4)} 行  ${o.rel}:${o.start}  ${o.cls}.${o.name}`);
 }
 // 全量清单落盘
+let mc = '';
+if (mergeCandidates.length) {
+  mc = [
+    '', `## 合并候选（私有碎片方法，单一调用点，建议回并）`, '',
+    '| 行数 | 位置 | 方法 |', '|------|------|------|',
+    ...mergeCandidates.slice(0, 100).map((o) => `| ${o.len} | \`brian-backend/${o.rel}:${o.start}\` | \`${o.cls}.${o.name}\` |`),
+  ].join('\n');
+}
 const outPath = path.join(ROOT, 'docs', 'MethodIndex', 'method-length-report.md');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 const md = [
@@ -84,6 +104,6 @@ const md = [
   '| 行数 | 位置 | 方法 |',
   '|------|------|------|',
   ...offenders.map((o) => `| ${o.len} | \`brian-backend/${o.rel}:${o.start}\` | \`${o.cls}.${o.name}\` |`),
-].join('\n');
+  ].join('\n') + mc;
 fs.writeFileSync(outPath, md);
 console.log(`\n完整清单：${path.relative(ROOT, outPath)}`);

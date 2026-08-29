@@ -19,6 +19,7 @@ import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition } from '../../shared/query';
 import { newRecord } from '../../shared/query';
+import { validateSendMessage, validatePriority } from '../domain/services/MQDomainService';
 import {
   MQContext,
   MessageRecord,
@@ -170,38 +171,19 @@ export class MQService {
   async sendMQ(input: SendMQInput, output: SendMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
-
     const data = input.data;
-    if (!data) {
-      throw new ValidationError('data 不能为空');
-    }
-    if (!data.queue || typeof data.queue !== 'string') {
-      throw new ValidationError('queue 不能为空');
-    }
-    if (data.payload === undefined || data.payload === null) {
-      throw new ValidationError('payload 不能为空');
-    }
+    validateSendMessage(data);
 
-    // 优先级：未指定时取配置默认值
-    let priority = data.priority;
-    if (priority === undefined || priority === null) {
-      priority = await this.config.getInt('default_priority', 5);
-    }
-    if (typeof priority !== 'number' || priority < 0 || priority > 10) {
-      throw new ValidationError('priority 必须为 0-10 之间的整数');
-    }
-
-    // 最大重试次数：从配置读取
+    const priority = await this.resolvePriority(data!.priority);
     const maxRetries = await this.config.getInt('default_max_retries', 3);
-
     const id = IdGenerator.generate();
 
     await this.relationDb.insert(
       QUEUE_MESSAGE_TABLE,
       newRecord({
         id,
-        queue: data.queue,
-        payload: JSON.stringify(data.payload),
+        queue: data!.queue,
+        payload: JSON.stringify(data!.payload),
         priority,
         status: MESSAGE_STATUS_PENDING,
         retry_count: 0,
@@ -210,6 +192,15 @@ export class MQService {
     );
     output.id = id;
     return true;
+  }
+
+  /**
+   * 解析消息优先级：未指定时回退配置默认值，并做 0-10 范围校验。
+   */
+  private async resolvePriority(priority: number | null | undefined): Promise<number> {
+    const resolved = priority ?? await this.config.getInt('default_priority', 5);
+    validatePriority(resolved);
+    return resolved;
   }
 
   /**
