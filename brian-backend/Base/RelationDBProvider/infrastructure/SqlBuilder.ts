@@ -51,7 +51,8 @@ export class SqlBuilder {
     for (let i = 0; i < conditions.length; i++) {
       const cond = conditions[i];
       // 第一个条件不需要逻辑连接词
-      const logic = i === 0 ? '' : ` ${this.normalizeLogic(cond.logic)} `;
+      const upperLogic = String(cond.logic ?? '').toUpperCase();
+    const logic = i === 0 ? '' : ` ${upperLogic === Logic.OR ? 'OR' : 'AND'} `;
       const fragment = this.buildConditionFragment(cond);
       parts.push(`${logic}${fragment.sql}`);
       params.push(...fragment.params);
@@ -65,7 +66,10 @@ export class SqlBuilder {
    */
   private static buildConditionFragment(cond: Condition): WhereClause {
     const field = this.quoteIdentifier(cond.field);
-    const op = this.normalizeOperator(cond.operator);
+    const upperOp = String(cond.operator).toUpperCase();
+    const op = (Object.values(Operator) as string[]).includes(upperOp)
+      ? (upperOp as Operator)
+      : Operator.EQ;
 
     switch (op) {
       case Operator.IS_NULL:
@@ -129,7 +133,8 @@ export class SqlBuilder {
     return order_by
       .map((o) => {
         const field = this.quoteIdentifier(o.field);
-        const dir = this.normalizeDirection(o.direction);
+        const upperDir = String(o.direction ?? '').toUpperCase();
+        const dir = upperDir === Direction.DESC ? 'DESC' : 'ASC';
         return `${field} ${dir}`;
       })
       .join(', ');
@@ -218,29 +223,4 @@ export class SqlBuilder {
     return `"${name}"`;
   }
 
-  /**
-   * 规范化操作符。
-   */
-  private static normalizeOperator(op: string): Operator {
-    const upper = String(op).toUpperCase();
-    return (Object.values(Operator) as string[]).includes(upper)
-      ? (upper as Operator)
-      : Operator.EQ;
-  }
-
-  /**
-   * 规范化逻辑关系。
-   */
-  private static normalizeLogic(logic?: string): string {
-    const upper = String(logic ?? '').toUpperCase();
-    return upper === Logic.OR ? 'OR' : 'AND';
-  }
-
-  /**
-   * 规范化排序方向。
-   */
-  private static normalizeDirection(dir?: string): string {
-    const upper = String(dir ?? '').toUpperCase();
-    return upper === Direction.DESC ? 'DESC' : 'ASC';
-  }
 }

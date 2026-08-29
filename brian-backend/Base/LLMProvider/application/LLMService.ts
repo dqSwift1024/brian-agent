@@ -580,7 +580,12 @@ export class LLMService {
     }
 
     // 仅在成功获取并保存模型后更新模型列表缓存时间
-    await this.updateModelsCacheTimestamp(input.llm_provider_id);
+    // 刷新模型列表缓存时间戳
+    await this.relationDb.update(
+      LLM_PROVIDER_TABLE,
+      [{ field: 'models_fetched_at', value: IdGenerator.now() }],
+      [{ field: 'id', operator: Operator.EQ, value: input.llm_provider_id }],
+    );
 
     // 返回该提供商下所有模型
     const rows = await this.relationDb.select(LLM_CACHE_TABLE, {
@@ -987,10 +992,6 @@ export class LLMService {
    * embedding 向量模型（如 nomic-embed-text）不支持 chat 补全，必须排除。
    * 历史数据可能缺少 llm_type，视为默认 text 以保证向后兼容。
    */
-  private isChatCapable(llmType?: string): boolean {
-    return (llmType ?? 'text') !== 'embedding';
-  }
-
   /**
    * 单个模型的底层推理请求执行
    */
@@ -1014,7 +1015,7 @@ export class LLMService {
       output.error_code = 'VALIDATION_ERROR';
       return false;
     }
-    if (!this.isChatCapable(llm.llm_type)) {
+    if ((llm.llm_type ?? 'text') === 'embedding') {
       output.error = `LLM ${llmId} 是 ${llm.llm_type ?? '未知'} 模型，无法用于文本生成`;
       output.error_code = 'VALIDATION_ERROR';
       return false;

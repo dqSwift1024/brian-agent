@@ -1,7 +1,7 @@
 # 后端方法长度分析报告
 
 > 由 `node scripts/analyze-method-length.mjs` 自动生成；阈值 30 行。
-> 方法总数 1792；超阈值 346 个。分布：`{<=10:955, <=30:168, <=20:323, <=50:162, <=120:32, <=80:116, 120+:36}`
+> 方法总数 1785；超阈值 346 个。分布：`{<=10:948, <=30:168, <=20:323, <=50:162, <=120:32, <=80:116, 120+:36}`
 
 | 行数 | 位置 | 方法 |
 |------|------|------|
@@ -27,9 +27,9 @@
 | 156 | `brian-backend/Base/MCPProvider/infrastructure/MCPSchemaInitializer.ts:23` | `MCPSchemaInitializer.init` |
 | 156 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1249` | `SelfLearningService.soTagGraph` |
 | 151 | `brian-backend/Orchestration/OrchestrationEntry/application/OrchestrationEntryService.ts:391` | `OrchestrationEntryService.receiveWorkAsync` |
+| 147 | `brian-backend/Base/LLMProvider/application/LLMService.ts:458` | `LLMService.listLLM` |
 | 145 | `brian-backend/Agent/EvolutorAgent/application/EvolutorAgentService.ts:406` | `EvolutorAgentService.startEvalSchedule` |
 | 143 | `brian-backend/Orchestration/OrchestrationVisualization/application/OrchestrationVisualizationService.ts:200` | `OrchestrationVisualizationService.visualizeWorkFlow` |
-| 142 | `brian-backend/Base/LLMProvider/application/LLMService.ts:460` | `LLMService.listLLM` |
 | 141 | `brian-backend/Agent/EvolutorAgent/application/EvolutorAgentService.ts:77` | `EvolutorAgentService.evalWorkAgent` |
 | 141 | `brian-backend/Orchestration/OrchestrationStrategy/application/OrchestrationStrategyService.ts:466` | `OrchestrationStrategyService.executePostProcessing` |
 | 140 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1631` | `SelfLearningService.soLearningStats` |
@@ -41,15 +41,15 @@
 | 127 | `brian-backend/Application/UserProfile/application/UserProfileService.ts:214` | `UserProfileService.generateProfile` |
 | 127 | `brian-backend/Application/Visualization/application/VisualizationService.ts:714` | `VisualizationService.soResource` |
 | 124 | `brian-backend/Application/Config/application/ConfigService.ts:364` | `ConfigService.soConfigDetail` |
-| 115 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1225` | `LLMService.genLLMAttr` |
-| 114 | `brian-backend/Base/LLMProvider/application/LLMService.ts:999` | `LLMService.executeSingleLLM` |
+| 115 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1224` | `LLMService.genLLMAttr` |
+| 114 | `brian-backend/Base/LLMProvider/application/LLMService.ts:998` | `LLMService.executeSingleLLM` |
 | 114 | `brian-backend/Base/shared/aop/AopProxy.ts:107` | `AopProxy.get` |
 | 113 | `brian-backend/Orchestration/OrchestrationEntry/infrastructure/OrchestrationEntrySchemaInitializer.ts:9` | `OrchestrationEntrySchemaInitializer.init` |
 | 110 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:730` | `OrchestrationExecutionService.execDAGAsync` |
 | 108 | `brian-backend/Base/StreamProvider/application/StreamService.ts:131` | `StreamService.pushStream` |
 | 107 | `brian-backend/Orchestration/OrchestrationExecution/infrastructure/OrchestrationExecutionSchemaInitializer.ts:6` | `OrchestrationExecutionSchemaInitializer.init` |
 | 106 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:900` | `AgentExecutionService.runPhases` |
-| 104 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:281` | `PromptsService.soPromptWithUsageSorting` |
+| 104 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:280` | `PromptsService.soPromptWithUsageSorting` |
 | 103 | `brian-backend/Base/GraphDBProvider/application/GraphDBService.ts:634` | `GraphDBService.updateGraphEdge` |
 | 103 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:531` | `JSONNodeService.handleBuildWorkContext` |
 | 103 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:622` | `OrchestrationExecutionService.execDAG` |
@@ -62,10 +62,10 @@
 | 91 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:525` | `AgentExecutionService.execAct` |
 | 90 | `brian-backend/Application/Chat/application/ChatService.ts:64` | `ChatService.submitWork` |
 | 90 | `brian-backend/Application/Chat/application/ChatService.ts:774` | `ChatService.soChatHistory` |
-| 88 | `brian-backend/Base/LLMProvider/application/LLMService.ts:656` | `LLMService.delLLM` |
-| 88 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1127` | `LLMService.embedLLM` |
+| 89 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:428` | `VectorDBComponent.search` |
+| 88 | `brian-backend/Base/LLMProvider/application/LLMService.ts:659` | `LLMService.delLLM` |
+| 88 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1126` | `LLMService.embedLLM` |
 | 88 | `brian-backend/Orchestration/OrchestrationEntry/application/OrchestrationEntryService.ts:765` | `OrchestrationEntryService.confirmIntent` |
-| 87 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:436` | `VectorDBComponent.search` |
 | 87 | `brian-backend/Application/Visualization/application/VisualizationService.ts:1047` | `VisualizationService.enrichAgentDAGNode` |
 | 85 | `brian-backend/Application/UserProfile/infrastructure/UserProfileSchemaInitializer.ts:13` | `UserProfileSchemaInitializer.init` |
 | 84 | `brian-backend/Application/Visualization/application/VisualizationService.ts:137` | `VisualizationService.soVisualizedMessages` |
@@ -83,7 +83,7 @@
 | 78 | `brian-backend/Agent/AgentLibrary/application/AgentLibraryService.ts:495` | `AgentLibraryService.configAgentLibrary` |
 | 77 | `brian-backend/Agent/AgentStrategy/application/AgentStrategyService.ts:61` | `AgentStrategyService.matchStrategy` |
 | 77 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1099` | `SelfLearningService.startTagActivation` |
-| 76 | `brian-backend/Base/LLMProvider/application/LLMService.ts:849` | `LLMService.execLLM` |
+| 76 | `brian-backend/Base/LLMProvider/application/LLMService.ts:852` | `LLMService.execLLM` |
 | 76 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:140` | `InfoCoreService.saveInfo` |
 | 76 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:497` | `InfoCoreService.rebuildCooccurForSource` |
 | 76 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:319` | `JSONNodeService.validate` |
@@ -142,7 +142,7 @@
 | 58 | `brian-backend/Agent/SummaryAgent/application/SummaryAgentService.ts:115` | `SummaryAgentService.generateByLLM` |
 | 58 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:1050` | `OrchestrationExecutionService.configOrchestrationExecution` |
 | 58 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:276` | `SelfLearningService.soLibrary` |
-| 57 | `brian-backend/Base/LLMProvider/application/LLMService.ts:246` | `LLMService.updateLLMProvider` |
+| 57 | `brian-backend/Base/LLMProvider/application/LLMService.ts:244` | `LLMService.updateLLMProvider` |
 | 57 | `brian-backend/Core/SoulCoreProvider/infrastructure/SoulCoreSchemaInitializer.ts:30` | `SoulCoreSchemaInitializer.init` |
 | 57 | `brian-backend/Agent/AgentLibrary/application/AgentLibraryService.ts:360` | `AgentLibraryService.ageAgent` |
 | 57 | `brian-backend/Orchestration/OrchestrationStrategy/application/OrchestrationStrategyService.ts:608` | `OrchestrationStrategyService.addStrategy` |
@@ -150,6 +150,7 @@
 | 56 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:924` | `JSONNodeService.handleExecDAG` |
 | 56 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:726` | `SelfLearningService.startDocumentLearning` |
 | 56 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1776` | `SelfLearningService.configSelfLearning` |
+| 55 | `brian-backend/Base/RelationDBProvider/infrastructure/SqlBuilder.ts:67` | `SqlBuilder.buildConditionFragment` |
 | 55 | `brian-backend/Base/SkillProvider/infrastructure/SkillSchemaInitializer.ts:31` | `SkillSchemaInitializer.init` |
 | 55 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:582` | `InfoCoreService.lastNInfo` |
 | 55 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:396` | `JSONNodeService.configJSONNode` |
@@ -161,7 +162,7 @@
 | 54 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:1067` | `JSONNodeService.runEval` |
 | 54 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1495` | `SelfLearningService.soLearningProgress` |
 | 54 | `brian-backend/Application/UserProfile/application/UserProfileService.ts:409` | `UserProfileService.soProfileByVersion` |
-| 53 | `brian-backend/Base/LLMProvider/application/LLMService.ts:310` | `LLMService.delLLMProvider` |
+| 53 | `brian-backend/Base/LLMProvider/application/LLMService.ts:308` | `LLMService.delLLMProvider` |
 | 53 | `brian-backend/Base/MCPProvider/application/MCPService.ts:90` | `MCPService.syncInstallStatus` |
 | 53 | `brian-backend/Base/MCPProvider/application/MCPService.ts:805` | `MCPService.execMcp` |
 | 53 | `brian-backend/Agent/AgentContext/application/AgentContextService.ts:46` | `AgentContextService.configAgentContext` |
@@ -175,7 +176,6 @@
 | 52 | `brian-backend/Base/GraphDBProvider/application/GraphDBService.ts:1231` | `GraphDBService.visualizedGraph` |
 | 52 | `brian-backend/Base/LogProvider/application/LogService.ts:499` | `LogService.configLog` |
 | 52 | `brian-backend/Base/PromptsProvider/infrastructure/PromptsSchemaInitializer.ts:31` | `PromptsSchemaInitializer.init` |
-| 52 | `brian-backend/Base/RelationDBProvider/infrastructure/SqlBuilder.ts:66` | `SqlBuilder.buildConditionFragment` |
 | 52 | `brian-backend/Base/SoulProvider/infrastructure/SoulSchemaInitializer.ts:31` | `SoulSchemaInitializer.init` |
 | 52 | `brian-backend/Core/SkillCoreProvider/infrastructure/SkillCoreSchemaInitializer.ts:30` | `SkillCoreSchemaInitializer.init` |
 | 52 | `brian-backend/Agent/AgentLibrary/application/AgentLibraryService.ts:607` | `AgentLibraryService.llmMatchAgent` |
@@ -183,7 +183,7 @@
 | 51 | `brian-backend/Base/CDTProvider/application/CDTService.ts:529` | `CDTService.injectAntiDetection` |
 | 51 | `brian-backend/Base/LLMProvider/application/strategies/VolcanoEngineStrategy.ts:33` | `VolcanoEngineStrategy.parseListModelsResponse` |
 | 51 | `brian-backend/Base/MQProvider/application/MQService.ts:213` | `MQService.consumeMQ` |
-| 51 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:211` | `PromptsService.soPrompt` |
+| 51 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:210` | `PromptsService.soPrompt` |
 | 51 | `brian-backend/Base/StreamProvider/application/StreamService.ts:75` | `StreamService.registerStream` |
 | 51 | `brian-backend/Core/CDTCoreProvider/application/CDTCoreService.ts:132` | `CDTCoreService.click` |
 | 51 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:845` | `AgentExecutionService.runSteps` |
@@ -196,7 +196,7 @@
 | 50 | `brian-backend/Agent/AgentBuilder/application/AgentBuilderService.ts:586` | `AgentBuilderService.analyzeTask` |
 | 50 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:790` | `AgentExecutionService.configAgentExecution` |
 | 50 | `brian-backend/Agent/PlannerAgent/application/PlannerAgentService.ts:485` | `PlannerAgentService.llmPlan` |
-| 49 | `brian-backend/Base/LLMProvider/application/LLMService.ts:935` | `LLMService.resolveCandidateModels` |
+| 49 | `brian-backend/Base/LLMProvider/application/LLMService.ts:938` | `LLMService.resolveCandidateModels` |
 | 49 | `brian-backend/Base/LogProvider/application/LogService.ts:395` | `LogService.visualizedLog` |
 | 49 | `brian-backend/Agent/AgentExecution/infrastructure/AgentExecutionSchemaInitializer.ts:8` | `AgentExecutionSchemaInitializer.init` |
 | 49 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:920` | `OrchestrationExecutionService.cancelExecution` |
@@ -206,7 +206,7 @@
 | 48 | `brian-backend/Agent/PlannerAgent/application/PlannerAgentService.ts:436` | `PlannerAgentService.configPlannerAgent` |
 | 48 | `brian-backend/Agent/WriterAgent/application/WriterAgentService.ts:297` | `WriterAgentService.saveUserProfile` |
 | 48 | `brian-backend/Orchestration/OrchestrationStrategy/application/OrchestrationStrategyService.ts:1010` | `OrchestrationStrategyService.configOrchestrationStrategy` |
-| 47 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1353` | `LLMService.visualizedLLM` |
+| 47 | `brian-backend/Base/LLMProvider/application/LLMService.ts:1352` | `LLMService.visualizedLLM` |
 | 47 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:351` | `InfoCoreService.summaryInfo` |
 | 47 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:641` | `InfoCoreService.graphNInfo` |
 | 47 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:2583` | `InfoCoreService.fillContextTriplesAndPersist` |
@@ -214,7 +214,7 @@
 | 47 | `brian-backend/Agent/WriterAgent/application/WriterAgentService.ts:249` | `WriterAgentService.recordTrace` |
 | 47 | `brian-backend/Application/UserProfile/application/UserProfileService.ts:849` | `UserProfileService.aggregateKnowledgeInterest` |
 | 46 | `brian-backend/Base/ChunkProvider/application/RecursiveTextSplitter.ts:102` | `RecursiveTextSplitter.splitTextRecursive` |
-| 46 | `brian-backend/Base/LLMProvider/application/LLMService.ts:193` | `LLMService.addLLMProvider` |
+| 46 | `brian-backend/Base/LLMProvider/application/LLMService.ts:191` | `LLMService.addLLMProvider` |
 | 46 | `brian-backend/Base/LLMProvider/application/strategies/BaseLLMStrategy.ts:99` | `BaseLLMStrategy.parseListModelsResponse` |
 | 46 | `brian-backend/Base/LogProvider/application/LogService.ts:210` | `LogService.addLog` |
 | 46 | `brian-backend/Base/VectorDBProvider/application/VectorDBService.ts:379` | `VectorDBService.visualizedVector` |
@@ -229,6 +229,7 @@
 | 45 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:878` | `JSONNodeService.handleBuildAgentDAG` |
 | 45 | `brian-backend/Orchestration/OrchestrationExecution/application/DagScheduler.ts:136` | `DagScheduler.buildTopology` |
 | 45 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:1199` | `SelfLearningService.startOrphanTagCheck` |
+| 44 | `brian-backend/Base/RelationDBProvider/infrastructure/SQLiteRelationDBRepository.ts:162` | `SQLiteRelationDBRepository.transaction` |
 | 44 | `brian-backend/Core/shared/MatchCacheHelper.ts:35` | `.checkMatchCache` |
 | 44 | `brian-backend/Agent/AgentLibrary/application/AgentLibraryService.ts:200` | `AgentLibraryService.delAgent` |
 | 44 | `brian-backend/Agent/shared/signature.ts:21` | `.parseTaskContentAndContext` |
@@ -241,7 +242,7 @@
 | 43 | `brian-backend/Base/components/GraphDB/GraphDBComponent.ts:296` | `GraphDBComponent.queryNeighborsByCTE` |
 | 43 | `brian-backend/Application/SelfLearning/application/SelfLearningService.ts:664` | `SelfLearningService.startRandomTriggerLearning` |
 | 43 | `brian-backend/Application/UserProfile/application/UserProfileService.ts:342` | `UserProfileService.saveUserPreference` |
-| 42 | `brian-backend/Base/LLMProvider/application/LLMService.ts:409` | `LLMService.testLLMProvider` |
+| 42 | `brian-backend/Base/LLMProvider/application/LLMService.ts:407` | `LLMService.testLLMProvider` |
 | 42 | `brian-backend/Base/LogProvider/interceptor/LogInterceptor.ts:95` | `LogInterceptor.afterExecute` |
 | 42 | `brian-backend/Base/MCPProvider/application/MCPService.ts:676` | `MCPService.updateMcp` |
 | 42 | `brian-backend/Base/ToolProvider/XmlParser.ts:83` | `XmlTokenizer.parseAttributes` |
@@ -265,10 +266,8 @@
 | 40 | `brian-backend/Base/LogProvider/application/LogService.ts:457` | `LogService.enableLog` |
 | 40 | `brian-backend/Base/MCPProvider/application/MCPService.ts:877` | `MCPService.soMcpUsage` |
 | 40 | `brian-backend/Base/MCPProvider/application/McpTransport.ts:243` | `.callToolOverHttp` |
-| 40 | `brian-backend/Base/RelationDBProvider/infrastructure/SQLiteRelationDBRepository.ts:162` | `SQLiteRelationDBRepository.transaction` |
 | 40 | `brian-backend/Core/CDTCoreProvider/application/CDTCoreService.ts:443` | `CDTCoreService.saveSession` |
 | 40 | `brian-backend/Core/MCPCoreProvider/infrastructure/MCPCoreSchemaInitializer.ts:12` | `MCPCoreSchemaInitializer.init` |
-| 39 | `brian-backend/Base/LLMProvider/application/LLMService.ts:144` | `LLMService.upsertUsage` |
 | 39 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:1678` | `InfoCoreService.updateInfoVectorConfig` |
 | 39 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:2775` | `InfoCoreService.upsertConfigRow` |
 | 39 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:617` | `AgentExecutionService.execReflect` |
@@ -280,6 +279,7 @@
 | 38 | `brian-backend/Core/SoulCoreProvider/application/SoulCoreService.ts:330` | `SoulCoreService.configSoulCore` |
 | 38 | `brian-backend/Agent/PlannerAgent/infrastructure/PlannerAgentSchemaInitializer.ts:8` | `PlannerAgentSchemaInitializer.init` |
 | 38 | `brian-backend/Application/Chat/application/ChatService.ts:667` | `ChatService.soSessionDetail` |
+| 37 | `brian-backend/Base/LLMProvider/application/LLMService.ts:144` | `LLMService.upsertUsage` |
 | 37 | `brian-backend/Base/MCPProvider/application/MCPService.ts:762` | `MCPService.soMcp` |
 | 37 | `brian-backend/Base/shared/config/ConfigService.ts:204` | `ConfigService.set` |
 | 37 | `brian-backend/Core/LLMCoreProvider/application/LLMCoreService.ts:262` | `LLMCoreService.checkLLMQuota` |
@@ -289,7 +289,7 @@
 | 37 | `brian-backend/Application/Config/application/ConfigService.ts:255` | `ConfigService.updateLayerPrivilege` |
 | 37 | `brian-backend/Application/Visualization/application/VisualizationService.ts:957` | `VisualizationService.buildCitationMap` |
 | 36 | `brian-backend/Base/GraphDBProvider/application/GraphDBService.ts:428` | `GraphDBService.updateGraphNode` |
-| 36 | `brian-backend/Base/LLMProvider/application/LLMService.ts:752` | `LLMService.updateLLM` |
+| 36 | `brian-backend/Base/LLMProvider/application/LLMService.ts:755` | `LLMService.updateLLM` |
 | 36 | `brian-backend/Core/shared/AgingEngine.ts:59` | `AgingEngine.age` |
 | 36 | `brian-backend/Agent/AgentLibrary/infrastructure/AgentLibrarySchemaInitializer.ts:97` | `AgentLibrarySchemaInitializer.backfillDailyUsage` |
 | 36 | `brian-backend/Orchestration/OrchestrationStrategy/application/OrchestrationStrategyService.ts:973` | `OrchestrationStrategyService.resolveStrategyDef` |
@@ -306,7 +306,7 @@
 | 34 | `brian-backend/Base/ChunkProvider/application/RecursiveTextSplitter.ts:173` | `RecursiveTextSplitter.mergeSplits` |
 | 34 | `brian-backend/Base/GraphDBProvider/application/GraphDBService.ts:358` | `GraphDBService.addGraphNode` |
 | 34 | `brian-backend/Base/LLMProvider/application/strategies/GoogleStrategy.ts:125` | `GoogleStrategy.parseChatResponse` |
-| 34 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:440` | `PromptsService.upsertUsage` |
+| 34 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:439` | `PromptsService.upsertUsage` |
 | 34 | `brian-backend/Base/SkillProvider/application/SkillService.ts:98` | `SkillService.addSkill` |
 | 34 | `brian-backend/Core/CDTCoreProvider/application/CDTCoreService.ts:93` | `CDTCoreService.typeText` |
 | 34 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:402` | `InfoCoreService.keywordInfo` |
@@ -315,8 +315,8 @@
 | 34 | `brian-backend/Application/UserProfile/application/UserProfileService.ts:897` | `UserProfileService.aggregateInteractionHabit` |
 | 33 | `brian-backend/Base/CronProvider/infrastructure/CronSchemaInitializer.ts:13` | `CronSchemaInitializer.init` |
 | 33 | `brian-backend/Base/LogProvider/application/LogService.ts:330` | `LogService.delLog` |
-| 33 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:149` | `PromptsService.updatePrompt` |
-| 33 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:401` | `PromptsService.execPrompt` |
+| 33 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:148` | `PromptsService.updatePrompt` |
+| 33 | `brian-backend/Base/PromptsProvider/application/PromptsService.ts:400` | `PromptsService.execPrompt` |
 | 33 | `brian-backend/Base/StreamProvider/access/StreamAccess.ts:73` | `StreamAccess.pushText` |
 | 33 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:491` | `AgentExecutionService.execThink` |
 | 33 | `brian-backend/Agent/AgentExecution/application/AgentExecutionService.ts:756` | `AgentExecutionService.soExecQueueStatus` |
@@ -357,18 +357,12 @@
 |------|------|------|
 | 7 | `brian-backend/Base/CDTProvider/application/CDTService.ts:586` | `CDTService.freeDebugPort` |
 | 6 | `brian-backend/Base/GraphDBProvider/application/GraphDBService.ts:1352` | `GraphDBService.formatDate` |
-| 7 | `brian-backend/Base/LLMProvider/application/LLMService.ts:603` | `LLMService.updateModelsCacheTimestamp` |
-| 3 | `brian-backend/Base/LLMProvider/application/LLMService.ts:992` | `LLMService.isChatCapable` |
 | 7 | `brian-backend/Base/LogProvider/application/LogService.ts:196` | `LogService.scheduleAging` |
 | 11 | `brian-backend/Base/LogProvider/application/LogService.ts:258` | `LogService.shouldDropByMinLevel` |
 | 8 | `brian-backend/Base/MCPProvider/application/MCPService.ts:75` | `MCPService.resolveStdioCommand` |
 | 8 | `brian-backend/Base/MCPProvider/application/McpTransport.ts:151` | `StdioMcpClient.onExit` |
 | 5 | `brian-backend/Base/MQProvider/application/MQService.ts:200` | `MQService.resolvePriority` |
 | 11 | `brian-backend/Base/RelationDBProvider/infrastructure/SQLiteRelationDBRepository.ts:66` | `SQLiteRelationDBRepository.ensureConfigTable` |
-| 6 | `brian-backend/Base/RelationDBProvider/infrastructure/SQLiteRelationDBRepository.ts:233` | `SQLiteRelationDBRepository.normalizeOpType` |
-| 6 | `brian-backend/Base/RelationDBProvider/infrastructure/SqlBuilder.ts:224` | `SqlBuilder.normalizeOperator` |
-| 4 | `brian-backend/Base/RelationDBProvider/infrastructure/SqlBuilder.ts:234` | `SqlBuilder.normalizeLogic` |
-| 4 | `brian-backend/Base/RelationDBProvider/infrastructure/SqlBuilder.ts:242` | `SqlBuilder.normalizeDirection` |
 | 6 | `brian-backend/Base/SkillProvider/application/SkillService.ts:56` | `SkillService.toBoolean` |
 | 6 | `brian-backend/Base/SkillProvider/application/SkillService.ts:235` | `SkillService.scriptType` |
 | 4 | `brian-backend/Base/ToolProvider/application/HttpService.ts:201` | `HttpService.openProxyRequest` |
@@ -382,13 +376,11 @@
 | 9 | `brian-backend/Base/components/GraphDB/CypherTranslator.ts:597` | `CypherTranslator.extractReturnClause` |
 | 10 | `brian-backend/Base/components/GraphDB/CypherTranslator.ts:720` | `CypherTranslator.extractSetClause` |
 | 5 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:144` | `VectorDBComponent.ensureInit` |
-| 3 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:204` | `VectorDBComponent.metadataToStored` |
-| 7 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:208` | `VectorDBComponent.getFieldValue` |
-| 10 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:264` | `VectorDBComponent.euclideanSimilarity` |
-| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:275` | `VectorDBComponent.dotSimilarity` |
-| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:282` | `VectorDBComponent.computeRawSimilarity` |
-| 5 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:341` | `VectorDBComponent.distanceTypeForLanceDB` |
-| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:347` | `VectorDBComponent.buildUserWhere` |
+| 7 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:205` | `VectorDBComponent.getFieldValue` |
+| 10 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:261` | `VectorDBComponent.euclideanSimilarity` |
+| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:272` | `VectorDBComponent.dotSimilarity` |
+| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:279` | `VectorDBComponent.computeRawSimilarity` |
+| 6 | `brian-backend/Base/components/VectorDB/VectorDBComponent.ts:339` | `VectorDBComponent.buildUserWhere` |
 | 7 | `brian-backend/Base/shared/native/NativeLoader.ts:127` | `NativeLoader.requireNative` |
 | 9 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:338` | `InfoCoreService.insertTag` |
 | 5 | `brian-backend/Core/InfoCoreProvider/application/InfoCoreService.ts:889` | `InfoCoreService.getGraphNodeTag` |
@@ -455,3 +447,11 @@
 | 7 | `brian-backend/Agent/WriterAgent/application/WriterAgentService.ts:457` | `WriterAgentService.renderPrompt` |
 | 3 | `brian-backend/Agent/WriterAgent/application/WriterAgentService.ts:468` | `WriterAgentService.resolveLlm` |
 | 11 | `brian-backend/Orchestration/JSONNode/application/JSONNodeService.ts:654` | `JSONNodeService.handleCondition` |
+| 9 | `brian-backend/Orchestration/OrchestrationExecution/application/DagScheduler.ts:191` | `DagScheduler.collectUpstream` |
+| 8 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:249` | `OrchestrationExecutionService.buildTaskChildMap` |
+| 3 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:258` | `OrchestrationExecutionService.isParentTask` |
+| 11 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:316` | `OrchestrationExecutionService.updateTaskAgentRecord` |
+| 7 | `brian-backend/Orchestration/OrchestrationExecution/application/OrchestrationExecutionService.ts:344` | `OrchestrationExecutionService.buildExecTaskContent` |
+| 4 | `brian-backend/Application/Chat/application/ChatService.ts:1243` | `ChatService.getEvalOutputClass` |
+| 4 | `brian-backend/Application/Chat/application/ChatService.ts:1248` | `ChatService.getEvalInputClass` |
+| 4 | `brian-backend/Application/Chat/application/ChatService.ts:1253` | `ChatService.getEvolutorAgentContextClass` |
