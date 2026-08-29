@@ -1051,16 +1051,72 @@ export class ConfigService {
     }
   }
 
+  /** 配置写入路由表：按匹配顺序分发到对应分组的写入处理器 */
+  private readonly updateConfigRoutes: Array<[
+    (prefix: string) => boolean,
+    (prefix: string, value: unknown) => Promise<void>,
+  ]> = [
+    [(prefix) => prefix.startsWith('log_provider.'), (prefix, value) => this.writeLogProviderConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.LLM_MATCH), (prefix, value) => this.writeLLMCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('llm_core.quota_'), (prefix, value) => this.writeLLMCoreQuotaConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('mcp_core.'), (prefix, value) => this.writeMCPCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH), (prefix, value) => this.writeSkillCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('skill_core.opt_rule'), (prefix, value) => this.writeSkillOptRuleConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH) || prefix.startsWith('soul_core.llm_id'), (prefix, value) => this.writeSoulCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('soul_core.opt_rule'), (prefix, value) => this.writeSoulOptRuleConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.tag_config.'), (prefix, value) => this.writeInfoTagConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.summary_config.'), (prefix, value) => this.writeInfoSummaryConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.vector_config.'), (prefix, value) => this.writeInfoVectorConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.context_config.'), (prefix, value) => this.writeInfoContextConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.config.'), (prefix, value) => this.writeInfoCoreConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('planner_agent.'), (prefix, value) => this.writePlannerAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('writer_agent.'), (prefix, value) => this.writeWriterAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('evolutor_agent.'), (prefix, value) => this.writeEvolutorAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_context.'), (prefix, value) => this.writeAgentContextConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_library.'), (prefix, value) => this.writeAgentLibraryConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_builder.'), (prefix, value) => this.writeAgentBuilderConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_execution.'), (prefix, value) => this.writeAgentExecutionConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_strategy.'), (prefix, value) => this.writeAgentStrategyConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.entry'), (prefix, value) => this.writeOrchestrationEntryConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.strategy'), (prefix, value) => this.writeOrchestrationStrategyConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.execution'), (prefix, value) => this.writeOrchestrationExecutionConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.visualization'), (prefix, value) => this.writeOrchestrationVisualizationConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.jsonnode'), (prefix, value) => this.writeOrchestrationJsonnodeConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('chat.'), (prefix, value) => this.writeChatConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('self_learning.'), (prefix, value) => this.writeSelfLearningConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('user_profile.'), (prefix, value) => this.writeUserProfileConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('visualization.'), (prefix, value) => this.writeVisualizationConfig(prefix, value)],
+  ];
+
+  /**
+   * 配置写入路由：仅做前缀匹配与分发，字段映射在各 writeXxxConfig 处理器内。
+   *
+   * @param configKey 配置键
+   * @param value 配置值
+   * @throws ValidationError 当配置键未命中任何路由
+   */
   private async routeUpdateConfig(configKey: string, value: unknown): Promise<void> {
     const baseModule = this.matchBaseProviderModule(configKey);
     if (baseModule) {
       await this.writeBaseProviderConfig(configKey, baseModule, value);
       return;
     }
+    for (const [match, handle] of this.updateConfigRoutes) {
+      if (match(configKey)) {
+        await handle(configKey, value);
+        return;
+      }
+    }
+    throw new ValidationError(`配置项 ${configKey} 未实现修改路由`);
+  }
 
-    const prefix = configKey;
-
-    if (prefix.startsWith('log_provider.')) {
+  /**
+   * 写入 `log_provider.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLogProviderConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('log_provider.enabled')) input.enabled = value as boolean;
       else if (prefix.startsWith('log_provider.default_level')) input.default_level = value as string;
@@ -1070,9 +1126,15 @@ export class ConfigService {
       const output: any = {};
       await this.logAccess.configLog(input as ConfigLogInput, output, {} as LogContext);
       return;
-    }
+  }
 
-    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.LLM_MATCH)) {
+  /**
+   * 写入 `llm_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLLMCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('llm_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('llm_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1080,14 +1142,28 @@ export class ConfigService {
       const output: any = {};
       await this.llmCore.configLLMCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('llm_core.quota_')) {
-      const input = { config_key: configKey, value } as any;
+  }
+
+  /**
+   * 写入 `llm_core.quota_*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLLMCoreQuotaConfig(prefix: string, value: unknown): Promise<void> {
+      const input = { config_key: prefix, value } as any;
       const output: any = {};
       await this.llmCore.limitLLM(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('mcp_core.')) {
+  }
+
+  /**
+   * 写入 `mcp_core.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeMCPCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('mcp_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('mcp_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1095,8 +1171,15 @@ export class ConfigService {
       const output: any = {};
       await this.mcpCore.configMCPCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
+  }
+
+  /**
+   * 写入 `skill_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSkillCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('skill_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('skill_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1104,8 +1187,15 @@ export class ConfigService {
       const output: any = {};
       await this.skillCore.configSkillCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('skill_core.opt_rule')) {
+  }
+
+  /**
+   * 写入 `skill_core.opt_rule*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSkillOptRuleConfig(prefix: string, value: unknown): Promise<void> {
       const key = prefix.split('skill_core.opt_rule.')[1];
       if (key) {
         const existing = await this.relationDb.selectOne('skill_opt_rule', []);
@@ -1127,8 +1217,15 @@ export class ConfigService {
         }
       }
       return;
-    }
-    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH) || prefix.startsWith('soul_core.llm_id')) {
+  }
+
+  /**
+   * 写入 `soul_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSoulCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('soul_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('soul_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1137,8 +1234,15 @@ export class ConfigService {
       const output: any = {};
       await this.soulCore.configSoulCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('soul_core.opt_rule')) {
+  }
+
+  /**
+   * 写入 `soul_core.opt_rule*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSoulOptRuleConfig(prefix: string, value: unknown): Promise<void> {
       const key = prefix.split('soul_core.opt_rule.')[1];
       if (key) {
         const existing = await this.relationDb.selectOne('soul_opt_rule', []);
@@ -1160,8 +1264,15 @@ export class ConfigService {
         }
       }
       return;
-    }
-    if (prefix.startsWith('info_core.tag_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.tag_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoTagConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.tag_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.INFO_TAG)) input.prompt_template_id = value as string;
@@ -1170,8 +1281,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoTagConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.summary_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.summary_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoSummaryConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.summary_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.INFO_SUMMARY)) input.prompt_template_id = value as string;
@@ -1181,8 +1299,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoSummaryConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.vector_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.vector_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoVectorConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.vector_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith('info_core.vector_config.dimension')) input.dimension = Number(value);
@@ -1190,8 +1315,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoVectorConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.context_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.context_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoContextConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.context_config.base_timeline_count')) input.base_timeline_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_tag_relative_count')) input.base_tag_relative_count = Number(value);
@@ -1205,15 +1337,29 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoContextConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.config.')) {
+  }
+
+  /**
+   * 写入 `info_core.config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoCoreConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.config.alive_max_days')) input.alive_max_days = Number(value);
       const output: any = {};
       await this.infoCore.updateInfoConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('planner_agent.')) {
+  }
+
+  /**
+   * 写入 `planner_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writePlannerAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('planner_agent.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith(PROMPT_SLOTS.PLAN)) input.plan_prompt_template_id = value as string;
@@ -1222,8 +1368,15 @@ export class ConfigService {
       const output: any = {};
       await this.plannerAgent.configPlannerAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('writer_agent.')) {
+  }
+
+  /**
+   * 写入 `writer_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeWriterAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.WRITE)) input.write_prompt_template_id = value as string;
       else if (prefix.startsWith('writer_agent.llm_id')) input.llm_id = value as string;
@@ -1234,8 +1387,15 @@ export class ConfigService {
       const output: any = {};
       await this.writerAgent.configWriterAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('evolutor_agent.')) {
+  }
+
+  /**
+   * 写入 `evolutor_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeEvolutorAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.EVAL_WORK)) input.eval_work_prompt_template_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.EVAL_WRITE)) input.eval_write_prompt_template_id = value as string;
@@ -1247,16 +1407,30 @@ export class ConfigService {
       const output: any = {};
       await this.evolutorAgent.configEvolutorAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_context.')) {
+  }
+
+  /**
+   * 写入 `agent_context.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentContextConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('agent_context.max_context_items')) input.max_context_items = value as number;
       else if (prefix.startsWith('agent_context.enable_snapshot_persistence')) input.enable_snapshot_persistence = value as boolean;
       const output: any = {};
       await this.agentContext.configAgentContext(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_library.')) {
+  }
+
+  /**
+   * 写入 `agent_library.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentLibraryConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('agent_library.regen_rate')) input.regen_rate = value;
       else if (prefix.startsWith('agent_library.similarity_threshold')) input.similarity_threshold = value;
@@ -1265,16 +1439,30 @@ export class ConfigService {
       const output: any = {};
       await this.agentLibrary.configAgentLibrary(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_builder.')) {
+  }
+
+  /**
+   * 写入 `agent_builder.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentBuilderConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.TASK_ANALYSIS)) input.task_analysis_prompt_template_id = value as string;
       else if (prefix.startsWith('agent_builder.auto_optimize')) input.auto_optimize = value as boolean;
       const output: any = {};
       await this.agentBuilder.configAgentBuilder(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_execution.')) {
+  }
+
+  /**
+   * 写入 `agent_execution.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentExecutionConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.THINK)) input.think_prompt_template_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.REFLECT)) input.reflect_prompt_template_id = value as string;
@@ -1284,14 +1472,28 @@ export class ConfigService {
       const output: any = {};
       await this.agentExecution.configAgentExecution(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_strategy.')) {
-      const input = { config_key: configKey, value } as any;
+  }
+
+  /**
+   * 写入 `agent_strategy.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentStrategyConfig(prefix: string, value: unknown): Promise<void> {
+      const input = { config_key: prefix, value } as any;
       const output: any = {};
       await this.agentStrategy.configAgentStrategy(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.entry')) {
+  }
+
+  /**
+   * 写入 `orchestration.entry*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationEntryConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.entry.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith(PROMPT_SLOTS.STRATEGY_SELECTOR)) input.strategy_prompt_template_id = value as string;
@@ -1302,16 +1504,30 @@ export class ConfigService {
       const output: any = {};
       await this.orchestrationEntry.configOrchestrationEntry(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.strategy')) {
+  }
+
+  /**
+   * 写入 `orchestration.strategy*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationStrategyConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.strategy.default_strategy_id')) input.default_strategy_id = value as string;
       else if (prefix.startsWith('orchestration.strategy.max_plan_retries')) input.max_plan_retries = value as number;
       const output: any = {};
       await this.orchestrationStrategy.configOrchestrationStrategy(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.execution')) {
+  }
+
+  /**
+   * 写入 `orchestration.execution*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationExecutionConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.execution.max_concurrent')) input.max_concurrent = value as number;
       else if (prefix.startsWith('orchestration.execution.dag_timeout_ms')) input.dag_timeout_ms = value as number;
@@ -1319,15 +1535,29 @@ export class ConfigService {
       const output: any = {};
       await this.orchestrationExecution.configOrchestrationExecution(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.visualization')) {
+  }
+
+  /**
+   * 写入 `orchestration.visualization*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationVisualizationConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.visualization.max_nodes_in_graph')) input.max_nodes_in_graph = value as number;
       const output: any = {};
       await this.orchestrationVisualization.configOrchestrationVisualization(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.jsonnode')) {
+  }
+
+  /**
+   * 写入 `orchestration.jsonnode*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationJsonnodeConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.jsonnode.max_execution_depth')) input.max_execution_depth = value as number;
       else if (prefix.startsWith('orchestration.jsonnode.node_timeout_ms')) input.node_timeout_ms = value as number;
@@ -1335,8 +1565,15 @@ export class ConfigService {
       const output: any = {};
       await this.jsonNode.configJSONNode(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('chat.')) {
+  }
+
+  /**
+   * 写入 `chat.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeChatConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('chat.max_messages_per_session')) input.max_messages_per_session = Number(value);
       else if (prefix.startsWith('chat.sse_heartbeat_interval_ms')) input.sse_heartbeat_interval_ms = Number(value);
@@ -1344,8 +1581,15 @@ export class ConfigService {
       const output: any = {};
       await this.chatAccess.configChat(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('self_learning.')) {
+  }
+
+  /**
+   * 写入 `self_learning.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSelfLearningConfig(prefix: string, value: unknown): Promise<void> {
       // 定时任务 cron 写入 CronProvider（与定时任务展示页面同一时间源）
       if (prefix === 'self_learning.tag_aging_cron' || prefix === 'self_learning.orphan_tag_check_cron') {
         const taskName = prefix === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
@@ -1369,8 +1613,15 @@ export class ConfigService {
       const output: any = {};
       await this.selfLearningAccess.configSelfLearning(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('user_profile.')) {
+  }
+
+  /**
+   * 写入 `user_profile.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeUserProfileConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('user_profile.auto_generate_interval_ms')) input.auto_generate_interval_ms = Number(value);
       else if (prefix.startsWith(PROMPT_SLOTS.PROFILE_ANALYSIS)) input.profile_analysis_prompt_template_id = value as string;
@@ -1380,8 +1631,15 @@ export class ConfigService {
       const output: any = {};
       await this.userProfileAccess.configUserProfile(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('visualization.')) {
+  }
+
+  /**
+   * 写入 `visualization.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeVisualizationConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('visualization.max_nodes_per_graph')) input.max_nodes_per_graph = value as number;
       else if (prefix.startsWith('visualization.default_message_summary_length')) input.default_message_summary_length = value as number;
@@ -1389,11 +1647,8 @@ export class ConfigService {
       const output: any = {};
       await this.visualizationAccess.configVisualization(input, {} as any, output);
       return;
-    }
-
-    // 未匹配到具体模块路由：静态定义中的配置项应全部有对应修改路由
-    throw new ValidationError(`配置项 ${configKey} 未实现修改路由`);
   }
+
 
   // =========================================================================
   // LLM Proxy methods
