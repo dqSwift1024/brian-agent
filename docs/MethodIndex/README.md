@@ -1,7 +1,7 @@
 # Brian-Agent 方法索引
 
 > 由 `npm run docs:index` 自动生成（TS AST 解析各层 access 层公开方法），请勿手工编辑。
-> 生成时间：2026-08-29T08:31:12.846Z；方法总数：490
+> 生成时间：2026-08-29T08:50:40.597Z；方法总数：490
 
 方法命名规范见 `docs/_1_DevStandards/DevStandards.md`；分层与复用规范见 `docs/_1_DevStandards/DDDStandards.md`。
 

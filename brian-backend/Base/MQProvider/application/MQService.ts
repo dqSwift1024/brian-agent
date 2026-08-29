@@ -17,7 +17,8 @@ import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
-import type { Condition, DataObject } from '../../shared/query';
+import type { Condition } from '../../shared/query';
+import { newRecord } from '../../shared/query';
 import {
   MQContext,
   MessageRecord,
@@ -194,21 +195,19 @@ export class MQService {
     const maxRetries = await this.config.getInt('default_max_retries', 3);
 
     const id = IdGenerator.generate();
-    const now = IdGenerator.now();
 
-    const dataObjects: DataObject[] = [
-      { field: 'id', value: id },
-      { field: 'created', value: now },
-      { field: 'updated', value: now },
-      { field: 'queue', value: data.queue },
-      { field: 'payload', value: JSON.stringify(data.payload) },
-      { field: 'priority', value: priority },
-      { field: 'status', value: MESSAGE_STATUS_PENDING },
-      { field: 'retry_count', value: 0 },
-      { field: 'max_retries', value: maxRetries },
-    ];
-
-    await this.relationDb.insert(QUEUE_MESSAGE_TABLE, dataObjects);
+    await this.relationDb.insert(
+      QUEUE_MESSAGE_TABLE,
+      newRecord({
+        id,
+        queue: data.queue,
+        payload: JSON.stringify(data.payload),
+        priority,
+        status: MESSAGE_STATUS_PENDING,
+        retry_count: 0,
+        max_retries: maxRetries,
+      }),
+    );
     output.id = id;
     return true;
   }

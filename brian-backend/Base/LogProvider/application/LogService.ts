@@ -12,6 +12,7 @@
  */
 
 import { Metrics } from '../../shared/base/Metrics';
+import { newRecord } from '../../shared/query';
 import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
@@ -225,23 +226,23 @@ export class LogService {
     }
 
     const logId = IdGenerator.generate();
-    const now = IdGenerator.now();
 
     try {
-      await this.relationDb.insert(LOG_RECORD_TABLE, [
-        { field: 'id', value: logId },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'level', value: data.level },
-        { field: 'source', value: data.source },
-        { field: 'message', value: data.message },
-        { field: 'trace_id', value: data.trace_id ?? null },
-        { field: 'caller', value: data.caller ?? null },
-        { field: 'work_id', value: data.work_id ?? null },
-        { field: 'interact_id', value: data.interact_id ?? null },
-        { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
-        { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
-      ]);
+      await this.relationDb.insert(
+        LOG_RECORD_TABLE,
+        newRecord({
+          id: logId,
+          level: data.level,
+          source: data.source,
+          message: data.message,
+          trace_id: data.trace_id ?? null,
+          caller: data.caller ?? null,
+          work_id: data.work_id ?? null,
+          interact_id: data.interact_id ?? null,
+          metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+          elapsed_ms: data.elapsed_ms ?? null,
+        }),
+      );
     } catch {
       // SQLite 写入失败不影响业务
     }
@@ -527,14 +528,14 @@ export class LogService {
           ],
         );
       } else {
-        await this.relationDb.insert(LOG_RULE_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'source', value: rule.source },
-          { field: 'method', value: rule.method },
-          { field: 'enable', value: rule.enable ? 1 : 0 },
-        ]);
+        await this.relationDb.insert(
+          LOG_RULE_TABLE,
+          newRecord({
+            source: rule.source,
+            method: rule.method,
+            enable: rule.enable ? 1 : 0,
+          }),
+        );
       }
     }
     await this.loadRules();

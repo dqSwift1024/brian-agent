@@ -454,9 +454,14 @@ export class SoulCoreService {
       prompt: generationPrompt,
       retries: 2,
       parse: (text) => JsonParser.parseObject(text),
-      onError: (err, attempt) =>
-        this.logger?.warn?.(`Soul 生成第 ${attempt} 次尝试失败`, { error: String(err) }),
-    }).catch((err: unknown) => {
+    }).then((res) => {
+      if (res === null) {
+        throw new ProcessingError('Soul 生成失败: LLM 输出 JSON 解析失败');
+      }
+      return res;
+    })
+    .catch((err: unknown) => {
+      if (err instanceof ProcessingError) throw err;
       throw new ProcessingError(`Soul 生成失败: ${err instanceof Error ? err.message : String(err)}`);
     });
 

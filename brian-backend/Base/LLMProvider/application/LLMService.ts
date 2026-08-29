@@ -49,7 +49,6 @@ const TEST_TIMEOUT_MS = 10000;
 const LIST_TIMEOUT_MS = 30000;
 
 /** 模型列表缓存有效期（毫秒），默认 1 小时 */
-const MODELS_CACHE_TTL_MS = 3600000;
 
 /** execLLM 默认请求超时时间（毫秒） */
 const EXEC_TIMEOUT_MS = 120000;
@@ -534,7 +533,6 @@ export class LLMService {
     }
 
     // upsert 到 llm_cache 表（按 llm_provider_id + llm_title 判重）
-    const now = IdGenerator.now();
     for (const m of parsedModels) {
       const modelId = m.modelId;
       if (!modelId) continue;
