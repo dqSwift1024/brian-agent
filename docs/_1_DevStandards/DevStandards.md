@@ -1,15 +1,18 @@
 1. 整个项目内相同的定义使用同一个英文单词；
-2. 接口名的设计采用动词+名词；例如：addSkill；
-3. 接口的设计 Boolean值的返回表示是否完成执行，方法名，参数有三个：input 表示输入；context 表示执行的环境；output 表示返回的内容；例如 Boolean addSkill(SkillInput input, SkillContext context, SkillOutput output);
+2. 接口名的设计采用动词+名词；例如：addSkill；查询/搜索类方法统一使用 `so` 前缀（so 为"搜"的音译），例如 soInfo、soConfigDetail；
+3. 接口的设计 Boolean值的返回表示是否完成执行，方法签名统一为五参：`Boolean methodName(XxxInput input, XxxOutput output, XxxContext context, XxxMetrics metrics, XxxReport report)`，例如 `Boolean addSkill(SkillInput input, SkillOutput output, SkillContext context, SkillMetrics metrics, SkillReport report)`；
     SkillInput 继承 Input 这个基类；所有的 Input 都继承 Input 基类；
-    SkillContext 继承 Context 这个基类；所有的 Context 都继承 Context 基类；
     SkillOutput 继承 Output 这个基类；所有的 Output 都继承 Output 基类；
+    SkillContext 继承 Context 这个基类；所有的 Context 都继承 Context 基类（方法使用的背景参数）；
+    SkillMetrics 继承 Metrics 这个基类；衡量对象，负责耗时统计与日志记录（封装 LogProvider 调用，提供 debug/info/warn/error 与计时能力），由 AopProxy 自动回填 elapsed_ms；
+    SkillReport 继承 Report 这个基类；上报对象，负责将方法执行过程中的信息上报给客户端（底层对接 StreamProvider 的 BrianSSEMessage 协议），无流会话时静默降级为 no-op；
+    调用方未传 metrics/report 时由 AopProxy 自动创建默认实例；
 4. 所有的方法都需要通过代理模式（AopProxy）增加切面注入能力。AopProxy 基于 JavaScript Proxy 拦截目标对象的方法调用，提供四个切入点（2前+2后）：
     - 切入点1 beforeExecute（方法执行前#1）：方法调用最开始的钩子，适合记录调用日志
     - 切入点2 preExecute（方法执行前#2）：方法实际执行前的钩子，适合参数校验、权限校验、缓存检查
     - 切入点3 postExecute（方法执行后#1）：方法成功返回后的钩子，适合结果转换、结果缓存
     - 切入点4 afterExecute（方法执行后#2）：方法执行完成后的钩子（无论成功或失败），适合耗时统计、资源清理
-    每个 Access 层通过 `AopProxy.wrap(rawService, { logger })` 生成代理对象，拦截器异常不影响业务方法执行。默认内置日志拦截器（记录调用开始+完成耗时），支持通过 `interceptors` 选项注入多个自定义拦截器实现无代码侵入的横切关注点扩展。Output 参数中自动注入 `elapsed_ms` 字段记录本次调用耗时。
+    每个 Access 层通过 `AopProxy.wrap(rawService, { logger })` 生成代理对象，拦截器异常不影响业务方法执行。默认内置日志拦截器（记录调用开始+完成耗时），支持通过 `interceptors` 选项注入多个自定义拦截器实现无代码侵入的横切关注点扩展。AopProxy 按参数位置自动识别新式 5 参（Input, Output, Context, Metrics, Report）与旧式 3 参（Input, Context, Output）两种调用形态，并自动回填 `elapsed_ms`（新式写入 Metrics，同时兼容写入 Output）与 trace_id。
 5. 表设计规范
     1. 表名唯一；
     2. 必须包含id，created，updated三个字段；

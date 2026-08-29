@@ -20,80 +20,39 @@ const SIG_RE =
 
 // 三参转发调用：xxx.name(a, b, c)，b 是 context 风格名、c 是 output 风格名
 const CALL_RE = /((?:this\.|await this\.)?\w+\.\w+)\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(new\s+[\w.]+(?:<[^>()]*>)?\(\)|\w+)\s*(?=[,)])/g;
-const CTX_NAME = /^(?:\w*?context|_?c)$/i;
+const CTX_NAME = /^(?:\w*?(?:context|ctx)|_?c)$/i;
 const OUT_NAME = /^(?:\w*?output|_?o)$/i;
 
 function hasMetricsInScope(fnBodyParams) {
   return true; // 签名改过即有 metrics 形参，转发时直接引用
 }
 
-// 2b. 字面量 Context 中参的三参调用（深度追踪扫描，arg2 恰为 new XContext() 时交换/移位）
+// 2b. 基于 TypeScript AST 的精确交换：调用第 2 参为 ctx 风格实参时交换第 2/3 参
+import ts from 'typescript';
+
 function swapLiteralContextArgs(src) {
-  const TOKEN = /new\s+\w*Context\s*\(\s*\)/g;
+  const sf = ts.createSourceFile('x.ts', src, ts.ScriptTarget.Latest, true);
+  const edits = [];
+  const CTX_ARG = /^(?:\w+\.)?(?:new\s+[A-Za-z_$][\w$]*Context\s*\(\s*\)|[A-Za-z_$][\w$]*(?:[Cc]tx|ontext)|ctx)$/;
+  const visit = (node) => {
+    if (ts.isCallOrNewExpression(node) && node.arguments && node.arguments.length >= 3) {
+      const a2 = node.arguments[1];
+      const a3 = node.arguments[2];
+      const t2 = a2.getText(sf).trim();
+      if (CTX_ARG.test(t2) && !t2.includes('\n')) {
+        edits.push({ start: a2.getStart(sf), end: a2.getEnd(), text: a3.getText(sf) });
+        edits.push({ start: a3.getStart(sf), end: a3.getEnd(), text: a2.getText(sf) });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  edits.sort((a, b) => b.start - a.start);
+  // 去重（同一位置两条编辑互为交换，按区间排序后直接应用）
   let out = src;
-  let m;
-  let guard = 0;
-  while ((m = TOKEN.exec(out)) && guard++ < 20000) {
-    const ctxEnd = m.index + m[0].length;
-    // 找调用开括号（回扫平衡括号）
-    let depth = 0, open = -1;
-    for (let i = m.index - 1; i >= 0; i--) {
-      const ch = out[i];
-      if (ch === ')' || ch === ']' || ch === '}') depth++;
-      else if (ch === '(' || ch === '[' || ch === '{') {
-        if (depth === 0) { open = i; break; }
-        depth--;
-      }
-    }
-    if (open < 0) continue;
-    // 计算当前参数序号（open 到 ctxStart 之间的顶层逗号数）
-    let commas = 0, d2 = 0, arg1Start = -1;
-    for (let i = open + 1; i < m.index; i++) {
-      const ch = out[i];
-      if (ch === '(' || ch === '[' || ch === '{') d2++;
-      else if (ch === ')' || ch === ']' || ch === '}') d2--;
-      else if (ch === ',' && d2 === 0) { commas++; if (commas === 1) arg1Start = i; }
-    }
-    if (commas !== 1) continue; // 仅处理第 2 参
-    // ctx 后必须是顶层逗号
-    let j = ctxEnd;
-    while (j < out.length && /\s/.test(out[j])) j++;
-    if (out[j] !== ',') continue;
-    // 找调用闭括号
-    let close = -1, d3 = 0;
-    for (let i = open + 1; i < out.length; i++) {
-      const ch = out[i];
-      if (ch === '(' || ch === '[' || ch === '{') d3++;
-      else if (ch === ')' || ch === ']' || ch === '}') {
-        if (d3 === 0) { close = i; break; }
-        d3--;
-      }
-    }
-    if (close < 0) continue;
-    const arg0 = out.slice(open + 1, arg1Start); // 首参（第一个顶层逗号之前）
-    const ws = out.slice(arg1Start + 1, m.index); // 首参逗号到 ctx 之间的空白
-    const arg1 = ws;
-    // arg3：从 ctx 后逗号到顶层逗号或 close
-    let arg3End = -1, more = false, d4 = 0;
-    for (let i = j + 1; i < close; i++) {
-      const ch = out[i];
-      if (ch === '(' || ch === '[' || ch === '{') d4++;
-      else if (ch === ')' || ch === ']' || ch === '}') d4--;
-      else if (ch === ',' && d4 === 0) { arg3End = i; more = true; break; }
-    }
-    if (arg3End < 0) { arg3End = close; more = false; }
-    const arg3 = out.slice(j + 1, arg3End);
-    const rest = more ? out.slice(arg3End + 1, close) : '';
-    if (more && rest.trim() === '') { more = false; } // 尾逗号不算更多参数
-    const trimmed = (s) => s.replace(/\s+$/, '');
-    if (!more) {
-      // (a, ctx, b[, ]) → (b, ctx, a[, ])
-      out = out.slice(0, open + 1) + arg0 + ',' + arg3 + ', ' + m[0] + (rest ? ',' + rest : '') + out.slice(close);
-    } else {
-      // (a, ctx, b, rest…) → (a, b, ctx, rest…)
-      out = out.slice(0, open + 1) + arg0 + ',' + arg3 + ', ' + m[0] + ',' + rest + out.slice(close);
-    }
-    TOKEN.lastIndex = 0; // 重扫（文本已变）
+  for (const e of edits) {
+    if (out.slice(e.start, e.end) === e.text) continue; // 无变化
+    out = out.slice(0, e.start) + e.text + out.slice(e.end);
   }
   return out;
 }
@@ -124,16 +83,21 @@ function transform(src, file) {
     if (firstImport) {
       let baseDir = path.dirname(file);
       let baseRoot;
-      for (let d = baseDir; d !== path.parse(d).root; d = path.dirname(d)) {
+      for (let d = baseDir, i = 0; i < 30; d = path.dirname(d), i++) {
+        if (d === '.' || d === path.parse(d).root) break;
         if (fs.existsSync(path.join(d, 'shared', 'base'))) { baseRoot = d; break; }
       }
-      const relPath = baseRoot
-        ? path.relative(path.dirname(file), path.join(baseRoot, 'shared', 'base')).replaceAll('\\', '/')
-        : '../../shared/base';
       const idx = firstImport.index;
-      src = src.slice(0, idx) +
-        `import { Metrics } from '${relPath}/Metrics';\nimport { Report } from '${relPath}/Report';\n` +
-        src.slice(idx);
+      if (baseRoot) {
+        const relPath = path.relative(path.dirname(file), path.join(baseRoot, 'shared', 'base')).replaceAll('\\', '/');
+        src = src.slice(0, idx) +
+          `import { Metrics } from '${relPath}/Metrics';\nimport { Report } from '${relPath}/Report';\n` +
+          src.slice(idx);
+      } else {
+        src = src.slice(0, idx) +
+          "import { Metrics, Report } from '@brian-agent/base';\n" +
+          src.slice(idx);
+      }
     }
   }
   return { src, changed };
