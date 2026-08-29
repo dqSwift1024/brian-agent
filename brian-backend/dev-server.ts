@@ -21,6 +21,25 @@ import { LogAccess, LogContext, DelLogInput, DelLogOutput } from './Base/LogProv
 import { VectorDBAccess } from './Base/VectorDBProvider';
 import { CDTAccess } from './Base/CDTProvider';
 import { BookmarkAccess } from './Base/BookmarkProvider';
+import {
+  SoTreeInput, SoTreeOutput, SoFlatFoldersInput, SoFlatFoldersOutput,
+  AddFolderInput, AddFolderOutput, AddItemInput, AddItemOutput,
+  UpdateFolderInput, UpdateFolderOutput, UpdateItemInput, UpdateItemOutput,
+  DelFolderInput, DelFolderOutput, DelItemInput, DelItemOutput,
+  MoveItemInput, MoveItemOutput, BookmarkContext,
+} from './Base/BookmarkProvider/domain/types';
+import {
+  GenerateIdsInput, GenerateIdsOutput, JsonCheckInput, JsonCheckOutput,
+  JsonFormatInput, JsonFormatOutput, JsonMinifyInput, JsonMinifyOutput,
+  XmlCheckInput, XmlCheckOutput, XmlFormatInput, XmlFormatOutput,
+  XmlMinifyInput, XmlMinifyOutput, RegexMatchInput, RegexMatchOutput,
+  CronCheckInput, CronCheckOutput, CronGenerateInput, CronGenerateOutput,
+  CronParseInput, CronParseOutput, CronNextInput, CronNextOutput, ToolContext,
+} from './Base/ToolProvider/domain/types';
+import {
+  SoResourceInput, SoResourceOutput, SystemMonitorContext,
+} from './Base/ToolProvider/domain/SystemMonitorTypes';
+import { ExecRequestInput, ExecRequestOutput, HttpContext } from './Base/ToolProvider/domain/HttpTypes';
 import { ChunkAccess } from './Base/ChunkProvider';
 import { CronAccess } from './Base/CronProvider';
 import {
@@ -32,7 +51,7 @@ import {
   CloseStreamOutput,
 } from './Base/StreamProvider';
 import {
-  CronContext, ListCronTasksOutput,
+  CronContext, ListCronTasksInput, ListCronTasksOutput,
   GetCronTaskInput, GetCronTaskOutput,
   SetCronTaskInput, SetCronTaskOutput,
   SetCronTaskEnabledInput, SetCronTaskEnabledOutput,
@@ -531,6 +550,15 @@ async function buildContext() {
     { config_key: 'http_timeout_ms', config_value: '60000', value_type: 'INT', description: 'HTTP 请求默认超时时间（毫秒）' },
   ]);
   const httpAccess = new HttpAccess(toolConfigService);
+  // 标准签名适配：execRequest(Input, Output, Context, ...) 简化为请求对象风格
+  const httpReq = async (req: { url: string; method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number }) => {
+    const out = new ExecRequestOutput();
+    await httpAccess.execRequest(
+      Object.assign(new ExecRequestInput(), { url: req.url, method: req.method, headers: req.headers, body: req.body, timeout_ms: req.timeoutMs }),
+      out, new HttpContext(),
+    );
+    return out.response;
+  };
   const streamAccess = new StreamAccess(relationDb, logger);
 
   // ---- Core Providers ----
@@ -606,8 +634,8 @@ async function buildContext() {
     for (const agentType of ['PLANNER', 'WRITER', 'EVOLUTOR', 'SUMMARY', 'INTENT'] as const) {
       await agentBuilder.buildSystemAgent(
         Object.assign(new BuildSystemAgentInput(), { agent_type: agentType }),
-        new AgentBuilderContext(),
         new BuildSystemAgentOutput(),
+        new AgentBuilderContext(),
       );
     }
   } catch (e) {
@@ -644,8 +672,8 @@ async function buildContext() {
   // 系统启动时自动开启随机触发学习（自动学习后台常驻：空闲时按 random_factor 随机触发）
   await selfLearningAccess.startLearning(
     Object.assign(new StartLearningInput(), { learning_mode: 'RANDOM' }),
-    new SelfLearningContext(),
     new StartLearningOutput(),
+    new SelfLearningContext(),
   );
 
   // 启动期注册常驻 MQ 消费 Worker（orchestration.eval 评估队列），
@@ -1551,7 +1579,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input: GetConfigDetailInput = Object.assign(new GetConfigDetailInput(), {});
         const output = new GetConfigDetailOutput();
         const context = new ConfigContext();
-        await ctx.configAccess.soConfigDetail(input, context, output);
+        await ctx.configAccess.soConfigDetail(input, output, context);
         sendJson(res, 200, { config: { layers: output.layers } });
 
       } else if (method === 'PUT' && pathname === '/api/config') {
@@ -1568,7 +1596,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
         const output = new UpdateConfigOutput();
         const context = new ConfigContext();
-        await ctx.configAccess.updateConfig(input, context, output);
+        await ctx.configAccess.updateConfig(input, output, context);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'GET' && pathname === '/api/config/graph-visualization') {
@@ -1601,7 +1629,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetConfigItemInput(), { config_key: configKey });
         const output = new GetConfigItemOutput();
         const context = new ConfigContext();
-        await ctx.configAccess.soConfigItem(input, context, output);
+        await ctx.configAccess.soConfigItem(input, output, context);
         sendJson(res, 200, { config_item: output.config_item });
 
       // ---- Config Save Defaults ----
@@ -1774,14 +1802,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const modelInput = Object.assign(new GetLLMInput(), { id });
         const modelOutput = new GetLLMOutput();
         const modelCtx = new LLMContext();
-        await ctx.configAccess.soLLMById(modelInput, modelCtx, modelOutput);
+        await ctx.configAccess.soLLMById(modelInput, modelOutput, modelCtx);
         const model = modelOutput.llm as Record<string, unknown> | null;
         const providerId = (model?.llm_provider_id as string) || '';
         if (providerId) {
           const testInput = Object.assign(new TestLLMProviderInput(), { id: providerId });
           const testOutput = new TestLLMProviderOutput();
           const testCtx = new LLMContext();
-          await ctx.configAccess.testLLMProvider(testInput, testCtx, testOutput);
+          await ctx.configAccess.testLLMProvider(testInput, testOutput, testCtx);
           sendJson(res, 200, {
             success: testOutput.connected !== false,
             latency: testOutput.response_time_ms,
@@ -1808,7 +1836,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             no_fallback: true,
           });
           const execOutput = new ExecLLMOutput();
-          await ctx.llmAccess.execLLM(execInput, new LLMContext(), execOutput);
+          await ctx.llmAccess.execLLM(execInput, execOutput, new LLMContext());
           sendJson(res, 200, {
             result: execOutput.result ?? '',
             raw_response: execOutput.raw_response ?? '',
@@ -1829,7 +1857,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const { EmbedLLMInput, EmbedLLMOutput, LLMContext } = await import('./Base/LLMProvider/domain/types');
           const embedInput = Object.assign(new EmbedLLMInput(), { id, input });
           const embedOutput = new EmbedLLMOutput();
-          await ctx.llmAccess.embedLLM(embedInput, new LLMContext(), embedOutput);
+          await ctx.llmAccess.embedLLM(embedInput, embedOutput, new LLMContext());
           sendJson(res, 200, {
             embedding: embedOutput.embedding ?? [],
             dimension: (embedOutput.embedding ?? []).length,
@@ -1847,7 +1875,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const genInput = Object.assign(new GenLLMAttrInput(), { id });
           const genOutput = new GenLLMAttrOutput();
-          await ctx.llmAccess.genLLMAttr(genInput, new LLMContext(), genOutput);
+          await ctx.llmAccess.genLLMAttr(genInput, genOutput, new LLMContext());
           sendJson(res, 200, {
             llm_brief: genOutput.llm_brief ?? '',
             model_usage: genOutput.model_usage ?? '',
@@ -1890,14 +1918,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new SoLLMProviderInput(), {});
         const output = new SoLLMProviderOutput();
         const context = new LLMContext();
-        await ctx.configAccess.soLLMProvider(input, context, output);
+        await ctx.configAccess.soLLMProvider(input, output, context);
         sendJson(res, 200, output.list || []);
 
       } else if (method === 'POST' && pathname === '/api/config/provider') {
         const input = Object.assign(new AddLLMProviderInput(), body);
         const output = new AddLLMProviderOutput();
         const context = new LLMContext();
-        await ctx.configAccess.addLLMProvider(input, context, output);
+        await ctx.configAccess.addLLMProvider(input, output, context);
         sendJson(res, 200, { id: output.provider_id, name: body.llm_provider_title || 'new-provider' });
 
       } else if (method === 'PUT' && pathname.startsWith('/api/config/provider/')) {
@@ -1905,7 +1933,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new UpdateLLMProviderInput(), { ...body, provider_id: id });
         const output = new UpdateLLMProviderOutput();
         const context = new LLMContext();
-        await ctx.configAccess.updateLLMProvider(input, context, output);
+        await ctx.configAccess.updateLLMProvider(input, output, context);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/config/provider/')) {
@@ -1913,7 +1941,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new DelLLMProviderInput(), { ids: [id] });
         const output = new DelLLMProviderOutput();
         const context = new LLMContext();
-        await ctx.configAccess.delLLMProvider(input, context, output);
+        await ctx.configAccess.delLLMProvider(input, output, context);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'POST' && /\/api\/config\/provider\/[^/]+\/fetch-models$/.test(pathname)) {
@@ -1921,7 +1949,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const fetchInput = Object.assign(new ListLLMInput(), { llm_provider_id: id, force: true });
         const fetchOutput = new ListLLMOutput();
         const fetchCtx = new LLMContext();
-        const ok = await ctx.configAccess.listLLM(fetchInput, fetchCtx, fetchOutput);
+        const ok = await ctx.configAccess.listLLM(fetchInput, fetchOutput, fetchCtx);
         const models = (fetchOutput.list || []).map((m: Record<string, unknown>) => ({
           id: m.llm_title || m.id,
           name: m.llm_title || m.name || '',
@@ -1992,7 +2020,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
         try {
-          const resp = await httpAccess.request({
+          const resp = await httpReq({
             url,
             method: 'POST',
             headers,
@@ -2016,7 +2044,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const testInput = Object.assign(new TestLLMProviderInput(), { id });
         const testOutput = new TestLLMProviderOutput();
         const testCtx = new LLMContext();
-        await ctx.configAccess.testLLMProvider(testInput, testCtx, testOutput);
+        await ctx.configAccess.testLLMProvider(testInput, testOutput, testCtx);
         sendJson(res, 200, {
           success: testOutput.connected !== false,
           latency: testOutput.response_time_ms,
@@ -2090,14 +2118,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new SoSoulInput(), {});
         const output = new SoSoulOutput();
         const context = new SoulContext();
-        await ctx.configAccess.soSoul(input, context, output);
+        await ctx.configAccess.soSoul(input, output, context);
         sendJson(res, 200, output.list || []);
 
       } else if (method === 'POST' && pathname === '/api/config/soul') {
         const input = Object.assign(new AddSoulInput(), { data: body });
         const output = new AddSoulOutput();
         const context = new SoulContext();
-        await ctx.configAccess.addSoul(input, context, output);
+        await ctx.configAccess.addSoul(input, output, context);
         sendJson(res, 200, { id: output.id, soul_brief: body.soul_brief || 'new-soul' });
 
       } else if (method === 'PUT' && pathname.startsWith('/api/config/soul/')) {
@@ -2105,7 +2133,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new UpdateSoulInput(), { ...body, soul_id: id });
         const output = new UpdateSoulOutput();
         const context = new SoulContext();
-        await ctx.configAccess.updateSoul(input, context, output);
+        await ctx.configAccess.updateSoul(input, output, context);
         sendJson(res, 200, { success: true });
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/config/soul/')) {
@@ -2113,7 +2141,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new DelSoulInput(), { soul_ids: [id] });
         const output = new DelSoulOutput();
         const context = new SoulContext();
-        await ctx.configAccess.delSoul(input, context, output);
+        await ctx.configAccess.delSoul(input, output, context);
         sendJson(res, 200, { success: true });
 
       // ---- MCP (Config section) ----
@@ -2121,7 +2149,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const provInput = Object.assign(new SoMcpProviderInput(), {});
         const provOutput = new SoMcpProviderOutput();
         const provContext = new McpContext();
-        await ctx.configAccess.soMcpProvider(provInput, provContext, provOutput);
+        await ctx.configAccess.soMcpProvider(provInput, provOutput, provContext);
         const providers = provOutput.list || [];
         if (providers.length === 0) {
           sendJson(res, 200, []);
@@ -2129,7 +2157,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const input = Object.assign(new ListMcpInput(), { mcp_provider_id: providers[0].id });
           const output = new ListMcpOutput();
           const context = new McpContext();
-          await ctx.configAccess.listMcp(input, context, output);
+          await ctx.configAccess.listMcp(input, output, context);
           sendJson(res, 200, output.list || []);
         }
 
@@ -2152,21 +2180,21 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && pathname === '/api/config/mcp/provider') {
         const input = Object.assign(new AddMcpProviderInput(), { data: body });
         const output = new AddMcpProviderOutput();
-        await ctx.configAccess.addMcpProvider(input, new McpContext(), output);
+        await ctx.configAccess.addMcpProvider(input, output, new McpContext());
         sendJson(res, 201, { id: output.id });
 
       } else if (method === 'PUT' && /^\/api\/config\/mcp\/provider\/[^/]+$/.test(pathname)) {
         const id = pathname.split('/api/config/mcp/provider/')[1];
         const input = Object.assign(new UpdateMcpProviderInput(), { id, data: body.data || body });
         const output = new UpdateMcpProviderOutput();
-        await ctx.configAccess.updateMcpProvider(input, new McpContext(), output);
+        await ctx.configAccess.updateMcpProvider(input, output, new McpContext());
         sendJson(res, 200, { success: true });
 
       } else if (method === 'DELETE' && /^\/api\/config\/mcp\/provider\/[^/]+$/.test(pathname)) {
         const id = pathname.split('/api/config/mcp/provider/')[1];
         const input = Object.assign(new DelMcpProviderInput(), { ids: [id] });
         const output = new DelMcpProviderOutput();
-        await ctx.configAccess.delMcpProvider(input, new McpContext(), output);
+        await ctx.configAccess.delMcpProvider(input, output, new McpContext());
         sendJson(res, 200, { success: true, affected_rows: output.affected_rows });
 
       // ---- MCP Market: test connectivity ----
@@ -2178,22 +2206,22 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           const start = Date.now();
           if (provId === 'github') {
-            const r = await httpAccess.request({ url: 'https://registry.npmjs.org/-/v1/search?text=keywords:mcp&size=1' });
+            const r = await httpReq({ url: 'https://registry.npmjs.org/-/v1/search?text=keywords:mcp&size=1' });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'npm registry 可达' : `HTTP ${r.status}`;
           } else if (provId === 'smithery') {
-            const r = await httpAccess.request({ url: 'https://api.smithery.ai/servers?pageSize=1' });
+            const r = await httpReq({ url: 'https://api.smithery.ai/servers?pageSize=1' });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'Smithery API 可达' : `HTTP ${r.status}`;
           } else if (provId === 'aliyun_bailian') {
-            const r = await httpAccess.request({ url: 'https://dashscope.aliyuncs.com', timeoutMs: 5000 });
+            const r = await httpReq({ url: 'https://dashscope.aliyuncs.com', timeoutMs: 5000 });
             latency = Date.now() - start;
             ok = true;
             statusMsg = 'DashScope API 可达';
           } else if (provId === 'modelscope') {
-            const r = await httpAccess.request({ url: 'https://modelscope.cn', timeoutMs: 5000 });
+            const r = await httpReq({ url: 'https://modelscope.cn', timeoutMs: 5000 });
             latency = Date.now() - start;
             ok = r.ok;
             statusMsg = ok ? 'ModelScope 可达' : `HTTP ${r.status}`;
@@ -2217,7 +2245,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           if (provId === 'github') {
             const searchTerm = q ? `keywords:mcp+${encodeURIComponent(q)}` : 'keywords:mcp+server';
-            const npmRes = await httpAccess.request({ url: `https://registry.npmjs.org/-/v1/search?text=${searchTerm}&size=${pageSize}&from=${(page - 1) * pageSize}` });
+            const npmRes = await httpReq({ url: `https://registry.npmjs.org/-/v1/search?text=${searchTerm}&size=${pageSize}&from=${(page - 1) * pageSize}` });
             if (!npmRes.ok) throw new Error(`npm 请求失败 HTTP ${npmRes.status}`);
             const data = JSON.parse(npmRes.bodyText) as { objects: Array<{ package: { name: string; description: string; version: string; links?: { npm?: string } } }>; total: number };
             tools = (data.objects || []).map(obj => ({
@@ -2240,7 +2268,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             params.set('pageSize', String(Math.min(pageSize, 100)));
             params.set('page', String(page));
             if (q) params.set('q', q);
-            const smRes = await httpAccess.request({ url: `https://api.smithery.ai/servers?${params.toString()}` });
+            const smRes = await httpReq({ url: `https://api.smithery.ai/servers?${params.toString()}` });
             if (!smRes.ok) throw new Error(`Smithery 请求失败 HTTP ${smRes.status}`);
             const data = JSON.parse(smRes.bodyText) as { servers: Array<{ id: string; qualifiedName: string; displayName: string; description: string; remote?: boolean }>; pagination: { totalCount: number } };
             tools = (data.servers || []).map(s => ({
@@ -2275,7 +2303,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         try {
           // GitHub: fetch npm package info and install directly
           if (provId === 'github') {
-            const pkgRes = await httpAccess.request({ url: `https://registry.npmjs.org/${toolId}/latest` });
+            const pkgRes = await httpReq({ url: `https://registry.npmjs.org/${toolId}/latest` });
             if (!pkgRes.ok) { sendJson(res, 400, { error: `npm 包 ${toolId} 不存在` }); return; }
             const pkg = JSON.parse(pkgRes.bodyText) as { name: string; description: string; bin?: Record<string, string>; version?: string };
             // 校验：不能重复安装
@@ -2327,18 +2355,18 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       } else if (method === 'POST' && /\/api\/config\/mcp\/start$/.test(pathname)) {
         const startIn = Object.assign(new StartMcpInput(), { id: (body as Record<string, unknown>).id || '' });
-        await ctx.configAccess.startMcp(startIn, new McpContext(), new StartMcpOutput());
+        await ctx.configAccess.startMcp(startIn, new StartMcpOutput(), new McpContext());
         sendJson(res, 200, { success: true });
 
       } else if (method === 'POST' && /\/api\/config\/mcp\/stop$/.test(pathname)) {
         const stopIn = Object.assign(new StopMcpInput(), { id: (body as Record<string, unknown>).id || '' });
-        await ctx.configAccess.stopMcp(stopIn, new McpContext(), new StopMcpOutput());
+        await ctx.configAccess.stopMcp(stopIn, new StopMcpOutput(), new McpContext());
         sendJson(res, 200, { success: true });
 
       } else if (method === 'POST' && /\/api\/config\/mcp\/uninstall$/.test(pathname)) {
         const unInput = Object.assign(new UninstallMcpInput(), { id: (body as Record<string, unknown>).id || '' });
         const unOutput = new UninstallMcpOutput();
-        await ctx.configAccess.uninstallMcp(unInput, new McpContext(), unOutput);
+        await ctx.configAccess.uninstallMcp(unInput, unOutput, new McpContext());
         sendJson(res, 200, { success: true });
 
       // ---- Agent Routes ----
@@ -2346,14 +2374,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetAgentInput(), {});
         const output = new GetAgentOutput();
         const context = new AgentLibraryContext();
-        await ctx.agentLibrary.soAgent(input, context, output);
+        await ctx.agentLibrary.soAgent(input, output, context);
         sendJson(res, 200, { agents: output.agents || [] });
 
       } else if (method === 'GET' && pathname === '/api/agent/strategy') {
         const input = Object.assign(new SoStrategyInput(), {});
         const output = new SoStrategyOutput();
         const context = new AgentStrategyContext();
-        await ctx.agentStrategy.soStrategy(input, context, output);
+        await ctx.agentStrategy.soStrategy(input, output, context);
         sendJson(res, 200, { strategies: output.strategies || [] });
 
       } else if (method === 'POST' && /\/api\/agent\/strategy\/[^/]+\/toggle$/.test(pathname)) {
@@ -2361,7 +2389,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new ToggleStrategyInput(), { strategy_id: strategyId });
         const output = new ToggleStrategyOutput();
         const context = new AgentStrategyContext();
-        await ctx.agentStrategy.toggleStrategy(input, context, output);
+        await ctx.agentStrategy.toggleStrategy(input, output, context);
         sendJson(res, 200, { success: true, enable: output.enable });
 
       // ===== 原始 POST /api/agent（桩实现，保留作为参考）=====
@@ -2415,7 +2443,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new ToggleAgentInput(), { id });
         const output = new ToggleAgentOutput();
         const context = new AgentLibraryContext();
-        await ctx.agentLibrary.toggleAgent(input, context, output);
+        await ctx.agentLibrary.toggleAgent(input, output, context);
         sendJson(res, 200, { success: true, enable: output.enable });
 
       // ===== 原始 PUT /api/agent/{id}（桩实现，保留作为参考）=====
@@ -2442,7 +2470,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           if (b.task_signature !== undefined) updIn.task_signature = String(b.task_signature);
           if (b.strategy_id !== undefined) updIn.strategy_id = String(b.strategy_id);
           if (b.soul_id !== undefined) updIn.soul_id = String(b.soul_id);
-          await ctx.agentLibrary.updateAgent(updIn, new AgentLibraryContext(), new UpdateAgentOutput());
+          await ctx.agentLibrary.updateAgent(updIn, new UpdateAgentOutput(), new AgentLibraryContext());
           sendJson(res, 200, { success: true });
         } catch (e: unknown) {
           sendJson(res, 400, { error: (e as Error).message || '更新失败' });
@@ -2453,7 +2481,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new DelAgentInput(), { ids: [id] });
         const output = new DelAgentOutput();
         const context = new AgentLibraryContext();
-        await ctx.agentLibrary.delAgent(input, context, output);
+        await ctx.agentLibrary.delAgent(input, output, context);
         if (output.deleted_count === 0) {
           sendJson(res, 404, { error: `Agent 不存在或未删除: ${id}` });
         } else {
@@ -2465,14 +2493,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new SoSkillInput(), {});
         const output = new SoSkillOutput();
         const context = new SkillContext();
-        await ctx.configAccess.soSkill(input, context, output);
+        await ctx.configAccess.soSkill(input, output, context);
         sendJson(res, 200, { skills: output.list || [] });
 
       } else if (method === 'POST' && pathname === '/api/skill') {
         const input = Object.assign(new AddSkillInput(), { data: body });
         const output = new AddSkillOutput();
         const context = new SkillContext();
-        await ctx.configAccess.addSkill(input, context, output);
+        await ctx.configAccess.addSkill(input, output, context);
         sendJson(res, 200, { id: output.id, name: body.name || body.skill_brief || 'new-skill' });
 
       } else if (method === 'POST' && /\/api\/skill\/[^/]+\/exec$/.test(pathname)) {
@@ -2480,7 +2508,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new ExecSkillInput(), { id, params: (body as Record<string, unknown>).params || body });
         const output = new ExecSkillOutput();
         const context = new SkillContext();
-        await ctx.configAccess.execSkill(input, context, output);
+        await ctx.configAccess.execSkill(input, output, context);
         sendJson(res, 200, { result: output.result });
 
       } else if (method === 'POST' && /\/api\/skill\/[^/]+\/toggle$/.test(pathname)) {
@@ -2491,7 +2519,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new UpdateSkillInput(), { id, data: body });
         const output = new UpdateSkillOutput();
         const context = new SkillContext();
-        await ctx.configAccess.updateSkill(input, context, output);
+        await ctx.configAccess.updateSkill(input, output, context);
         sendJson(res, 200, { success: true, affected_rows: output.affected_rows });
 
       } else if (method === 'DELETE' && pathname.startsWith('/api/skill/')) {
@@ -2499,7 +2527,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new DelSkillInput(), { ids: [id] });
         const output = new DelSkillOutput();
         const context = new SkillContext();
-        await ctx.configAccess.delSkill(input, context, output);
+        await ctx.configAccess.delSkill(input, output, context);
         sendJson(res, 200, { success: true });
 
       // ---- MCP (Standalone) ----
@@ -2523,13 +2551,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const ids = ((body as Record<string, unknown>).ids as string[]) || [];
         const input = Object.assign(new StartMcpsInput(), { ids });
         const output = new StartMcpsOutput();
-        await ctx.mcpAccess.startMcps(input, new McpContext(), output);
+        await ctx.mcpAccess.startMcps(input, output, new McpContext());
         sendJson(res, 200, { success: true, started_count: output.started_count });
 
       } else if (method === 'POST' && pathname === '/api/mcp/refresh') {
         const input = new RefreshMcpStatusInput();
         const output = new RefreshMcpStatusOutput();
-        await ctx.mcpAccess.refreshMcpStatus(input, new McpContext(), output);
+        await ctx.mcpAccess.refreshMcpStatus(input, output, new McpContext());
         sendJson(res, 200, { success: true, removed: output.removed, running: output.running, stopped: output.stopped, total: output.total });
 
       } else if (method === 'GET' && pathname === '/api/mcp/usage') {
@@ -2539,7 +2567,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           end_date: params.get('end_date') || undefined,
         });
         const output = new GetMcpUsageOutput();
-        await ctx.mcpAccess.soMcpUsage(input, new McpContext(), output);
+        await ctx.mcpAccess.soMcpUsage(input, output, new McpContext());
         sendJson(res, 200, { list: output.list, total: output.total });
 
       } else if (method === 'GET' && pathname === '/api/mcp/market') {
@@ -2578,20 +2606,20 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/start$/.test(pathname)) {
         const id = pathname.split('/api/mcp/')[1].split('/')[0];
         const startInput = Object.assign(new StartMcpInput(), { id });
-        await ctx.mcpAccess.startMcp(startInput, new McpContext(), new StartMcpOutput());
+        await ctx.mcpAccess.startMcp(startInput, new StartMcpOutput(), new McpContext());
         sendJson(res, 200, { success: true });
 
       } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/stop$/.test(pathname)) {
         const id = pathname.split('/api/mcp/')[1].split('/')[0];
         const stopInput = Object.assign(new StopMcpInput(), { id });
-        await ctx.mcpAccess.stopMcp(stopInput, new McpContext(), new StopMcpOutput());
+        await ctx.mcpAccess.stopMcp(stopInput, new StopMcpOutput(), new McpContext());
         sendJson(res, 200, { success: true });
 
       } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/upgrade$/.test(pathname)) {
         const id = pathname.split('/api/mcp/')[1].split('/')[0];
         const upInput = Object.assign(new UpgradeMcpInput(), { id });
         const upOutput = new UpgradeMcpOutput();
-        await ctx.mcpAccess.upgradeMcp(upInput, new McpContext(), upOutput);
+        await ctx.mcpAccess.upgradeMcp(upInput, upOutput, new McpContext());
         sendJson(res, 200, { success: true, version: upOutput.version });
 
       } else if (method === 'POST' && /\/api\/mcp\/[^/]+\/call$/.test(pathname)) {
@@ -2602,14 +2630,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           params: (body as Record<string, unknown>).params || {},
         });
         const callOutput = new ExecMcpOutput();
-        await ctx.mcpAccess.execMcp(callInput, new McpContext(), callOutput);
+        await ctx.mcpAccess.execMcp(callInput, callOutput, new McpContext());
         sendJson(res, 200, { result: callOutput.result, raw_response: callOutput.raw_response });
 
       } else if (method === 'DELETE' && /\/api\/mcp\/[^/]+$/g.test(pathname) && !pathname.includes('/install') && !pathname.includes('/toggle') && !pathname.includes('/start') && !pathname.includes('/stop')) {
         const id = pathname.split('/api/mcp/')[1];
         const unInput = Object.assign(new UninstallMcpInput(), { id });
         const unOutput = new UninstallMcpOutput();
-        await ctx.mcpAccess.uninstallMcp(unInput, new McpContext(), unOutput);
+        await ctx.mcpAccess.uninstallMcp(unInput, unOutput, new McpContext());
         sendJson(res, 200, { success: true });
 
       // ===== Chat Routes =====
@@ -2643,7 +2671,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         const output = new SearchSessionOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.soSession(input, context, output);
+        await ctx.chatAccess.soSession(input, output, context);
         sendJson(res, 200, {
           sessions: (output.sessions || []).map((s) => ({
             sessionId: s.session_id,
@@ -2668,7 +2696,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetChatHistoryInput(), { session_id: sid });
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.soChatHistory(input, context, output);
+        await ctx.chatAccess.soChatHistory(input, output, context);
 
         // ===== 原始代码（保留作为参考）：仅保留一问(REQUEST)一答(RESPONSE)，未填充思考 Blocks =====
         /*
@@ -2859,7 +2887,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new GetChatHistoryInput(), { session_id: sid });
         const output = new GetChatHistoryOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.soChatHistory(input, context, output);
+        await ctx.chatAccess.soChatHistory(input, output, context);
         sendJson(res, 200, { exchanges: output.messages || [] });
 
       } else if (method === 'POST' && pathname === '/api/chat/send') {
@@ -2875,7 +2903,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
         const output = new SubmitWorkOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.submitWork(input, context, output);
+        await ctx.chatAccess.submitWork(input, output, context);
         sendJson(res, 200, { msgId: output.interact_id, workId: output.work_id });
 
       } else if (method === 'POST' && pathname === '/api/chat/stream') {
@@ -2912,8 +2940,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           clientClosed = true;
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           ).catch(() => {});
         });
 
@@ -2934,8 +2962,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
             },
           }),
-          new StreamContext(),
           new RegisterStreamOutput(),
+          new StreamContext(),
         );
 
         const onEvent = (evt: { event: string; data: Record<string, unknown> }) => {
@@ -2953,7 +2981,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const streamOutput = new OpenChatStreamOutput();
 
         try {
-          await ctx.chatAccess.openChatStream(streamInput, new ChatContext(), streamOutput, onEvent);
+          await ctx.chatAccess.openChatStream(streamInput, streamOutput, new ChatContext(), onEvent);
         } catch (err: any) {
           await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
             error_message: err?.message || 'Stream failed',
@@ -2962,8 +2990,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         } finally {
           await ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           );
           if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
         }
@@ -2974,7 +3002,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new DeleteSessionInput(), { session_ids: [sid] });
         const output = new DeleteSessionOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.deleteSession(input, context, output);
+        await ctx.chatAccess.deleteSession(input, output, context);
         sendJson(res, 200, { deleted_count: output.deleted_count });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/session/')) {
@@ -2983,7 +3011,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetSessionDetailOutput();
         const context = new ChatContext();
         try {
-          await ctx.chatAccess.soSessionDetail(input, context, output);
+          await ctx.chatAccess.soSessionDetail(input, output, context);
           sendJson(res, 200, { session: output.session });
         } catch (err: any) {
           sendJson(res, 404, { error: err?.message || 'Session not found' });
@@ -2994,7 +3022,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new SearchMessageInput(), { keyword: kw });
         const output = new SearchMessageOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.soMessage(input, context, output);
+        await ctx.chatAccess.soMessage(input, output, context);
         sendJson(res, 200, { messages: output.messages || [], total: output.total });
 
       } else if (method === 'POST' && /\/api\/chat\/message\/[^/]+\/pin$/.test(pathname)) {
@@ -3002,7 +3030,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new PinMessageInput(), { info_id: infoId });
         const output = new PinMessageOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.pinMessage(input, context, output);
+        await ctx.chatAccess.pinMessage(input, output, context);
         sendJson(res, 200, { pin: output.pin });
 
       } else if (method === 'POST' && /\/api\/chat\/cancel\//.test(pathname)) {
@@ -3010,7 +3038,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new CancelWorkInput(), { session_id: params.get('sessionId') || '', work_id: eid });
         const output = new CancelWorkOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.cancelWork(input, context, output);
+        await ctx.chatAccess.cancelWork(input, output, context);
         sendJson(res, 200, { cancelled: true });
 
       } else if (method === 'POST' && pathname === '/api/chat/confirm-intent') {
@@ -3036,8 +3064,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           clientClosed = true;
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           ).catch(() => {});
         });
 
@@ -3052,8 +3080,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
             },
           }),
-          new StreamContext(),
           new RegisterStreamOutput(),
+          new StreamContext(),
         );
 
         const input = Object.assign(new ConfirmIntentInput(), {
@@ -3066,7 +3094,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
 
         try {
-          await ctx.chatAccess.confirmIntent(input, context, output);
+          await ctx.chatAccess.confirmIntent(input, output, context);
         } catch (err: any) {
           await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
             error_message: err?.message || 'Confirm intent failed',
@@ -3075,8 +3103,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         } finally {
           await ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           );
           if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
         }
@@ -3103,8 +3131,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           clientClosed = true;
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           ).catch(() => {});
         });
 
@@ -3119,8 +3147,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
               if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
             },
           }),
-          new StreamContext(),
           new RegisterStreamOutput(),
+          new StreamContext(),
         );
 
         const input = Object.assign(new SubmitClarificationInput(), {
@@ -3132,7 +3160,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const context = new ChatContext();
 
         try {
-          await ctx.chatAccess.submitClarification(input, context, output);
+          await ctx.chatAccess.submitClarification(input, output, context);
         } catch (err: any) {
           await ctx.streamAccess.pushEvent(sessionId, 'error', 'CONTROL', {
             error_message: err?.message || 'Submit clarification failed',
@@ -3141,8 +3169,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         } finally {
           await ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Stream finished' }),
-            new StreamContext(),
             new CloseStreamOutput(),
+            new StreamContext(),
           );
           if (!clientClosed) { try { res.end(); } catch { /* ignore */ } }
         }
@@ -3152,7 +3180,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new CreateSessionInput(), { session_title: body.title || body.session_title || '' });
         const output = new CreateSessionOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.createSession(input, context, output);
+        await ctx.chatAccess.createSession(input, output, context);
         sendJson(res, 200, { session_id: output.session_id, session_title: output.session_title, created: output.created });
 
       } else if ((method === 'PUT' || method === 'POST') && /\/api\/chat\/session\/[^/]+\/title$/.test(pathname)) {
@@ -3161,7 +3189,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const input = Object.assign(new UpdateSessionTitleInput(), { session_id: sid, session_title: newTitle });
         const output = new UpdateSessionTitleOutput();
         const context = new ChatContext();
-        await ctx.chatAccess.updateSessionTitle(input, context, output);
+        await ctx.chatAccess.updateSessionTitle(input, output, context);
         sendJson(res, 200, { success: true, session_id: sid, session_title: newTitle });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/dag')) {
@@ -3332,7 +3360,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         await ctx.relationDb.delete('info_summary', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         await ctx.relationDb.delete('info_keyword', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         await ctx.relationDb.delete('info_vector', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
-        await ctx.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new InfoCoreContext(), new DelInfoGraphOutput());
+        await ctx.infoCore.delInfoGraph(Object.assign(new DelInfoGraphInput(), { info_ids: infoIds }), new DelInfoGraphOutput(), new InfoCoreContext());
         const affected = await ctx.relationDb.delete('info_raw', [{ field: 'info_id', operator: Operator.IN, value: infoIds }]);
         sendJson(res, 200, { deleted_count: affected });
 
@@ -3359,14 +3387,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'DELETE' && pathname === '/api/memory/tag-graph') {
         try {
           const out = new ClearGraphOutput();
-          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'Tag' }), new InfoCoreContext(), out);
+          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'Tag' }), out, new InfoCoreContext());
           sendJson(res, 200, { deleted_nodes: out.deleted_nodes });
         } catch (e: any) { sendJson(res, 500, { error: e?.message || '清理失败' }); }
 
       } else if (method === 'DELETE' && pathname === '/api/memory/keyword-graph') {
         try {
           const out = new ClearGraphOutput();
-          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'keyword' }), new InfoCoreContext(), out);
+          await ctx.infoCore.clearGraph(Object.assign(new ClearGraphInput(), { node_type: 'keyword' }), out, new InfoCoreContext());
           sendJson(res, 200, { deleted_nodes: out.deleted_nodes });
         } catch (e: any) { sendJson(res, 500, { error: e?.message || '清理失败' }); }
       // ---- Graph Search: text-based tag traversal ----
@@ -3397,7 +3425,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           const findTagNodeId = async (tagText: string): Promise<string> => {
             const out = new SelectGraphOutput();
             await ctx.graphDBAccess.selectGraph(
-              { target: GraphTarget.NODE, node_type: 'Tag' } as SelectGraphInput, new GraphContext(), out,
+              { target: GraphTarget.NODE, node_type: 'Tag' } as SelectGraphInput, out, new GraphContext(),
             );
             for (const node of out.list as Array<{ id: string; content: Record<string, unknown> }>) {
               if (node.content?.['tag'] === tagText) return node.id;
@@ -3414,7 +3442,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
                 { field: 'from_node_id', operator: Operator.IN, value: frontier },
                 { field: 'to_node_id', operator: Operator.IN, value: frontier, logic: 'OR' },
               ],
-            } as SelectGraphInput, new GraphContext(), out);
+            } as SelectGraphInput, out, new GraphContext());
             return (out.list as Array<{ id: string; from_node_id: string; to_node_id: string; weight: number; is_active: boolean }>)
               .filter((e) => !onlyActive || e.is_active)
               .slice(0, fanOutLimit);
@@ -3508,8 +3536,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         }
         await ctx.selfLearningAccess.startLearning(
           Object.assign(new StartLearningInput(), { learning_mode: backendMode }),
-          new SelfLearningContext(),
           new StartLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3522,8 +3550,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         if (!autoField) { sendJson(res, 400, { error: '未知的学习模式' }); return; }
         await ctx.selfLearningAccess.configSelfLearning(
           Object.assign(new ConfigSelfLearningInput(), { [autoField]: enabled }),
-          new SelfLearningContext(),
           new ConfigSelfLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3537,8 +3565,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const clamped = Math.max(0, Math.min(100, value));
         await ctx.selfLearningAccess.configSelfLearning(
           Object.assign(new ConfigSelfLearningInput(), { [field]: clamped }),
-          new SelfLearningContext(),
           new ConfigSelfLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3550,8 +3578,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const backendMode = mapLearningMode(storedMode) === 'ALL' ? 'DOCUMENT' : mapLearningMode(storedMode);
         await ctx.selfLearningAccess.stopLearning(
           Object.assign(new StopLearningInput(), { learning_mode: backendMode }),
-          new SelfLearningContext(),
           new StopLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3559,8 +3587,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const mode = String((body as Record<string, unknown>).mode || 'from-conversation');
         await ctx.selfLearningAccess.configSelfLearning(
           Object.assign(new ConfigSelfLearningInput(), { learning_mode: mode }),
-          new SelfLearningContext(),
           new ConfigSelfLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3568,8 +3596,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const randomFactor = Number((body as Record<string, unknown>).randomFactor ?? (body as Record<string, unknown>).random_factor ?? 50);
         await ctx.selfLearningAccess.configSelfLearning(
           Object.assign(new ConfigSelfLearningInput(), { random_factor: randomFactor }),
-          new SelfLearningContext(),
           new ConfigSelfLearningOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3579,8 +3607,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetLearningStatsOutput();
         await ctx.selfLearningAccess.soLearningStats(
           Object.assign(new GetLearningStatsInput(), { source: backendSource }),
-          new SelfLearningContext(),
           output,
+          new SelfLearningContext(),
         );
         const s = output.stats || {};
         sendJson(res, 200, {
@@ -3627,8 +3655,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetLearningResultsOutput();
         await ctx.selfLearningAccess.soLearningResults(
           Object.assign(new GetLearningResultsInput(), { type: 'KNOWLEDGE', source: backendSource, page_current: 1, page_size: 20 }),
-          new SelfLearningContext(),
           output,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { items: output.results || [] });
 
@@ -3638,8 +3666,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new GetLearningResultsOutput();
         await ctx.selfLearningAccess.soLearningResults(
           Object.assign(new GetLearningResultsInput(), { type: 'INSIGHT', source: backendSource, page_current: 1, page_size: 20 }),
-          new SelfLearningContext(),
           output,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { items: output.results || [] });
 
@@ -3650,7 +3678,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const priority = typeof body.priority === 'number' ? body.priority : undefined;
         const sendInput = Object.assign(new SendMQInput(), { data: { queue, payload, priority } });
         const sendOutput = new SendMQOutput();
-        await ctx.mqAccess.sendMQ(sendInput, new MQContext(), sendOutput);
+        await ctx.mqAccess.sendMQ(sendInput, sendOutput, new MQContext());
         sendJson(res, 200, { success: true, id: sendOutput.id });
 
       } else if (method === 'POST' && pathname === '/api/config/mq/consume') {
@@ -3658,11 +3686,11 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const autoAck = body.auto_ack !== false;
         const consumeInput = Object.assign(new ConsumeMQInput(), { queue });
         const consumeOutput = new ConsumeMQOutput();
-        await ctx.mqAccess.consumeMQ(consumeInput, new MQContext(), consumeOutput);
+        await ctx.mqAccess.consumeMQ(consumeInput, consumeOutput, new MQContext());
         if (consumeOutput.message && autoAck) {
           const ackInput = Object.assign(new AckMQInput(), { message_id: consumeOutput.message.id });
           const ackOutput = new AckMQOutput();
-          await ctx.mqAccess.ackMQ(ackInput, new MQContext(), ackOutput);
+          await ctx.mqAccess.ackMQ(ackInput, ackOutput, new MQContext());
           consumeOutput.message.status = 'COMPLETED';
         }
         sendJson(res, 200, { message: consumeOutput.message });
@@ -3682,7 +3710,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const queue = params.get('queue') || undefined;
         const statsInput = Object.assign(new GetQueueStatsInput(), { queue });
         const statsOutput = new GetQueueStatsOutput();
-        await ctx.mqAccess.soQueueStats(statsInput, new MQContext(), statsOutput);
+        await ctx.mqAccess.soQueueStats(statsInput, statsOutput, new MQContext());
         sendJson(res, 200, statsOutput.stats);
 
       } else if (method === 'GET' && pathname === '/api/config/mq/queues') {
@@ -3704,7 +3732,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       // ===== Library Routes =====
       } else if (method === 'GET' && pathname === '/api/library/paths') {
         const output = new SearchLibraryOutput();
-        await ctx.selfLearningAccess.soLibrary(new SearchLibraryInput(), new SelfLearningContext(), output);
+        await ctx.selfLearningAccess.soLibrary(new SearchLibraryInput(), output, new SelfLearningContext());
         sendJson(res, 200, { paths: (output.libraries || []).map(l => ({
           id: String(l.library_id || ''),
           name: String(l.library_name || ''),
@@ -3736,8 +3764,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const id = pathname.split('/api/library/paths/')[1];
         await ctx.selfLearningAccess.deleteLibrary(
           Object.assign(new DeleteLibraryInput(), { library_id: id }),
-          new SelfLearningContext(),
           new DeleteLibraryOutput(),
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { success: true });
 
@@ -3760,8 +3788,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const out = new SetLibraryEnabledOutput();
         await ctx.selfLearningAccess.setLibraryEnabled(
           Object.assign(new SetLibraryEnabledInput(), { library_id: id, enabled }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { id, enabled: out.enabled, fileCount: out.file_count, directoryCount: out.directory_count });
 
@@ -3776,8 +3804,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             cursor: params.get('cursor') || undefined,
             limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined,
           }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, {
           files: (out.files || []).map((f) => ({
@@ -3800,8 +3828,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const out = new GetLibraryTreeOutput();
         await ctx.selfLearningAccess.soLibraryTree(
           Object.assign(new GetLibraryTreeInput(), { library_id: id }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { tree: out.tree });
 
@@ -3810,8 +3838,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const out = new GetFileContentOutput();
         const ok = await ctx.selfLearningAccess.soFileContent(
           Object.assign(new GetFileContentInput(), { file_id: fileId }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         if (!ok) { sendJson(res, 404, { error: '文件不存在或不可读' }); return; }
         sendJson(res, 200, { fileName: out.file_name, content: out.content, learnedAt: out.learned_at || 0 });
@@ -3827,8 +3855,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             context_after: b.context_after ? String(b.context_after) : undefined,
             question: b.question ? String(b.question) : undefined,
           }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { result: out.result, llm_id: out.llm_id });
 
@@ -3846,8 +3874,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             result: String(b.result || ''),
             llm_id: b.llm_id ? String(b.llm_id) : undefined,
           }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, { id: out.id });
 
@@ -3856,8 +3884,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const out = new GetFileAnnotationsOutput();
         await ctx.selfLearningAccess.soFileAnnotations(
           Object.assign(new GetFileAnnotationsInput(), { file_id: fileId }),
-          new SelfLearningContext(),
           out,
+          new SelfLearningContext(),
         );
         sendJson(res, 200, {
           annotations: (out.annotations || []).map((a) => ({
@@ -3883,7 +3911,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           version: params.get('version') ? parseInt(params.get('version')!, 10) : undefined,
         });
         const output = new GetUserProfileOutput();
-        await ctx.userProfileAccess.soUserProfile(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soUserProfile(input, output, new UserProfileContext());
         sendJson(res, 200, output);
       } else if (method === 'POST' && pathname === '/api/profile/generate') {
         const input = Object.assign(new GenerateProfileInput(), {
@@ -3891,7 +3919,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           directions: Array.isArray(body.directions) ? body.directions : undefined,
         });
         const output = new GenerateProfileOutput();
-        await ctx.userProfileAccess.generateProfile(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.generateProfile(input, output, new UserProfileContext());
         sendJson(res, 200, output.profile);
       } else if (method === 'POST' && pathname === '/api/profile/preference') {
         const input = Object.assign(new SaveUserPreferenceInput(), {
@@ -3903,7 +3931,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           additional_preferences: body.additional_preferences,
         });
         const output = new SaveUserPreferenceOutput();
-        await ctx.userProfileAccess.saveUserPreference(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.saveUserPreference(input, output, new UserProfileContext());
         sendJson(res, 200, { success: true });
       } else if (method === 'GET' && pathname === '/api/profile/history') {
         const input = Object.assign(new GetProfileHistoryInput(), {
@@ -3911,7 +3939,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : undefined,
         });
         const output = new GetProfileHistoryOutput();
-        await ctx.userProfileAccess.soProfileHistory(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileHistory(input, output, new UserProfileContext());
         sendJson(res, 200, { history: output.history });
       } else if (method === 'GET' && pathname.startsWith('/api/profile/version/')) {
         const versionStr = pathname.split('/').pop()!;
@@ -3922,31 +3950,31 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           session_id: params.get('session_id') || undefined,
         });
         const output = new GetProfileByVersionOutput();
-        await ctx.userProfileAccess.soProfileByVersion(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileByVersion(input, output, new UserProfileContext());
         sendJson(res, 200, output.profile);
       } else if (method === 'GET' && pathname === '/api/profile/direction') {
         const input = new GetProfileDirectionInput();
         const output = new GetProfileDirectionOutput();
-        await ctx.userProfileAccess.soProfileDirection(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soProfileDirection(input, output, new UserProfileContext());
         sendJson(res, 200, { directions: output.directions });
       } else if (method === 'POST' && pathname === '/api/profile/reset') {
         const input = Object.assign(new ResetUserProfileInput(), {
           session_id: body.session_id || undefined,
         });
         const output = new ResetUserProfileOutput();
-        await ctx.userProfileAccess.resetUserProfile(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.resetUserProfile(input, output, new UserProfileContext());
         sendJson(res, 200, { success: true, reset_count: output.reset_count });
       } else if (method === 'POST' && pathname === '/api/profile/direction') {
         const input = Object.assign(new ConfigProfileDirectionInput(), {
           directions: Array.isArray(body.directions) ? body.directions : [],
         });
         const output = new ConfigProfileDirectionOutput();
-        await ctx.userProfileAccess.configProfileDirection(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.configProfileDirection(input, output, new UserProfileContext());
         sendJson(res, 200, { success: true });
       } else if (method === 'DELETE' && pathname === '/api/profile/direction') {
         const input = Object.assign(new DeleteProfileDirectionInput(), { direction_key: body.direction_key });
         const output = new DeleteProfileDirectionOutput();
-        await ctx.userProfileAccess.deleteProfileDirection(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.deleteProfileDirection(input, output, new UserProfileContext());
         sendJson(res, 200, { success: true });
       // ===== Monitor Routes =====
       } else if (method === 'GET' && pathname === '/api/monitor/health-all') {
@@ -4063,7 +4091,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { status, uptime: Math.round(process.uptime()), components });
 
       } else if (method === 'GET' && pathname === '/api/monitor/resources') {
-        const metrics = ctx.systemMonitorAccess.collect();
+        const resMonOut = new SoResourceOutput();
+        await ctx.systemMonitorAccess.soResource(new SoResourceInput(), resMonOut, new SystemMonitorContext());
+        const metrics = resMonOut.metrics;
         sendJson(res, 200, { cpu: metrics.cpu, memory: metrics.memory, disk: metrics.disk });
       } else if (method === 'GET' && pathname === '/api/analytics/token-trend') {
         // 按天聚合 llm_usage 的 token 用量（input_tokens + output_tokens）
@@ -4133,13 +4163,13 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           return;
         }
         const output = new DelLogOutput();
-        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { ids }), new LogContext(), output);
+        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { ids }), output, new LogContext());
         sendJson(res, 200, { deleted_count: output.affected_rows });
 
       } else if (method === 'DELETE' && pathname === '/api/monitor/logs/all') {
         const output = new DelLogOutput();
         // 使用未来时间作为 before_time，删除全部日志
-        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { before_time: Date.now() + 86400000 }), new LogContext(), output);
+        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { before_time: Date.now() + 86400000 }), output, new LogContext());
         sendJson(res, 200, { deleted_count: output.affected_rows });
 
       } else if (method === 'GET' && pathname === '/api/config/work') {
@@ -4401,7 +4431,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             similarity_threshold: threshold,
           });
           const output = new SimilarKInfoOutput();
-          await ctx.infoCore.similarKInfo(input, new InfoCoreContext(), output);
+          await ctx.infoCore.similarKInfo(input, output, new InfoCoreContext());
 
           sendJson(res, 200, {
             results: output.list.map((r: any) => ({
@@ -4426,83 +4456,143 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 
       // ---- Bookmark Routes ----
       } else if (method === 'GET' && pathname === '/api/bookmark/tree') {
-        sendJson(res, 200, { tree: ctx.bookmarkAccess.getTree() });
+        const bmCtx = new BookmarkContext();
+        const treeOut = new SoTreeOutput();
+        await ctx.bookmarkAccess.soTree(new SoTreeInput(), treeOut, bmCtx);
+        sendJson(res, 200, { tree: treeOut.tree });
 
       } else if (method === 'GET' && pathname === '/api/bookmark/folders') {
-        sendJson(res, 200, { folders: ctx.bookmarkAccess.getFlatFolders() });
+        const bmCtx = new BookmarkContext();
+        const foldersOut = new SoFlatFoldersOutput();
+        await ctx.bookmarkAccess.soFlatFolders(new SoFlatFoldersInput(), foldersOut, bmCtx);
+        sendJson(res, 200, { folders: foldersOut.folders });
 
       } else if (method === 'POST' && pathname === '/api/bookmark/folder') {
-        const folder = ctx.bookmarkAccess.createFolder(body.name || '', body.parent_id || '');
-        sendJson(res, 200, folder);
+        const bmCtx = new BookmarkContext();
+        const folderOut = new AddFolderOutput();
+        await ctx.bookmarkAccess.addFolder(
+          Object.assign(new AddFolderInput(), { name: body.name || '', parent_id: body.parent_id || '' }),
+          folderOut, bmCtx,
+        );
+        sendJson(res, 200, folderOut.folder);
 
       } else if (method === 'PUT' && pathname === '/api/bookmark/folder/update') {
-        ctx.bookmarkAccess.updateFolder(body.id || '', body.name || '');
+        const bmCtx = new BookmarkContext();
+        await ctx.bookmarkAccess.updateFolder(
+          Object.assign(new UpdateFolderInput(), { id: body.id || '', name: body.name || '' }),
+          new UpdateFolderOutput(), bmCtx,
+        );
         sendJson(res, 200, {});
 
       } else if (method === 'DELETE' && pathname === '/api/bookmark/folder') {
-        ctx.bookmarkAccess.deleteFolder(body.id || '');
+        const bmCtx = new BookmarkContext();
+        await ctx.bookmarkAccess.delFolder(
+          Object.assign(new DelFolderInput(), { id: body.id || '' }),
+          new DelFolderOutput(), bmCtx,
+        );
         sendJson(res, 200, {});
 
       } else if (method === 'POST' && pathname === '/api/bookmark/item') {
-        const item = ctx.bookmarkAccess.createItem(body.folder_id || '', body.title || '', body.url || '', body.favicon || '');
-        sendJson(res, 200, item);
+        const bmCtx = new BookmarkContext();
+        const itemOut = new AddItemOutput();
+        await ctx.bookmarkAccess.addItem(
+          Object.assign(new AddItemInput(), { folder_id: body.folder_id || '', title: body.title || '', url: body.url || '', favicon: body.favicon || '' }),
+          itemOut, bmCtx,
+        );
+        sendJson(res, 200, itemOut.item);
 
       } else if (method === 'PUT' && pathname === '/api/bookmark/item/update') {
-        ctx.bookmarkAccess.updateItem(body.id || '', body.title || '', body.url || '');
+        const bmCtx = new BookmarkContext();
+        await ctx.bookmarkAccess.updateItem(
+          Object.assign(new UpdateItemInput(), { id: body.id || '', title: body.title || '', url: body.url || '' }),
+          new UpdateItemOutput(), bmCtx,
+        );
         sendJson(res, 200, {});
 
       } else if (method === 'PUT' && pathname === '/api/bookmark/item/move') {
-        ctx.bookmarkAccess.moveItem(body.id || '', body.target_folder_id || '');
+        const bmCtx = new BookmarkContext();
+        await ctx.bookmarkAccess.moveItem(
+          Object.assign(new MoveItemInput(), { id: body.id || '', target_folder_id: body.target_folder_id || '' }),
+          new MoveItemOutput(), bmCtx,
+        );
         sendJson(res, 200, {});
 
       } else if (method === 'DELETE' && pathname === '/api/bookmark/item') {
-        ctx.bookmarkAccess.deleteItem(body.id || '');
+        const bmCtx = new BookmarkContext();
+        await ctx.bookmarkAccess.delItem(
+          Object.assign(new DelItemInput(), { id: body.id || '' }),
+          new DelItemOutput(), bmCtx,
+        );
         sendJson(res, 200, {});
-
       } else if (method === 'POST' && pathname === '/api/tool/id') {
         const count = Math.max(1, Math.min(Number(body.count ?? 1) || 1, 1000));
-        sendJson(res, 200, { ids: ctx.toolAccess.generateIds(count) });
+        const idsOut = new GenerateIdsOutput();
+        await ctx.toolAccess.generateIds(Object.assign(new GenerateIdsInput(), { count }), idsOut, new ToolContext());
+        sendJson(res, 200, { ids: idsOut.ids });
 
       } else if (method === 'POST' && pathname === '/api/tool/json/check') {
-        sendJson(res, 200, ctx.toolAccess.jsonCheck(body.text ?? ''));
+        const tOut = new JsonCheckOutput();
+        await ctx.toolAccess.jsonCheck(Object.assign(new JsonCheckInput(), { text: body.text ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/json/format') {
-        sendJson(res, 200, ctx.toolAccess.jsonFormat(body.text ?? '', Number(body.indent ?? 2)));
+        const tOut = new JsonFormatOutput();
+        await ctx.toolAccess.jsonFormat(Object.assign(new JsonFormatInput(), { text: body.text ?? '', indent: Number(body.indent ?? 2) }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/json/minify') {
-        sendJson(res, 200, ctx.toolAccess.jsonMinify(body.text ?? ''));
+        const tOut = new JsonMinifyOutput();
+        await ctx.toolAccess.jsonMinify(Object.assign(new JsonMinifyInput(), { text: body.text ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/xml/check') {
-        sendJson(res, 200, ctx.toolAccess.xmlCheck(body.text ?? ''));
+        const tOut = new XmlCheckOutput();
+        await ctx.toolAccess.xmlCheck(Object.assign(new XmlCheckInput(), { text: body.text ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/xml/format') {
-        sendJson(res, 200, ctx.toolAccess.xmlFormat(body.text ?? '', Number(body.indent ?? 2)));
+        const tOut = new XmlFormatOutput();
+        await ctx.toolAccess.xmlFormat(Object.assign(new XmlFormatInput(), { text: body.text ?? '', indent: Number(body.indent ?? 2) }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/xml/minify') {
-        sendJson(res, 200, ctx.toolAccess.xmlMinify(body.text ?? ''));
+        const tOut = new XmlMinifyOutput();
+        await ctx.toolAccess.xmlMinify(Object.assign(new XmlMinifyInput(), { text: body.text ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/regex') {
-        sendJson(res, 200, ctx.toolAccess.regexMatch(body.pattern ?? '', body.text ?? '', body.flags ?? ''));
+        const tOut = new RegexMatchOutput();
+        await ctx.toolAccess.regexMatch(Object.assign(new RegexMatchInput(), { pattern: body.pattern ?? '', text: body.text ?? '', flags: body.flags ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/cron/check') {
-        sendJson(res, 200, ctx.toolAccess.cronCheck(body.expression ?? body.cron ?? ''));
+        const tOut = new CronCheckOutput();
+        await ctx.toolAccess.cronCheck(Object.assign(new CronCheckInput(), { expr: body.expression ?? body.cron ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/cron/generate') {
-        sendJson(res, 200, ctx.toolAccess.cronGenerate({
-          second: body.second ?? '*', minute: body.minute ?? '*', hour: body.hour ?? '*',
-          day: body.day ?? '*', month: body.month ?? '*', week: body.week ?? '*',
-        }));
+        const tOut = new CronGenerateOutput();
+        await ctx.toolAccess.cronGenerate(Object.assign(new CronGenerateInput(), {
+          fields: {
+            second: body.second ?? '*', minute: body.minute ?? '*', hour: body.hour ?? '*',
+            day: body.day ?? '*', month: body.month ?? '*', week: body.week ?? '*',
+          },
+        }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/cron/parse') {
-        sendJson(res, 200, ctx.toolAccess.cronParse(body.expression ?? body.cron ?? ''));
+        const tOut = new CronParseOutput();
+        await ctx.toolAccess.cronParse(Object.assign(new CronParseInput(), { expr: body.expression ?? body.cron ?? '' }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
 
       } else if (method === 'POST' && pathname === '/api/tool/cron/next') {
-        sendJson(res, 200, ctx.toolAccess.cronNext(body.expression ?? body.cron ?? '', typeof body.from_ms === 'number' ? body.from_ms : undefined));
-
+        const tOut = new CronNextOutput();
+        await ctx.toolAccess.cronNext(Object.assign(new CronNextInput(), { expr: body.expression ?? body.cron ?? '', from_ms: typeof body.from_ms === 'number' ? body.from_ms : undefined }), tOut, new ToolContext());
+        sendJson(res, 200, tOut.result);
       // ---- Cron 定时任务管理 ----
       } else if (method === 'GET' && pathname === '/api/cron/tasks') {
         const output = new ListCronTasksOutput();
-        await ctx.cronAccess.listCronTasks(new CronContext(), output);
+        await ctx.cronAccess.listCronTasks(new ListCronTasksInput(), output, new CronContext());
         sendJson(res, 200, { tasks: output.tasks });
 
       } else if (method === 'GET' && pathname.startsWith('/api/cron/tasks/')) {
@@ -4514,12 +4604,12 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
             limit: params.get('limit') ? parseInt(params.get('limit')!, 10) : 50,
           });
           const output = new ListCronTaskRunsOutput();
-          await ctx.cronAccess.listCronTaskRuns(input, new CronContext(), output);
+          await ctx.cronAccess.listCronTaskRuns(input, output, new CronContext());
           sendJson(res, 200, { runs: output.runs });
         } else {
           const input = Object.assign(new GetCronTaskInput(), { name });
           const output = new GetCronTaskOutput();
-          await ctx.cronAccess.soCronTask(input, new CronContext(), output);
+          await ctx.cronAccess.soCronTask(input, output, new CronContext());
           sendJson(res, 200, { task: output.task });
         }
 
@@ -4527,21 +4617,21 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const name = pathname.split('/').filter(Boolean)[3];
         const input = Object.assign(new SetCronTaskEnabledInput(), { name, enabled: !!body.enabled });
         const output = new SetCronTaskEnabledOutput();
-        await ctx.cronAccess.setCronTaskEnabled(input, new CronContext(), output);
+        await ctx.cronAccess.setCronTaskEnabled(input, output, new CronContext());
         sendJson(res, 200, { task: output.task });
 
       } else if (method === 'PUT' && pathname.startsWith('/api/cron/tasks/')) {
         const name = pathname.split('/').filter(Boolean)[3];
         const input = Object.assign(new SetCronTaskInput(), { name, cron: body.cron });
         const output = new SetCronTaskOutput();
-        await ctx.cronAccess.setCronTask(input, new CronContext(), output);
+        await ctx.cronAccess.setCronTask(input, output, new CronContext());
         sendJson(res, 200, { task: output.task });
 
       } else if (method === 'POST' && /\/api\/cron\/tasks\/[^/]+\/trigger$/.test(pathname)) {
         const name = pathname.split('/').filter(Boolean)[3];
         const input = Object.assign(new TriggerCronTaskInput(), { name });
         const output = new TriggerCronTaskOutput();
-        await ctx.cronAccess.triggerCronTask(input, new CronContext(), output);
+        await ctx.cronAccess.triggerCronTask(input, output, new CronContext());
         sendJson(res, 200, { run: output.run });
 
       } else if (method === 'GET' && serveFrontend(res, pathname)) {
@@ -4607,7 +4697,7 @@ async function main() {
         // 停止 CDT
         import('./Base/CDTProvider/domain/types').then(async (t) => {
           const { CDTContext, StopCDTInput, StopCDTOutput } = t;
-          await ctx.cdtAccess.stopCDT(new StopCDTInput(), new CDTContext(), new StopCDTOutput());
+          await ctx.cdtAccess.stopCDT(new StopCDTInput(), new StopCDTOutput(), new CDTContext());
           fileLogger.info('[dev-server] CDT stopped');
         }).catch(() => {}).finally(finish);
       });

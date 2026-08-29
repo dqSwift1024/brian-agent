@@ -52,6 +52,9 @@ export interface CronTaskRunRecord {
 // ---------------------------------------------------------------------------
 
 /** listCronTasks 出参 */
+export class ListCronTasksInput extends Input {
+}
+
 export class ListCronTasksOutput extends Output {
   tasks: CronTaskRecord[] = [];
 }

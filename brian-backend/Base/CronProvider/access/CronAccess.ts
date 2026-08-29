@@ -30,6 +30,7 @@ import {
   TriggerCronTaskOutput,
   ListCronTaskRunsInput,
   ListCronTaskRunsOutput,
+  ListCronTasksInput,
 } from '../domain/types';
 
 export class CronAccess {
@@ -68,7 +69,7 @@ export class CronAccess {
   // 查询 / 更新
   // -------------------------------------------------------------------------
 
-  async listCronTasks(_context: CronContext, output: ListCronTasksOutput): Promise<boolean> {
+  async listCronTasks(_input: ListCronTasksInput, output: ListCronTasksOutput, _context: CronContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     output.tasks = this.service.listTasks();
     return true;
   }
