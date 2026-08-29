@@ -17,6 +17,7 @@ import BlockRenderer from '@/components/blocks/BlockRenderer.vue'
 // import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingModal from './ThinkingModal.vue'
 import EvalResultModal from './EvalResultModal.vue'
+import { readSSE } from '../../composables/useSSE'
 
 const sessionStore = useSessionStore()
 
@@ -232,28 +233,7 @@ async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-    const reader = res.body?.getReader()
-    if (!reader) throw new Error('No response body')
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) { // eslint-disable-line no-constant-condition
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const rawData = JSON.parse(line.slice(6))
-            handleStreamEvent(rawData, botMsgId)
-          } catch { /* ignore parse errors */ }
-        }
-      }
-    }
+    await readSSE(res, (rawData) => handleStreamEvent(rawData as Record<string, unknown>, botMsgId))
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       const errBlock: Block = {
@@ -328,26 +308,7 @@ async function handleClarificationSubmit() {
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-    const reader = res.body?.getReader()
-    if (!reader) throw new Error('No response body')
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) { // eslint-disable-line no-constant-condition
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            handleStreamEvent(JSON.parse(line.slice(6)), botMsgId)
-          } catch { /* ignore parse errors */ }
-        }
-      }
-    }
+    await readSSE(res, (rawData) => handleStreamEvent(rawData as Record<string, unknown>, botMsgId))
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       const errBlock: Block = {
@@ -518,28 +479,7 @@ async function handleSend(content: string, citingIds: string[]) {
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-    const reader = res.body?.getReader()
-    if (!reader) throw new Error('No response body')
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) { // eslint-disable-line no-constant-condition
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const rawData = JSON.parse(line.slice(6))
-            handleStreamEvent(rawData, botMsgId)
-          } catch { /* ignore parse errors */ }
-        }
-      }
-    }
+    await readSSE(res, (rawData) => handleStreamEvent(rawData as Record<string, unknown>, botMsgId))
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       const errBlock: Block = {

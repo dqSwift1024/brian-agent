@@ -17,13 +17,7 @@ import PageBreadcrumb from '@/components/layout/PageBreadcrumb.vue'
 import NeuralBackground from '@/components/layout/NeuralBackground.vue'
 import LibraryTreeItem from '@/components/LibraryTreeItem.vue'
 import { useI18nStore } from '@/stores/i18n'
-
-function formatFileSize(bytes: number): string {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
+import { formatFileSize, formatTokens, formatTime, formatTime as formatProfileTime } from '../utils/format'
 
 function renderMarkdown(content: string): string {
   const html = marked.parse(content) as string
@@ -137,13 +131,6 @@ function scrollToHistoryDate(dateKey: string) {
   document.getElementById(`history-group-${dateKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function formatTokens(n?: number): string {
-  if (!n) return '0'
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
-  return String(n)
-}
-
 // 历史页热力图：基于 chatList 按最后消息时间聚合当月每天的会话数量
 const historyHeatmapYear = ref(new Date().getFullYear())
 const historyHeatmapMonth = ref(new Date().getMonth() + 1)
@@ -242,12 +229,6 @@ async function confirmDelete() {
 }
 
 function openSession(sessionId: string) { router.push(`/?session=${sessionId}`) }
-
-function formatTime(ts: number) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 // Memory tab
 const memories = ref<MemoryItem[]>([])
@@ -1042,12 +1023,6 @@ function stabilityClass(s?: string): string {
   if (s === 'drifting') return 'bg-warning-orange/10 text-warning-orange'
   if (s === 'emerging') return 'bg-brian-blue/10 text-brian-blue'
   return ''
-}
-
-function formatProfileTime(ts: number): string {
-  if (!ts) return ''
-  const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 // Tag graph tab（Obsidian 风格力导向图）

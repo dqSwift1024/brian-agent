@@ -5,6 +5,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSessionStore } from '@/stores/session'
+import { formatTime as sharedFormatTime } from '../../utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -104,13 +105,10 @@ const effectiveCitingCount = computed(() => {
 })
 
 function formatTime(ts: number) {
+  if (props.mode === 'map') return sharedFormatTime(ts)
   if (!ts) return ''
   const d = new Date(ts)
-  const pad = (x: number) => String(x).padStart(2, '0')
-  if (props.mode === 'map') {
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function getSummary(cid: string): string {
