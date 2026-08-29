@@ -35,6 +35,7 @@ import { Operator, Direction } from '../../shared/query';
 import type { Condition, DataObject } from '../../shared/query';
 import { LLMContext, LLMProviderRecord, LLMCacheRecord, LLMAvailableRecord, AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput, DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput, TestLLMProviderInput, TestLLMProviderOutput, ListLLMInput, ListLLMOutput, AddLLMInput, AddLLMOutput, DelLLMInput, DelLLMOutput, UpdateLLMInput, UpdateLLMOutput, SoLLMInput, SoLLMOutput, ExecLLMInput, ExecLLMOutput, EmbedLLMInput, EmbedLLMOutput, GenLLMAttrInput, GenLLMAttrOutput, VisualizedLLMInput, VisualizedLLMOutput, EnableLLMInput, EnableLLMOutput, LLM_PROVIDER_TABLE, LLM_CACHE_TABLE, LLM_AVAILABLE_TABLE, LLM_USAGE_TABLE, LLM_CONFIG_TABLE } from '../domain/types';
 import { LLMStrategyFactory } from './strategies';
+import { newPatch, newRecord } from '../../shared/query';
 import {
   isModelsCacheFresh,
   extractRemoteErrorDetail,
@@ -154,34 +155,29 @@ export class LLMService {
     ]);
 
     if (existing) {
-      const currentCount = (existing.usage_count as number) ?? 0;
-      const currentInput = (existing.input_tokens as number) ?? 0;
-      const currentOutput = (existing.output_tokens as number) ?? 0;
       await this.relationDb.update(
         LLM_USAGE_TABLE,
-        [
-          { field: 'usage_count', value: currentCount + 1 },
-          { field: 'input_tokens', value: currentInput + inputTokens },
-          { field: 'output_tokens', value: currentOutput + outputTokens },
-          { field: 'updated', value: now },
-        ],
+        newPatch({
+          usage_count: ((existing.usage_count as number) ?? 0) + 1,
+          input_tokens: ((existing.input_tokens as number) ?? 0) + inputTokens,
+          output_tokens: ((existing.output_tokens as number) ?? 0) + outputTokens,
+        }),
         [
           { field: 'llm_available_id', operator: Operator.EQ, value: llmEnableId },
           { field: 'usage_date', operator: Operator.EQ, value: today },
         ],
       );
     } else {
-      const usageId = IdGenerator.generate();
-      await this.relationDb.insert(LLM_USAGE_TABLE, [
-        { field: 'id', value: usageId },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'llm_available_id', value: llmEnableId },
-        { field: 'usage_date', value: today },
-        { field: 'usage_count', value: 1 },
-        { field: 'input_tokens', value: inputTokens },
-        { field: 'output_tokens', value: outputTokens },
-      ]);
+      await this.relationDb.insert(
+        LLM_USAGE_TABLE,
+        newRecord({
+          llm_available_id: llmEnableId,
+          usage_date: today,
+          usage_count: 1,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+        }),
+      );
     }
   }
 

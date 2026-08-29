@@ -20,6 +20,7 @@ import { ComponentDisabledError, ValidationError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition } from '../../shared/query';
+import { buildLogConditions, rowToLogRecord } from '../domain/services/LogDomainService';
 import {
   LogContext,
   LogRecord,
@@ -268,29 +269,7 @@ export class LogService {
 
   /** 将数据库行转换为 LogRecord */
   private rowToLogRecord(row: Record<string, unknown>): LogRecord {
-    return {
-      id: String(row.id),
-      created: Number(row.created),
-      updated: Number(row.updated),
-      level: String(row.level),
-      source: String(row.source),
-      message: String(row.message),
-      trace_id: row.trace_id ? String(row.trace_id) : undefined,
-      caller: row.caller ? String(row.caller) : undefined,
-      work_id: row.work_id ? String(row.work_id) : undefined,
-      interact_id: row.interact_id ? String(row.interact_id) : undefined,
-      metadata: row.metadata ? this.parseMetadata(String(row.metadata)) : undefined,
-      elapsed_ms: row.elapsed_ms ? Number(row.elapsed_ms) : undefined,
-    };
-  }
-
-  /** 解析 metadata JSON 字符串 */
-  private parseMetadata(raw: string): Record<string, unknown> | undefined {
-    try {
-      return JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      return undefined;
-    }
+    return rowToLogRecord(row);
   }
 
   /** 获取日志（soLogById）- 从 SQLite 中查找第一条匹配记录 */
@@ -331,35 +310,9 @@ export class LogService {
   ): Promise<boolean> {
     this.ensureEnabled();
 
-    const conditions: Condition[] = [];
-    if (input.level) {
-      conditions.push({ field: 'level', operator: Operator.EQ, value: input.level });
-    }
-    if (input.source) {
-      conditions.push({ field: 'source', operator: Operator.EQ, value: input.source });
-    }
-    if (input.trace_id) {
-      conditions.push({ field: 'trace_id', operator: Operator.EQ, value: input.trace_id });
-    }
-    if (input.work_id) {
-      conditions.push({ field: 'work_id', operator: Operator.EQ, value: input.work_id });
-    }
-    if (input.interact_id) {
-      conditions.push({ field: 'interact_id', operator: Operator.EQ, value: input.interact_id });
-    }
-    if (input.keyword) {
-      conditions.push({ field: 'message', operator: Operator.LIKE, value: `%${input.keyword}%` });
-    }
-    if (input.start_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
-    }
-    if (input.end_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
-    }
-
+    const queryConditions = buildLogConditions(input);
     const orderBy = input.order_by ?? [{ field: 'created', direction: 'DESC' }];
     const page = input.page ?? { current: 1, size: 50 };
-    const queryConditions = conditions.length > 0 ? conditions : undefined;
 
     const rows = await this.relationDb.select(LOG_RECORD_TABLE, {
       conditions: queryConditions,

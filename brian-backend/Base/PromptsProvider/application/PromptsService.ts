@@ -23,6 +23,7 @@ import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, DataObject, OrderBy, Page } from '../../shared/query';
 import { PromptContext, PromptTemplateRecord, AddPromptInput, AddPromptOutput, DelPromptInput, DelPromptOutput, UpdatePromptInput, UpdatePromptOutput, GetPromptInput, GetPromptOutput, SoPromptInput, SoPromptOutput, ExecPromptInput, ExecPromptOutput, EnablePromptsInput, EnablePromptsOutput, ClosePromptInput, ClosePromptOutput, PROMPT_TEMPLATE_TABLE, PROMPT_TEMPLATE_USAGE_TABLE, PROMPTS_CONFIG_TABLE } from '../domain/types';
+import { renderPromptTemplate } from '../domain/services/PromptDomainService';
 
 /**
  * PromptsProvider 应用服务。
@@ -419,24 +420,13 @@ export class PromptsService {
       throw new ValidationError(`Prompt ${input.id} 已禁用`);
     }
 
-    // 2. 变量替换：先处理 {{#if var}}...{{/if}} 条件块（空变量移除整块），
-    //    再将 {{variable_name}} 替换为 variables 中对应的值
-    let rendered = stripEmptyConditionalBlocks(
+    // 2. 模板渲染（条件块清理 + 变量替换）：纯数据加工，委托领域服务
+    output.prompt = renderPromptTemplate(
       record.prompt_template,
       input.variables as Record<string, unknown>,
     );
-    for (const [key, value] of Object.entries(input.variables)) {
-      const pattern = new RegExp(
-        `\\{\\{\\s*${this.escapeRegExp(key)}\\s*\\}\\}`,
-        'g',
-      );
-      rendered = rendered.replace(pattern, () => String(value));
-    }
 
-    // 3. 生成最终的完整 Prompt 字符串
-    output.prompt = rendered;
-
-    // 4. 更新 prompt_template_usage 表当天的 usage_count + 1
+    // 3. 更新 prompt_template_usage 表当天的 usage_count + 1
     await this.upsertUsage(input.id);
 
     return true;

@@ -103,43 +103,31 @@ export class NativeLoader {
     const abiDir = `node${NativeLoader.abiTag}`;
     const fileName = `${moduleName}.node`;
 
-    // 优先级 1: prebuilt/{platform}-{arch}/node{abi}/module.node
-    const abiMatchPath = join(basePath, 'prebuilt', platformDir, abiDir, fileName);
-    if (existsSync(abiMatchPath)) {
-      return {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        exports: require(abiMatchPath),
-        resolvedPath: abiMatchPath,
-        matchType: 'abi',
-      };
-    }
+    // 探测优先级：abi 精确匹配 → 平台匹配 → 传统 out/ 路径
+    const candidates: Array<{ path: string; matchType: LoadResult['matchType'] }> = [
+      { path: join(basePath, 'prebuilt', platformDir, abiDir, fileName), matchType: 'abi' },
+      { path: join(basePath, 'prebuilt', platformDir, fileName), matchType: 'platform' },
+      { path: join(basePath, 'out', fileName), matchType: 'legacy' },
+    ];
 
-    // 优先级 2: prebuilt/{platform}-{arch}/module.node
-    const platformMatchPath = join(basePath, 'prebuilt', platformDir, fileName);
-    if (existsSync(platformMatchPath)) {
-      return {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        exports: require(platformMatchPath),
-        resolvedPath: platformMatchPath,
-        matchType: 'platform',
-      };
-    }
-
-    // 优先级 3: out/module.node（传统路径）
-    const legacyPath = join(basePath, 'out', fileName);
-    if (existsSync(legacyPath)) {
-      return {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        exports: require(legacyPath),
-        resolvedPath: legacyPath,
-        matchType: 'legacy',
-      };
+    for (const c of candidates) {
+      if (existsSync(c.path)) return NativeLoader.requireNative(c.path, c.matchType);
     }
 
     throw new Error(
       `Native module "${moduleName}" not found for platform "${platformDir}" (ABI ${NativeLoader.abiTag}). ` +
-      `Checked: ${abiMatchPath}, ${platformMatchPath}, ${legacyPath}. ` +
+      `Checked: ${candidates.map((c) => c.path).join(', ')}. ` +
       `Please add the prebuilt binary to the appropriate directory.`
     );
   }
-}
+
+  /**
+   * require 原生模块（运行时路径解析，无法静态导入）。
+   */
+  private static requireNative(
+    modulePath: string,
+    matchType: LoadResult['matchType'],
+  ): LoadResult {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return { exports: require(modulePath), resolvedPath: modulePath, matchType };
+  }}
