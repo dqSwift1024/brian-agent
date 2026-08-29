@@ -89,6 +89,14 @@
 4. 方法索引重生成（`npm run docs:index`）且包含本模块全部 access 方法。
 5. 对应 PRD 已同步（签名/方法名/新增方法章节/代码变更记录）。
 
-## 7. 模块重构样例（试点沉淀，随阶段 C 补充）
+## 7. 模块重构样例（试点沉淀）
 
-（占位：SoulProvider 与 LLMProvider 试点完成后，在此记录 before/after 对照。）
+### SoulProvider（2026-08-29，参考实现）
+
+**before**：`SoulService` 516 行，`soSoul` 单方法内混合关键词预查询（I/O）、usage 四维 Map 聚合、多字段排序、内存分页；`delSoul/updateSoul/soSoulById` 三处重复的"id/ids/conditions 目标条件解析"。
+
+**after**：
+- `domain/services/SoulDomainService.ts`（纯函数，零 I/O）：`resolveTargetConditions` / `buildKeywordConditions` / `aggregateUsageStats` / `getUsageValue` / `hasUsageSorting` / `sortByOrder` / `paginate`。全部可独立单测。
+- `SoulService` 只剩流程：ensureEnabled → 取数（I/O）→ 调领域服务 → 写回 Output。
+- 复用共享件：`newRecord/newPatch` 消除 insert/update 手写样板。
+- 验证：SoulProvider 58 用例全绿；PRD 已同步（签名五参 + 代码变更记录）。
