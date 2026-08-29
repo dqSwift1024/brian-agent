@@ -1,31 +1,27 @@
 /**
  * @fileoverview Core 层共享错误类型定义。
+ *
+ * 统一错误体系：Core 层不再自定义错误类层次，直接复用 Base/shared/errors 的
+ * ProviderError 体系（ValidationError / NotFoundError / DatabaseError 等），
+ * 并补充领域处理错误 ProcessingError。跨层 instanceof 判断因此始终可靠。
  */
-export { ProviderError } from '@brian-agent/base';
+export {
+  ProviderError,
+  ComponentDisabledError,
+  ValidationError,
+  NotFoundError,
+  DatabaseError,
+} from '@brian-agent/base';
 
-export class CoreError extends Error {
-  readonly error_code: string;
-  constructor(message: string, error_code: string) {
-    super(message);
-    this.name = this.constructor.name;
-    this.error_code = error_code;
-  }
-}
+import { ProviderError } from '@brian-agent/base';
 
-export class ValidationError extends CoreError {
+/**
+ * 领域处理错误。
+ *
+ * Core 层业务规则执行失败（如 LLM 结果解析失败、聚合计算失败）时抛出。
+ */
+export class ProcessingError extends ProviderError {
   constructor(message: string) {
-    super(message, 'CORE_VALIDATION_ERROR');
-  }
-}
-
-export class NotFoundError extends CoreError {
-  constructor(resource: string, id: string) {
-    super(`${resource} 不存在: ${id}`, 'CORE_NOT_FOUND');
-  }
-}
-
-export class ProcessingError extends CoreError {
-  constructor(message: string) {
-    super(message, 'CORE_PROCESSING_ERROR');
+    super(message, 'PROCESSING_ERROR');
   }
 }

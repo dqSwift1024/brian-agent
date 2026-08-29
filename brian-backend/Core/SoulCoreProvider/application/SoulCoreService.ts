@@ -38,6 +38,7 @@ import {
   SOUL_CORE_USAGE_TABLE,
 } from '../domain/types';
 import { ProcessingError } from '../../shared/errors';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { AgingEngine } from '../../shared/AgingEngine';
 import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
@@ -49,7 +50,8 @@ import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../sha
  * 上层不可直接操作 agent_soul / soul_core_usage / soul_opt_rule 表。
  */
 export class SoulCoreService {
-  private configCache: SoulCoreConfigRecord | null = null;
+  /** 单行配置仓 */
+  private readonly configStore: SingleRowConfigStore<SoulCoreConfigRecord>;
 
   /**
    * @param relationDb RelationDBProvider 接入层
@@ -62,7 +64,13 @@ export class SoulCoreService {
     private readonly soulAccess: SoulAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<SoulCoreConfigRecord>(this.relationDb, {
+      table: SOUL_CORE_CONFIG_TABLE,
+      toRecord: (raw) => this.toSoulCoreConfigRecord(raw),
+      defaults: [],
+    });
+  }
 
   /**
    * 初始化：确保默认配置存在。
@@ -320,9 +328,6 @@ export class SoulCoreService {
   // ===== 修改后的方法 =====
   async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getCoreConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined || input.llm_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -353,22 +358,7 @@ export class SoulCoreService {
       if (input.llm_id !== undefined) {
         updateData.push({ field: 'llm_id', value: input.llm_id || null });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing?.id) {
-        await this.relationDb.update(
-          SOUL_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(SOUL_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
-      this.configCache = null;
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getCoreConfig();
@@ -379,26 +369,9 @@ export class SoulCoreService {
   // 内部辅助 — 配置
   // ---------------------------------------------------------------------------
 
-  /** 加载第一行配置记录，写入缓存 */
-  private async loadCoreConfigRecord(): Promise<Record<string, unknown> | null> {
-    this.configCache = null;
-    const rows = await this.relationDb.select(SOUL_CORE_CONFIG_TABLE, {
-      page: { current: 1, size: 1 },
-    });
-    const raw = rows.length > 0 ? rows[0] : null;
-    this.configCache = raw
-      ? this.toSoulCoreConfigRecord(raw)
-      : null;
-    return raw;
-  }
-
-  /** 获取配置（优先缓存） */
+  /** 获取配置（单行配置仓：进程内缓存 + 空表回退默认值） */
   private async getCoreConfig(): Promise<SoulCoreConfigRecord | null> {
-    if (this.configCache !== null) {
-      return this.configCache;
-    }
-    await this.loadCoreConfigRecord();
-    return this.configCache;
+    return this.configStore.load();
   }
 
   // ---------------------------------------------------------------------------

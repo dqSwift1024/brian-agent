@@ -1,4 +1,5 @@
 import { Metrics, Report } from '@brian-agent/base';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import type { RelationDBAccess, MCPAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   Operator,
@@ -36,12 +37,28 @@ import {
 } from '../domain/types';
 
 export class MCPCoreService {
+  /** 单行配置仓 */
+  private readonly configStore: SingleRowConfigStore<McpCoreConfigRecord>;
+
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly mcpAccess: MCPAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<McpCoreConfigRecord>(this.relationDb, {
+      table: MCP_CORE_CONFIG_TABLE,
+      toRecord: (raw) => ({
+        id: String(raw.id),
+        created: Number(raw.created),
+        updated: Number(raw.updated),
+        regen_rate: Number(raw.regen_rate),
+        similarity_threshold: Number(raw.similarity_threshold ?? 0.7),
+        prompt_template_id: String(raw.prompt_template_id ?? ''),
+      }),
+      defaults: [{ field: 'prompt_template_id', value: '' }],
+    });
+  }
 
   /**
    * 为 Agent 匹配 MCP（三层统一匹配/选择逻辑，第3层除外：MCP 没有匹配不可用 MCP）。
@@ -119,9 +136,6 @@ export class MCPCoreService {
 
   async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -149,21 +163,7 @@ export class MCPCoreService {
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || '' });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing.id) {
-        await this.relationDb.update(
-          MCP_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(MCP_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getConfig();
@@ -171,19 +171,7 @@ export class MCPCoreService {
   }
 
   private async getConfig(): Promise<McpCoreConfigRecord> {
-    const rows = await this.relationDb.select(MCP_CORE_CONFIG_TABLE);
-    if (rows.length > 0) {
-      const r = rows[0];
-      return {
-        id: String(r.id),
-        created: Number(r.created),
-        updated: Number(r.updated),
-        regen_rate: Number(r.regen_rate),
-        similarity_threshold: Number(r.similarity_threshold ?? 0.7),
-        prompt_template_id: String(r.prompt_template_id ?? ''),
-      };
-    }
-    return {
+    return (await this.configStore.load()) ?? {
       id: '',
       created: 0,
       updated: 0,

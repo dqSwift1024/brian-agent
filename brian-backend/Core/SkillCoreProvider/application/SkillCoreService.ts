@@ -8,6 +8,7 @@
  */
 
 import { Metrics, Report } from '@brian-agent/base';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SkillAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -54,12 +55,21 @@ export class SkillCoreService {
    * @param llmAccess LLMProvider 接入层
    * @param promptsAccess PromptsProvider 接入层
    */
+  /** 单行配置仓 */
+  private readonly configStore: SingleRowConfigStore<SkillCoreConfigRecord>;
+
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly skillAccess: SkillAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<SkillCoreConfigRecord>(relationDb, {
+      table: SKILL_CORE_CONFIG_TABLE,
+      toRecord: (raw) => this.toSkillCoreConfigRecord(raw),
+      defaults: [{ field: 'prompt_template_id', value: '' }],
+    });
+  }
 
   // ---------------------------------------------------------------------------
   // matchSkill
@@ -294,9 +304,6 @@ export class SkillCoreService {
    */
   async configSkillCore(input: ConfigSkillCoreInput, output: ConfigSkillCoreOutput, _context: SkillCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -324,26 +331,7 @@ export class SkillCoreService {
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || '' });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing.id) {
-        await this.relationDb.update(
-          SKILL_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        const insertData: Array<{ field: string; value: unknown }> = [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ];
-        // 表约束 prompt_template_id NOT NULL，确保写入非空值
-        if (!insertData.some((d) => d.field === 'prompt_template_id')) {
-          insertData.push({ field: 'prompt_template_id', value: '' });
-        }
-        await this.relationDb.insert(SKILL_CORE_CONFIG_TABLE, insertData);
-      }
+      await this.configStore.upsert(updateData);
     }
 
     const config = await this.getConfig();
@@ -358,14 +346,7 @@ export class SkillCoreService {
 
   /** 获取 skill_core_config 记录（不存在则返回默认值） */
   private async getConfig(): Promise<SkillCoreConfigRecord> {
-    const row = await this.relationDb.selectOne(
-      SKILL_CORE_CONFIG_TABLE,
-      [],
-    );
-    if (row) {
-      return this.toSkillCoreConfigRecord(row);
-    }
-    return {
+    return (await this.configStore.load()) ?? {
       id: '',
       created: 0,
       updated: 0,

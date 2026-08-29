@@ -14,6 +14,7 @@ import {
   ValidationError,
   NotFoundError,
 } from '../../shared/errors';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 import type { LLMProviderQuotaRecord, LLMCoreConfigRecord } from '../domain/types';
@@ -54,7 +55,8 @@ import {
  * 提供 LLM 提供商选择（匹配 + 缓存）和配额/限额管理能力。
  */
 export class LLMCoreService {
-  private configCache: LLMCoreConfigRecord | null = null;
+  /** 单行配置仓（读取缓存 + upsert 收敛） */
+  private readonly configStore: SingleRowConfigStore<LLMCoreConfigRecord>;
 
   /**
    * @param relationDb RelationDBProvider 接入层实例
@@ -65,7 +67,13 @@ export class LLMCoreService {
     private readonly relationDb: RelationDBAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<LLMCoreConfigRecord>(relationDb, {
+      table: LLM_CORE_CONFIG_TABLE,
+      toRecord: (raw) => this.toCoreConfigRecord(raw),
+      defaults: [],
+    });
+  }
 
   /**
    * 初始化：确保默认配置存在。
@@ -300,9 +308,6 @@ export class LLMCoreService {
    */
   async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getCoreConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -330,22 +335,7 @@ export class LLMCoreService {
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing?.id) {
-        await this.relationDb.update(
-          LLM_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(LLM_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
-      this.configCache = null;
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getCoreConfig();
@@ -386,26 +376,9 @@ export class LLMCoreService {
   // Private helpers — 配置
   // ---------------------------------------------------------------------------
 
-  /** 加载第一行配置记录，写入缓存 */
-  private async loadCoreConfigRecord(): Promise<Record<string, unknown> | null> {
-    this.configCache = null;
-    const rows = await this.relationDb.select(LLM_CORE_CONFIG_TABLE, {
-      page: { current: 1, size: 1 },
-    });
-    const raw = rows.length > 0 ? rows[0] : null;
-    this.configCache = raw
-      ? this.toCoreConfigRecord(raw)
-      : null;
-    return raw;
-  }
-
-  /** 获取配置（优先缓存） */
+  /** 获取配置（单行配置仓：进程内缓存 + 空表回退默认值） */
   private async getCoreConfig(): Promise<LLMCoreConfigRecord | null> {
-    if (this.configCache !== null) {
-      return this.configCache;
-    }
-    await this.loadCoreConfigRecord();
-    return this.configCache;
+    return this.configStore.load();
   }
 
   /** 将原始 DB 行转为 LLMCoreConfigRecord */
