@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -37,29 +38,26 @@ export class WriterAgentAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async write(i: WriteInput, c: WriterAgentContext, o: WriteOutput): Promise<boolean> {
+  async execWrite(i: WriteInput, o: WriteOutput, c: WriterAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.write(i, c, o);
+    return this.service.execWrite(i, o, c, metrics, report);
   }
 
-  async saveUserProfile(
-    i: SaveUserProfileInput, c: WriterAgentContext, o: SaveUserProfileOutput,
+  async saveUserProfile(i: SaveUserProfileInput, o: SaveUserProfileOutput, c: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.saveUserProfile(i, c, o);
+    return this.service.saveUserProfile(i, o, c, metrics, report);
   }
 
-  async getUserProfile(
-    i: GetUserProfileInput, c: WriterAgentContext, o: GetUserProfileOutput,
+  async soUserProfile(i: GetUserProfileInput, o: GetUserProfileOutput, c: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getUserProfile(i, c, o);
+    return this.service.soUserProfile(i, o, c, metrics, report);
   }
 
-  async configWriterAgent(
-    i: ConfigWriterAgentInput, c: WriterAgentContext, o: ConfigWriterAgentOutput,
+  async configWriterAgent(i: ConfigWriterAgentInput, o: ConfigWriterAgentOutput, c: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configWriterAgent(i, c, o);
+    return this.service.configWriterAgent(i, o, c, metrics, report);
   }
 }

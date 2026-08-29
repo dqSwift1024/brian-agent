@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import {
   Operator, ValidationError,
@@ -45,35 +46,32 @@ export class SummaryAgentService {
     const buildOut = new BuildSystemAgentOutput();
     await this.agentBuilder.buildSystemAgent(
       Object.assign(new BuildSystemAgentInput(), { agent_type: 'SUMMARY' }),
-      new AgentBuilderContext(),
       buildOut,
+      new AgentBuilderContext(),
     );
     if (!buildOut.agent_id) throw new ValidationError('buildSummaryAgent failed');
 
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      new AgentLibraryContext(),
       getOut,
+      new AgentLibraryContext(),
     );
     const agent = getOut.agents[0];
     if (agent && builtinSoulId && agent.soul_id !== builtinSoulId) {
       await this.agentLibrary.updateAgent(
         Object.assign(new UpdateAgentInput(), { agent_id: buildOut.agent_id, soul_id: builtinSoulId }),
-        new AgentLibraryContext(),
         new UpdateAgentOutput(),
+        new AgentLibraryContext(),
       );
     }
     return true;
   }
 
-  async generateSummary(
-    input: GenerateSummaryInput,
-    _ctx: SummaryAgentContext,
-    output: GenerateSummaryOutput,
+  async generateSummary(input: GenerateSummaryInput, output: GenerateSummaryOutput, _ctx: SummaryAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const cfgOut = new SoInfoSummaryConfigOutput();
-    await this.infoCore.soInfoSummaryConfig(new SoInfoSummaryConfigInput(), new InfoCoreContext(), cfgOut);
+    await this.infoCore.soInfoSummaryConfig(new SoInfoSummaryConfigInput(), cfgOut, new InfoCoreContext());
     const config = cfgOut.config;
     if (!config || config.enable !== 1) {
       output.summary = '';
@@ -103,8 +101,8 @@ export class SummaryAgentService {
     const so = new SoSoulOutput();
     await this.soulAccess.soSoul(
       { conditions: [{ field: 'soul_brief', operator: Operator.EQ, value: SUMMARY_SOUL_BRIEF }] },
-      new SoulContext(),
       so,
+      new SoulContext(),
     );
     if (so.list.length > 0) return so.list[0].id;
 
@@ -117,18 +115,18 @@ export class SummaryAgentService {
           soul_usage: SUMMARY_SOUL_USAGE,
         },
       },
-      new SoulContext(),
       addOut,
+      new SoulContext(),
     );
     return addOut.id;
   }
 
   private async generateByLLM(info: string): Promise<string> {
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_type: 'SUMMARY' }),
-      new AgentLibraryContext(),
       getOut,
+      new AgentLibraryContext(),
     );
     const agent = getOut.agents.find((a) => a.enable);
     // LLM 绑定只存在于 LLMProvider 的 agent_llm，经 Core.matchLLM 解析
@@ -143,8 +141,8 @@ export class SummaryAgentService {
         const soulOut = new GetSoulOutput();
         await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: agent.soul_id }),
-          new SoulContext(),
           soulOut,
+          new SoulContext(),
         );
         system = soulOut.soul?.soul_content ?? soulOut.soul?.soul_brief ?? '';
       } catch {
@@ -158,8 +156,8 @@ export class SummaryAgentService {
         id: PROMPT_IDS.summary,
         variables: { task_content: info, soul: system },
       }),
-      new PromptContext(),
       promptOut,
+      new PromptContext(),
     );
     let prompt = okPrompt && promptOut.prompt ? promptOut.prompt : '';
     if (!prompt) {
@@ -175,8 +173,8 @@ export class SummaryAgentService {
         prompt,
         ...(system ? { system } : {}),
       }),
-      new LLMContext(),
       llmOut,
+      new LLMContext(),
     );
     if (!ok || !llmOut.result) return '';
     return llmOut.result.trim();
@@ -190,8 +188,8 @@ export class SummaryAgentService {
       const llmOut = new MatchLLMOutput();
       await this.llmCore?.matchLLM(
         Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        new LLMCoreContext(),
         llmOut,
+        new LLMCoreContext(),
       );
       return llmOut.llm_id || '';
     } catch {

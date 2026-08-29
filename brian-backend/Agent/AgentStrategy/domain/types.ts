@@ -39,7 +39,7 @@ export class MatchStrategyOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getStrategy
+// soStrategyById
 // ---------------------------------------------------------------------------
 
 export class GetStrategyInput extends Input {

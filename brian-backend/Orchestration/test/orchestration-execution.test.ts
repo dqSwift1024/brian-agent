@@ -691,15 +691,15 @@ describe('OrchestrationExecution', () => {
   });
 
   // =========================================================================
-  // 7. getExecQueueStatus
+  // 7. soExecQueueStatus
   // =========================================================================
-  describe('getExecQueueStatus', () => {
+  describe('soExecQueueStatus', () => {
     it('TC-GQS-001: 查询队列统计信息', async () => {
       const input = new GetOrchestrationExecQueueStatusInput();
       const output = new GetOrchestrationExecQueueStatusOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.getExecQueueStatus(input, ctx, output);
+      const result = await exec.soExecQueueStatus(input, ctx, output);
       expect(result).toBe(true);
       expect(output.queue_stats).toBeTruthy();
     });

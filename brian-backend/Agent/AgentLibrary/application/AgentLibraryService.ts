@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   IdGenerator, Operator, OperationType, ValidationError, NotFoundError,
@@ -60,10 +61,7 @@ export class AgentLibraryService {
     private readonly promptsAccess: PromptsAccess,
   ) {}
 
-  async addAgent(
-    input: AddAgentInput,
-    _ctx: AgentLibraryContext,
-    output: AddAgentOutput,
+  async addAgent(input: AddAgentInput, output: AddAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.agent_id) throw new ValidationError('agent_id 为必填');
     if (!VALID_AGENT_TYPES.includes(input.agent_type as typeof VALID_AGENT_TYPES[number])) {
@@ -101,10 +99,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async matchAgent(
-    input: MatchAgentInput,
-    _ctx: AgentLibraryContext,
-    output: MatchAgentOutput,
+  async matchAgent(input: MatchAgentInput, output: MatchAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const threshold = input.similarity_threshold ?? config?.similarity_threshold ?? 0.7;
@@ -206,10 +201,7 @@ export class AgentLibraryService {
   // }
 
   // ===== 修改后：新增 agent_purpose 持久化（对应前端"描述"字段）=====
-  async updateAgent(
-    input: UpdateAgentInput,
-    _ctx: AgentLibraryContext,
-    _output: UpdateAgentOutput,
+  async updateAgent(input: UpdateAgentInput, _output: UpdateAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(AGENT_TABLE, [
       { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
@@ -240,10 +232,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async delAgent(
-    input: DelAgentInput,
-    _ctx: AgentLibraryContext,
-    output: DelAgentOutput,
+  async delAgent(input: DelAgentInput, output: DelAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.ids || input.ids.length === 0) {
       output.deleted_count = 0;
@@ -288,10 +277,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async toggleAgent(
-    input: ToggleAgentInput,
-    _ctx: AgentLibraryContext,
-    output: ToggleAgentOutput,
+  async toggleAgent(input: ToggleAgentInput, output: ToggleAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.id) throw new ValidationError('id 为必填');
     const rows = await this.relationDb.select(AGENT_TABLE, {
@@ -352,10 +338,7 @@ export class AgentLibraryService {
   // }
 
   // ===== 修改后：新增按日统计 agent_usage_daily（upsert 当天计数）=====
-  async recordAgentUsage(
-    input: RecordAgentUsageInput,
-    ctx: AgentLibraryContext,
-    _output: RecordAgentUsageOutput,
+  async recordAgentUsage(input: RecordAgentUsageInput, _output: RecordAgentUsageOutput, ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.agent_id) throw new ValidationError('agent_id 为必填');
     const existing = await this.relationDb.selectOne(AGENT_TABLE, [
@@ -418,10 +401,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async getAgent(
-    input: GetAgentInput,
-    _ctx: AgentLibraryContext,
-    output: GetAgentOutput,
+  async soAgent(input: GetAgentInput, output: GetAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (input.agent_id) {
       const row = await this.relationDb.selectOne(AGENT_TABLE, [
@@ -510,10 +490,7 @@ export class AgentLibraryService {
   // }
 
   // ===== 修改后：按日统计表 agent_usage_daily 按 usage_date 日期窗口统计 =====
-  async ageAgent(
-    _input: AgeAgentInput,
-    _ctx: AgentLibraryContext,
-    output: AgeAgentOutput,
+  async ageAgent(_input: AgeAgentInput, output: AgeAgentOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const ruleRows = await this.relationDb.select(AGENT_OPT_RULE_TABLE);
     const rules = ruleRows.map((r) => ({
@@ -571,10 +548,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async getAgentRule(
-    input: GetAgentRuleInput,
-    _ctx: AgentLibraryContext,
-    output: GetAgentRuleOutput,
+  async soAgentRule(input: GetAgentRuleInput, output: GetAgentRuleOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(AGENT_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -592,10 +566,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async updateAgentRule(
-    input: UpdateAgentRuleInput,
-    _ctx: AgentLibraryContext,
-    _output: UpdateAgentRuleOutput,
+  async updateAgentRule(input: UpdateAgentRuleInput, _output: UpdateAgentRuleOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.operations?.length) throw new ValidationError('operations 为必填');
 
@@ -654,10 +625,7 @@ export class AgentLibraryService {
     return true;
   }
 
-  async configAgentLibrary(
-    input: ConfigAgentLibraryInput,
-    _ctx: AgentLibraryContext,
-    output: ConfigAgentLibraryOutput,
+  async configAgentLibrary(input: ConfigAgentLibraryInput, output: ConfigAgentLibraryOutput, _ctx: AgentLibraryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -682,8 +650,8 @@ export class AgentLibraryService {
           Object.assign(new SoPromptInput(), {
             conditions: [{ field: 'id', operator: Operator.EQ, value: input.prompt_template_id }],
           }),
-          new PromptContext(),
           soOut,
+          new PromptContext(),
         );
         if (!soOut.list?.length) {
           throw new ValidationError(`prompt_template_id 不存在: ${input.prompt_template_id}`);
@@ -730,7 +698,7 @@ export class AgentLibraryService {
         { field: 'enable', operator: Operator.EQ, value: 1 },
       ]);
       if (count > input.max_agent_count) {
-        void this.ageAgent(new AgeAgentInput(), new AgentLibraryContext(), new AgeAgentOutput());
+        void this.ageAgent(new AgeAgentInput(), new AgeAgentOutput(), new AgentLibraryContext());
       }
     }
     return true;
@@ -757,7 +725,7 @@ export class AgentLibraryService {
   private async resolveRankerLlm(): Promise<string> {
     try {
       const so = new SoLLMOutput();
-      await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), so);
+      await this.llmAccess.soLLM({} as SoLLMInput, so, new LLMContext());
       const list = (so.list || []).filter((l) => l.enable && l.llm_type !== 'embedding');
       const def = list.find((l) => l.is_default) ?? list[0];
       return def?.id ?? '';
@@ -795,8 +763,8 @@ export class AgentLibraryService {
           id,
           variables: { task_content: taskContent, candidates: candidatesJson },
         }),
-        new PromptContext(),
         promptOut,
+        new PromptContext(),
       );
       if (okPrompt && promptOut.prompt) prompt = promptOut.prompt;
     } catch { /* ignore prompt failure */ }
@@ -809,8 +777,8 @@ export class AgentLibraryService {
     const llmOut = new ExecLLMOutput();
     const okLlm = await this.llmAccess.execLLM(
       Object.assign(new ExecLLMInput(), { id: llmId, prompt }),
-      new LLMContext(),
       llmOut,
+      new LLMContext(),
     );
     if (!okLlm) return null;
 

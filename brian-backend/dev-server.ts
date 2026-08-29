@@ -3883,7 +3883,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           version: params.get('version') ? parseInt(params.get('version')!, 10) : undefined,
         });
         const output = new GetUserProfileOutput();
-        await ctx.userProfileAccess.getUserProfile(input, new UserProfileContext(), output);
+        await ctx.userProfileAccess.soUserProfile(input, new UserProfileContext(), output);
         sendJson(res, 200, output);
       } else if (method === 'POST' && pathname === '/api/profile/generate') {
         const input = Object.assign(new GenerateProfileInput(), {

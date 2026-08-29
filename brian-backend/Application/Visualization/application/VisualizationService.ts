@@ -395,27 +395,27 @@ export class VisualizationService {
 
     if (traceId) {
       try {
-        await this.agentExecution.getTrace(
+        await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: traceId }),
           new AgentExecutionContext(),
           traceOut,
         );
       } catch (err) {
-        this.logWarn('getTrace by trace_id failed', err);
-        output.trace = { error: 'getTrace failed', trace_id: traceId, agent_id: input.agent_id };
+        this.logWarn('soTrace by trace_id failed', err);
+        output.trace = { error: 'soTrace failed', trace_id: traceId, agent_id: input.agent_id };
         return true;
       }
     }
 
     if (!traceOut.trace && input.agent_id) {
       try {
-        await this.agentExecution.getTrace(
+        await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: input.agent_id }),
           Object.assign(new AgentExecutionContext(), { trace_id: input.agent_id }),
           traceOut,
         );
       } catch (err) {
-        this.logWarn('getTrace by agent_id failed', err);
+        this.logWarn('soTrace by agent_id failed', err);
       }
     }
 
@@ -739,7 +739,7 @@ export class VisualizationService {
       switch (resource_type.toLowerCase()) {
         case 'agent': {
           const out = new GetAgentOutput();
-          await this.agentLibrary.getAgent(
+          await this.agentLibrary.soAgent(
             Object.assign(new GetAgentInput(), { agent_id: resource_id }),
             new AgentLibraryContext(),
             out,
@@ -799,7 +799,7 @@ export class VisualizationService {
         }
         case 'trace': {
           const out = new GetTraceOutput();
-          await this.agentExecution.getTrace(
+          await this.agentExecution.soTrace(
             Object.assign(new GetTraceInput(), { trace_id: resource_id }),
             new AgentExecutionContext(),
             out,
@@ -819,7 +819,7 @@ export class VisualizationService {
         }
         case 'eval': {
           const out = new GetEvaluationOutput();
-          await this.evolutorAgent.getEvaluation(
+          await this.evolutorAgent.soEvaluation(
             Object.assign(new GetEvaluationInput(), { conditions: [{ field: 'eval_id', operator: Operator.EQ, value: resource_id }] }),
             new EvolutorAgentContext(),
             out,
@@ -829,7 +829,7 @@ export class VisualizationService {
         }
         case 'plan': {
           const out = new GetPlanOutput();
-          await this.plannerAgent.getPlan(
+          await this.plannerAgent.soPlan(
             Object.assign(new GetPlanInput(), { plan_id: resource_id }),
             new PlannerAgentContext(),
             out,
@@ -839,7 +839,7 @@ export class VisualizationService {
         }
         case 'context': {
           const out = new GetContextDetailOutput();
-          await this.agentContext.getContextDetail(
+          await this.agentContext.soContextDetail(
             Object.assign(new GetContextDetailInput(), { work_id: resource_id }),
             new AgentContextContext(),
             out,
@@ -1143,7 +1143,7 @@ export class VisualizationService {
     if (evalId) {
       try {
         const out = new GetEvaluationOutput();
-        await this.evolutorAgent.getEvaluation(
+        await this.evolutorAgent.soEvaluation(
           Object.assign(new GetEvaluationInput(), {
             conditions: [{ field: 'eval_id', operator: Operator.EQ, value: evalId }],
           }),
@@ -1187,7 +1187,7 @@ export class VisualizationService {
     try {
       if (k.includes('agent')) {
         const out = new GetAgentOutput();
-        await this.agentLibrary.getAgent(Object.assign(new GetAgentInput(), { agent_id: id }), new AgentLibraryContext(), out);
+        await this.agentLibrary.soAgent(Object.assign(new GetAgentInput(), { agent_id: id }), new AgentLibraryContext(), out);
         return out.agents[0] ?? { agent_id: id };
       }
       if (k.includes('llm')) return await this.resolveLLM(id);
@@ -1270,7 +1270,7 @@ export class VisualizationService {
 
     try {
       const out = new GetPlanOutput();
-      await this.plannerAgent.getPlan(
+      await this.plannerAgent.soPlan(
         Object.assign(new GetPlanInput(), { plan_id: planId }),
         new PlannerAgentContext(),
         out,
@@ -1290,7 +1290,7 @@ export class VisualizationService {
     for (const id of agentIds) {
       try {
         const out = new GetAgentOutput();
-        await this.agentLibrary.getAgent(
+        await this.agentLibrary.soAgent(
           Object.assign(new GetAgentInput(), { agent_id: id }),
           new AgentLibraryContext(),
           out,
@@ -1311,7 +1311,7 @@ export class VisualizationService {
     for (const id of execIds) {
       try {
         const out = new GetTraceOutput();
-        await this.agentExecution.getTrace(
+        await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: id }),
           new AgentExecutionContext(),
           out,
@@ -1339,7 +1339,7 @@ export class VisualizationService {
 
     try {
       const out = new GetAgentOutput();
-      await this.agentLibrary.getAgent(
+      await this.agentLibrary.soAgent(
         Object.assign(new GetAgentInput(), { agent_id: writerAgentId }),
         new AgentLibraryContext(),
         out,
@@ -1357,7 +1357,7 @@ export class VisualizationService {
 
     try {
       const out = new GetEvaluationOutput();
-      await this.evolutorAgent.getEvaluation(
+      await this.evolutorAgent.soEvaluation(
         Object.assign(new GetEvaluationInput(), {
           conditions: [],
         }),

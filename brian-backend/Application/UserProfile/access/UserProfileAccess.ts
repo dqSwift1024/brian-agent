@@ -74,11 +74,11 @@ export class UserProfileAccess {
     return this.service.getProfileDirection(i, c, o);
   }
 
-  async getUserProfile(
+  async soUserProfile(
     i: GetUserProfileInput, c: UserProfileContext, o: GetUserProfileOutput,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getUserProfile(i, c, o);
+    return this.service.soUserProfile(i, c, o);
   }
 
   async generateProfile(

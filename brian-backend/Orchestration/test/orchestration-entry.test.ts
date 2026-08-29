@@ -343,7 +343,7 @@ describe('OrchestrationEntry', () => {
     });
 
     it('TC-BWC-003: 无用户画像时构建上下文', async () => {
-      writerAgent.getUserProfile.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.user_profile = null; return true; });
+      writerAgent.soUserProfile.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.user_profile = null; return true; });
       const input = Object.assign(new BuildWorkContextInput(), {
         session_id: 's17', work_id: 'w3', user_query: '你好',
       });
@@ -354,8 +354,8 @@ describe('OrchestrationEntry', () => {
       expect(result).toBe(true);
     });
 
-    it('TC-BWC-006: WriterAgent.getUserProfile 调用失败', async () => {
-      writerAgent.getUserProfile.mockRejectedValueOnce(new Error('profile failed'));
+    it('TC-BWC-006: WriterAgent.soUserProfile 调用失败', async () => {
+      writerAgent.soUserProfile.mockRejectedValueOnce(new Error('profile failed'));
       const input = Object.assign(new BuildWorkContextInput(), {
         session_id: 's18', work_id: 'w4', user_query: '你好',
       });

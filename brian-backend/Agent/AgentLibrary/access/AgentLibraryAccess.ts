@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import { AgentLibrarySchemaInitializer } from '../infrastructure/AgentLibrarySchemaInitializer';
@@ -36,63 +37,58 @@ export class AgentLibraryAccess {
     await this.initPromise;
   }
 
-  async addAgent(i: AddAgentInput, c: AgentLibraryContext, o: AddAgentOutput): Promise<boolean> {
+  async addAgent(i: AddAgentInput, o: AddAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.addAgent(i, c, o);
+    return this.service.addAgent(i, o, c, metrics, report);
   }
 
-  async matchAgent(i: MatchAgentInput, c: AgentLibraryContext, o: MatchAgentOutput): Promise<boolean> {
+  async matchAgent(i: MatchAgentInput, o: MatchAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.matchAgent(i, c, o);
+    return this.service.matchAgent(i, o, c, metrics, report);
   }
 
-  async updateAgent(i: UpdateAgentInput, c: AgentLibraryContext, o: UpdateAgentOutput): Promise<boolean> {
+  async updateAgent(i: UpdateAgentInput, o: UpdateAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.updateAgent(i, c, o);
+    return this.service.updateAgent(i, o, c, metrics, report);
   }
 
-  async delAgent(i: DelAgentInput, c: AgentLibraryContext, o: DelAgentOutput): Promise<boolean> {
+  async delAgent(i: DelAgentInput, o: DelAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.delAgent(i, c, o);
+    return this.service.delAgent(i, o, c, metrics, report);
   }
 
-  async toggleAgent(i: ToggleAgentInput, c: AgentLibraryContext, o: ToggleAgentOutput): Promise<boolean> {
+  async toggleAgent(i: ToggleAgentInput, o: ToggleAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.toggleAgent(i, c, o);
+    return this.service.toggleAgent(i, o, c, metrics, report);
   }
 
-  async recordAgentUsage(i: RecordAgentUsageInput, c: AgentLibraryContext, o: RecordAgentUsageOutput): Promise<boolean> {
+  async recordAgentUsage(i: RecordAgentUsageInput, o: RecordAgentUsageOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.recordAgentUsage(i, c, o);
+    return this.service.recordAgentUsage(i, o, c, metrics, report);
   }
 
-  async getAgent(i: GetAgentInput, c: AgentLibraryContext, o: GetAgentOutput): Promise<boolean> {
+  async soAgent(i: GetAgentInput, o: GetAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.getAgent(i, c, o);
+    return this.service.soAgent(i, o, c, metrics, report);
   }
 
-  /** soAgent 别名，语义同 getAgent */
-  async soAgent(i: GetAgentInput, c: AgentLibraryContext, o: GetAgentOutput): Promise<boolean> {
-    return this.getAgent(i, c, o);
+  async ageAgent(i: AgeAgentInput, o: AgeAgentOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    await this.initPromise;
+    return this.service.ageAgent(i, o, c, metrics, report);
   }
 
-  async ageAgent(i: AgeAgentInput, c: AgentLibraryContext, o: AgeAgentOutput): Promise<boolean> {
+  async soAgentRule(i: GetAgentRuleInput, o: GetAgentRuleOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.ageAgent(i, c, o);
+    return this.service.soAgentRule(i, o, c, metrics, report);
   }
 
-  async getAgentRule(i: GetAgentRuleInput, c: AgentLibraryContext, o: GetAgentRuleOutput): Promise<boolean> {
+  async updateAgentRule(i: UpdateAgentRuleInput, o: UpdateAgentRuleOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.getAgentRule(i, c, o);
+    return this.service.updateAgentRule(i, o, c, metrics, report);
   }
 
-  async updateAgentRule(i: UpdateAgentRuleInput, c: AgentLibraryContext, o: UpdateAgentRuleOutput): Promise<boolean> {
+  async configAgentLibrary(i: ConfigAgentLibraryInput, o: ConfigAgentLibraryOutput, c: AgentLibraryContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.updateAgentRule(i, c, o);
-  }
-
-  async configAgentLibrary(i: ConfigAgentLibraryInput, c: AgentLibraryContext, o: ConfigAgentLibraryOutput): Promise<boolean> {
-    await this.initPromise;
-    return this.service.configAgentLibrary(i, c, o);
+    return this.service.configAgentLibrary(i, o, c, metrics, report);
   }
 }

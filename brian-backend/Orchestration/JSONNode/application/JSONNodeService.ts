@@ -749,7 +749,7 @@ export class JSONNodeService {
       try {
         const profileInput = Object.assign(new GetUserProfileInput(), { session_id: sessionId });
         const profileOutput = new GetUserProfileOutput();
-        await this.writerAgent.getUserProfile(profileInput, new WriterAgentContext(), profileOutput);
+        await this.writerAgent.soUserProfile(profileInput, new WriterAgentContext(), profileOutput);
         userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
       } catch { /* degrade gracefully */ }
     }

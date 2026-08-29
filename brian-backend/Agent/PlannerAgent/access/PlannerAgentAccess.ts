@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -35,30 +36,29 @@ export class PlannerAgentAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async plan(i: PlanInput, c: PlannerAgentContext, o: PlanOutput): Promise<boolean> {
+  async execPlan(i: PlanInput, o: PlanOutput, c: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.plan(i, c, o);
+    return this.service.execPlan(i, o, c, metrics, report);
   }
 
-  async planHierarchical(i: PlanHierarchicalInput, c: PlannerAgentContext, o: PlanHierarchicalOutput): Promise<boolean> {
+  async planHierarchical(i: PlanHierarchicalInput, o: PlanHierarchicalOutput, c: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.planHierarchical(i, c, o);
+    return this.service.planHierarchical(i, o, c, metrics, report);
   }
 
-  async replan(i: ReplanInput, c: PlannerAgentContext, o: ReplanOutput): Promise<boolean> {
+  async replan(i: ReplanInput, o: ReplanOutput, c: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.replan(i, c, o);
+    return this.service.replan(i, o, c, metrics, report);
   }
 
-  async getPlan(i: GetPlanInput, c: PlannerAgentContext, o: GetPlanOutput): Promise<boolean> {
+  async soPlan(i: GetPlanInput, o: GetPlanOutput, c: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.getPlan(i, c, o);
+    return this.service.soPlan(i, o, c, metrics, report);
   }
 
-  async configPlannerAgent(
-    i: ConfigPlannerAgentInput, c: PlannerAgentContext, o: ConfigPlannerAgentOutput,
+  async configPlannerAgent(i: ConfigPlannerAgentInput, o: ConfigPlannerAgentOutput, c: PlannerAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configPlannerAgent(i, c, o);
+    return this.service.configPlannerAgent(i, o, c, metrics, report);
   }
 }

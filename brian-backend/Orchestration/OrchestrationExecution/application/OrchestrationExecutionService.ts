@@ -1324,10 +1324,10 @@ export class OrchestrationExecutionService {
   }
 
   // -------------------------------------------------------------------------
-  // getExecQueueStatus
+  // soExecQueueStatus
   // -------------------------------------------------------------------------
 
-  async getExecQueueStatus(
+  async soExecQueueStatus(
     _input: GetOrchestrationExecQueueStatusInput,
     _context: OrchestrationExecutionContext,
     output: GetOrchestrationExecQueueStatusOutput,
@@ -1393,7 +1393,7 @@ export class OrchestrationExecutionService {
           worker_info: getWorkerOutput.worker ?? null,
         };
       } catch (err: unknown) {
-        this.logger?.error?.('getExecQueueStatus: MQ queue query failed', {
+        this.logger?.error?.('soExecQueueStatus: MQ queue query failed', {
           error: err instanceof Error ? err.message : String(err),
         });
       }

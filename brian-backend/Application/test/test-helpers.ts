@@ -95,7 +95,7 @@ export function createMockInfoCore(overrides: Record<string, any> = {}) {
 
 export function createMockWriterAgent(overrides: Record<string, any> = {}) {
   return {
-    getUserProfile: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soUserProfile: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.user_profile = { language: 'zh-CN', style: 'detailed' };
       return true;
     }),
@@ -116,7 +116,7 @@ export function createMockWriterAgent(overrides: Record<string, any> = {}) {
 
 export function createMockEvolutorAgent(overrides: Record<string, any> = {}) {
   return {
-    getEvaluation: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soEvaluation: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.evaluations = [];
       return true;
     }),
@@ -134,7 +134,7 @@ export function createMockEvolutorAgent(overrides: Record<string, any> = {}) {
       o.config = {};
       return true;
     }),
-    getEvolutionReport: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soEvolutionReport: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.report = {};
       return true;
     }),
@@ -279,7 +279,7 @@ export function createMockMQCore(overrides: Record<string, any> = {}) {
 
 export function createMockAgentLibrary(overrides: Record<string, any> = {}) {
   return {
-    getAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.agents = [];
       return true;
     }),
@@ -299,7 +299,7 @@ export function createMockAgentLibrary(overrides: Record<string, any> = {}) {
       o.total = 0;
       return true;
     }),
-    getAgentRule: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgentRule: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.rules = [];
       return true;
     }),
@@ -360,7 +360,7 @@ export function createMockAgentExecution(overrides: Record<string, any> = {}) {
       o.execution_id = 'mock-exec-id';
       return true;
     }),
-    getTrace: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soTrace: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.trace = { iterations: [] };
       return true;
     }),
@@ -381,7 +381,7 @@ export function createMockAgentExecution(overrides: Record<string, any> = {}) {
 export function createMockAgentStrategy(overrides: Record<string, any> = {}) {
   return {
     addStrategy: vi.fn().mockResolvedValue(true),
-    getStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soStrategyById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.strategies = [];
       return true;
     }),
@@ -411,7 +411,7 @@ export function createMockAgentContext(overrides: Record<string, any> = {}) {
       o.context = {};
       return true;
     }),
-    getContextDetail: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soContextDetail: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.context = {};
       return true;
     }),
@@ -433,7 +433,7 @@ export function createMockPlannerAgent(overrides: Record<string, any> = {}) {
       return true;
     }),
     replan: vi.fn().mockResolvedValue(true),
-    getPlan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soPlan: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.plan = {};
       return true;
     }),
@@ -454,7 +454,7 @@ export function createMockOrchestrationStrategy(overrides: Record<string, any> =
     executePlanningStrategy: vi.fn().mockResolvedValue(true),
     executePostProcessing: vi.fn().mockResolvedValue(true),
     addStrategy: vi.fn().mockResolvedValue(true),
-    getStrategy: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soStrategyById: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.strategies = [];
       return true;
     }),
@@ -485,7 +485,7 @@ export function createMockOrchestrationExecution(overrides: Record<string, any> 
       return true;
     }),
     cancelExecution: vi.fn().mockResolvedValue(true),
-    getExecQueueStatus: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soExecQueueStatus: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
       o.status = {};
       return true;
     }),

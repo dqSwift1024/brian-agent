@@ -1,4 +1,5 @@
 ﻿import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
+import { Metrics, Report } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
@@ -63,7 +64,7 @@ export class WriterAgentService {
 
   // ===== 原始 write 方法（保留作为参考） =====
   /*
-  async originalWrite(input: WriteInput, ctx: WriterAgentContext, output: WriteOutput): Promise<boolean> {
+  async originalWrite(input: WriteInput, output: WriteOutput, ctx: WriterAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
       work_id: input.work_id || ctx.work_id,
@@ -75,7 +76,7 @@ export class WriterAgentService {
 
     const libCtx = Object.assign(new AgentLibraryContext(), builderCtx);
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
       libCtx,
       getOut,
@@ -217,7 +218,7 @@ export class WriterAgentService {
   */
 
   // ===== 修改后的 write 方法：支持兼容兼顾 r.answer 和 r.result 字段 =====
-  async write(input: WriteInput, ctx: WriterAgentContext, output: WriteOutput): Promise<boolean> {
+  async execWrite(input: WriteInput, output: WriteOutput, ctx: WriterAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const startedAt = IdGenerator.now();
     const builderCtx = Object.assign(new AgentBuilderContext(), {
       session_id: ctx.session_id,
@@ -225,15 +226,15 @@ export class WriterAgentService {
       interact_id: input.interact_id || ctx.interact_id,
     });
     const buildOut = new BuildSystemAgentOutput();
-    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'WRITER' }), builderCtx, buildOut);
+    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'WRITER' }), buildOut, builderCtx);
     if (!buildOut.agent_id) throw new ValidationError('buildWriterAgent failed');
 
     const libCtx = Object.assign(new AgentLibraryContext(), builderCtx);
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      libCtx,
       getOut,
+      libCtx,
     );
     const agent = getOut.agents[0];
 
@@ -282,8 +283,8 @@ export class WriterAgentService {
             info: input.user_query,
             persist_snapshot: false,
           }),
-          new InfoCoreContext(),
           ctxOut,
+          new InfoCoreContext(),
         );
         // ===== 原始方法（保留作为参考）=====
         // contextExtra = (ctxOut.list ?? []).map((i) => String((i as { info?: string }).info ?? '')).join('\n');
@@ -348,8 +349,8 @@ export class WriterAgentService {
         const soulOut = new GetSoulOutput();
         await this.soulAccess.soSoulById(
           Object.assign(new GetSoulInput(), { id: agent.soul_id }),
-          new SoulContext(),
           soulOut,
+          new SoulContext(),
         );
         system = soulOut.soul?.soul_content ?? soulOut.soul?.soul_brief ?? '';
       } catch { /* ignore */ }
@@ -374,8 +375,8 @@ export class WriterAgentService {
         prompt,
         ...(system ? { system } : {}),
       }),
-      new LLMContext(),
       llmOut,
+      new LLMContext(),
     );
     if (!ok) {
       response = `Summary: ${input.user_query.slice(0, 100)}\n\nResults:\n${results}`;
@@ -398,8 +399,8 @@ export class WriterAgentService {
         work_id: input.work_id || ctx.work_id || '',
         interact_id: input.interact_id || ctx.interact_id || '',
       }),
-      libCtx,
       new RecordAgentUsageOutput(),
+      libCtx,
     );
 
     output.agent_id = buildOut.agent_id;
@@ -474,10 +475,7 @@ export class WriterAgentService {
     }
   }
 
-  async saveUserProfile(
-    input: SaveUserProfileInput,
-    _ctx: WriterAgentContext,
-    _output: SaveUserProfileOutput,
+  async saveUserProfile(input: SaveUserProfileInput, _output: SaveUserProfileOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) throw new ValidationError('session_id 为必填');
     if (input.language !== undefined && !LANGUAGE_ENUM.includes(input.language)) {
@@ -526,10 +524,7 @@ export class WriterAgentService {
     return true;
   }
 
-  async getUserProfile(
-    input: GetUserProfileInput,
-    _ctx: WriterAgentContext,
-    output: GetUserProfileOutput,
+  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const profile = await this.loadProfile(input.session_id);
     if (profile) {
@@ -544,10 +539,7 @@ export class WriterAgentService {
     return true;
   }
 
-  async configWriterAgent(
-    input: ConfigWriterAgentInput,
-    _ctx: WriterAgentContext,
-    output: ConfigWriterAgentOutput,
+  async configWriterAgent(input: ConfigWriterAgentInput, output: ConfigWriterAgentOutput, _ctx: WriterAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -574,8 +566,8 @@ export class WriterAgentService {
           Object.assign(new SoPromptInput(), {
             conditions: [{ field: 'id', operator: Operator.EQ, value: input.write_prompt_template_id }],
           }),
-          new PromptContext(),
           so,
+          new PromptContext(),
         );
         if (!so.list?.length) {
           throw new ValidationError(`prompt_template_id 不存在: ${input.write_prompt_template_id}`);
@@ -653,8 +645,8 @@ export class WriterAgentService {
       const promptOut = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
         promptOut,
+        new PromptContext(),
       );
       if (promptOut.prompt) return promptOut.prompt;
     } catch { /* use fallback prompt */ }
@@ -670,8 +662,8 @@ export class WriterAgentService {
       const llmOut = new MatchLLMOutput();
       await this.llmCore?.matchLLM(
         Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        new LLMCoreContext(),
         llmOut,
+        new LLMCoreContext(),
       );
       return llmOut.llm_id || '';
     } catch {

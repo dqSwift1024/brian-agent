@@ -432,15 +432,15 @@ describe('OrchestrationStrategy', () => {
   });
 
   // =========================================================================
-  // 7. getStrategy
+  // 7. soStrategyById
   // =========================================================================
-  describe('getStrategy', () => {
+  describe('soStrategyById', () => {
     it('TC-SS-001: 按 strategy_label 查询', async () => {
       const input = Object.assign(new GetOrchestrationStrategyInput(), { strategy_label: 'SIMPLE' });
       const output = new GetOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.getStrategy(input, ctx, output);
+      const result = await strategy.soStrategyById(input, ctx, output);
       expect(result).toBe(true);
       expect(output.strategies.length).toBeGreaterThanOrEqual(1);
     });
@@ -450,7 +450,7 @@ describe('OrchestrationStrategy', () => {
       const output = new GetOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.getStrategy(input, ctx, output);
+      const result = await strategy.soStrategyById(input, ctx, output);
       expect(result).toBe(true);
       expect(output.strategies).toEqual([]);
     });

@@ -305,14 +305,14 @@ describe('UserProfileService', () => {
   });
 
   // =====================================================================
-  // getUserProfile
+  // soUserProfile
   // =====================================================================
 
-  describe('getUserProfile', () => {
+  describe('soUserProfile', () => {
     it('TC-UP-025: Get global profile → returns complete profile data', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      const result = await service.getUserProfile(input, ctx(), output);
+      const result = await service.soUserProfile(input, ctx(), output);
 
       expect(result).toBe(true);
       expect(output.session_id).toBeUndefined();
@@ -327,7 +327,7 @@ describe('UserProfileService', () => {
       const input = new GetUserProfileInput();
       input.session_id = 'test-session-001';
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       expect(output.session_id).toBe('test-session-001');
     });
@@ -336,7 +336,7 @@ describe('UserProfileService', () => {
       const input = new GetUserProfileInput();
       input.version = 2;
       const output = new GetUserProfileOutput();
-      const result = await service.getUserProfile(input, ctx(), output);
+      const result = await service.soUserProfile(input, ctx(), output);
 
       expect(result).toBe(true);
     });
@@ -345,7 +345,7 @@ describe('UserProfileService', () => {
       const input = new GetUserProfileInput();
       input.session_id = 'test-session-028';
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       const lp = output.dimensions.language_preference as Record<string, unknown>;
       expect(lp).toBeDefined();
@@ -358,7 +358,7 @@ describe('UserProfileService', () => {
       const input = new GetUserProfileInput();
       input.session_id = 'test-session-029';
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       const rs = output.dimensions.reply_style as Record<string, unknown>;
       expect(rs).toBeDefined();
@@ -372,7 +372,7 @@ describe('UserProfileService', () => {
     it('TC-UP-030: knowledge_interest dimension', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       const ki = output.dimensions.knowledge_interest as Record<string, unknown>;
       expect(ki).toBeDefined();
@@ -382,7 +382,7 @@ describe('UserProfileService', () => {
     it('TC-UP-031: interaction_habit dimension', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       const ih = output.dimensions.interaction_habit as Record<string, unknown>;
       expect(ih).toBeDefined();
@@ -394,7 +394,7 @@ describe('UserProfileService', () => {
     it('TC-UP-032: feedback_sensitivity dimension', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       const fs = output.dimensions.feedback_sensitivity as Record<string, unknown>;
       expect(fs).toBeDefined();
@@ -406,7 +406,7 @@ describe('UserProfileService', () => {
     it('TC-UP-033: profile_summary present', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       expect(output.profile_summary).toBeTruthy();
       expect(typeof output.profile_summary).toBe('string');
@@ -415,7 +415,7 @@ describe('UserProfileService', () => {
     it('TC-UP-034: evolution_trend correct', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       expect(Array.isArray(output.evolution_trend)).toBe(true);
     });
@@ -423,7 +423,7 @@ describe('UserProfileService', () => {
     it('TC-UP-035: Profile not generated → dimensions populated, version=0, fallback summary', async () => {
       const input = new GetUserProfileInput();
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       expect(output.profile_version).toBe(0);
       expect(output.profile_summary).toBeTruthy();
@@ -438,19 +438,19 @@ describe('UserProfileService', () => {
       input.version = 999;
       const output = new GetUserProfileOutput();
 
-      const result = await service.getUserProfile(input, ctx(), output);
+      const result = await service.soUserProfile(input, ctx(), output);
       expect(result).toBe(true);
       expect(output.profile_version).toBe(0);
       expect(typeof output.dimensions).toBe('object');
     });
 
     it('TC-UP-038: Handles writerAgent failure gracefully', async () => {
-      vi.spyOn(writerAgent as any, 'getUserProfile').mockRejectedValueOnce(new Error('writer down'));
+      vi.spyOn(writerAgent as any, 'soUserProfile').mockRejectedValueOnce(new Error('writer down'));
 
       const input = new GetUserProfileInput();
       input.session_id = 'test-session-002';
       const output = new GetUserProfileOutput();
-      await service.getUserProfile(input, ctx(), output);
+      await service.soUserProfile(input, ctx(), output);
 
       expect(output.session_id).toBe('test-session-002');
       expect(output.dimensions).toBeDefined();
@@ -460,7 +460,7 @@ describe('UserProfileService', () => {
       const input = new GetUserProfileInput();
       input.session_id = 'non-existent-session-xyz';
       const output = new GetUserProfileOutput();
-      const result = await service.getUserProfile(input, ctx(), output);
+      const result = await service.soUserProfile(input, ctx(), output);
 
       expect(result).toBe(true);
       expect(output.session_id).toBe('non-existent-session-xyz');
@@ -1070,7 +1070,7 @@ describe('UserProfileService', () => {
       expect(dimsAfter.length).toBe(0);
 
       const getOut = new GetUserProfileOutput();
-      await service.getUserProfile(new GetUserProfileInput(), ctx(), getOut);
+      await service.soUserProfile(new GetUserProfileInput(), ctx(), getOut);
       expect(getOut.profile_version).toBe(0);
     });
 

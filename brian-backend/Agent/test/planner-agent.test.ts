@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { ValidationError } from '@brian-agent/base';
 import { PlannerAgentService } from '../PlannerAgent/application/PlannerAgentService';
@@ -31,17 +32,17 @@ describe('PlannerAgent', () => {
   describe('plan', () => {
     it('TC-PA-001: 生成单节点 DAG', async () => {
       const out = new PlanOutput();
-      await planner.plan(Object.assign(new PlanInput(), {
+      await planner.execPlan(Object.assign(new PlanInput(), {
         work_id: `w-${Math.random().toString(36).slice(2, 8)}`, interact_id: 'i1', task_content: 'simple task',
-      }), new PlannerAgentContext(), out);
+      }), out, new PlannerAgentContext());
       expect(out.plan_id).toBeTruthy();
       expect(out.task_dag.nodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it('TC-PA-002: plan_id 唯一', async () => {
       const o1 = new PlanOutput(); const o2 = new PlanOutput();
-      await planner.plan(Object.assign(new PlanInput(), { work_id: `wa-${Math.random().toString(36).slice(2, 8)}`, interact_id: 'i1', task_content: 'a' }), new PlannerAgentContext(), o1);
-      await planner.plan(Object.assign(new PlanInput(), { work_id: `wb-${Math.random().toString(36).slice(2, 8)}`, interact_id: 'i2', task_content: 'b' }), new PlannerAgentContext(), o2);
+      await planner.execPlan(Object.assign(new PlanInput(), { work_id: `wa-${Math.random().toString(36).slice(2, 8)}`, interact_id: 'i1', task_content: 'a' }), o1, new PlannerAgentContext());
+      await planner.execPlan(Object.assign(new PlanInput(), { work_id: `wb-${Math.random().toString(36).slice(2, 8)}`, interact_id: 'i2', task_content: 'b' }), o2, new PlannerAgentContext());
       expect(o1.plan_id).not.toBe(o2.plan_id);
     });
   });
@@ -74,7 +75,7 @@ describe('PlannerAgent', () => {
       const out = new PlanHierarchicalOutput();
       await p.planHierarchical(Object.assign(new PlanHierarchicalInput(), {
         work_id: 'w-ph-1', interact_id: 'i1', task_content: '研究Agent',
-      }), new PlannerAgentContext(), out);
+      }), out, new PlannerAgentContext());
 
       expect(out.plan_id).toBeTruthy();
       expect(out.task_dag.nodes.length).toBeLessThanOrEqual(10);
@@ -100,7 +101,7 @@ describe('PlannerAgent', () => {
       const out = new PlanHierarchicalOutput();
       await p.planHierarchical(Object.assign(new PlanHierarchicalInput(), {
         work_id: 'w-ph-2', interact_id: 'i2', task_content: '研究Agent',
-      }), new PlannerAgentContext(), out);
+      }), out, new PlannerAgentContext());
 
       expect(out.plan_id).toBeTruthy();
       expect(out.task_dag.nodes.length).toBeLessThanOrEqual(10);
@@ -110,19 +111,19 @@ describe('PlannerAgent', () => {
   describe('configPlannerAgent', () => {
     it('TC-PA-010: 配置可用', async () => {
       const out = new ConfigPlannerAgentOutput();
-      await planner.configPlannerAgent(new ConfigPlannerAgentInput(), new PlannerAgentContext(), out);
+      await planner.configPlannerAgent(new ConfigPlannerAgentInput(), out, new PlannerAgentContext());
       expect(out.config).toBeTruthy();
     });
 
     it('TC-PA-012: threshold 超出范围抛异常', async () => {
       await expect(planner.configPlannerAgent(Object.assign(new ConfigPlannerAgentInput(), { complexity_decompose_threshold: 150 }),
-        new PlannerAgentContext(), new ConfigPlannerAgentOutput())).rejects.toThrow(ValidationError);
+        new ConfigPlannerAgentOutput(), new PlannerAgentContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-PA-013: 更新 llm_id', async () => {
       const out = new ConfigPlannerAgentOutput();
       await planner.configPlannerAgent(Object.assign(new ConfigPlannerAgentInput(), { llm_id: 'planner-model-1' }),
-        new PlannerAgentContext(), out);
+        out, new PlannerAgentContext());
       expect(out.config?.llm_id).toBe('planner-model-1');
     });
   });

@@ -573,7 +573,7 @@ export class OrchestrationEntryService {
   //       session_id: input.session_id,
   //     });
   //     const profileOutput = new GetUserProfileOutput();
-  //     await this.writerAgent.getUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
+  //     await this.writerAgent.soUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
   //     userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
   //   } catch { /* degrade gracefully */ }
   //
@@ -658,7 +658,7 @@ export class OrchestrationEntryService {
         session_id: input.session_id,
       });
       const profileOutput = new GetUserProfileOutput();
-      await this.writerAgent.getUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
+      await this.writerAgent.soUserProfile(profileInput, Object.assign(new WriterAgentContext(), { session_id: input.session_id }) as WriterAgentContext, profileOutput);
       userProfile = profileOutput.user_profile as unknown as Record<string, unknown>;
     } catch { /* degrade gracefully */ }
 

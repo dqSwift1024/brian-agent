@@ -120,7 +120,7 @@ export class StopEvalScheduleInput extends Input {
 export class StopEvalScheduleOutput extends Output {}
 
 // ---------------------------------------------------------------------------
-// getEvaluation
+// soEvaluation
 // ---------------------------------------------------------------------------
 
 export class GetEvaluationInput extends Input {
@@ -136,7 +136,7 @@ export class GetEvaluationOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getEvolutionReport
+// soEvolutionReport
 // ---------------------------------------------------------------------------
 
 export class GetEvolutionReportInput extends Input {

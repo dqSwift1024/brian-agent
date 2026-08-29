@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
@@ -57,10 +58,7 @@ export class AgentStrategyService {
    * 多候选时优先用 prompt 模板做决策；无可用 LLM 绑定时回退第一候选。
    * Agent 层不自选 llm_model。
    */
-  async matchStrategy(
-    input: MatchStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: MatchStrategyOutput,
+  async matchStrategy(input: MatchStrategyInput, output: MatchStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(AGENT_STRATEGY_TABLE, {
       conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }],
@@ -110,8 +108,8 @@ export class AgentStrategyService {
               })),
             },
           }),
-          new PromptContext(),
           promptOut,
+          new PromptContext(),
         );
         // 无 agent llm 时不做模型调用，仅用模板渲染结果尝试解析（通常需 LLM）
         // 回退：选复杂度区间中位最接近的
@@ -138,10 +136,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async getStrategy(
-    input: GetStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: GetStrategyOutput,
+  async soStrategyById(input: GetStrategyInput, output: GetStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
       { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
@@ -154,10 +149,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async soStrategy(
-    input: SoStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: SoStrategyOutput,
+  async soStrategy(input: SoStrategyInput, output: SoStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(AGENT_STRATEGY_TABLE, {
       conditions: input.conditions,
@@ -168,10 +160,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async addStrategy(
-    input: AddStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: AddStrategyOutput,
+  async addStrategy(input: AddStrategyInput, output: AddStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_label) throw new ValidationError('strategy_label 为必填');
     if (input.suitable_complexity_min > input.suitable_complexity_max) {
@@ -202,10 +191,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async updateStrategy(
-    input: UpdateStrategyInput,
-    _ctx: AgentStrategyContext,
-    _output: UpdateStrategyOutput,
+  async updateStrategy(input: UpdateStrategyInput, _output: UpdateStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
       { field: 'strategy_id', operator: Operator.EQ, value: input.strategy_id },
@@ -234,10 +220,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async toggleStrategy(
-    input: ToggleStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: ToggleStrategyOutput,
+  async toggleStrategy(input: ToggleStrategyInput, output: ToggleStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     if (!input.strategy_id) throw new ValidationError('strategy_id 为必填');
     const row = await this.relationDb.selectOne(AGENT_STRATEGY_TABLE, [
@@ -259,10 +242,7 @@ export class AgentStrategyService {
     return true;
   }
 
-  async configAgentStrategy(
-    input: ConfigAgentStrategyInput,
-    _ctx: AgentStrategyContext,
-    output: ConfigAgentStrategyOutput,
+  async configAgentStrategy(input: ConfigAgentStrategyInput, output: ConfigAgentStrategyOutput, _ctx: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -296,8 +276,8 @@ export class AgentStrategyService {
           Object.assign(new SoPromptInput(), {
             conditions: [{ field: 'id', operator: Operator.EQ, value: input.match_prompt_template_id }],
           }),
-          new PromptContext(),
           so,
+          new PromptContext(),
         );
         if (!so.list?.length) {
           throw new ValidationError(`prompt_template_id 不存在: ${input.match_prompt_template_id}`);

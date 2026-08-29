@@ -93,11 +93,11 @@ export class OrchestrationExecutionAccess {
     return this.service.cancelExecution(i, c, o);
   }
 
-  async getExecQueueStatus(
+  async soExecQueueStatus(
     i: GetOrchestrationExecQueueStatusInput, c: OrchestrationExecutionContext, o: GetOrchestrationExecQueueStatusOutput,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getExecQueueStatus(i, c, o);
+    return this.service.soExecQueueStatus(i, c, o);
   }
 
   async configOrchestrationExecution(

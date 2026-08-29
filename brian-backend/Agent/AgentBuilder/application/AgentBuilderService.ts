@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, StreamAccess, Logger } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
@@ -65,10 +66,7 @@ export class AgentBuilderService {
     private readonly streamAccess?: StreamAccess,
   ) {}
 
-  async buildAgent(
-    input: BuildAgentInput,
-    ctx: AgentBuilderContext,
-    output: BuildAgentOutput,
+  async buildAgent(input: BuildAgentInput, output: BuildAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const libCtx = this.toLibCtx(ctx, input.interact_id);
@@ -99,8 +97,8 @@ export class AgentBuilderService {
           task_content: input.task_content,
           agent_type: 'WORKER',
         }),
-        libCtx,
         matchOut,
+        libCtx,
       );
       if (matchOut.agent_id) {
         await this.agentLibrary.recordAgentUsage(
@@ -109,8 +107,8 @@ export class AgentBuilderService {
             work_id: ctx.work_id || '',
             interact_id: input.interact_id || ctx.interact_id || '',
           }),
-          libCtx,
           new RecordAgentUsageOutput(),
+          libCtx,
         );
         output.agent_id = matchOut.agent_id;
 
@@ -134,8 +132,8 @@ export class AgentBuilderService {
         task_complexity: complexity,
         task_domain: domain,
       }),
-      new AgentStrategyContext(),
       strategyOut,
+      new AgentStrategyContext(),
     );
     if (!strategyOut.strategy_id) {
       throw new ValidationError('Failed to match strategy');
@@ -148,8 +146,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || ctx.interact_id || '',
       }),
-      new LLMCoreContext(),
       llmOut,
+      new LLMCoreContext(),
     );
     const llmId = llmOut.llm_id || analysisLlm || '';
 
@@ -160,8 +158,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
       }),
-      new SkillCoreContext(),
       skillOut,
+      new SkillCoreContext(),
     );
 
     const mcpOut = new MatchMcpOutput();
@@ -171,8 +169,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
       }),
-      new McpCoreContext(),
       mcpOut,
+      new McpCoreContext(),
     );
 
     const soulOut = new MatchSoulOutput();
@@ -184,8 +182,8 @@ export class AgentBuilderService {
         task_content: input.task_content,
         task_domain: analysis.domain,
       }),
-      new SoulCoreContext(),
       soulOut,
+      new SoulCoreContext(),
     );
 
     const agentName = this.generateAgentName(
@@ -210,8 +208,8 @@ export class AgentBuilderService {
         agent_name: agentName,
         agent_purpose: agentPurpose,
       }),
-      libCtx,
       addOut,
+      libCtx,
     );
     if (!ok) throw new ValidationError('addAgent failed');
 
@@ -223,8 +221,8 @@ export class AgentBuilderService {
           interact_id: input.interact_id || '',
           skill_id: sid.skill_id,
         }),
-        new SkillCoreContext(),
         new OptSkillOutput(),
+        new SkillCoreContext(),
       );
     }
     for (const mid of mcpOut.mcp_ids ?? []) {
@@ -235,8 +233,8 @@ export class AgentBuilderService {
           interact_id: input.interact_id || '',
           mcp_id: mid,
         }),
-        new McpCoreContext(),
         new OptMcpOutput(),
+        new McpCoreContext(),
       );
     }
     if (soulOut.soul_id) {
@@ -247,8 +245,8 @@ export class AgentBuilderService {
           interact_id: input.interact_id || '',
           soul_id: soulOut.soul_id,
         }),
-        new SoulCoreContext(),
         new OptSoulOutput(),
+        new SoulCoreContext(),
       );
     }
 
@@ -277,7 +275,7 @@ export class AgentBuilderService {
             mcps: mcpOut.mcp_ids || [],
           }),
         });
-        await this.infoCore.saveInfo(saveIn, new InfoCoreContext(), new SaveInfoOutput());
+        await this.infoCore.saveInfo(saveIn, new SaveInfoOutput(), new InfoCoreContext());
       } catch {
         /* best-effort */
       }
@@ -308,10 +306,7 @@ export class AgentBuilderService {
    * 由 EvolutorAgent 在 need_optimize 时调用。
    * 重新匹配策略与 Core 组件，并将变更写回 agent 表与 Core 绑定表。
    */
-  async optimizeAgent(
-    input: OptimizeAgentInput,
-    ctx: AgentBuilderContext,
-    output: OptimizeAgentOutput,
+  async optimizeAgent(input: OptimizeAgentInput, output: OptimizeAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     if (!config?.auto_optimize) {
@@ -321,10 +316,10 @@ export class AgentBuilderService {
 
     const libCtx = this.toLibCtx(ctx, input.interact_id);
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: input.agent_id }),
-      libCtx,
       getOut,
+      libCtx,
     );
     if (getOut.agents.length === 0) throw new NotFoundError('Agent', input.agent_id);
     const agent = getOut.agents[0];
@@ -337,8 +332,8 @@ export class AgentBuilderService {
         task_complexity: 50,
         task_domain: '',
       }),
-      new AgentStrategyContext(),
       strategyOut,
+      new AgentStrategyContext(),
     );
     if (strategyOut.strategy_id && strategyOut.strategy_id !== agent.strategy_id) {
       output.changes.push({
@@ -351,8 +346,8 @@ export class AgentBuilderService {
           agent_id: input.agent_id,
           strategy_id: strategyOut.strategy_id,
         }),
-        libCtx,
         new UpdateAgentOutput(),
+        libCtx,
       );
     }
 
@@ -364,8 +359,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
       }),
-      new LLMCoreContext(),
       llmOut,
+      new LLMCoreContext(),
     );
     if (llmOut.llm_id) {
       output.changes.push({ component: 'llm', from: '', to: llmOut.llm_id });
@@ -379,8 +374,8 @@ export class AgentBuilderService {
         interact_id: input.interact_id || '',
         soul_id: agent.soul_id,
       }),
-      new SoulCoreContext(),
       soulOut,
+      new SoulCoreContext(),
     );
     const newSoul = soulOut.current_soul_id || '';
     if (newSoul && newSoul !== agent.soul_id) {
@@ -390,8 +385,8 @@ export class AgentBuilderService {
           agent_id: input.agent_id,
           soul_id: newSoul,
         }),
-        libCtx,
         new UpdateAgentOutput(),
+        libCtx,
       );
     }
 
@@ -402,8 +397,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
       }),
-      new SkillCoreContext(),
       skillMatchOut,
+      new SkillCoreContext(),
     );
     // Skill/MCP 绑定变更维护在 Core 的 agent_skill / agent_mcp 表，Agent 层不直接访问；
     // 通过 SkillCore.matchSkill 触发重新评估并持久化绑定，optSkill 记录使用，
@@ -416,8 +411,8 @@ export class AgentBuilderService {
           interact_id: input.interact_id || '',
           skill_id: s.skill_id,
         }),
-        new SkillCoreContext(),
         new OptSkillOutput(),
+        new SkillCoreContext(),
       );
       output.changes.push({ component: 'skill', from: '', to: s.skill_id });
     }
@@ -429,8 +424,8 @@ export class AgentBuilderService {
         context_id: ctx.session_id || '',
         interact_id: input.interact_id || '',
       }),
-      new McpCoreContext(),
       mcpMatchOut,
+      new McpCoreContext(),
     );
     for (const mcpId of mcpMatchOut.mcp_ids ?? []) {
       await this.mcpCore.optMCP(
@@ -440,8 +435,8 @@ export class AgentBuilderService {
           interact_id: input.interact_id || '',
           mcp_id: mcpId,
         }),
-        new McpCoreContext(),
         new OptMcpOutput(),
+        new McpCoreContext(),
       );
       output.changes.push({ component: 'mcp', from: '', to: mcpId });
     }
@@ -459,10 +454,7 @@ export class AgentBuilderService {
     INTENT: { strategyLabel: 'CoT', signatureKey: 'intent', defaultName: '需求理解 Agent' },
   };
 
-  async buildSystemAgent(
-    input: BuildSystemAgentInput,
-    ctx: AgentBuilderContext,
-    output: BuildSystemAgentOutput,
+  async buildSystemAgent(input: BuildSystemAgentInput, output: BuildSystemAgentOutput, ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const agentType = input.agent_type;
     const config = AgentBuilderService.SYSTEM_AGENT_CONFIG[agentType];
@@ -471,10 +463,10 @@ export class AgentBuilderService {
     const libCtx = this.toLibCtx(ctx, '');
     if (!input.force_new) {
       const getOut = new GetAgentOutput();
-      await this.agentLibrary.getAgent(
+      await this.agentLibrary.soAgent(
         Object.assign(new GetAgentInput(), { agent_type: agentType }),
-        libCtx,
         getOut,
+        libCtx,
       );
       const found = getOut.agents.find((a) => a.enable);
       if (found) {
@@ -495,8 +487,8 @@ export class AgentBuilderService {
           context_id: ctx.session_id || '',
           interact_id: ctx.interact_id || '',
         }),
-        new SoulCoreContext(),
         soulOut,
+        new SoulCoreContext(),
       );
       soulId = soulOut.soul_id || '';
     }
@@ -514,8 +506,8 @@ export class AgentBuilderService {
         task_signature: buildTaskSignature(config.signatureKey, agentType.toLowerCase()),
         agent_name: config.defaultName || `系统-${agentType.charAt(0)}${agentType.slice(1).toLowerCase()}`,
       }),
-      libCtx,
       addOut,
+      libCtx,
     );
     if (!ok) throw new ValidationError(`addAgent failed for ${agentType}`);
     if (soulId) {
@@ -526,18 +518,15 @@ export class AgentBuilderService {
           interact_id: '',
           soul_id: soulId,
         }),
-        new SoulCoreContext(),
         new OptSoulOutput(),
+        new SoulCoreContext(),
       );
     }
     output.agent_id = agentId;
     return true;
   }
 
-  async configAgentBuilder(
-    input: ConfigAgentBuilderInput,
-    _ctx: AgentBuilderContext,
-    output: ConfigAgentBuilderOutput,
+  async configAgentBuilder(input: ConfigAgentBuilderInput, output: ConfigAgentBuilderOutput, _ctx: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -584,8 +573,8 @@ export class AgentBuilderService {
           context_id: '',
           interact_id: interactId || '',
         }),
-        new LLMCoreContext(),
         llmOut,
+        new LLMCoreContext(),
       );
     } catch {
       return '';
@@ -611,8 +600,8 @@ export class AgentBuilderService {
             id: config.task_analysis_prompt_template_id,
             variables,
           }),
-          new PromptContext(),
           promptOut,
+          new PromptContext(),
         );
         let prompt = okPrompt && promptOut.prompt ? promptOut.prompt : '';
         if (!prompt) {
@@ -623,8 +612,8 @@ export class AgentBuilderService {
           const llmOut = new ExecLLMOutput();
           await this.llmAccess.execLLM(
             Object.assign(new ExecLLMInput(), { id: llmId, prompt }),
-            new LLMContext(),
             llmOut,
+            new LLMContext(),
           );
           const analysis = parseJsonObject(llmOut.result);
           if (analysis) {
@@ -653,8 +642,8 @@ export class AgentBuilderService {
           { field: 'enable', operator: Operator.EQ, value: 1 },
         ],
       }),
-      new AgentStrategyContext(),
       so,
+      new AgentStrategyContext(),
     );
     return so.strategies?.[0]?.strategy_id ?? '';
   }
@@ -665,8 +654,8 @@ export class AgentBuilderService {
       Object.assign(new SoPromptInput(), {
         conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
       }),
-      new PromptContext(),
       out,
+      new PromptContext(),
     );
     if (!out.list?.length) throw new ValidationError(`prompt_template_id 不存在: ${id}`);
   }

@@ -528,7 +528,7 @@ export class LLMService {
     const provider = row as unknown as LLMProviderRecord;
 
     const start = Date.now();
-    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const strategy = LLMStrategyFactory.soStrategyById(provider);
     const req = strategy.buildTestRequest(provider);
 
     try {
@@ -742,7 +742,7 @@ export class LLMService {
       return true;
     }
 
-    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const strategy = LLMStrategyFactory.soStrategyById(provider);
     const req = strategy.buildListModelsRequest(provider);
     let parsedModels: Array<{
       modelId: string;
@@ -1315,7 +1315,7 @@ export class LLMService {
   //   if (!providerRow) throw new NotFoundError('LLMProvider', llm.llm_provider_id);
   //   const provider = providerRow as unknown as LLMProviderRecord;
   //   if (!provider.enable) throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
-  //   const strategy = LLMStrategyFactory.getStrategy(provider);
+  //   const strategy = LLMStrategyFactory.soStrategyById(provider);
   //   const req = strategy.buildChatRequest(provider, llm, input);
   //   const res = await this.fetchWithTimeout(req.url, { method: req.method, headers: req.headers, body: req.body }, EXEC_TIMEOUT_MS);
   //   ...
@@ -1542,7 +1542,7 @@ export class LLMService {
       }
     }
 
-    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const strategy = LLMStrategyFactory.soStrategyById(provider);
     const req = strategy.buildChatRequest(provider, llm, input);
 
     try {
@@ -1647,7 +1647,7 @@ export class LLMService {
       throw new ValidationError(`LLMProvider ${provider.id} 已禁用`);
     }
 
-    const strategy = LLMStrategyFactory.getStrategy(provider);
+    const strategy = LLMStrategyFactory.soStrategyById(provider);
     const req = strategy.buildEmbedRequest(provider, llm, input);
 
     try {

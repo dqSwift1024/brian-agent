@@ -91,7 +91,7 @@ export class ChatService {
     let userProfile: Record<string, unknown> | undefined;
     try {
       const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
-      await this.writerAgent.getUserProfile(
+      await this.writerAgent.soUserProfile(
         Object.assign(new (await this.getWriterProfileInputClass())(), {
           session_id: input.session_id,
         }),
@@ -141,7 +141,7 @@ export class ChatService {
 
     try {
       const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
-      await this.evolutorAgent.getEvaluation(
+      await this.evolutorAgent.soEvaluation(
         Object.assign(new (await this.getEvalInputClass())(), {
           conditions: [{ field: 'work_id', operator: 'EQ', value: workId }],
         }),
@@ -189,7 +189,7 @@ export class ChatService {
     let userProfile: Record<string, unknown> | undefined;
     try {
       const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
-      await this.writerAgent.getUserProfile(
+      await this.writerAgent.soUserProfile(
         Object.assign(new (await this.getWriterProfileInputClass())(), {
           session_id: input.session_id,
         }),
@@ -239,7 +239,7 @@ export class ChatService {
 
     try {
       const evalOut = Object.assign(new (await this.getEvalOutputClass())(), {});
-      await this.evolutorAgent.getEvaluation(
+      await this.evolutorAgent.soEvaluation(
         Object.assign(new (await this.getEvalInputClass())(), {
           conditions: [{ field: 'work_id', operator: 'EQ', value: workId }],
         }),
@@ -317,7 +317,7 @@ export class ChatService {
     let userProfile: Record<string, unknown> | undefined;
     try {
       const profileOut = Object.assign(new (await this.getWriterProfileOutputClass())(), {});
-      await this.writerAgent.getUserProfile(
+      await this.writerAgent.soUserProfile(
         Object.assign(new (await this.getWriterProfileInputClass())(), {
           session_id: input.session_id,
         }),

@@ -212,7 +212,7 @@ export class CancelExecutionOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getExecQueueStatus
+// soExecQueueStatus
 // ---------------------------------------------------------------------------
 
 export class GetOrchestrationExecQueueStatusInput extends Input {}

@@ -127,7 +127,7 @@ export class UserProfileService {
     return true;
   }
 
-  async getUserProfile(
+  async soUserProfile(
     input: GetUserProfileInput,
     _ctx: UserProfileContext,
     output: GetUserProfileOutput,
@@ -139,7 +139,7 @@ export class UserProfileService {
     if (sessionId) {
       try {
         const wo = new WriterGetUserProfileOutput();
-        await this.writerAgent.getUserProfile(
+        await this.writerAgent.soUserProfile(
           Object.assign(new WriterGetUserProfileInput(), { session_id: sessionId }),
           new WriterAgentContext(),
           wo,
@@ -972,7 +972,7 @@ export class UserProfileService {
     try {
       const evalOut = new GetEvaluationOutput();
       const evalIn = Object.assign(new GetEvaluationInput(), {});
-      await this.evolutorAgent.getEvaluation(evalIn, new EvolutorAgentContext(), evalOut);
+      await this.evolutorAgent.soEvaluation(evalIn, new EvolutorAgentContext(), evalOut);
       const evaluations = (evalOut as any).evaluations ?? [];
       evaluationCount = evaluations.length;
       if (evaluationCount > 0) {

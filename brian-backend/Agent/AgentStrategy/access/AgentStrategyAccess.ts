@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import { AgentStrategySchemaInitializer } from '../infrastructure/AgentStrategySchemaInitializer';
@@ -30,52 +31,45 @@ export class AgentStrategyAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async matchStrategy(
-    i: MatchStrategyInput, c: AgentStrategyContext, o: MatchStrategyOutput,
+  async matchStrategy(i: MatchStrategyInput, o: MatchStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.matchStrategy(i, c, o);
+    return this.service.matchStrategy(i, o, c, metrics, report);
   }
 
-  async getStrategy(
-    i: GetStrategyInput, c: AgentStrategyContext, o: GetStrategyOutput,
+  async soStrategyById(i: GetStrategyInput, o: GetStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getStrategy(i, c, o);
+    return this.service.soStrategyById(i, o, c, metrics, report);
   }
 
-  async soStrategy(
-    i: SoStrategyInput, c: AgentStrategyContext, o: SoStrategyOutput,
+  async soStrategy(i: SoStrategyInput, o: SoStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.soStrategy(i, c, o);
+    return this.service.soStrategy(i, o, c, metrics, report);
   }
 
-  async addStrategy(
-    i: AddStrategyInput, c: AgentStrategyContext, o: AddStrategyOutput,
+  async addStrategy(i: AddStrategyInput, o: AddStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.addStrategy(i, c, o);
+    return this.service.addStrategy(i, o, c, metrics, report);
   }
 
-  async updateStrategy(
-    i: UpdateStrategyInput, c: AgentStrategyContext, o: UpdateStrategyOutput,
+  async updateStrategy(i: UpdateStrategyInput, o: UpdateStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.updateStrategy(i, c, o);
+    return this.service.updateStrategy(i, o, c, metrics, report);
   }
 
-  async toggleStrategy(
-    i: ToggleStrategyInput, c: AgentStrategyContext, o: ToggleStrategyOutput,
+  async toggleStrategy(i: ToggleStrategyInput, o: ToggleStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.toggleStrategy(i, c, o);
+    return this.service.toggleStrategy(i, o, c, metrics, report);
   }
 
-  async configAgentStrategy(
-    i: ConfigAgentStrategyInput, c: AgentStrategyContext, o: ConfigAgentStrategyOutput,
+  async configAgentStrategy(i: ConfigAgentStrategyInput, o: ConfigAgentStrategyOutput, c: AgentStrategyContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configAgentStrategy(i, c, o);
+    return this.service.configAgentStrategy(i, o, c, metrics, report);
   }
 }

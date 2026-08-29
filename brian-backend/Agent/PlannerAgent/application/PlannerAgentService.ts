@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
@@ -76,7 +77,7 @@ export class PlannerAgentService {
     private readonly llmCore?: LLMCoreAccess,
   ) {}
 
-  async plan(input: PlanInput, ctx: PlannerAgentContext, output: PlanOutput): Promise<boolean> {
+  async execPlan(input: PlanInput, output: PlanOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const planCtx = await this.decomposeOnce(input, ctx);
     output.plan_id = await this.persistPlan(planCtx.dag, input.work_id, input.interact_id, ctx, '');
     output.task_dag = planCtx.dag;
@@ -88,10 +89,7 @@ export class PlannerAgentService {
    * 层级规划：LLM 单次产出层级 DAG 后，对仍复杂（complexity >= threshold）的叶子任务
    * 递归调用 LLM 继续拆解，直到所有叶子任务为「小任务」或达到最大深度。
    */
-  async planHierarchical(
-    input: PlanHierarchicalInput,
-    ctx: PlannerAgentContext,
-    output: PlanHierarchicalOutput,
+  async planHierarchical(input: PlanHierarchicalInput, output: PlanHierarchicalOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const planCtx = await this.decomposeOnce(input, ctx);
     const maxDepth = input.max_depth ?? MAX_DECOMPOSE_DEPTH;
@@ -136,14 +134,14 @@ export class PlannerAgentService {
       interact_id: input.interact_id || ctx.interact_id,
     });
     const buildOut = new BuildSystemAgentOutput();
-    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'PLANNER' }), builderCtx, buildOut);
+    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'PLANNER' }), buildOut, builderCtx);
     if (!buildOut.agent_id) throw new ValidationError('buildPlannerAgent failed');
 
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      Object.assign(new AgentLibraryContext(), builderCtx),
       getOut,
+      Object.assign(new AgentLibraryContext(), builderCtx),
     );
     const agent = getOut.agents[0];
     if (!agent) throw new NotFoundError('PlannerAgent', buildOut.agent_id);
@@ -163,8 +161,8 @@ export class PlannerAgentService {
           info: input.task_content,
           persist_snapshot: false,
         }),
-        new InfoCoreContext(),
         ctxOut,
+        new InfoCoreContext(),
       );
       return formatContextCategories(ctxOut);
     } catch {
@@ -372,7 +370,7 @@ export class PlannerAgentService {
    */
   private static readonly MAX_TOTAL_REPLAN_DEPTH = 4;
 
-  async replan(input: ReplanInput, ctx: PlannerAgentContext, output: ReplanOutput): Promise<boolean> {
+  async replan(input: ReplanInput, output: ReplanOutput, ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const row = await this.relationDb.selectOne(AGENT_PLAN_TABLE, [
       { field: 'plan_id', operator: Operator.EQ, value: input.plan_id },
     ]);
@@ -426,7 +424,7 @@ export class PlannerAgentService {
     return true;
   }
 
-  async getPlan(input: GetPlanInput, _ctx: PlannerAgentContext, output: GetPlanOutput): Promise<boolean> {
+  async soPlan(input: GetPlanInput, output: GetPlanOutput, _ctx: PlannerAgentContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     if (input.plan_id) {
       const row = await this.relationDb.selectOne(AGENT_PLAN_TABLE, [
         { field: 'plan_id', operator: Operator.EQ, value: input.plan_id },
@@ -445,10 +443,7 @@ export class PlannerAgentService {
     return true;
   }
 
-  async configPlannerAgent(
-    input: ConfigPlannerAgentInput,
-    _ctx: PlannerAgentContext,
-    output: ConfigPlannerAgentOutput,
+  async configPlannerAgent(input: ConfigPlannerAgentInput, output: ConfigPlannerAgentOutput, _ctx: PlannerAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -525,8 +520,8 @@ export class PlannerAgentService {
           prompt,
           ...(system ? { system } : {}),
         }),
-        new LLMContext(),
         llmOut,
+        new LLMContext(),
       );
       if (!ok || !llmOut.result) return null;
 
@@ -653,8 +648,8 @@ export class PlannerAgentService {
           info_creator_id: planId,
           info: JSON.stringify(dag),
         }),
-        new InfoCoreContext(),
         new SaveInfoOutput(),
+        new InfoCoreContext(),
       );
     } catch { /* best-effort */ }
   }
@@ -665,8 +660,8 @@ export class PlannerAgentService {
       Object.assign(new SoPromptInput(), {
         conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
       }),
-      new PromptContext(),
       out,
+      new PromptContext(),
     );
     if (!out.list?.length) throw new ValidationError(`prompt_template_id 不存在: ${id}`);
   }
@@ -684,8 +679,8 @@ export class PlannerAgentService {
       const promptOut = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
         promptOut,
+        new PromptContext(),
       );
       if (promptOut.prompt) return promptOut.prompt;
     } catch { /* use fallback prompt */ }
@@ -701,8 +696,8 @@ export class PlannerAgentService {
       const llmOut = new MatchLLMOutput();
       await this.llmCore?.matchLLM(
         Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        new LLMCoreContext(),
         llmOut,
+        new LLMCoreContext(),
       );
       return llmOut.llm_id || '';
     } catch {

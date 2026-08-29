@@ -4,6 +4,7 @@
  * 展示「思考过程」时，用落库的 PromptReference（模板引用 + 小变量）+ 外部补充的
  * 上下文（context_data）与历史（history），经 PromptProvider 重建完整 prompt。
  */
+import { Metrics, Report } from '@brian-agent/base';
 import {
   PromptsAccess, SoulAccess,
   ExecPromptInput, ExecPromptOutput, PromptContext,
@@ -87,8 +88,8 @@ export class PromptRebuilder {
       const out = new GetSoulOutput();
       await this.soulAccess.soSoulById(
         Object.assign(new GetSoulInput(), { id: soulId }),
-        new SoulContext(),
         out,
+        new SoulContext(),
       );
       return out.soul?.soul_content ?? out.soul?.soul_brief ?? '';
     } catch {
@@ -100,8 +101,8 @@ export class PromptRebuilder {
     const out = new ExecPromptOutput();
     const ok = await this.promptsAccess.execPrompt(
       Object.assign(new ExecPromptInput(), { id: templateId, variables }),
-      new PromptContext(),
       out,
+      new PromptContext(),
     );
     return ok && out.prompt ? out.prompt : '';
   }

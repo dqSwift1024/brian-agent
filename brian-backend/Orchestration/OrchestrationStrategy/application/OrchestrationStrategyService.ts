@@ -863,7 +863,7 @@ export class OrchestrationStrategyService {
     return true;
   }
 
-  async getStrategy(
+  async soStrategyById(
     input: GetOrchestrationStrategyInput,
     _context: OrchestrationStrategyContext,
     output: GetOrchestrationStrategyOutput,

@@ -89,11 +89,11 @@ export class OrchestrationStrategyAccess {
     return this.service.handleDAGFailure(i, c, o);
   }
 
-  async getStrategy(
+  async soStrategyById(
     i: GetOrchestrationStrategyInput, c: OrchestrationStrategyContext, o: GetOrchestrationStrategyOutput,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getStrategy(i, c, o);
+    return this.service.soStrategyById(i, c, o);
   }
 
   async updateStrategy(

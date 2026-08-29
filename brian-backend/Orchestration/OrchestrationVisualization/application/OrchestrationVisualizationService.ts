@@ -588,7 +588,7 @@ export class OrchestrationVisualizationService {
         agent_id: agentId,
       });
       const getAgentOutput = new GetAgentOutput();
-      await this.agentLibrary.getAgent(getAgentInput, new AgentLibraryContext(), getAgentOutput);
+      await this.agentLibrary.soAgent(getAgentInput, new AgentLibraryContext(), getAgentOutput);
 
       if (getAgentOutput.agents.length > 0) {
         const agent: AgentRecord = getAgentOutput.agents[0];
@@ -598,7 +598,7 @@ export class OrchestrationVisualizationService {
         refs.agent_type = agent.agent_type ?? '';
       }
     } catch (err: unknown) {
-      this.logger?.error?.('getComponentRefs: agentLibrary.getAgent failed', { agentId, error: err instanceof Error ? err.message : String(err) });
+      this.logger?.error?.('getComponentRefs: agentLibrary.soAgent failed', { agentId, error: err instanceof Error ? err.message : String(err) });
     }
 
     try {
@@ -654,7 +654,7 @@ export class OrchestrationVisualizationService {
     try {
       const getTraceInput = Object.assign(new GetTraceInput(), { trace_id: traceId });
       const getTraceOutput = new GetTraceOutput();
-      await this.agentExecution.getTrace(getTraceInput, new AgentExecutionContext(), getTraceOutput);
+      await this.agentExecution.soTrace(getTraceInput, new AgentExecutionContext(), getTraceOutput);
 
       if (getTraceOutput.trace) {
         const traceData = getTraceOutput.trace as Record<string, unknown>;
@@ -663,7 +663,7 @@ export class OrchestrationVisualizationService {
         }
       }
     } catch (err: unknown) {
-      this.logger?.error?.('getContextSourceRefs: getTrace failed', { traceId, error: err instanceof Error ? err.message : String(err) });
+      this.logger?.error?.('getContextSourceRefs: soTrace failed', { traceId, error: err instanceof Error ? err.message : String(err) });
     }
 
     return refs;

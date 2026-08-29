@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, vi } from 'vitest';
 import { IntentAgentService } from '../IntentAgent/application/IntentAgentService';
 import {
@@ -6,39 +7,39 @@ import {
 
 function makeMocks() {
   const infoCore = {
-    getLastNInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    getLastNInfo: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.info_list = [
         { id: 'msg1', info_creator_role: 'USER', info_content: '之前的想法是实现内置Agent' },
       ];
       return true;
     }),
-    getPinInfo: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    getPinInfo: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.pin_list = [{ info_content: '重要提醒：需求理解得分低于阈值触发弹窗确认' }];
       return true;
     }),
   };
   const promptsAccess = {
-    execPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execPrompt: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.prompt = 'rendered prompt with 4 contexts';
       return true;
     }),
   };
   const soulAccess = {
-    soSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.list = []; return true; }),
-    addSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.id = 'soul-intent-id'; return true; }),
+    soSoul: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.list = []; return true; }),
+    addSoul: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.id = 'soul-intent-id'; return true; }),
   };
   const agentBuilder = {
-    buildSystemAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'agent-intent-id'; return true; }),
+    buildSystemAgent: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.agent_id = 'agent-intent-id'; return true; }),
   };
   const agentLibrary = {
-    getAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgent: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.agents = [{ agent_id: 'agent-intent-id', agent_type: 'INTENT', soul_id: 'soul-intent-id', enable: 1 }];
       return true;
     }),
     updateAgent: vi.fn().mockResolvedValue(true),
   };
   const llmAccess = {
-    execLLM: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    execLLM: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.result = JSON.stringify({
         understood_requirement: '系统根据历史对话与钉住信息理解后的需求',
         match_score: 60,
@@ -87,7 +88,7 @@ describe('IntentAgent', () => {
       citing_msg_ids: ['msg1'],
     });
     const output = new UnderstandRequirementOutput();
-    const ok = await svc.understandRequirement(input, new IntentAgentContext(), output);
+    const ok = await svc.understandRequirement(input, output, new IntentAgentContext());
 
     expect(ok).toBe(true);
     expect(output.match_score).toBe(60);
@@ -98,7 +99,7 @@ describe('IntentAgent', () => {
 
   it('understandRequirement 当匹配得分高于阈值时 should_modify_query 为 false', async () => {
     const mocks = makeMocks();
-    mocks.llmAccess.execLLM.mockImplementationOnce(async (_i: any, _c: any, o: any) => {
+    mocks.llmAccess.execLLM.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => {
       o.result = JSON.stringify({
         understood_requirement: '修改需求Agent',
         match_score: 95,
@@ -112,7 +113,7 @@ describe('IntentAgent', () => {
       user_query: '修改需求Agent',
     });
     const output = new UnderstandRequirementOutput();
-    await svc.understandRequirement(input, new IntentAgentContext(), output);
+    await svc.understandRequirement(input, output, new IntentAgentContext());
 
     expect(output.match_score).toBe(95);
     expect(output.should_modify_query).toBe(false);
