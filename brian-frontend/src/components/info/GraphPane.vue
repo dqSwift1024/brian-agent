@@ -2,9 +2,9 @@
 /**
  * 信息页「标签图谱 / 关键词图谱」页签共用视图（Obsidian 风格力导向图）。
  *
- * 两个页签的模板原本有 ~95% 重复（各 ~118 行），现以 kind 区分绑定来源，
- * 经 reactive 包装统一命名（reactive 自动解包内部 ref，v-model 直接可用）。
- * 业务逻辑来自 useTagGraphTab（经 InfoView 注入）。
+ * 两个页签的模板原本有 ~95% 重复（各 ~118 行），现以 kind 选择
+ * useTagGraphTab 工厂产出的对应状态包（reactive 自动解包内部 ref，
+ * v-model 直接可用），共用一份模板。业务逻辑经 InfoView 注入。
  */
 import { computed, inject, reactive } from 'vue'
 import {
@@ -16,45 +16,14 @@ const props = defineProps<{
   kind: 'tag' | 'keyword'
 }>()
 
-const graph = inject(INFO_TABS_KEY)!.graph
 const isTag = computed(() => props.kind === 'tag')
 
 const searchPlaceholder = isTag.value ? '搜索标签并定位...' : '搜索关键词并定位...'
 const emptyText = isTag.value ? '暂无标签数据' : '暂无关键词数据'
 const relatedEmptyText = isTag.value ? '暂无关联内容' : '暂无关联信息'
 
-const g = reactive({
-  search: isTag.value ? graph.tagSearch : graph.keywordSearch,
-  showLabels: isTag.value ? graph.tagGraphShowLabels : graph.keywordGraphShowLabels,
-  repulsion: isTag.value ? graph.tagGraphRepulsion : graph.keywordGraphRepulsion,
-  springStrength: isTag.value ? graph.tagGraphSpringStrength : graph.keywordGraphSpringStrength,
-  tx: isTag.value ? graph.tagGraphTx : graph.keywordTx,
-  ty: isTag.value ? graph.tagGraphTy : graph.keywordTy,
-  scale: isTag.value ? graph.tagGraphScale : graph.keywordScale,
-  svgRef: isTag.value ? graph.tagSvgRef : graph.keywordSvgRef,
-  nodes: isTag.value ? graph.graphNodes : graph.keywordGraphNodes,
-  edges: isTag.value ? graph.graphEdges : graph.keywordGraphEdges,
-  layoutNodes: isTag.value ? graph.tagLayoutNodes : graph.keywordLayoutNodes,
-  nodePosMap: isTag.value ? graph.tagNodePosMap : graph.keywordNodePosMap,
-  hoveredId: isTag.value ? graph.hoveredTagId : graph.keywordHoveredId,
-  selected: isTag.value ? graph.selectedTag : graph.selectedKeyword,
-  selectedMemories: isTag.value ? graph.selectedTagMemories : graph.selectedKeywordMemories,
-  panning: isTag.value ? graph.panning : graph.keywordPanning,
-  draggingId: isTag.value ? graph.draggingTagId : graph.keywordDraggingId,
-  clearing: isTag.value ? graph.clearingTagGraph : graph.clearingKeywordGraph,
-  loading: isTag.value ? graph.loadingGraph : graph.loadingKeywordGraph,
-  focus: isTag.value ? graph.focusTagNode : graph.focusKeywordNode,
-  resetView: isTag.value ? graph.resetTagGraphView : graph.resetKeywordGraphView,
-  clearAll: isTag.value ? graph.clearTagGraph : graph.clearKeywordGraph,
-  onWheel: isTag.value ? graph.onTagGraphWheel : graph.onKeywordGraphWheel,
-  onMouseDown: isTag.value ? graph.onTagGraphMouseDown : graph.onKeywordGraphMouseDown,
-  onMouseMove: isTag.value ? graph.onTagGraphMouseMove : graph.onKeywordGraphMouseMove,
-  onMouseUp: isTag.value ? graph.onTagGraphMouseUp : graph.onKeywordGraphMouseUp,
-  onNodeMouseDown: isTag.value ? graph.onTagNodeMouseDown : graph.onKeywordNodeMouseDown,
-  selectNode: isTag.value ? graph.selectTagNode : graph.selectKeywordNode,
-  isEdgeHighlighted: isTag.value ? graph.isTagEdgeHighlighted : graph.isKeywordEdgeHighlighted,
-  isNodeDimmed: isTag.value ? graph.isTagNodeDimmed : graph.isKeywordNodeDimmed,
-})
+const graph = inject(INFO_TABS_KEY)!.graph
+const g = reactive(props.kind === 'tag' ? graph.tag : graph.keyword)
 
 /** 函数式 ref：SVG 画布元素回填到图谱组合式函数（坐标换算依赖它） */
 function setSvgRef(el: unknown) {
@@ -67,9 +36,9 @@ function setSvgRef(el: unknown) {
     <div class="flex items-center gap-2 mb-3 flex-wrap">
       <div class="relative">
         <Search :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-        <input v-model="g.search" :placeholder="searchPlaceholder" class="pl-8 pr-3 py-1.5 w-44 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="g.focus" />
+        <input v-model="g.search" :placeholder="searchPlaceholder" class="pl-8 pr-3 py-1.5 w-44 rounded-lg bg-white dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-brian-blue" @keyup.enter="g.focusNode" />
       </div>
-      <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="g.focus">定位</button>
+      <button class="px-3 py-1.5 text-sm rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="g.focusNode">定位</button>
       <button class="px-3 py-1.5 text-sm rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300 hover:bg-apple-gray-200 dark:hover:bg-apple-gray-600" @click="g.resetView">重置视图</button>
       <span class="text-xs text-apple-gray-400">共 {{ g.nodes.length }} 节点</span>
       <div class="h-4 w-px bg-apple-gray-200 dark:bg-apple-gray-700" />
