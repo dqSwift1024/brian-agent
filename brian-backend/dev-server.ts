@@ -4549,8 +4549,12 @@ async function main() {
   server.listen(PORT, HOST, () => {
     fileLogger.info(`[dev-server] brian-backend running at http://${HOST}:${PORT}`);
     fileLogger.info(`[dev-server] Data directory: ${DATA_DIR}`);
-    // 自动启动 CDT
-    try {
+    // 自动启动 CDT：BRIAN_CDT_AUTO=0 可禁用（省一个常驻 Chrome 实例，
+    // 低内存机器建议关闭；/api/cdt/start 仍可手动启动）
+    if (process.env.BRIAN_CDT_AUTO === '0') {
+      fileLogger.info('[dev-server] BRIAN_CDT_AUTO=0，跳过 CDT 自动启动');
+    } else {
+      try {
       import('./Base/CDTProvider/domain/types').then(async (t) => {
         const { CDTContext, StartCDTInput, StartCDTOutput } = t;
         const o = new StartCDTOutput();
@@ -4561,7 +4565,8 @@ async function main() {
           fileLogger.warn(`[dev-server] CDT start failed: ${o.error}`);
         }
       });
-    } catch {}
+      } catch {}
+      }
   });
 
   const gracefulShutdown = (signal: string) => {
