@@ -122,6 +122,26 @@ npm 包由 `pack.mjs` 自动生成（`dist-pack/npm/`，已注入版本号与仓
 
 程序与数据分离：升级/重装覆盖安装目录，数据不受影响。
 
+## 开发模式后端守护（systemd user service）
+
+dev 后端若以 `./brian start backend`（nohup）方式启动，会随终端/IDE 环境变化、
+被 oomd 或其他进程误伤后**静默消失且无法自愈**。改为 systemd user service 托管：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp packaging/brian-backend-dev.service ~/.config/systemd/user/
+# 确认 unit 内 PATH= 指向你本机的 node bin 目录（nvm 用户：dirname $(which node)）
+systemctl --user daemon-reload
+./brian stop backend          # 停掉 nohup 旧实例
+systemctl --user enable --now brian-backend-dev
+loginctl enable-linger        # 可选：服务不随登录会话结束
+```
+
+效果：进程被杀 2 秒内自动拉起（Restart=always）；`systemctl --user status
+brian-backend-dev` 看状态；死亡原因进 `journalctl --user -u brian-backend-dev`。
+改 `.ts` 源码自动热更新（tsx watch 语义不变）。停用托管改回 `./brian start backend`：
+`systemctl --user disable --now brian-backend-dev`。
+
 ## 系统数据种子（个人数据 / 系统数据分离）
 
 打包时执行 `packaging/export-system-data.mjs`，从构建机库（`brian-backend/data/brian.db`）

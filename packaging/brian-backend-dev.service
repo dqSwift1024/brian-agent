@@ -1,0 +1,45 @@
+# ============================================================================
+# Brian-Agent 开发模式后端守护（systemd user service）
+#
+# 作用：后端进程独立于终端/IDE 会话（关终端、关 IDE、oomd 误杀都会被
+#       Restart=always 秒级自动拉起），死亡原因进入 journal 可查。
+#
+# 安装（一次性）:
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/brian-backend-dev.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   # 先停掉 nohup 方式启动的旧实例: ./brian stop backend
+#   systemctl --user enable --now brian-backend-dev
+#   loginctl enable-linger          # 可选：不随登录会话结束
+#
+# 日常:
+#   systemctl --user status brian-backend-dev   # 状态 + 最近日志
+#   journalctl --user -u brian-backend-dev -f   # 跟踪日志
+#   systemctl --user restart brian-backend-dev  # 重启
+#   systemctl --user disable --now brian-backend-dev  # 停用（改回 ./brian start backend）
+#
+# 端口/数据目录等环境变量在此文件的 Environment= 行修改。
+# ============================================================================
+
+[Unit]
+Description=Brian-Agent dev backend (tsx hot-reload)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/CodeSpace/GitHub/brian-agent/brian-backend
+ExecStart=/bin/bash -lc 'exec npx tsx dev-server.ts'
+Restart=always
+RestartSec=2
+Environment=BRIAN_PORT=8000
+Environment=BRIAN_HOST=127.0.0.1
+# 开发机低内存默认关闭 CDT 常驻 Chrome（需要浏览器自动化设为 1）
+Environment=BRIAN_CDT_AUTO=0
+# tsx 源码热更新模式；改代码自动生效
+Environment="PATH=/home/user/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin"
+Environment=NODE_ENV=development
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
