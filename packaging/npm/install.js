@@ -65,6 +65,69 @@ function extract(archive, destDir) {
   if (r.status !== 0) throw new Error(`解压失败: tar -xf ${archive}`);
 }
 
+const SERVICE = 'brian-agent.service';
+
+/** systemd user 服务可用且未被禁用时返回 true（Windows/容器环境返回 false） */
+function systemdUserAvailable() {
+  if (process.platform === 'win32') return false;
+  if (process.env.BRIAN_NO_SERVICE === '1') return false;
+  const r = spawnSync('systemctl', ['--user', 'is-system-running'], { encoding: 'utf8' });
+  return r.status === 0 || /degraded/.test(r.stdout || '');
+}
+
+/**
+ * 安装/刷新用户级 systemd 服务（brian-agent.service）：
+ * 独立于终端会话，被杀 2 秒自动拉起（Restart=always），死亡原因进 journald。
+ * 无需 root；失败仅告警，不阻断 npm 安装。
+ */
+function ensureUserSystemdService(dir) {
+  if (!systemdUserAvailable()) {
+    log('systemd user 服务不可用，使用包内 brian.sh/brian.cmd 直接管理');
+    return false;
+  }
+  try {
+    const unitDir = path.join(os.homedir(), '.config', 'systemd', 'user');
+    const port = process.env.BRIAN_PORT || '8000';
+    const host = process.env.BRIAN_HOST || '127.0.0.1';
+    const dataDir = process.env.BRIAN_DATA_DIR || path.join(os.homedir(), '.brian-agent');
+    const unit = [
+      '[Unit]',
+      'Description=Brian-Agent service (self-contained runtime)',
+      'After=network.target',
+      '',
+      '[Service]',
+      'Type=simple',
+      `ExecStart=${dir}/bin/node ${dir}/server/brian-server.cjs`,
+      'Environment=BRIAN_PORTABLE=1',
+      `Environment=BRIAN_DATA_DIR=${dataDir}`,
+      `Environment=BRIAN_NATIVE_DIR=${dir}/server/native`,
+      `Environment=BRIAN_PORT=${port}`,
+      `Environment=BRIAN_HOST=${host}`,
+      'Restart=always',
+      'RestartSec=2',
+      'StandardOutput=journal',
+      'StandardError=journal',
+      '',
+      '[Install]',
+      'WantedBy=default.target',
+      '',
+    ].join('\n');
+    fs.mkdirSync(unitDir, { recursive: true });
+    fs.writeFileSync(path.join(unitDir, SERVICE), unit);
+    spawnSync('systemctl', ['--user', 'daemon-reload']);
+    const en = spawnSync('systemctl', ['--user', 'enable', '--now', SERVICE], { encoding: 'utf8' });
+    if (en.status !== 0) {
+      warn(`systemd 服务启用失败（端口占用？可调 BRIAN_PORT 后重试）: ${(en.stderr || '').trim()}`);
+      return false;
+    }
+    log(`systemd 服务已安装并启动: systemctl --user status brian-agent（数据: ${dataDir}）`);
+    return true;
+  } catch (e) {
+    warn(`systemd 服务安装失败（不阻断）: ${e.message}`);
+    return false;
+  }
+}
+
 function main() {
   const key = targetKey();
   if (!key) {
@@ -74,9 +137,10 @@ function main() {
   }
 
   const dir = installDir();
-  // 幂等：同版本已装则跳过
+  // 幂等：同版本已装则跳过下载，但仍确保 systemd 服务就位
   if (markerVersion(dir) === VERSION && fs.existsSync(path.join(dir, 'server', 'brian-server.cjs'))) {
     log(`v${VERSION} 已安装在 ${dir}，跳过下载`);
+    ensureUserSystemdService(dir);
     return;
   }
 
@@ -109,7 +173,10 @@ function main() {
       fs.chmodSync(path.join(dir, 'bin', 'node'), 0o755);
       fs.chmodSync(path.join(dir, 'brian.sh'), 0o755);
     }
-    log(`✅ 已安装到 ${dir}。运行 brian start 启动（数据目录 ~/.brian-agent）。`);
+    const served = ensureUserSystemdService(dir);
+    log(served
+      ? `✅ 已安装到 ${dir}，服务由 systemd 托管（brian start/status/stop，被杀自动拉起）。`
+      : `✅ 已安装到 ${dir}。运行 brian start 启动（数据目录 ~/.brian-agent）。`);
   } catch (e) {
     warn(`自动安装失败: ${e.message}`);
     warn('npm 全局命令已就绪；运行时安装可稍后重试: npm rebuild -g brian-agent');

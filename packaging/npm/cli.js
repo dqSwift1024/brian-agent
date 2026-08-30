@@ -36,7 +36,31 @@ function findInstallDir() {
   return null;
 }
 
+const SERVICE = 'brian-agent.service';
+
+/** 用户级 systemd 服务已安装时，start/stop/restart/status/logs 路由到 systemctl/journalctl */
+function serviceInstalled() {
+  return fs.existsSync(path.join(os.homedir(), '.config', 'systemd', 'user', SERVICE));
+}
+
 function main() {
+  const cmd = process.argv[2] || 'serve';
+
+  if (serviceInstalled() && process.platform !== 'win32') {
+    if (['start', 'stop', 'restart', 'status'].includes(cmd)) {
+      const r = spawnSync('systemctl', ['--user', cmd, SERVICE], { stdio: 'inherit' });
+      process.exit(r.status ?? 0);
+    }
+    if (cmd === 'logs') {
+      const r = spawnSync('journalctl', ['--user', '-u', SERVICE, '-n', '200', '-f'], { stdio: 'inherit' });
+      process.exit(r.status ?? 0);
+    }
+    if (cmd === 'serve') {
+      console.error('[brian] 服务正由 systemd 托管：systemctl --user restart brian-agent（前台 serve 请先 disable）');
+      process.exit(1);
+    }
+  }
+
   const dir = findInstallDir();
   if (!dir) {
     console.error(`[brian] 尚未安装 Brian-Agent 运行时 (${VERSION})。`);

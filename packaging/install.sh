@@ -26,6 +26,7 @@ FROM=""             # 本地 tarball 路径（离线安装）
 INSTALL_DIR=""      # 空 = 自动（root→/opt/brian-agent，否则 ~/.local/share/brian-agent）
 WANT_SYSTEMD=0
 NO_BIN=0
+NO_USER_SERVICE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,6 +35,7 @@ while [ $# -gt 0 ]; do
     --from)     FROM="$2"; shift 2 ;;
     --dir)      INSTALL_DIR="$2"; shift 2 ;;
     --systemd)  WANT_SYSTEMD=1; shift ;;
+    --no-service) NO_USER_SERVICE=1; shift ;;
     --no-bin)   NO_BIN=1; shift ;;
     -h|--help)  grep '^#' "$0" | sed 's/^# \{0,2\}//'; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 1 ;;
@@ -117,6 +119,42 @@ if [ "$NO_BIN" = "0" ]; then
     *":$BIN_DIR:"*) ;;
     *) log "⚠ $BIN_DIR 不在 PATH 中，请将其加入 PATH 后重开终端" ;;
   esac
+fi
+
+# ---------------------------------------------------------------------------
+# 用户级 systemd 服务（非 root 安装时自动托管；被杀自动拉起、独立于终端会话）
+# ---------------------------------------------------------------------------
+if [ "$NO_USER_SERVICE" = "0" ] && [ "$(id -u)" != "0" ] && [ -d /run/systemd/system ]; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+  PORT="${BRIAN_PORT:-8000}"; HOST="${BRIAN_HOST:-127.0.0.1}"
+  cat > "$UNIT_DIR/brian-agent.service" <<UNIT
+[Unit]
+Description=Brian-Agent service (self-contained runtime)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/bin/node $INSTALL_DIR/server/brian-server.cjs
+Environment=BRIAN_PORTABLE=1
+Environment=BRIAN_DATA_DIR=$HOME/.brian-agent
+Environment=BRIAN_NATIVE_DIR=$INSTALL_DIR/server/native
+Environment=BRIAN_PORT=$PORT
+Environment=BRIAN_HOST=$HOST
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+UNIT
+  systemctl --user daemon-reload
+  if systemctl --user enable --now brian-agent.service 2>/dev/null; then
+    log "systemd 用户服务已安装并启动: systemctl --user status brian-agent"
+  else
+    log "⚠ 用户服务启用失败（端口占用？调整 BRIAN_PORT 后重跑）；可用 ./brian.sh 直接管理"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

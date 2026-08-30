@@ -105,7 +105,7 @@ Windows：`brian.cmd start|stop|status|serve|open`。
 |------|---------|------|
 | `packaging/install.sh`（curl\|sh / `--from` 离线） | Linux/macOS，无需 Node | 检测平台 → Release 下载（或本地包）→ 装 `/opt/brian-agent`（root）或 `~/.local/share/brian-agent` → 全局命令 `brian`（/usr/local/bin 或 ~/.local/bin）→ `--systemd` 可选常驻 |
 | `packaging/install.ps1` | Windows | 下载 zip → `%LOCALAPPDATA%\brian-agent` → 写入用户 PATH（`brian.cmd`） |
-| npm 包 `dist-pack/npm/` | 已有 Node 18+ | `npm i -g brian-agent`：`bin.brian` 垫片 + postinstall 按 Release 下载平台包 → `cli.js` 分发参数给包内启动器 |
+| npm 包 `dist-pack/npm/` | 已有 Node 18+ | `npm i -g brian-agent`：`bin.brian` 垫片 + postinstall 按 Release 下载平台包，并**自动安装用户级 systemd 服务**（`brian start/status/stop` 路由到 systemctl，被杀 2 秒自动拉起，`brian logs` 看 journal） |
 
 npm 包由 `pack.mjs` 自动生成（`dist-pack/npm/`，已注入版本号与仓库地址，
 `--no-npm` 跳过、`--repo owner/repo` 覆盖）；发布流程见 `packaging/npm/README.md`
