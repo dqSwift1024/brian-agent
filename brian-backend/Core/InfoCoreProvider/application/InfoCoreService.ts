@@ -1087,11 +1087,19 @@ export class InfoCoreService {
    */
   async rebuildCitationGraph(_input: RebuildCitationGraphInput, output: RebuildCitationGraphOutput, _context: InfoCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
+    // 旧表在迁移收敛后已 DROP：先查 sqlite_master 判断存在性，
+    // 避免对已迁移库每次查询都触发 RelationDB 的 ERROR 级 "no such table" 日志
+    const legacyExists = (this.relationDb.queryRaw<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = ?`,
+      [LEGACY_INFO_GRAPH_TABLE],
+    )?.[0]?.c ?? 0) > 0;
     let legacyRows: Array<Record<string, unknown>> = [];
-    try {
-      legacyRows = await this.relationDb.select(LEGACY_INFO_GRAPH_TABLE, {});
-    } catch {
-      legacyRows = [];
+    if (legacyExists) {
+      try {
+        legacyRows = await this.relationDb.select(LEGACY_INFO_GRAPH_TABLE, {});
+      } catch {
+        legacyRows = [];
+      }
     }
 
     let migrated = 0;
