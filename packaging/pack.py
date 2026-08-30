@@ -211,6 +211,10 @@ def main() -> None:
     parser.add_argument("--skip-deb", action="store_true", help="不构建 .deb")
     parser.add_argument("--no-system-data", action="store_true",
                         help="不打包系统数据种子（模型提供商列表 / MCP 提供商列表）")
+    parser.add_argument("--no-npm", action="store_true",
+                        help="不生成 npm 全局分发包（dist-pack/npm/）")
+    parser.add_argument("--repo", default=None, metavar="OWNER/REPO",
+                        help="npm 包与安装脚本引用的 GitHub 仓库（默认取 origin remote）")
     parser.add_argument("--no-install", action="store_true",
                         help="不自动执行 npm ci（依赖缺失时报错而非自动安装）")
     args = parser.parse_args()
@@ -242,6 +246,10 @@ def main() -> None:
         pack_cmd.append("--skip-chromium")
     if args.no_system_data:
         pack_cmd.append("--no-system-data")
+    if args.no_npm:
+        pack_cmd.append("--no-npm")
+    if args.repo:
+        pack_cmd += ["--repo", args.repo]
     if args.skip_deb or set(targets) != set(ALL_TARGETS):
         pack_cmd += ["--only", ",".join(targets)]
     info(f"执行装配: {' '.join(pack_cmd)}")

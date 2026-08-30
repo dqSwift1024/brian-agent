@@ -99,24 +99,49 @@ python3 packaging/pack.py --skip-chromium                 # 不内置 Chrome（�
 
 产物在 `dist-pack/`：Linux/macOS 为 `.tar.gz`，Windows 为 `.zip`，Linux 另有 `.deb`。
 
-### 安装（目标机器）
+### 全局安装（推荐，Hermes 式体验）
 
-| 平台 | 产物 | 安装与启动 |
-|------|------|-----------|
-| Linux | `brian-agent-linux-x64.tar.gz` 或 `.deb` | tar 解压后 `./brian.sh start`；或 `sudo dpkg -i brian-agent_*.deb`，之后用 `brian` 命令（start/stop/status/logs） |
+任选其一，安装后即可在**任意目录**使用 `brian` 命令：
+
+```bash
+# 方式 A：npm 全局包（已有 Node 18+ 的机器；postinstall 自动下载对应平台运行时）
+npm i -g brian-agent
+
+# 方式 B：一键脚本（Linux/macOS，无需 Node；从 GitHub Releases 下载）
+curl -fsSL https://raw.githubusercontent.com/zhaoxuan-inside/brian-agent/main/packaging/install.sh | bash
+# Windows（PowerShell）:
+iwr https://raw.githubusercontent.com/zhaoxuan-inside/brian-agent/main/packaging/install.ps1 -OutFile install.ps1; .\install.ps1
+
+# 方式 C：离线安装（本地已有的发行包，Linux/macOS）
+./packaging/install.sh --from dist-pack/brian-agent-linux-x64.tar.gz
+```
+
+### 安装（免安装便携模式）
+
+不安装直接使用也可以——解压即用，数据落在包内 `data/`：
+
+```bash
+tar -xzf brian-agent-linux-x64.tar.gz && cd brian-agent-linux-x64
+./brian.sh start                     # Windows: brian.cmd start
+```
+
+| 平台 | 产物 | 便携模式启动 |
+|------|------|-------------|
+| Linux | `brian-agent-linux-x64.tar.gz` 或 `.deb` | 解压后 `./brian.sh start`；`.deb` 安装后直接用 `brian` 命令（/usr/bin/brian） |
 | macOS（Intel/Apple Silicon） | `brian-agent-darwin-*.tar.gz` | 解压 → `xattr -dr com.apple.quarantine brian-agent-*` → `./brian.sh start` |
 | Windows | `brian-agent-win32-x64.zip` | 解压 → `brian.cmd start`（前台：`brian.cmd serve`） |
 
-启动后浏览器打开 **http://127.0.0.1:8000**。停止：`./brian.sh stop`（Windows `brian.cmd stop`）。对外监听：`BRIAN_HOST=0.0.0.0`。
+启动后浏览器打开 **http://127.0.0.1:8000**。停止：`brian stop`（便携模式 `./brian.sh stop`）。对外监听：`BRIAN_HOST=0.0.0.0`。
 
-Linux 可选 systemd 常驻：`sudo cp systemd/brian-agent.service /etc/systemd/system/ && sudo systemctl enable --now brian-agent`。
+Linux 可选 systemd 常驻：安装包内含 `systemd/brian-agent.service`（.deb 已装好，可用 `sudo systemctl enable --now brian-agent`）；一键脚本加 `--systemd` 参数自动安装。
 
 ### 首次运行须知
 
 - 包内**不含数据库**：`data/` 在首次运行时自动创建（表结构与默认配置种子自动初始化）；
 - **通用目录数据已随包预置**：模型提供商列表（OpenAI/Anthropic/DeepSeek/智谱/通义等 13 家）与 MCP 提供商列表（阿里云百炼/ModelScope/GitHub/Smithery 等）在首次运行时自动导入；
 - **个人数据不打包**（API Key、对话、记忆等）：提供商目录不含 API Key，需在 `/config` 页选择提供商并填入自己的 Key 才能开始对话；
-- 数据目录默认为包内 `data/`（`BRIAN_DATA_DIR` 可改）；端口 `BRIAN_PORT`（默认 8000）、监听地址 `BRIAN_HOST`（默认 127.0.0.1）；
+- 数据目录默认 `~/.brian-agent`（Windows `%APPDATA%\brian-agent`，`BRIAN_DATA_DIR` 可改，便携模式设为包内 `data/`）；端口 `BRIAN_PORT`（默认 8000）、监听地址 `BRIAN_HOST`（默认 127.0.0.1）；
+- **升级/重装不影响数据**（程序与数据分离）；
 - Windows 首次运行若被 SmartScreen 拦截，选择「仍要运行」。
 
 详见 [packaging/README.md](packaging/README.md) 与 [docs/打包部署.md](docs/打包部署.md)。

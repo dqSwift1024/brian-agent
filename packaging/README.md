@@ -63,6 +63,7 @@ brian-agent-<plat>-<arch>/
 │   ├── package.json            # 存根：better-sqlite3 的 bindings() 定位模块根用
 │   ├── portable.marker         # 便携模式标记
 │   ├── seed/system-seed.json   # 系统数据种子（通用目录数据，首跑自动导入）
+│   └── （启动器为包内 brian.sh/brian.cmd；数据默认在 ~/.brian-agent）
 │   ├── build/Release/          # better_sqlite3.node（bindings() 默认查找路径）
 │   └── native/<plat>-<arch>/   # better_sqlite3 / isolated_vm / jieba / lancedb
 ├── web/                        # 前端 dist（由后端同端口服务，SPA fallback）
@@ -95,6 +96,31 @@ Windows：`brian.cmd start|stop|status|serve|open`。
 3. **Chromium**（`setup-chromium.ts`）：便携包从 `<包根>/chrome/chrome.zip`
    解压到系统临时目录（带缓存）并设置 `BRIAN_CHROME_PATH`；未内置时 CDT
    回退系统 Chrome。
+
+## 全局安装器与 npm 分发
+
+三种"装一次、任意目录 `brian` 命令"的安装路径：
+
+| 方式 | 目标用户 | 机制 |
+|------|---------|------|
+| `packaging/install.sh`（curl\|sh / `--from` 离线） | Linux/macOS，无需 Node | 检测平台 → Release 下载（或本地包）→ 装 `/opt/brian-agent`（root）或 `~/.local/share/brian-agent` → 全局命令 `brian`（/usr/local/bin 或 ~/.local/bin）→ `--systemd` 可选常驻 |
+| `packaging/install.ps1` | Windows | 下载 zip → `%LOCALAPPDATA%\brian-agent` → 写入用户 PATH（`brian.cmd`） |
+| npm 包 `dist-pack/npm/` | 已有 Node 18+ | `npm i -g brian-agent`：`bin.brian` 垫片 + postinstall 按 Release 下载平台包 → `cli.js` 分发参数给包内启动器 |
+
+npm 包由 `pack.mjs` 自动生成（`dist-pack/npm/`，已注入版本号与仓库地址，
+`--no-npm` 跳过、`--repo owner/repo` 覆盖）；发布流程见 `packaging/npm/README.md`
+（需先创建 GitHub Release `v<版本>` 并上传 4 个平台压缩包）。
+
+## 数据目录（个人数据 / 程序分离）
+
+| 环境 | 默认数据目录 |
+|------|-------------|
+| Linux/macOS | `~/.brian-agent` |
+| Windows | `%APPDATA%rian-agent` |
+| systemd（.deb / `--systemd`） | `/var/lib/brian-agent` |
+| 便携模式（可选） | `BRIAN_DATA_DIR=$PWD/data`（数据跟包走，U 盘场景） |
+
+程序与数据分离：升级/重装覆盖安装目录，数据不受影响。
 
 ## 系统数据种子（个人数据 / 系统数据分离）
 

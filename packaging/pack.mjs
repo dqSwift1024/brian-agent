@@ -50,6 +50,16 @@ const PREBUILT_ABI = 'node127';
 
 const CHROME_VERSION = process.env.CHROME_VERSION || '140.0.7339.80';
 
+/** 从 origin remote 推断 owner/repo（默认 zhaoxuan-inside/brian-agent） */
+function detectRepo() {
+  try {
+    const url = execSync('git remote get-url origin', { cwd: ROOT, encoding: 'utf8' }).trim();
+    const m = url.match(/[/:]([^/]+\/[^/]+?)(\.git)?$/);
+    if (m) return m[1];
+  } catch { /* ignore */ }
+  return 'zhaoxuan-inside/brian-agent';
+}
+
 // ---------------------------------------------------------------------------
 // 目标平台定义
 // ---------------------------------------------------------------------------
@@ -68,6 +78,9 @@ const args = process.argv.slice(2);
 const SKIP_CHROMIUM = args.includes('--skip-chromium');
 const SKIP_FRONTEND_BUILD = args.includes('--skip-frontend-build');
 const NO_SYSTEM_DATA = args.includes('--no-system-data');
+const NO_NPM = args.includes('--no-npm');
+// npm 包内引用的 GitHub 仓库（Release 资产下载地址），默认取 origin remote
+const NPM_REPO = (args.includes('--repo') ? args[args.indexOf('--repo') + 1] : null) || detectRepo();
 const onlyIdx = args.indexOf('--only');
 const onlyTargets = onlyIdx >= 0 ? args[onlyIdx + 1].split(',') : null;
 
@@ -315,7 +328,7 @@ function brianShTemplate() {
     'NODE="$ROOT/bin/node"',
     'SERVER="$ROOT/server/brian-server.cjs"',
     'export BRIAN_PORTABLE=1',
-    'export BRIAN_DATA_DIR="${BRIAN_DATA_DIR:-$ROOT/data}"',
+    'export BRIAN_DATA_DIR="${BRIAN_DATA_DIR:-$HOME/.brian-agent}"',
     'export BRIAN_NATIVE_DIR="$ROOT/server/native"',
     'export BRIAN_PORT="${BRIAN_PORT:-8000}"',
     'export BRIAN_HOST="${BRIAN_HOST:-127.0.0.1}"',
@@ -379,7 +392,7 @@ function brianCmdTemplate() {
     'set "BRIAN_PORTABLE=1"',
     'if not defined BRIAN_PORT set "BRIAN_PORT=8000"',
     'if not defined BRIAN_HOST set "BRIAN_HOST=127.0.0.1"',
-    'set "BRIAN_DATA_DIR=%ROOT%\\data"',
+    'set "BRIAN_DATA_DIR=%APPDATA%\\brian-agent"',
     'set "BRIAN_NATIVE_DIR=%ROOT%\\server\\native"',
     'if not exist "%ROOT%\\run" mkdir "%ROOT%\\run"',
     'if not exist "%ROOT%\\logs" mkdir "%ROOT%\\logs"',
@@ -465,12 +478,12 @@ function readmeTemplate(targetKey) {
     '  server/     后端服务（brian-server.cjs）与平台原生模块（native/）',
     '  web/        前端页面（由后端同端口服务）',
     '  chrome/     Chrome for Testing（浏览器自动化 CDT 用，首次运行解压）',
-    '  data/       运行数据（SQLite / 向量库 / 图谱 / 日志），删除即重置',
+    '  (数据)      运行数据默认 ~/.brian-agent（Windows %APPDATA%\\brian-agent），BRIAN_DATA_DIR 可指到任意位置（如 $PWD/data 便携用）',
     '',
     '配置（环境变量）:',
     '  BRIAN_PORT=8000     服务端口',
     '  BRIAN_HOST=127.0.0.1  监听地址（对外服务改为 0.0.0.0）',
-    '  BRIAN_DATA_DIR      数据目录（默认包内 data/）',
+    '  BRIAN_DATA_DIR      数据目录（默认 ~/.brian-agent，Windows %APPDATA%\\brian-agent）',
     '',
     'Linux systemd（可选，.deb 安装后同样适用）:',
     '  sudo cp systemd/brian-agent.service /etc/systemd/system/',
@@ -511,7 +524,7 @@ Type=simple
 WorkingDirectory=/opt/brian-agent
 ExecStart=/opt/brian-agent/bin/node /opt/brian-agent/server/brian-server.cjs
 Environment=BRIAN_PORTABLE=1
-Environment=BRIAN_DATA_DIR=/opt/brian-agent/data
+Environment=BRIAN_DATA_DIR=/var/lib/brian-agent
 Environment=BRIAN_NATIVE_DIR=/opt/brian-agent/server/native
 Environment=BRIAN_PORT=8000
 Environment=BRIAN_HOST=127.0.0.1
@@ -663,6 +676,7 @@ function buildDeb(linuxPkg) {
     '#!/bin/sh',
     'set -e',
     'chmod +x /opt/brian-agent/brian.sh /opt/brian-agent/bin/node 2>/dev/null || true',
+    'mkdir -p /var/lib/brian-agent && chmod 755 /var/lib/brian-agent',
     'echo "brian-agent 已安装。运行: sudo systemctl enable --now brian-agent（需先复制 service 文件）"',
     'echo "或直接执行: /opt/brian-agent/brian.sh start   界面: http://127.0.0.1:8000"',
     'exit 0',
@@ -682,6 +696,24 @@ function buildDeb(linuxPkg) {
   fs.rmSync(staging, { recursive: true, force: true });
   log(`deb: ${debPath} (${(fs.statSync(debPath).size / 1024 / 1024).toFixed(1)} MB)`);
   return debPath;
+}
+
+// ---------------------------------------------------------------------------
+// npm 全局分发包生成（dist-pack/npm/，可直接 npm publish）
+// ---------------------------------------------------------------------------
+function genNpmPackage() {
+  const src = path.join(__dirname, 'npm');
+  const out = path.join(OUT, 'npm');
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(out, { recursive: true });
+  for (const name of ['package.json', 'cli.js', 'install.js', 'README.md']) {
+    let text = fs.readFileSync(path.join(src, name), 'utf8');
+    text = text
+      .replaceAll('__BRIAN_VERSION__', VERSION)
+      .replaceAll('__BRIAN_REPO__', NPM_REPO);
+    fs.writeFileSync(path.join(out, name), text);
+  }
+  log(`npm 包已生成: ${out}（发布: cd dist-pack/npm && npm publish；需先创建 GitHub Release v${VERSION} 并上传 4 个平台压缩包）`);
 }
 
 // ---------------------------------------------------------------------------
@@ -723,6 +755,11 @@ async function main() {
     buildDeb(linuxPkg);
   } else if (linuxPkg && onlyTargets) {
     log('指定了 --only，跳过 .deb 构建');
+  }
+
+  // npm 全局分发包（bin brian；postinstall 按 Release 下载平台产物）
+  if (!NO_NPM) {
+    genNpmPackage();
   }
 
   log('✅ 全部完成。产物位于 dist-pack/：');
