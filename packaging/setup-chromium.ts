@@ -63,16 +63,29 @@ function readChromiumFromSelf(): Buffer | null {
 /**
  * 安装内置 Chromium。
  * 必须在 CDTService 首次启动（spawn chrome）之前调用。
+ *
+ * 两种来源：
+ * - SEA 单文件：Chromium zip 追加在可执行文件末尾（BRIANSEA footer）；
+ * - 便携目录包（BRIAN_PORTABLE=1）：<包根>/chrome/chrome.zip。
  */
 export function installChromium(): void {
-  // 仅在 SEA 打包模式下尝试从可执行文件自身提取
   const sea = getSea();
-  if (!sea || typeof sea.isSea !== 'function' || !sea.isSea()) return;
+  const isSeaEnv = !!sea && typeof sea.isSea === 'function' && sea.isSea();
+
+  let buf: Buffer | null = null;
+  if (isSeaEnv) {
+    buf = readChromiumFromSelf();
+  } else if (process.env.BRIAN_PORTABLE === '1' && process.env.BRIAN_DATA_DIR) {
+    // 便携包根 = data 目录的上级
+    const zipPath = process.env.BRIAN_CHROME_ZIP
+      || path.join(path.dirname(process.env.BRIAN_DATA_DIR), 'chrome', 'chrome.zip');
+    try {
+      if (fs.existsSync(zipPath)) buf = fs.readFileSync(zipPath);
+    } catch { /* 读取失败按未内置处理 */ }
+  }
+  if (!buf) return; // 未内置 Chromium
 
   try {
-    const buf = readChromiumFromSelf();
-    if (!buf) return; // 未内置 Chromium
-
     const platform = process.platform;
     const arch = process.arch;
     const dir = path.join(os.tmpdir(), 'brian-agent-chromium', `${platform}-${arch}`);

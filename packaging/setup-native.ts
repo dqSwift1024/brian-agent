@@ -42,6 +42,15 @@ function getSea(): { isSea(): boolean; getRawAsset(key: string): ArrayBuffer } |
   }
 }
 
+/**
+ * 便携目录包模式：BRIAN_PORTABLE=1 且 BRIAN_NATIVE_DIR 已由入口设置时，
+ * 原生 .node 已由打包器布局在 <BRIAN_NATIVE_DIR>/<plat>-<arch>/，无需解压。
+ */
+function getPortableDir(): string | null {
+  if (process.env.BRIAN_PORTABLE !== '1' || !process.env.BRIAN_NATIVE_DIR) return null;
+  return path.join(process.env.BRIAN_NATIVE_DIR, `${process.platform}-${process.arch}`);
+}
+
 /** 解压目录：优先环境变量，其次系统临时目录下的固定位置 */
 function getNativeDir(): string {
   if (nativeDir) return nativeDir;
@@ -95,6 +104,12 @@ function resolveNative(request: string): string | null {
 /**
  * 安装原生模块加载拦截。
  * 必须在任何 require 原生模块之前调用。
+ *
+ * 两种打包形态：
+ * - SEA 单文件：asset 解压到临时目录后重定向；
+ * - 便携目录包（BRIAN_PORTABLE=1）：.node 已由打包器布局在
+ *   BRIAN_NATIVE_DIR/<plat>-<arch>/，直接重定向。
+ * 开发模式（非 SEA 且非便携包）不做任何处理，原生模块照常从 node_modules 加载。
  */
 export function installNativeLoader(): void {
   if (hooked) return;
@@ -102,10 +117,24 @@ export function installNativeLoader(): void {
 
   const sea = getSea();
   const isSeaEnv = !!sea && typeof sea.isSea === 'function' && sea.isSea();
-  if (!isSeaEnv) return; // 开发模式：原生模块正常加载
+  const portableDir = getPortableDir();
+
+  if (!isSeaEnv) {
+    if (portableDir) {
+      // 便携包：文件已就位，仅记录目录并挂钩重定向
+      nativeDir = portableDir;
+      hookResolveFilename();
+    }
+    return; // 开发模式：原生模块正常加载
+  }
 
   extractNativeAssets(sea as { getRawAsset(key: string): ArrayBuffer });
+  hookResolveFilename();
+}
 
+/** 将 .node 请求重定向到已就位的原生文件；未命中走原逻辑 */
+function hookResolveFilename(): void {
+  if (!nativeDir) return;
   const origResolve = Module._resolveFilename;
   Module._resolveFilename = function (this: unknown, request: string, ...args: unknown[]): string {
     const hit = resolveNative(request);

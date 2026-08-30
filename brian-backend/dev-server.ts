@@ -4570,5 +4570,11 @@ async function main() {
 
 main().catch((err) => {
   fileLogger.error('[dev-server] Fatal error:', err);
+  // Error 实例的 message/stack 不在可枚举属性上，fileLogger 序列化会丢失，此处显式展开
+  if (err instanceof Error) {
+    fileLogger.error('[dev-server] Fatal detail:', err.message, '\n', err.stack);
+  }
+  // eslint-disable-next-line no-console
+  console.error('[dev-server] Fatal:', err instanceof Error ? err.stack : err);
   process.exit(1);
 });

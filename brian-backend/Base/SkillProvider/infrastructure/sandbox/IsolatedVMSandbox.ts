@@ -12,8 +12,10 @@
  * 从 prebuilt/ 目录加载匹配的原生模块。
  */
 
-import ivm from 'isolated-vm';
 import type { ISandbox, SandboxResult } from './ISandbox';
+
+/** isolated-vm 命名空间的类型（运行时延迟加载，见构造函数） */
+type IvmModule = typeof import('isolated-vm');
 
 /**
  * isolated-vm 沙箱实现。
@@ -22,13 +24,17 @@ import type { ISandbox, SandboxResult } from './ISandbox';
  * 执行完毕后自动释放 Context。Isolate 实例在 dispose 时销毁。
  */
 export class IsolatedVMSandbox implements ISandbox {
-  private isolate: ivm.Isolate;
+  private isolate: InstanceType<IvmModule['Isolate']>;
 
   /**
    * @param memoryLimitMB 沙箱可用内存上限（MB），默认 128MB。
    *  该值影响 v8 堆大小与外部分配内存的总和。
    */
   constructor(memoryLimitMB = 128) {
+    // 延迟加载：平台缺少预编译 .node 时此处抛错（上层降级为 UnavailableJsSandbox），
+    // 而非模块导入期抛错导致整个服务无法启动
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const ivm = require('isolated-vm') as IvmModule;
     this.isolate = new ivm.Isolate({ memoryLimit: memoryLimitMB });
   }
 
