@@ -8,14 +8,19 @@
 
 | 形态 | 脚本 | 产物 | 适用 |
 |------|------|------|------|
-| **便携目录包（推荐）** | `packaging/pack.mjs` | `dist-pack/brian-agent-<plat>-<arch>.tar.gz / .zip / .deb` | 交叉打包：在一台机器上产出全部 4 个目标 |
+| **便携目录包（推荐）** | `packaging/pack.py`（底层 `pack.mjs`） | `dist-pack/brian-agent-<plat>-<arch>.tar.gz / .zip / .deb` + `SHA256SUMS` | 交叉打包：在一台机器上产出全部 4 个目标 |
 | SEA 单文件可执行 | `packaging/build.mjs` | `dist-sea/brian-<plat>-<arch>` | 单文件极简分发；需在目标平台构建，macOS 需重签名 |
 
-## 便携包（pack.mjs）
+## 便携包（pack.py / pack.mjs）
+
+`pack.py` 是自动化入口：环境自检（Node 22 / ABI 127 / tar / dpkg-deb）→ 依赖
+缺失时自动 `npm ci` → 前端构建 → 调用 `pack.mjs` 组装 → 产物结构校验 →
+生成 `SHA256SUMS`。`pack.mjs` 是实际装配器，可单独使用。
 
 ### 构建环境要求
 
 - **Node 22（ABI 127）**：仓库内置的预编译原生模块为 `node127`，其他版本会拒绝构建
+- Python 3.8+（仅 pack.py 需要）
 - 网络可访问 `nodejs.org`、`registry.npmjs.org`、`storage.googleapis.com`
   （Chromium；`--skip-chromium` 可跳过）
 - Linux 构建机需要 `tar`（macOS 同样有）；`.deb` 需要本机有 `dpkg-deb`
@@ -23,11 +28,18 @@
 ### 用法
 
 ```bash
-node packaging/pack.mjs                      # 全部 4 目标 + linux .deb
-node packaging/pack.mjs linux-x64            # 仅指定目标（逗号分隔多个）
-node packaging/pack.mjs --only darwin-arm64,win32-x64
-node packaging/pack.mjs --skip-chromium      # 不内置 Chromium（每个目标 -150MB）
-node packaging/pack.mjs --skip-frontend-build  # 复用已有 brian-frontend/dist
+# 推荐：一键自动化（全部 4 目标 + .deb + SHA256SUMS）
+python3 packaging/pack.py
+
+# 常用变体
+python3 packaging/pack.py --targets linux-x64,win32-x64   # 指定目标
+python3 packaging/pack.py --skip-chromium                 # 不内置 Chromium（每个目标 -150MB）
+python3 packaging/pack.py --skip-frontend-build           # 复用已有 brian-frontend/dist
+python3 packaging/pack.py --skip-deb                      # 不产 .deb
+python3 packaging/pack.py --no-install                    # 依赖缺失时报错而非自动 npm ci
+
+# 底层装配器（pack.py 内部调用）
+node packaging/pack.mjs --only darwin-arm64,win32-x64 --skip-chromium --skip-frontend-build
 ```
 
 ### 目标与产物

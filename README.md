@@ -32,6 +32,44 @@ npm run typecheck
 
 后端服务默认监听 `http://127.0.0.1:8000`，前端通过 Vite 代理转发 `/api` 和 `/ws` 请求。环境变量可通过 `BRIAN_PORT` 和 `BRIAN_HOST` 配置。
 
+## 打包分发与安装
+
+把系统打成**自包含发行包**：内置 Node.js 运行时、全部原生依赖、前端页面与 Chrome for Testing（浏览器自动化用），目标机器**无需安装任何依赖**，解压即用。
+
+### 一键打包（构建机执行）
+
+```bash
+# 全部 4 个目标 + .deb + SHA256SUMS（要求构建机为 Node 22）
+python3 packaging/pack.py
+
+# 常用变体
+python3 packaging/pack.py --targets linux-x64,win32-x64   # 指定目标
+python3 packaging/pack.py --skip-chromium                 # 不内置 Chrome（体积 -150MB/目标）
+```
+
+产物在 `dist-pack/`：Linux/macOS 为 `.tar.gz`，Windows 为 `.zip`，Linux 另有 `.deb`。
+
+### 安装（目标机器）
+
+| 平台 | 产物 | 安装与启动 |
+|------|------|-----------|
+| Linux | `brian-agent-linux-x64.tar.gz` 或 `.deb` | tar 解压后 `./brian.sh start`；或 `sudo dpkg -i brian-agent_*.deb`，之后用 `brian` 命令（start/stop/status/logs） |
+| macOS（Intel/Apple Silicon） | `brian-agent-darwin-*.tar.gz` | 解压 → `xattr -dr com.apple.quarantine brian-agent-*` → `./brian.sh start` |
+| Windows | `brian-agent-win32-x64.zip` | 解压 → `brian.cmd start`（前台：`brian.cmd serve`） |
+
+启动后浏览器打开 **http://127.0.0.1:8000**。停止：`./brian.sh stop`（Windows `brian.cmd stop`）。对外监听：`BRIAN_HOST=0.0.0.0`。
+
+Linux 可选 systemd 常驻：`sudo cp systemd/brian-agent.service /etc/systemd/system/ && sudo systemctl enable --now brian-agent`。
+
+### 首次运行须知
+
+- 包内**不含数据库**：`data/` 在首次运行时自动创建（表结构与默认配置种子自动初始化）；
+- 全新包**未配置 LLM API Key**，需先在 `/config` 页面配置模型供应商才能开始对话；
+- 数据目录默认为包内 `data/`（`BRIAN_DATA_DIR` 可改）；端口 `BRIAN_PORT`（默认 8000）、监听地址 `BRIAN_HOST`（默认 127.0.0.1）；
+- Windows 首次运行若被 SmartScreen 拦截，选择「仍要运行」。
+
+详见 [packaging/README.md](packaging/README.md)。
+
 ## 核心特性
 
 ### 1. ChatMap 可视化控制
