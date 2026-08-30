@@ -7,6 +7,7 @@
  */
 import { ref } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import type { Block, ChatMessage } from '@/api/types'
 import { readSSE } from './useSSE'
 import { createChatStreamEventHandler } from './chatStreamEvents'
@@ -26,7 +27,8 @@ interface SseInteractionOptions {
 
 export function useChatStream() {
   const sessionStore = useSessionStore()
-  const streamHandler = createChatStreamEventHandler(sessionStore)
+  const chatUi = useChatUiStore()
+  const streamHandler = createChatStreamEventHandler(sessionStore, chatUi)
 
   // 需求确认 / 需求补充的提交中状态（防重复提交）
   const confirmingIntent = ref(false)
@@ -53,8 +55,8 @@ export function useChatStream() {
    */
   async function runSseInteraction(opts: SseInteractionOptions) {
     sessionStore.setStreaming(true)
-    sessionStore.resetPlanning()
-    sessionStore.resetAgentStatus()
+    chatUi.resetPlanning()
+    chatUi.resetAgentStatus()
     try {
       const abortCtrl = new AbortController()
       sessionStore.setCancelController(abortCtrl)
@@ -72,7 +74,7 @@ export function useChatStream() {
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
         addErrorBlock(opts.botMsgId, err.message, opts.errorCode, opts.retryAvailable)
-        if (opts.autoCloseThinkingOnError) sessionStore.requestAutoCloseThinkingModal()
+        if (opts.autoCloseThinkingOnError) chatUi.requestAutoCloseThinkingModal()
       }
     } finally {
       sessionStore.finalizeBlocks(opts.botMsgId)
@@ -140,11 +142,11 @@ export function useChatStream() {
    * 立即关闭确认弹窗，SSE 流式完成后实时展示思考过程与系统回答，最后刷新历史。
    */
   async function handleIntentConfirm(action: 'APPROVE' | 'KEEP' | 'CANCEL') {
-    const conf = sessionStore.intentConfirmation
+    const conf = chatUi.intentConfirmation
     if (!conf || confirmingIntent.value) return
     confirmingIntent.value = true
     // 立即关闭确认弹窗，避免后端同步重入编排（APPROVE/KEEP 会重新执行完整编排、耗时较长）期间弹窗长期停留
-    sessionStore.clearIntentConfirmation()
+    chatUi.clearIntentConfirmation()
     streamHandler.reset()
 
     try {
@@ -170,10 +172,10 @@ export function useChatStream() {
 
   /** 需求补充提交：收集各澄清项答案并发起流式执行 */
   async function handleClarificationSubmit() {
-    const req = sessionStore.clarificationRequest
+    const req = chatUi.clarificationRequest
     if (!req || submittingClarification.value) return
     submittingClarification.value = true
-    sessionStore.clearClarificationRequest()
+    chatUi.clearClarificationRequest()
     streamHandler.reset()
 
     const answers = req.clarifications.map((c) => ({

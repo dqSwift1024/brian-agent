@@ -2,7 +2,7 @@
  * @fileoverview 对话 SSE 事件 → Store 状态的适配层。
  *
  * 后端编排流（/api/chat/stream、confirm-intent、submit-clarification）逐帧推送
- * 编排事件；本模块把每类事件转换为 sessionStore 中的 Block / Planning /
+ * 编排事件；本模块把每类事件转换为会话数据 store（blocks）与交互 UI store（Planning /
  * Agent 状态更新。原实现内联于 ChatArea.vue（handleStreamEvent 560+ 行），
  * 现按事件拆为具名函数并以分发表分发。
  *
@@ -10,12 +10,15 @@
  */
 import type { Block, TextBlock, ThinkingBlock, TaskDagNode, TaskDagEdge, DagNodeItem, DagEdgeItem, DagExecutionStep } from '@/api/types'
 import type { useSessionStore } from '@/stores/session'
+import type { useChatUiStore } from '@/stores/chatUi'
 
-type SessionStore = ReturnType<typeof useSessionStore>
+type ChatStore = ReturnType<typeof useSessionStore>
+type ChatUiStore = ReturnType<typeof useChatUiStore>
 
 /** 单条 SSE 帧解析出的公共字段，作为各事件处理函数的上下文 */
 interface StreamEventCtx {
-  sessionStore: SessionStore
+  chat: ChatStore
+  ui: ChatUiStore
   botMsgId: string
   payload: Record<string, unknown>
   /** 服务器时间戳（结构化帧取 timestamp 字段，否则本地时钟） */
@@ -130,7 +133,7 @@ function upsertExecutionStep(steps: DagExecutionStep[], step: DagExecutionStep):
 // 事件处理工厂（持有轮内状态：流式文本块指针 / trace_id 回退值）
 // ============================================================
 
-export function createChatStreamEventHandler(sessionStore: SessionStore): ChatStreamEventHandler {
+export function createChatStreamEventHandler(chat: ChatStore, ui: ChatUiStore): ChatStreamEventHandler {
   // 当前流式文本块 id：一轮回复只在首个文本帧创建一次 TextParagraph，后续帧追加
   let textBlockId: string | null = null
   // 后端经 ToolProvider 生成的 trace_id 由 connected 事件回传，供 Feedback/Error 块缺省引用
@@ -139,7 +142,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
   /** 快捷辅助：获取或创建某 Agent 的 ThinkingBlock（按 agentId 复用，回填非 uuid 的真实名称） */
   function getOrCreateThinkBlock(ctx: StreamEventCtx, agId: string, defaultName?: string, defaultType?: string): ThinkingBlock {
     const key = agId ? `block-think-${ctx.botMsgId}-${agId}` : `block-think-${ctx.botMsgId}`
-    let existing = ctx.sessionStore.blocks.find(b => b.id === key) as ThinkingBlock | undefined
+    let existing = ctx.chat.blocks.find(b => b.id === key) as ThinkingBlock | undefined
     const formattedName = formatAgentTitle(defaultName, agId, defaultType)
 
     if (!existing) {
@@ -163,21 +166,21 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
         steps: [],
         meta: { status: 'streaming', createdAt: ctx.serverTime, updatedAt: ctx.serverTime },
       }
-      sessionStore.addBlock(existing as Block)
+      chat.addBlock(existing as Block)
     } else if (defaultName && !UUID_RE.test(defaultName) && defaultName !== agId) {
       if (!existing.agentInfo) {
         existing.agentInfo = { name: defaultName, type: defaultType || 'WORKER' }
       } else {
         existing.agentInfo.name = defaultName
       }
-      sessionStore.updateBlock(existing.id, { agentInfo: existing.agentInfo })
+      chat.updateBlock(existing.id, { agentInfo: existing.agentInfo })
     }
     return existing
   }
 
   /** 自动弹出思考弹窗时定位动画原点：取"要展示思考过程的问题"（最近一条用户消息）对应的"思考过程"按钮 */
   function resolveAutoThinkingOrigin() {
-    const msgs = sessionStore.messages
+    const msgs = chat.messages
     let lastUser
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {
@@ -189,11 +192,11 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       const btn = document.querySelector(`[data-thinking-id="${lastUser.id}"]`) as HTMLElement | null
       if (btn) {
         const r = btn.getBoundingClientRect()
-        sessionStore.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
+        ui.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
         return
       }
     }
-    sessionStore.setThinkingOrigin(null)
+    ui.setThinkingOrigin(null)
   }
 
   /** 最终回复文本：首个文本帧创建 TextParagraph 块，后续帧追加内容（agent_output 与 text_chunk 共用） */
@@ -209,9 +212,9 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
         content: chunk,
         meta: { status: 'streaming', createdAt: ctx.serverTime, updatedAt: ctx.serverTime },
       }
-      sessionStore.addBlock(textBlock as Block)
+      chat.addBlock(textBlock as Block)
     } else {
-      sessionStore.appendBlockContent(textBlockId, chunk)
+      chat.appendBlockContent(textBlockId, chunk)
     }
   }
 
@@ -233,7 +236,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const citingMessages = categories.citing || (Array.isArray(payload.session_context) ? payload.session_context : ((payload.citations as unknown[]) || undefined))
 
     thinkBlock.context = {
-      strategy: (payload.strategy as string) || (sessionStore.planning?.status && sessionStore.planning.status !== 'idle' ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)'),
+      strategy: (payload.strategy as string) || (ui.planning?.status && ui.planning.status !== 'idle' ? 'Planning 策略 (任务分解)' : 'Simple 策略 (直接推理)'),
       userProfile,
       selectedMessages: categories.selected,
       citingMessages,
@@ -247,10 +250,10 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       recentWorks,
       customContext: typeof payload.custom_context === 'string' ? payload.custom_context : undefined,
     }
-    sessionStore.updateBlock(thinkBlock.id, { context: thinkBlock.context })
+    chat.updateBlock(thinkBlock.id, { context: thinkBlock.context })
     // 上下文构建成功后弹出思考过程弹窗（流式展示），避免过早弹出遮挡后续的「确认需求理解」弹窗
     resolveAutoThinkingOrigin()
-    sessionStore.openThinkingModal(null)
+    ui.openThinkingModal(null)
   }
 
   /** 需求理解 Agent (IntentAgent) 结果：填充思考块并标记该 Agent 成功 */
@@ -282,7 +285,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       reflection: `是否需要修改查询: ${payload.should_modify_query ? '是' : '否'}`,
       passed: true,
     })
-    sessionStore.updateBlock(intentBlock.id, {
+    chat.updateBlock(intentBlock.id, {
       input: intentBlock.input,
       content: intentBlock.content,
       output: intentBlock.output,
@@ -292,22 +295,22 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       durationMs: intentBlock.durationMs,
       meta: { ...intentBlock.meta, status: 'done' },
     })
-    sessionStore.setAgentStatus(intentAgentId, 'SUCCESS', '需求理解 Agent (Intent)')
+    ui.setAgentStatus(intentAgentId, 'SUCCESS', '需求理解 Agent (Intent)')
   }
 
   /** 需求理解得分低于阈值：弹出「需求确认」卡片，由用户确认按理解执行 / 按原文执行 / 取消 */
   function onIntentConfirmationRequired(ctx: StreamEventCtx) {
-    sessionStore.setIntentConfirmation({
+    ui.setIntentConfirmation({
       ...ctx.payload,
-      session_id: sessionStore.currentSessionId,
+      session_id: chat.currentSessionId,
     })
   }
 
   /** Planner 识别出需用户补充参数才能执行的任务：在对话区弹出「需求补充」卡片 */
   function onClarificationRequired(ctx: StreamEventCtx) {
-    sessionStore.setClarificationRequest({
+    ui.setClarificationRequest({
       ...ctx.payload,
-      session_id: sessionStore.currentSessionId,
+      session_id: chat.currentSessionId,
     })
   }
 
@@ -316,7 +319,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const taskDag = (ctx.payload.task_dag as { nodes?: unknown[]; edges?: unknown[] }) || {}
     const taskNodes = mapTaskNodes(taskDag)
     const taskEdges = mapTaskEdges(taskDag)
-    sessionStore.updatePlanning({
+    ui.updatePlanning({
       planId: typeof ctx.payload.plan_id === 'string' ? ctx.payload.plan_id : undefined,
       taskDag: taskNodes.length > 0 ? { nodes: taskNodes, edges: taskEdges } : undefined,
       status: 'streaming',
@@ -327,7 +330,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
   function onAgentDagCreated(ctx: StreamEventCtx) {
     const agentDag = (ctx.payload.agent_dag as Record<string, unknown>) || {}
     const nodes = mapAgentDagNodes(agentDag)
-    sessionStore.updatePlanning({
+    ui.updatePlanning({
       planId: typeof agentDag.plan_id === 'string' ? agentDag.plan_id : undefined,
       agentDag: {
         planId: typeof agentDag.plan_id === 'string' ? agentDag.plan_id : undefined,
@@ -338,8 +341,8 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       status: 'streaming',
     })
     // 节点主键 id 为 task_id；task 级状态按 task_id 记录，agent 级状态按 agentId 记录
-    for (const n of sessionStore.planning.agentDag?.nodes ?? []) {
-      sessionStore.setAgentStatus(n.agentId, normalizeNodeStatus(n.status ?? ''), n.agentName, n.id)
+    for (const n of ui.planning.agentDag?.nodes ?? []) {
+      ui.setAgentStatus(n.agentId, normalizeNodeStatus(n.status ?? ''), n.agentName, n.id)
     }
   }
 
@@ -350,8 +353,8 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       node_type: String(ctx.payload.node_type ?? ''),
       status: 'RUNNING',
     }
-    sessionStore.updatePlanning({
-      executionSteps: upsertExecutionStep(sessionStore.planning.executionSteps || [], step),
+    ui.updatePlanning({
+      executionSteps: upsertExecutionStep(ui.planning.executionSteps || [], step),
       status: 'streaming',
     })
   }
@@ -365,8 +368,8 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       elapsed_ms: Number(ctx.payload.elapsed_ms ?? 0),
       error: typeof ctx.payload.error === 'string' ? ctx.payload.error : undefined,
     }
-    sessionStore.updatePlanning({
-      executionSteps: upsertExecutionStep(sessionStore.planning.executionSteps || [], step),
+    ui.updatePlanning({
+      executionSteps: upsertExecutionStep(ui.planning.executionSteps || [], step),
       status: 'streaming',
     })
   }
@@ -375,11 +378,11 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
   function onAgentBuilding(ctx: StreamEventCtx) {
     const taskContent = typeof ctx.payload.task_content === 'string' ? ctx.payload.task_content : ''
     const buildLabel = taskContent ? `构建中: ${taskContent.slice(0, 24)}` : '构建 Agent'
-    sessionStore.setAgentStatus(ctx.agentId, 'RUNNING', buildLabel)
+    ui.setAgentStatus(ctx.agentId, 'RUNNING', buildLabel)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId, buildLabel, 'WORKER')
     thinkBlock.agentInfo = { id: ctx.agentId, name: buildLabel, type: 'WORKER' }
     if (taskContent) thinkBlock.input = taskContent
-    sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
+    chat.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
   }
 
   /** Agent 构建完成：回填真实 agent 名称与组件绑定 */
@@ -387,7 +390,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const { payload } = ctx
     const agentName = String(payload.agent_name || payload.agent_id || ctx.agentId || 'WorkAgent')
     const agentType = String(payload.agent_type || 'WORKER')
-    sessionStore.setAgentStatus(ctx.agentId, 'RUNNING', agentName)
+    ui.setAgentStatus(ctx.agentId, 'RUNNING', agentName)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId, agentName, agentType)
     thinkBlock.agentInfo = {
       id: ctx.agentId,
@@ -401,7 +404,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     if (payload.task_content) {
       thinkBlock.input = payload.task_content as string | Record<string, unknown>
     }
-    sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
+    chat.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, input: thinkBlock.input })
   }
 
   /** 复用既有 Agent：将「构建中」占位卡片收敛为「复用已有 Agent」 */
@@ -411,8 +414,8 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const thinkBlock = getOrCreateThinkBlock(ctx, key, '复用已有 Agent', 'WORKER')
     thinkBlock.agentInfo = { id: matchedAgentId || key, name: '复用已有 Agent', type: 'WORKER' }
     thinkBlock.output = { reused: true, matched_agent_id: matchedAgentId }
-    sessionStore.setAgentStatus(key, 'SUCCESS', '复用已有 Agent')
-    sessionStore.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, output: thinkBlock.output, meta: { ...thinkBlock.meta, status: 'done' } })
+    ui.setAgentStatus(key, 'SUCCESS', '复用已有 Agent')
+    chat.updateBlock(thinkBlock.id, { agentInfo: thinkBlock.agentInfo, output: thinkBlock.output, meta: { ...thinkBlock.meta, status: 'done' } })
   }
 
   /** Agent 思考推理中（RUNNING → 黄色）：追加/续写 THINK 步骤 */
@@ -422,7 +425,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const rawAgName = typeof payload.agent_name === 'string' ? payload.agent_name : undefined
     const rawAgType = typeof payload.agent_type === 'string' ? payload.agent_type : undefined
     const iterIdx = typeof payload.iteration === 'number' ? payload.iteration : undefined
-    sessionStore.setAgentStatus(ctx.agentId, 'RUNNING', rawAgName, ctx.taskId)
+    ui.setAgentStatus(ctx.agentId, 'RUNNING', rawAgName, ctx.taskId)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId, rawAgName, rawAgType)
     thinkBlock.content += chunk
     if (payload.prompt) thinkBlock.prompt = payload.prompt as string
@@ -437,13 +440,13 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     } else {
       lastStep.content = (lastStep.content || '') + chunk
     }
-    sessionStore.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
+    chat.updateBlock(thinkBlock.id, { content: thinkBlock.content, steps: thinkBlock.steps, input: thinkBlock.input, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
   }
 
   /** Agent 工具调用：追加 ACT 步骤，并为真实外部工具生成独立 ToolInvocation 块（过滤 NONE 占位） */
   function onAgentAction(ctx: StreamEventCtx) {
     const { payload } = ctx
-    sessionStore.setAgentStatus(ctx.agentId, 'RUNNING', undefined, ctx.taskId)
+    ui.setAgentStatus(ctx.agentId, 'RUNNING', undefined, ctx.taskId)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId)
     if (!thinkBlock.steps) thinkBlock.steps = []
 
@@ -457,7 +460,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       iteration: iterIdx ?? (thinkBlock.steps.length + 1),
       toolCalls: [{ toolName, toolType: String(payload.tool_type || toolName), params, result: payload.result }],
     })
-    sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
+    chat.updateBlock(thinkBlock.id, { steps: thinkBlock.steps })
 
     const toolBlock: Block = {
       id: `block-tool-${Date.now()}`,
@@ -469,13 +472,13 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       result: payload.result,
       meta: { status: payload.status === 'done' ? 'done' : 'streaming', createdAt: ctx.serverTime, updatedAt: ctx.serverTime },
     } as Block
-    sessionStore.addBlock(toolBlock)
+    chat.addBlock(toolBlock)
   }
 
   /** Agent 反思：追加 REFLECT 步骤（反思阶段仍属于思考推理中 RUNNING） */
   function onAgentReflection(ctx: StreamEventCtx) {
     const { payload } = ctx
-    sessionStore.setAgentStatus(ctx.agentId, 'RUNNING', undefined, ctx.taskId)
+    ui.setAgentStatus(ctx.agentId, 'RUNNING', undefined, ctx.taskId)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId)
     if (!thinkBlock.steps) thinkBlock.steps = []
     if (payload.prompt) thinkBlock.prompt = payload.prompt as string
@@ -488,7 +491,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       reflection: String(payload.reflection || ''),
       passed: Boolean(payload.passed),
     })
-    sessionStore.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
+    chat.updateBlock(thinkBlock.id, { steps: thinkBlock.steps, prompt: thinkBlock.prompt, rawResponse: thinkBlock.rawResponse })
   }
 
   /** Agent 产出完成（SUCCESS → 绿色）：回填输出与 Token 用量/耗时；文本产出同时流入用户可见文本块 */
@@ -496,7 +499,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
     const { payload } = ctx
     const outputVal = payload.output || payload.result || payload.chunk || payload.answer
     if (ctx.agentId) {
-      sessionStore.setAgentStatus(ctx.agentId, 'SUCCESS', undefined, ctx.taskId)
+      ui.setAgentStatus(ctx.agentId, 'SUCCESS', undefined, ctx.taskId)
       const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId)
       thinkBlock.output = outputVal as string | Record<string, unknown>
       if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
@@ -504,7 +507,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       if (typeof payload.input_tokens === 'number') thinkBlock.inputTokens = payload.input_tokens
       if (typeof payload.output_tokens === 'number') thinkBlock.outputTokens = payload.output_tokens
       if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
-      sessionStore.updateBlock(thinkBlock.id, {
+      chat.updateBlock(thinkBlock.id, {
         output: thinkBlock.output,
         input: thinkBlock.input,
         tokenUsage: thinkBlock.tokenUsage,
@@ -521,13 +524,13 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
   /** 最终回复流式文本：开始输出即收敛思考块为 done，避免弹窗在回复已展示后仍显示「思考中...」 */
   function onTextChunk(ctx: StreamEventCtx) {
     const chunk = typeof ctx.payload === 'string' ? ctx.payload : String(ctx.payload.chunk || '')
-    sessionStore.finalizeThinkingBlocks(ctx.botMsgId)
+    chat.finalizeThinkingBlocks(ctx.botMsgId)
     appendAssistantChunk(ctx, chunk)
   }
 
   function onCitation(ctx: StreamEventCtx) {
     if (textBlockId) {
-      sessionStore.updateBlock(textBlockId, {
+      chat.updateBlock(textBlockId, {
         citingIds: ctx.payload.citing_ids as string[],
       } as Partial<Block>)
     }
@@ -535,15 +538,15 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
 
   /** 一轮回复流式输出完成：收敛全部块、标记 Planning 完成，并追加 Feedback 块 */
   function onDone(ctx: StreamEventCtx) {
-    sessionStore.finalizeBlocks(ctx.botMsgId)
-    sessionStore.updatePlanning({ status: 'done' })
+    chat.finalizeBlocks(ctx.botMsgId)
+    ui.updatePlanning({ status: 'done' })
     // 需求理解暂停等待确认：不关闭思考弹窗、不追加 Feedback 块，等待用户确认后重新发起
     if (ctx.payload.paused) {
       textBlockId = null
       return
     }
     // done 事件 → 自动关闭思考弹窗（满足最短展示 5 秒后关闭）
-    sessionStore.requestAutoCloseThinkingModal()
+    ui.requestAutoCloseThinkingModal()
     const feedbackBlock: Block = {
       id: `block-fb-${Date.now()}`,
       msgId: ctx.botMsgId,
@@ -552,21 +555,21 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       traceId: String(ctx.payload.trace_id || currentTraceId || ''),
       meta: { status: 'done', createdAt: ctx.serverTime, updatedAt: ctx.serverTime },
     } as Block
-    sessionStore.addBlock(feedbackBlock)
+    chat.addBlock(feedbackBlock)
     textBlockId = null
   }
 
   /** 单个 Agent 执行失败（ERROR → 红色），并记录错误信息 */
   function onAgentError(ctx: StreamEventCtx) {
     const { payload } = ctx
-    sessionStore.setAgentStatus(ctx.agentId, 'ERROR', undefined, ctx.taskId)
+    ui.setAgentStatus(ctx.agentId, 'ERROR', undefined, ctx.taskId)
     const thinkBlock = getOrCreateThinkBlock(ctx, ctx.agentId)
     if (typeof payload.error_message === 'string' && payload.error_message) {
       thinkBlock.output = { error: payload.error_message } as string | Record<string, unknown>
     }
     if (payload.input) thinkBlock.input = payload.input as string | Record<string, unknown>
     if (typeof payload.elapsed_ms === 'number') thinkBlock.durationMs = payload.elapsed_ms
-    sessionStore.updateBlock(thinkBlock.id, {
+    chat.updateBlock(thinkBlock.id, {
       output: thinkBlock.output,
       input: thinkBlock.input,
       durationMs: thinkBlock.durationMs,
@@ -578,11 +581,11 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
   function onError(ctx: StreamEventCtx) {
     const { payload } = ctx
     if (ctx.agentId) {
-      sessionStore.setAgentStatus(ctx.agentId, 'ERROR')
+      ui.setAgentStatus(ctx.agentId, 'ERROR')
     } else {
-      for (const [aid, info] of Object.entries(sessionStore.agentExecutions)) {
+      for (const [aid, info] of Object.entries(ui.agentExecutions)) {
         if (info.status === 'RUNNING' || info.status === 'PENDING') {
-          sessionStore.setAgentStatus(aid, 'ERROR')
+          ui.setAgentStatus(aid, 'ERROR')
         }
       }
     }
@@ -597,8 +600,8 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       traceId: String(payload.trace_id || currentTraceId || ''),
       meta: { status: 'error', createdAt: ctx.serverTime, updatedAt: ctx.serverTime },
     } as Block
-    sessionStore.addBlock(errBlock)
-    sessionStore.requestAutoCloseThinkingModal()
+    chat.addBlock(errBlock)
+    ui.requestAutoCloseThinkingModal()
   }
 
   /** 事件分发表：agent_thinking/thinking、agent_action/agent_status、text_chunk/text 为同义别名 */
@@ -640,7 +643,7 @@ export function createChatStreamEventHandler(sessionStore: SessionStore): ChatSt
       const serverTime = Number(isStructured ? (data.timestamp || Date.now()) : Date.now())
       const agentId = String(isStructured ? (data.agent_id || '') : (payload.agent_id || ''))
       const taskId = String(isStructured ? (data.task_id || '') : (payload.task_id || ''))
-      handlers[event]?.({ sessionStore, botMsgId, payload, serverTime, agentId, taskId })
+      handlers[event]?.({ chat, ui, botMsgId, payload, serverTime, agentId, taskId })
     },
     reset(clearTrace = false) {
       textBlockId = null

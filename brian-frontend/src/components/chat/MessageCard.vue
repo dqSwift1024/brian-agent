@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check, Brain, Gauge } from '@lucide/vue'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
-import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import { formatTime as sharedFormatTime } from '../../utils/format'
 
 const props = withDefaults(
@@ -53,7 +53,7 @@ const emit = defineEmits<{
   (e: 'showEval', id: string): void
 }>()
 
-const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 
 const expandedCiting = ref(false)
 const expandedCited = ref(false)
@@ -136,7 +136,7 @@ function handleShowThinking(e: MouseEvent) {
   const el = e.currentTarget as HTMLElement | null
   if (el) {
     const r = el.getBoundingClientRect()
-    sessionStore.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
+    chatUi.setThinkingOrigin({ left: r.left, top: r.top, width: r.width, height: r.height })
   }
   emit('showThinking', targetId.value)
 }

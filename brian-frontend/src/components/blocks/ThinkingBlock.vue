@@ -29,7 +29,7 @@ import {
   MessageSquare
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
-import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 
@@ -50,7 +50,7 @@ const props = withDefaults(
   },
 )
 
-const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 const isExpanded = ref(props.startExpanded)
 const activeTab = ref<'io' | 'chain' | 'prompt'>(props.defaultTab)
 
@@ -60,7 +60,7 @@ const isStreaming = computed(() => props.block.meta.status === 'streaming')
 const runtimeStatus = computed(() => {
   const id = props.block.agentInfo?.id
   if (id) {
-    const rt = sessionStore.agentExecutions[id]
+    const rt = chatUi.agentExecutions[id]
     if (rt && rt.status) return rt.status
   }
   return isStreaming.value ? 'RUNNING' : 'SUCCESS'

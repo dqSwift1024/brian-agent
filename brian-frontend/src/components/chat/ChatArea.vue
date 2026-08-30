@@ -7,6 +7,7 @@ import {
   UserRound,
 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import { chatApi } from '@/api'
 import type { ChatMessage, Block } from '@/api/types'
 import ChatMap from './ChatMap.vue'
@@ -20,6 +21,7 @@ import ClarificationCard from './ClarificationCard.vue'
 import { useChatStream } from '@/composables/useChatStream'
 
 const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 const {
   confirmingIntent,
   submittingClarification,
@@ -86,7 +88,7 @@ watch(() => sessionStore.focusInfoId, async (id) => {
 
 // 需求确认 / 需求补充卡片出现时滚动到底部，确保表单可见可交互
 watch(
-  () => [sessionStore.intentConfirmation, sessionStore.clarificationRequest],
+  () => [chatUi.intentConfirmation, chatUi.clarificationRequest],
   async ([intent, clarify]) => {
     if (!intent && !clarify) return
     await nextTick()
@@ -115,16 +117,16 @@ function jumpTo(id: string) {
 // 思考过程独立按模块并发加载（DAG 与 ThinkingBlocks 独立请求并渐进式展示）
 async function showThinking(id: string) {
   // 1. 立即打开弹窗并展示"正在加载思考过程..."动态加载态，避免静态空白卡顿
-  sessionStore.startThinkingLoading(id)
+  chatUi.startThinkingLoading(id)
 
   // 2. 模块独立加载：DAG 图与思考块独立请求并回调更新
   const dagPromise = chatApi.thinking(id, 'dag')
-    .then(res => sessionStore.setThinkingDag(res.dag ?? null))
-    .catch(() => sessionStore.setThinkingDag(null))
+    .then(res => chatUi.setThinkingDag(res.dag ?? null))
+    .catch(() => chatUi.setThinkingDag(null))
 
   const blocksPromise = chatApi.thinking(id, 'blocks')
-    .then(res => sessionStore.setThinkingBlocks(res.blocks ?? []))
-    .catch(() => sessionStore.setThinkingBlocks([]))
+    .then(res => chatUi.setThinkingBlocks(res.blocks ?? []))
+    .catch(() => chatUi.setThinkingBlocks([]))
 
   await Promise.allSettled([dagPromise, blocksPromise])
 }
@@ -241,7 +243,7 @@ function startResize(e: MouseEvent) {
                 @click-card="centerMapOn"
                 @jump-to="jumpTo"
                 @show-thinking="showThinking"
-                @show-eval="sessionStore.openEvalResult"
+                @show-eval="chatUi.openEvalResult"
               />
             </div>
 
@@ -265,19 +267,19 @@ function startResize(e: MouseEvent) {
 
         <!-- 需求理解确认卡片（对话区内联） -->
         <IntentConfirmCard
-          v-if="sessionStore.intentConfirmation"
-          :confirmation="sessionStore.intentConfirmation"
+          v-if="chatUi.intentConfirmation"
+          :confirmation="chatUi.intentConfirmation"
           :submitting="confirmingIntent"
           @confirm="handleIntentConfirm"
         />
 
         <!-- 需求补充卡片（对话区内联） -->
         <ClarificationCard
-          v-if="sessionStore.clarificationRequest"
-          :request="sessionStore.clarificationRequest"
+          v-if="chatUi.clarificationRequest"
+          :request="chatUi.clarificationRequest"
           :submitting="submittingClarification"
           @submit="handleClarificationSubmit"
-          @cancel="sessionStore.clearClarificationRequest()"
+          @cancel="chatUi.clearClarificationRequest()"
         />
       </div>
 

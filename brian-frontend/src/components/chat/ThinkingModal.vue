@@ -2,23 +2,25 @@
 import { computed, ref, nextTick } from 'vue'
 import { X, Brain, Loader2 } from '@lucide/vue'
 import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import type { ThinkingBlock, PlanningData } from '@/api/types'
 import ThinkingContext from './ThinkingContext.vue'
 import TaskDagFlow from './TaskDagFlow.vue'
 import AgentDagFlow from './AgentDagFlow.vue'
 import ThinkingBlockView from '@/components/blocks/ThinkingBlock.vue'
 const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 
-const visible = computed(() => sessionStore.thinkingModalVisible)
-const targetMsgId = computed(() => sessionStore.thinkingTargetMsgId)
-const thinkingLoading = computed(() => sessionStore.thinkingLoading)
-const dagLoading = computed(() => sessionStore.dagLoading)
-const blocksLoading = computed(() => sessionStore.blocksLoading)
+const visible = computed(() => chatUi.thinkingModalVisible)
+const targetMsgId = computed(() => chatUi.thinkingTargetMsgId)
+const thinkingLoading = computed(() => chatUi.thinkingLoading)
+const dagLoading = computed(() => chatUi.dagLoading)
+const blocksLoading = computed(() => chatUi.blocksLoading)
 
 // 指定消息（思考过程按钮）→ 展示后端接口采集的思考块；未指定（流式期间自动弹出）→ 展示当前流式思考块
 const thinkingBlocks = computed<ThinkingBlock[]>(() => {
   if (targetMsgId.value) {
-    return sessionStore.thinkingBlocks as ThinkingBlock[]
+    return chatUi.thinkingBlocks as ThinkingBlock[]
   }
   return sessionStore.blocks.filter(
     (b): b is ThinkingBlock => b.type === 'ThinkingChain' && b.meta.status === 'streaming',
@@ -28,7 +30,7 @@ const thinkingBlocks = computed<ThinkingBlock[]>(() => {
 // Planning 策略拆解：指定消息 → 接口采集的 Task/Agent DAG；流式期间 → 实时拆解数据
 const planning = computed<PlanningData | null>(() => {
   if (targetMsgId.value) {
-    const dag = sessionStore.thinkingDag
+    const dag = chatUi.thinkingDag
     if (!dag || (!dag.nodes.length && !dag.taskDag)) return null
     return {
       planId: dag.planId,
@@ -37,7 +39,7 @@ const planning = computed<PlanningData | null>(() => {
       status: 'done',
     }
   }
-  const p = sessionStore.planning
+  const p = chatUi.planning
   if (!p.taskDag && !p.agentDag && !(p.executionSteps && p.executionSteps.length > 0)) return null
   return p
 })
@@ -52,7 +54,7 @@ const executionAgents = computed<ThinkingBlock[]>(() => thinkingBlocks.value)
 // 整体的"思考中"状态：任一 Agent 处于思考中（RUNNING）即整体显示"思考中"
 const overallStreaming = computed(() => {
   if (thinkingBlocks.value.some((b) => b.meta.status === 'streaming')) return true
-  return Object.values(sessionStore.agentExecutions).some((i) => i.status === 'RUNNING')
+  return Object.values(chatUi.agentExecutions).some((i) => i.status === 'RUNNING')
 })
 
 // AgentDAG 与下方 Agent 执行区联动：点击 AgentDAG 节点 → 定位并高亮对应 Agent 卡片
@@ -69,7 +71,7 @@ async function focusAgent(agentId: string) {
 }
 
 function close() {
-  sessionStore.closeThinkingModal()
+  chatUi.closeThinkingModal()
 }
 
 // ===== 弹窗入场/退场动画：从"思考过程"按钮位置按曲线速率弹出，回收也按曲线速率缩回该按钮 =====
@@ -111,7 +113,7 @@ function flipDelta(from: Rect, to: Rect) {
 // before-enter 触发时元素尚未插入 DOM，getBoundingClientRect 返回全 0；
 // 故在此仅记录动画起点（"思考过程"按钮矩形），并将遮罩置于透明待入场。
 function onBeforeEnter() {
-  const origin = sessionStore.thinkingOrigin
+  const origin = chatUi.thinkingOrigin
   startRect = origin && origin.width > 0 && origin.height > 0 ? { ...origin } : null
   if (overlayRef.value) overlayRef.value.style.opacity = '0'
 }
@@ -163,7 +165,7 @@ function onLeave(_el: Element, done: () => void) {
   const el = cardRef.value
   const end = endRect
   if (el && end && end.width > 0) {
-    const origin = sessionStore.thinkingOrigin
+    const origin = chatUi.thinkingOrigin
     const to = origin && origin.width > 0 && origin.height > 0 ? origin : fallbackRect(end)
     void el.offsetWidth
     el.style.transformOrigin = '0 0'
@@ -181,7 +183,7 @@ function onLeave(_el: Element, done: () => void) {
 function onAfterLeave() {
   startRect = null
   endRect = null
-  sessionStore.clearThinkingOrigin()
+  chatUi.clearThinkingOrigin()
 }
 </script>
 

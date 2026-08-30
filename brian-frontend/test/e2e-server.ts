@@ -22,6 +22,8 @@ const tempDirs: string[] = [];
 
 function resetSeq() { _seq = 0; }
 function makeTempDir(): string {
+  // 基础目录可能不存在（干净环境），先递归创建
+  fs.mkdirSync('/tmp/opencode', { recursive: true });
   const dir = fs.mkdtempSync(path.join('/tmp/opencode', 'brian-e2e-test-'));
   tempDirs.push(dir);
   return dir;

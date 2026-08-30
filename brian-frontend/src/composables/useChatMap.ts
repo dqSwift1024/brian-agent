@@ -7,6 +7,7 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import { chatApi } from '@/api'
 import type { ChatMapNode } from '@/api/types'
 import { NODE_H, NODE_W } from '@/utils/chatMapLayout'
@@ -17,6 +18,7 @@ import {
 
 export function useChatMap() {
   const sessionStore = useSessionStore()
+  const chatUi = useChatUiStore()
 
   const containerRef = ref<HTMLDivElement | null>(null)
   const scale = ref(1)
@@ -243,15 +245,15 @@ export function useChatMap() {
 
   // ===== 思考过程独立按模块并发加载（DAG 与 ThinkingBlocks 独立加载与渐进式展示） =====
   async function showThinking(infoId: string) {
-    sessionStore.startThinkingLoading(infoId)
+    chatUi.startThinkingLoading(infoId)
 
     const dagPromise = chatApi.thinking(infoId, 'dag')
-      .then(res => sessionStore.setThinkingDag(res.dag ?? null))
-      .catch(() => sessionStore.setThinkingDag(null))
+      .then(res => chatUi.setThinkingDag(res.dag ?? null))
+      .catch(() => chatUi.setThinkingDag(null))
 
     const blocksPromise = chatApi.thinking(infoId, 'blocks')
-      .then(res => sessionStore.setThinkingBlocks(res.blocks ?? []))
-      .catch(() => sessionStore.setThinkingBlocks([]))
+      .then(res => chatUi.setThinkingBlocks(res.blocks ?? []))
+      .catch(() => chatUi.setThinkingBlocks([]))
 
     await Promise.allSettled([dagPromise, blocksPromise])
   }

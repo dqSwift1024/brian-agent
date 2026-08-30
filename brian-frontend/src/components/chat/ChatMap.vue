@@ -6,11 +6,13 @@
  * 初始布局见 utils/chatMapLayout。
  */
 import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import { edgeKey } from '@/utils/chatMapGeometry'
 import MessageCard from './MessageCard.vue'
 import { useChatMap } from '@/composables/useChatMap'
 
 const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 
 const {
   containerRef, scale, offset, isPanning,
@@ -131,7 +133,7 @@ const {
           @click-card="onNodeClick(n)"
           @jump-to="jumpTo"
           @show-thinking="showThinking"
-          @show-eval="sessionStore.openEvalResult"
+          @show-eval="chatUi.openEvalResult"
         />
       </div>
     </div>
