@@ -29,8 +29,9 @@ export const CHAT_MAP_BASE_Y = 180
 
 const CITATION_EXTRA_COL_GAP = 60
 
-const NODE_W = 330
-const NODE_H = 162
+/** 消息框尺寸：宽/高在原始基础上放大为 1.5 倍（220→330，108→162），布局与视图共用 */
+export const NODE_W = 330
+export const NODE_H = 162
 
 const RESPONSE_TYPE = 'RESPONSE'
 
@@ -171,7 +172,8 @@ function applyCoordinates(
 }
 
 // ===== 后处理：检测并解决节点重叠（完全消除重叠） =====
-function rectsOverlap(
+/** 碰撞检测：两个矩形是否重叠（布局重叠消解与拖拽推离共用） */
+export function rectsOverlap(
   ax: number, ay: number, aw: number, ah: number,
   bx: number, by: number, bw: number, bh: number,
 ): boolean {
