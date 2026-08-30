@@ -184,16 +184,4 @@ npm run build         # 按依赖顺序构建全部（前端含 vue-tsc 类型�
 | [docs/_1_DevStandards/DevStandards.md](docs/_1_DevStandards/DevStandards.md) | 开发强制规范（方法签名 / AOP / 分层） |
 | [docs/TODO-List.md](docs/TODO-List.md) | 待开发功能清单 |
 
-## 📄 许可证
-
-本项目基于 [Apache License 2.0](LICENSE) 开源。
-
-```
-Copyright 2026 Brian-Agent Team
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
 ```
