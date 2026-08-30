@@ -16,22 +16,17 @@ import type { InfoTabKey } from '../api/types'
 export interface TagGraphTabDeps {
   activeTab: Ref<InfoTabKey>
   closeContextMenu: () => void
-  historySearch: Ref<string>
-  historyStartTime: Ref<string>
-  historyEndTime: Ref<string>
   loadHistory: () => void
   loadMemory: () => void
   loadAllDateCounts: () => PromiseLike<unknown> | unknown
   loadLibraries: () => void
   loadProfile: () => void
-  memoryStartTime: Ref<string>
-  memoryEndTime: Ref<string>
   onMemoryScroll: () => void
   startDateCountRefresh: () => void
   stopDateCountRefresh: () => void
 }
 
-export function useTagGraphTab({ activeTab, closeContextMenu, historySearch, historyStartTime, historyEndTime, loadHistory, loadMemory, loadAllDateCounts, loadLibraries, loadProfile, memoryStartTime, memoryEndTime, onMemoryScroll, startDateCountRefresh, stopDateCountRefresh }: TagGraphTabDeps) {
+export function useTagGraphTab({ activeTab, closeContextMenu, loadHistory, loadMemory, loadAllDateCounts, loadLibraries, loadProfile, onMemoryScroll, startDateCountRefresh, stopDateCountRefresh }: TagGraphTabDeps) {
 // Tag graph tab（Obsidian 风格力导向图）
 interface TagLayoutNode extends GraphNode { x: number; y: number; r: number; color: string }
 
@@ -564,22 +559,10 @@ watch(activeTab, (val) => {
   loadTabData(val)
 })
 
-let historySearchTimer: ReturnType<typeof setTimeout> | null = null
-watch([historySearch, historyStartTime, historyEndTime], () => {
-  if (historySearchTimer) clearTimeout(historySearchTimer)
-  historySearchTimer = setTimeout(() => { loadHistory() }, 300)
+watch(activeTab, (val) => {
+  localStorage.setItem('brian-info-active-tab', val)
+  loadTabData(val)
 })
-
-let memorySearchTimer: ReturnType<typeof setTimeout> | null = null
-watch([memoryStartTime, memoryEndTime], () => {
-  if (memorySearchTimer) clearTimeout(memorySearchTimer)
-  memorySearchTimer = setTimeout(() => { loadMemory() }, 300)
-})
-
-function searchMemoryByEnter() {
-  if (memorySearchTimer) clearTimeout(memorySearchTimer)
-  loadMemory()
-}
 
   return {
     clearKeywordGraph,
@@ -621,8 +604,7 @@ function searchMemoryByEnter() {
     loadTagGraph,
     loadedTabs,
     loadingGraph,
-    loadingKeywordGraph,
-    onKeywordGraphMouseDown,
+    loadingKeywordGraph,    onKeywordGraphMouseDown,
     onKeywordGraphMouseMove,
     onKeywordGraphMouseUp,
     onKeywordGraphWheel,
@@ -639,7 +621,6 @@ function searchMemoryByEnter() {
     resetTagGraphView,
     saveKeywordGraphConfig,
     saveTagGraphConfig,
-    searchMemoryByEnter,
     selectKeywordNode,
     selectTagNode,
     selectedKeyword,

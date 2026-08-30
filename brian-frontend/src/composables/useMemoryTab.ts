@@ -105,6 +105,17 @@ async function loadMoreMemory() {
   await loadMemory(false)
 }
 
+// 时间过滤变化防抖后刷新；搜索框回车立即检索（原位于 useTagGraphTab，归位至本页签）
+watch([memoryStartTime, memoryEndTime], () => {
+  if (memorySearchTimer.value) clearTimeout(memorySearchTimer.value)
+  memorySearchTimer.value = setTimeout(() => { loadMemory() }, 300)
+})
+
+function searchMemoryByEnter() {
+  if (memorySearchTimer.value) clearTimeout(memorySearchTimer.value)
+  loadMemory()
+}
+
 const memorySentinel = ref<HTMLElement | null>(null)
 let memoryObserver: IntersectionObserver | null = null
 
@@ -382,6 +393,7 @@ function clickHeatmapDay(day: number | null) {
     prevHeatmapMonth,
     requestMemoryDelete,
     scrollMemoryNavToActive,
+    searchMemoryByEnter,
     selectedMemories,
     startDateCountRefresh,
     stopDateCountRefresh,

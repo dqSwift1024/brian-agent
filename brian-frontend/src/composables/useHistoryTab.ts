@@ -5,7 +5,7 @@
  * 模板经解构引用，函数名与原先保持一致。
  */
 
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatApi } from '../api'
 import type { ChatSession } from '../api/types'
@@ -43,6 +43,13 @@ async function loadHistory() {
   catch { /* ignore */ }
   finally { loadingHistory.value = false }
 }
+
+// 搜索条件变化防抖后刷新（原位于 useTagGraphTab，归位至本页签）
+let historySearchTimer: ReturnType<typeof setTimeout> | null = null
+watch([historySearch, historyStartTime, historyEndTime], () => {
+  if (historySearchTimer) clearTimeout(historySearchTimer)
+  historySearchTimer = setTimeout(() => { loadHistory() }, 300)
+})
 
 const filteredHistory = computed(() => {
   return [...chatList.value].sort((a, b) => b.lastTime - a.lastTime)
