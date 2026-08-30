@@ -62,6 +62,7 @@ brian-agent-<plat>-<arch>/
 │   ├── brian-server.cjs        # 后端 bundle（esbuild 打包全部 5 层 + dev-server）
 │   ├── package.json            # 存根：better-sqlite3 的 bindings() 定位模块根用
 │   ├── portable.marker         # 便携模式标记
+│   ├── seed/system-seed.json   # 系统数据种子（通用目录数据，首跑自动导入）
 │   ├── build/Release/          # better_sqlite3.node（bindings() 默认查找路径）
 │   └── native/<plat>-<arch>/   # better_sqlite3 / isolated_vm / jieba / lancedb
 ├── web/                        # 前端 dist（由后端同端口服务，SPA fallback）
@@ -94,6 +95,21 @@ Windows：`brian.cmd start|stop|status|serve|open`。
 3. **Chromium**（`setup-chromium.ts`）：便携包从 `<包根>/chrome/chrome.zip`
    解压到系统临时目录（带缓存）并设置 `BRIAN_CHROME_PATH`；未内置时 CDT
    回退系统 Chrome。
+
+## 系统数据种子（个人数据 / 系统数据分离）
+
+打包时执行 `packaging/export-system-data.mjs`，从构建机库（`brian-backend/data/brian.db`）
+导出**通用数据**为 `system-seed.json`，包内首跑自动导入（`BRIAN_SEED_FILE`，
+仅空表导入、绝不覆盖运行数据，天然幂等）：
+
+| 分类 | 内容 | 处理 |
+|------|------|------|
+| 系统数据（随包） | `llm_provider` 模型提供商目录（13 行：OpenAI/Anthropic/DeepSeek/智谱/通义等） | 剔除指向本机(127.0.0.1/localhost)的行；`api_key` 一律置空 |
+| 系统数据（随包） | `mcp_provider` MCP 提供商目录（4 行：阿里云百炼/ModelScope/GitHub/Smithery） | 全量 |
+| 个人数据（不打包） | `api_key`、`llm_available`（个人选配模型）、`mcp_install`（个人安装实例）、会话/记忆/向量库/图谱/画像/Agent/Skill 实体、usage/trace/日志 | 一概不导出 |
+
+规则维护在 `export-system-data.mjs` 的 `SYSTEM_TABLES / SANITIZE_FIELDS / ROW_FILTERS`。
+`--no-system-data` 可跳过种子打包。
 
 ### 已知限制
 

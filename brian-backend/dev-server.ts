@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws';
 
 import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, Operator } from '@brian-agent/base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
+import { applySystemSeed } from './seed/systemSeed';
 import { LLMAccess } from './Base/LLMProvider';
 import { MCPAccess } from './Base/MCPProvider';
 import { SoulAccess } from './Base/SoulProvider';
@@ -4509,6 +4510,24 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
 async function main() {
   fileLogger.info('[dev-server] Initializing brian-backend (real backends, no mocks)...');
   const ctx = await buildContext();
+
+  // 发行包系统数据种子（通用目录数据：模型提供商列表 / MCP 提供商列表，
+  // 由 packaging/export-system-data.mjs 从构建机库导出，个人数据已剔除）。
+  // 仅空表导入，不覆盖运行数据；非打包环境无 BRIAN_SEED_FILE，行为不变。
+  if (process.env.BRIAN_SEED_FILE) {
+    try {
+      const seedResult = await applySystemSeed(ctx.relationDb, process.env.BRIAN_SEED_FILE);
+      for (const { table, rows } of seedResult.imported) {
+        fileLogger.info(`[dev-server] 系统数据种子已导入: ${table} (${rows} 行)`);
+      }
+      if (seedResult.skipped.length > 0) {
+        fileLogger.info(`[dev-server] 系统数据种子跳过非空表: ${seedResult.skipped.join(', ')}`);
+      }
+    } catch (e) {
+      fileLogger.warn(`[dev-server] 系统数据种子导入失败（不影响启动）: ${(e as Error).message}`);
+    }
+  }
+
   const server = createServer(ctx);
   // 防止 Node.js HTTP Server 默认超时中断长连接（如 SSE 对话流或多轮 Agent 思考）
   server.timeout = 0;
@@ -4572,7 +4591,7 @@ main().catch((err) => {
   fileLogger.error('[dev-server] Fatal error:', err);
   // Error 实例的 message/stack 不在可枚举属性上，fileLogger 序列化会丢失，此处显式展开
   if (err instanceof Error) {
-    fileLogger.error('[dev-server] Fatal detail:', err.message, '\n', err.stack);
+    fileLogger.error('[dev-server] Fatal detail:', `${err.message}\n${err.stack}`);
   }
   // eslint-disable-next-line no-console
   console.error('[dev-server] Fatal:', err instanceof Error ? err.stack : err);

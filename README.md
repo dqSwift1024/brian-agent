@@ -64,7 +64,8 @@ Linux 可选 systemd 常驻：`sudo cp systemd/brian-agent.service /etc/systemd/
 ### 首次运行须知
 
 - 包内**不含数据库**：`data/` 在首次运行时自动创建（表结构与默认配置种子自动初始化）；
-- 全新包**未配置 LLM API Key**，需先在 `/config` 页面配置模型供应商才能开始对话；
+- **通用目录数据已随包预置**：模型提供商列表（OpenAI/Anthropic/DeepSeek/智谱/通义等 13 家）与 MCP 提供商列表（阿里云百炼/ModelScope/GitHub/Smithery 等）在首次运行时自动导入；
+- **个人数据不打包**（API Key、对话、记忆等）：提供商目录不含 API Key，需在 `/config` 页选择提供商并填入自己的 Key 才能开始对话；
 - 数据目录默认为包内 `data/`（`BRIAN_DATA_DIR` 可改）；端口 `BRIAN_PORT`（默认 8000）、监听地址 `BRIAN_HOST`（默认 127.0.0.1）；
 - Windows 首次运行若被 SmartScreen 拦截，选择「仍要运行」。
 

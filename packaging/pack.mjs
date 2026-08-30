@@ -67,6 +67,7 @@ const TARGETS = {
 const args = process.argv.slice(2);
 const SKIP_CHROMIUM = args.includes('--skip-chromium');
 const SKIP_FRONTEND_BUILD = args.includes('--skip-frontend-build');
+const NO_SYSTEM_DATA = args.includes('--no-system-data');
 const onlyIdx = args.indexOf('--only');
 const onlyTargets = onlyIdx >= 0 ? args[onlyIdx + 1].split(',') : null;
 
@@ -524,7 +525,7 @@ WantedBy=multi-user.target
 // ---------------------------------------------------------------------------
 // 组装单个目标
 // ---------------------------------------------------------------------------
-async function packTarget(targetKey, bundlePath) {
+async function packTarget(targetKey, bundlePath, seedPath) {
   const t = TARGETS[targetKey];
   const name = `brian-agent-${targetKey}`;
   const pkg = path.join(OUT, name);
@@ -570,20 +571,26 @@ async function packTarget(targetKey, bundlePath) {
   if (!fs.existsSync(path.join(webDist, 'index.html'))) die('前端 dist 不存在，先执行 npm run build:frontend');
   fs.cpSync(webDist, path.join(pkg, 'web'), { recursive: true });
 
-  // 5) Chromium
+  // 5) 系统数据种子
+  if (seedPath) {
+    fs.mkdirSync(path.join(pkg, 'server', 'seed'), { recursive: true });
+    fs.copyFileSync(seedPath, path.join(pkg, 'server', 'seed', 'system-seed.json'));
+  }
+
+  // 6) Chromium
   const chromeZip = await fetchChromium(targetKey);
   if (chromeZip) {
     fs.mkdirSync(path.join(pkg, 'chrome'), { recursive: true });
     fs.copyFileSync(chromeZip, path.join(pkg, 'chrome', 'chrome.zip'));
   }
 
-  // 6) systemd 单元（非 Windows）
+  // 7) systemd 单元（非 Windows）
   if (t.os !== 'win32') {
     fs.mkdirSync(path.join(pkg, 'systemd'), { recursive: true });
     fs.writeFileSync(path.join(pkg, 'systemd', 'brian-agent.service'), SYSTEMD_UNIT);
   }
 
-  // 7) 启动器与 README
+  // 8) 启动器与 README
   if (t.os === 'win32') {
     fs.writeFileSync(path.join(pkg, 'brian.cmd'), brianCmdTemplate());
   } else {
@@ -592,7 +599,7 @@ async function packTarget(targetKey, bundlePath) {
   }
   fs.writeFileSync(path.join(pkg, 'README.txt'), readmeTemplate(targetKey));
 
-  // 8) 归档
+  // 9) 归档
   fs.mkdirSync(OUT, { recursive: true });
   if (t.archive === 'tar.gz') {
     const out = path.join(OUT, `${name}.tar.gz`);
@@ -692,11 +699,23 @@ async function main() {
   fs.mkdirSync(CACHE, { recursive: true });
 
   buildFrontend();
+
+  // 系统数据种子（通用目录数据：模型提供商列表 / MCP 提供商列表）
+  let seedPath = null;
+  if (!NO_SYSTEM_DATA) {
+    seedPath = path.join(OUT, 'system-seed.json');
+    run(`node packaging/export-system-data.mjs --out "${seedPath}"`);
+    if (!fs.existsSync(seedPath)) {
+      warn('系统数据导出未产生文件（构建机库不存在或为空），包内将不含种子');
+      seedPath = null;
+    }
+  }
+
   const bundlePath = await buildBundle();
 
   let linuxPkg = null;
   for (const targetKey of targets) {
-    const pkg = await packTarget(targetKey, bundlePath);
+    const pkg = await packTarget(targetKey, bundlePath, seedPath);
     if (targetKey === 'linux-x64') linuxPkg = pkg;
   }
 

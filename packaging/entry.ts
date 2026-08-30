@@ -42,6 +42,11 @@ function setupPortable(): boolean {
   if (!process.env.BRIAN_NATIVE_DIR) {
     process.env.BRIAN_NATIVE_DIR = path.join(root, 'server', 'native');
   }
+  // 系统数据种子（通用目录数据：模型提供商列表 / MCP 提供商列表）
+  const seedPath = path.join(root, 'server', 'seed', 'system-seed.json');
+  if (fs.existsSync(seedPath)) {
+    process.env.BRIAN_SEED_FILE = seedPath;
+  }
   // 前端静态文件：从 web/ 目录构建 base64 映射（与 SEA asset 的 frontend.json 同构），
   // dev-server 的 serveFrontend 零改动复用
   const webDir = path.join(root, 'web');
