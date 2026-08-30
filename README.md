@@ -1,40 +1,90 @@
+<div align="center">
+
 # Brian-Agent
 
-面向 C 端用户的 C/S 架构 Agent 服务，核心理念是做"一个人"而非"一个工具"——具备记忆、自我反思、内在动力与成长进化能力。支持单机部署，也可改造为集中部署的 SaaS 服务。
+**面向 C 端用户的智能个人 Agent 服务 —— 不是做一个"工具"，而是做一个"人"**
 
-## 快速开始
+具备记忆、自我反思、内在动力与成长进化能力 · 支持单机交付，亦可改造为集中部署的 SaaS
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/Node.js-22.x-339933?logo=node.js&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D?logo=vue.js&logoColor=white)
+
+</div>
+
+---
+
+## ✨ 核心特性
+
+### 1. ChatMap 可视化控制
+
+只问答你关心的信息，摒弃无用的信息进入上下文：上下文的构建只采用**被引用的消息**，
+不会加载无关消息，实现对话上下文的自主控制。
+
+<div align="center">
+  <img src="README/image.png" width="800" alt="ChatMap 可视化控制" />
+</div>
+
+### 2. Memory Pin 机制（强制模型注意力）
+
+对话轮数过多、上下文过长时，重要信息可能被忽略或丢失。只需 **Pin 住消息**，
+它就会永远留在上下文的关键位置，不被滑动窗口冲刷。
+
+<div align="center">
+  <img src="README/image-1.png" width="640" alt="Memory Pin 机制" />
+</div>
+
+### 3. 涌现图与关键词图（提升 Memory 质量）
+
+**信息页面**（`/info`）提供两个基于**共现关系**的知识图谱，帮助用户发现记忆中的隐藏关联：
+
+**涌现图（Tag Graph）** —— 基于时间线的信息大部分是重要的，但上下文长度有限、时间距离过远的信息容易损失。系统理解请求内容后，通过标签图谱搜索，选中与当前请求最相关的信息。
+
+<div align="center">
+  <img src="README/image-2.png" width="800" alt="涌现图（Tag Graph）" />
+</div>
+
+**关键词图（Keyword Graph）** —— 大脑中有些灵光一闪，是被某一个词激活的。通过关键词图的关联性搜索，重现这种"灵光一闪"。
+
+<div align="center">
+  <img src="README/image-3.png" width="800" alt="关键词图（Keyword Graph）" />
+</div>
+
+> 这两个图谱的价值在于：**自动发现记忆中的涌现模式**——用户可能从未意识到的标签/关键词之间的关联被自动挖掘并可视化，帮助用户理解和审视自己的知识结构。同时，这些图谱关系也反向服务于上下文构建（`TAG_RELATIVE` 和 `KEYWORD` 维度），让模型在检索时不仅依赖向量相似度，还能利用**结构化的共现关系**，提升检索质量。
+
+### 4. 随机记忆（增强 Memory 多样性）
+
+模拟人脑的**联想性/偶然性回忆**——有时最有价值的上下文恰恰来自看似无关的记忆。随机记忆防止上下文过于狭窄，为模型提供意外的灵感连接。
+
+## 🚀 快速开始（开发模式）
 
 ```bash
+git clone <repo-url> brian-agent && cd brian-agent
 
-git clone 
+npm install          # 安装依赖（postinstall 自动就位原生模块）
 
-# 安装依赖
-npm install
+./brian start        # 启动后端(:8000) + 前端(:5173)
+./brian open         # 浏览器打开前端
 
-# 启动后端 + 前端
-./brian start
-
-# 仅启动后端（端口 8000）
-./brian start backend
-
-# 仅启动前端（端口 5173）
-npm run dev -w @brian-agent/frontend
-
-# 构建
-npm run build
-
-# 运行测试
-npm run test
-
-# 类型检查
-npm run typecheck
+# 常用
+./brian start backend        # 仅启动后端
+./brian serve                # 前台 headless 模式
+./brian doctor               # 环境与依赖自检
+./brian stop                 # 停止全部
 ```
 
-后端服务默认监听 `http://127.0.0.1:8000`，前端通过 Vite 代理转发 `/api` 和 `/ws` 请求。环境变量可通过 `BRIAN_PORT` 和 `BRIAN_HOST` 配置。
+后端默认监听 `http://127.0.0.1:8000`，前端 Vite(:5173) 代理 `/api` 与 `/ws`。
+环境变量：`BRIAN_PORT`、`BRIAN_HOST`。日常管理详见 [docs/使用手册.md](docs/使用手册.md)。
 
-## 打包分发与安装
+> 首次启动后需在 `/config` 页面配置模型供应商与 API Key，即可开始对话
+> （内置 13 家主流提供商目录：OpenAI / Anthropic / DeepSeek / 智谱 / 通义 / 火山引擎…）。
 
-把系统打成**自包含发行包**：内置 Node.js 运行时、全部原生依赖、前端页面与 Chrome for Testing（浏览器自动化用），目标机器**无需安装任何依赖**，解压即用。
+## 📦 打包分发与安装
+
+把系统打成**自包含发行包**：内置 Node.js 运行时、全部原生依赖、前端页面与
+Chrome for Testing（浏览器自动化用），目标机器**无需安装任何依赖**，解压即用。
 
 ### 一键打包（构建机执行）
 
@@ -69,41 +119,56 @@ Linux 可选 systemd 常驻：`sudo cp systemd/brian-agent.service /etc/systemd/
 - 数据目录默认为包内 `data/`（`BRIAN_DATA_DIR` 可改）；端口 `BRIAN_PORT`（默认 8000）、监听地址 `BRIAN_HOST`（默认 127.0.0.1）；
 - Windows 首次运行若被 SmartScreen 拦截，选择「仍要运行」。
 
-详见 [packaging/README.md](packaging/README.md)。
+详见 [packaging/README.md](packaging/README.md) 与 [docs/打包部署.md](docs/打包部署.md)。
 
-## 核心特性
+## 🏗️ 架构一览
 
-### 1. ChatMap 可视化控制
+npm workspaces 单仓库，后端按 DDD 分为 5 个严格分层的包，依赖单向：
+`base ← core ← agent ← orchestration ← application`；前端经 Vite 代理访问后端。
 
-只问答你关心的信息，摒弃无用的信息进入上下文；
-上下文的构建只会采用引用的消息，不会去加载没有引用的消息，实现自主控制上下文；
+| 包 | 层级 | 职责 |
+|----|------|------|
+| `@brian-agent/base` | 基础构件层 | RelationDB(SQLite) / GraphDB / VectorDB(LanceDB) / LLM / MCP / MQ / Prompts / Skill 沙箱 / Soul / CDT / Cron |
+| `@brian-agent/core` | 基础层 | InfoCore(记忆核心) / LLMCore / MCPCore / SkillCore / SoulCore / MQCore / CDTCore |
+| `@brian-agent/agent` | Agent 层 | AgentLibrary / AgentBuilder / AgentContext / AgentExecution / PlannerAgent / WriterAgent / EvolutorAgent |
+| `@brian-agent/orchestration` | 编排层 | OrchestrationEntry / Strategy / Execution / JSONNode / Visualization |
+| `@brian-agent/application` | 应用层 | Chat / Config / SelfLearning / UserProfile / Visualization |
+| `@brian-agent/frontend` | 前端 | Vue 3 + Pinia + Vite + Tailwind CSS（Apple 风格主题），Notion 式块渲染 |
+| `@brian-agent/shared` | 共享 | Zod schema + TypeScript 类型 |
 
-![alt text](image.png)
+**技术栈**：TypeScript · 纯 `node:http` + `ws`（无 Web 框架）· better-sqlite3 / isolated-vm / LanceDB（离线预编译原生件）· Node 22。
 
-### 2. Memory Pin 机制（强制模型注意力）
+## 🧪 质量与测试
 
-对话的论数过多，或者上下文太长，上下文可能会不加载或者忽略掉重要的信息，同步哦pin住消息，就可以让重要的信息，永远留在上下文的重要位置；
+```bash
+npm run test          # 后端 5 层 vitest（1800+ 用例）
+npm run typecheck     # 后端 5 层 tsc --noEmit
+npm run lint          # 前端 ESLint
+npm run lint:backend  # 后端 ESLint
+npm run build         # 按依赖顺序构建全部（前端含 vue-tsc 类型检查）
+```
 
-![alt text](image-1.png)
+## 📚 文档
 
-### 3. 涌现图与关键词图（提升 Memory 质量）
+| 文档 | 内容 |
+|------|------|
+| [docs/AgentThink.md](docs/_0_DesignPrinciples/AgentThink.md) | 设计哲学与 Agent 思考模型 |
+| [docs/使用手册.md](docs/使用手册.md) | 日常启动/关闭与管理操作 |
+| [docs/打包部署.md](docs/打包部署.md) | 打包原理与部署细节 |
+| [docs/_01_TerminologyStandardization.md](docs/_01_TerminologyStandardization.md) | 术语标准化（msg_id / interact_id / work_id / session_id） |
+| [docs/_1_DevStandards/DevStandards.md](docs/_1_DevStandards/DevStandards.md) | 开发强制规范（方法签名 / AOP / 分层） |
+| [docs/TODO-List.md](docs/TODO-List.md) | 待开发功能清单 |
 
-**信息页面**（`/info`）提供两个基于**共现关系**的知识图谱，帮助用户发现记忆中的隐藏关联：
+## 📄 许可证
 
-#### 涌现图（Tag Graph）
+本项目基于 [Apache License 2.0](LICENSE) 开源。
 
-基于时间线的信息大部分是重要的信息，但是因为上下文长度问题，可能会导致时间距离过远的信息损失，理解请求的内容，通过标签的形式通过图搜索，选中和当前请求最相关的信息；
+```
+Copyright 2026 Brian-Agent Team
 
-![alt text](image-2.png)
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-#### 关键词图（Keyword Graph）
-
-大脑中有些灵光一闪，就是被某一个词给激活的，通过关键词图的相关性搜索，来实现这样的灵光一闪；
-
-![alt text](image-3.png)
-
-这两个图的价值在于：**自动发现记忆中的涌现模式**——用户可能从未意识到的标签/关键词之间的关联被自动挖掘并可视化，帮助用户理解和审视自己的知识结构。同时，这些图谱关系也反向服务于上下文构建（`TAG_RELATIVE` 和 `KEYWORD` 维度），让模型在检索时不仅依赖向量相似度，还能利用**结构化的共现关系**，提升检索质量。
-
-### 4. 随机记忆（增强 Memory 多样性）
-
-设计理念：模拟人脑的**联想性/偶然性回忆**——有时最有价值的上下文恰恰来自看似无关的记忆。随机记忆防止上下文过于狭窄，为模型提供意外的灵感连接。
+    http://www.apache.org/licenses/LICENSE-2.0
+```
