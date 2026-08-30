@@ -3,6 +3,8 @@ dist/
 dist-sea/
 dist-pack/
 packaging/.cache/
+packaging/__pycache__/
+
 
 
 build/
