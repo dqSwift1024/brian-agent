@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Pin, PinOff, ChevronDown, CornerUpRight, AlertCircle, Copy, Check, Brain, Gauge } from '@lucide/vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { copyToClipboard } from '@/utils/clipboard'
+import { renderMarkdown } from '@/utils/markdown'
 import { useSessionStore } from '@/stores/session'
 import { formatTime as sharedFormatTime } from '../../utils/format'
 
@@ -78,17 +77,12 @@ const isUser = computed(() => props.role === 'user' || props.role === 'USER' || 
 const isError = computed(() => props.content.startsWith('[错误]') || props.summary.startsWith('[错误]'))
 
 // 消息内容按 Markdown 渲染
-const renderedContent = computed(() => {
-  const raw = props.content || ''
-  if (!raw.trim()) return ''
-  return DOMPurify.sanitize(marked.parse(raw) as string)
-})
+const renderedContent = computed(() => renderMarkdown(props.content))
 
 // 摘要按 Markdown 渲染（无摘要时回退原文）
 const renderedSummary = computed(() => {
   const raw = props.summary || props.content || ''
-  if (!raw.trim()) return '(无内容)'
-  return DOMPurify.sanitize(marked.parse(raw) as string)
+  return raw.trim() ? renderMarkdown(raw) : '(无内容)'
 })
 
 const effectiveTraceId = computed(() => props.traceId || '')
@@ -368,46 +362,4 @@ async function copyTraceId() {
 <style scoped>
 details summary::-webkit-details-marker { display: none; }
 details summary::marker { content: ''; }
-.markdown-body :deep(h1) { font-size: 1.4em; font-weight: 700; margin: 0.6em 0 0.4em; }
-.markdown-body :deep(h2) { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.4em; }
-.markdown-body :deep(h3) { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.3em; }
-.markdown-body :deep(h4) { font-size: 1em; font-weight: 600; margin: 0.5em 0 0.3em; }
-.markdown-body :deep(p) { margin: 0.5em 0; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.4em; margin: 0.5em 0; }
-.markdown-body :deep(li) { margin: 0.2em 0; }
-.markdown-body :deep(code) {
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  background: rgba(128, 128, 128, 0.12);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9em;
-}
-.markdown-body :deep(pre) {
-  background: rgba(128, 128, 128, 0.1);
-  border-radius: 8px;
-  padding: 0.75em 1em;
-  overflow-x: auto;
-  margin: 0.5em 0;
-}
-.markdown-body :deep(pre code) { background: transparent; padding: 0; }
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid rgba(128, 128, 128, 0.35);
-  padding-left: 0.75em;
-  margin: 0.5em 0;
-  color: rgba(128, 128, 128, 0.9);
-}
-.markdown-body :deep(table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 0.5em 0;
-  font-size: 0.95em;
-}
-.markdown-body :deep(th), .markdown-body :deep(td) {
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  padding: 0.35em 0.6em;
-  text-align: left;
-}
-.markdown-body :deep(a) { color: #0071e3; text-decoration: underline; }
-.markdown-body :deep(hr) { border: none; border-top: 1px solid #d1d1d6; margin: 0.8em 0; }
-.markdown-body :deep(img) { max-width: 100%; border-radius: 8px; }
 </style>

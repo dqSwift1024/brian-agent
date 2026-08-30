@@ -4,8 +4,6 @@
  * 业务逻辑来自 useLibraryTab（经 InfoView 注入）。
  */
 import { inject } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import {
   Plus, Folder, Trash2, ArrowLeft, ChevronRight, Search,
   FileText, Sparkles, Loader2, X,
@@ -13,6 +11,7 @@ import {
 import LibraryTreeItem from '@/components/LibraryTreeItem.vue'
 import { INFO_TABS_KEY } from '@/composables/useInfoTabs'
 import { formatFileSize } from '@/utils/format'
+import { renderMarkdown } from '@/utils/markdown'
 
 const {
   activeAnnotationId,
@@ -57,10 +56,6 @@ const {
   submitAsk,
 } = inject(INFO_TABS_KEY)!.library
 
-function renderMarkdown(content: string): string {
-  const html = marked.parse(content) as string
-  return DOMPurify.sanitize(html)
-}
 </script>
 
 <template>
