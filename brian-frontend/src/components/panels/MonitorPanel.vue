@@ -60,19 +60,22 @@ function buildLogQuery() {
 // }
 
 // ===== 修改后的方法：并行请求，减少加载时间 =====
-async function fetchAll() {
-  const [healthR, resourcesR, tokenTrendR, modelDistR, logsR] = await Promise.allSettled([
+// 日志查询在大库上是重操作（COUNT 全表扫描同步阻塞事件循环），
+// 仅页面进入与手动搜索/刷新时执行，绝不参与 10 秒轮询。
+async function fetchAll(includeLogs = false) {
+  const logsTask = includeLogs ? monitorApi.logs(buildLogQuery()) : undefined
+  const all = await Promise.allSettled([
     monitorApi.health(),
     monitorApi.resources(),
     monitorApi.tokenTrend(),
     monitorApi.modelDistribution(),
-    monitorApi.logs(buildLogQuery()),
+    ...(logsTask ? [logsTask] : []),
   ])
-  if (healthR.status === 'fulfilled') health.value = healthR.value
-  if (resourcesR.status === 'fulfilled') resources.value = resourcesR.value
-  if (tokenTrendR.status === 'fulfilled') tokenTrend.value = tokenTrendR.value
-  if (modelDistR.status === 'fulfilled') modelDist.value = modelDistR.value
-  if (logsR.status === 'fulfilled') logs.value = logsR.value
+  if (all[0].status === 'fulfilled') health.value = all[0].value
+  if (all[1].status === 'fulfilled') resources.value = all[1].value
+  if (all[2].status === 'fulfilled') tokenTrend.value = all[2].value
+  if (all[3].status === 'fulfilled') modelDist.value = all[3].value
+  if (logsTask && all[4] && all[4].status === 'fulfilled') logs.value = all[4].value as Awaited<typeof logsTask>
 }
 
 async function loadLogSources() {
@@ -88,7 +91,7 @@ function resetLogFilters() {
   logStartTime.value = ''
   logEndTime.value = ''
   selectedLogs.value = new Set()
-  fetchAll()
+  fetchAll(true)
 }
 
 function toggleLogSelect(id: string) {
@@ -139,7 +142,7 @@ async function deleteLog(id: string) {
       next.delete(id)
       selectedLogs.value = next
     }
-    await fetchAll()
+    await fetchAll(true)
   } catch { /* */ }
 }
 
@@ -149,7 +152,7 @@ async function deleteSelectedLogs() {
   try {
     await monitorApi.deleteLogs(ids)
     selectedLogs.value = new Set()
-    await fetchAll()
+    await fetchAll(true)
   } catch { /* */ }
 }
 
@@ -158,14 +161,14 @@ async function clearAllLogs() {
   try {
     await monitorApi.clearLogs()
     selectedLogs.value = new Set()
-    await fetchAll()
+    await fetchAll(true)
   } catch { /* */ }
 }
 
 onMounted(() => {
-  fetchAll()
+  fetchAll(true) // 首次进入页面：含日志查询
   loadLogSources()
-  pollTimer.value = setInterval(fetchAll, 10000)
+  pollTimer.value = setInterval(() => fetchAll(false), 10000) // 轮询不含日志
 })
 onUnmounted(() => {
   if (pollTimer.value) clearInterval(pollTimer.value)
@@ -488,7 +491,7 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
         <h3 class="text-sm font-semibold flex items-center gap-2">
           <Eye :size="16" class="text-brian-blue" /> 最近日志
         </h3>
-        <button class="p-1.5 rounded-lg text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800" @click="fetchAll()">
+        <button class="p-1.5 rounded-lg text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800" @click="fetchAll(true)">
           <RefreshCw :size="14" />
         </button>
       </div>
@@ -496,14 +499,14 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <div class="relative">
           <Search :size="13" class="absolute left-2 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-          <input v-model="logKeyword" class="pl-7 pr-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-40" placeholder="内容搜索" @keyup.enter="fetchAll()" />
+          <input v-model="logKeyword" class="pl-7 pr-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-40" placeholder="内容搜索" @keyup.enter="fetchAll(true)" />
         </div>
-        <input v-model="logTraceId" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="traceId" @keyup.enter="fetchAll()" />
-        <select v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
+        <input v-model="logTraceId" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="traceId" @keyup.enter="fetchAll(true)" />
+        <select v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll(true)">
           <option value="">全部模块</option>
           <option v-for="s in logSources" :key="s" :value="s">{{ s }}</option>
         </select>
-        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
+        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll(true)">
           <option v-for="o in LOG_SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
         <select v-model="logLevel" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none">
@@ -516,7 +519,7 @@ function displayModelName(m: { model: string; deleted?: boolean }): string {
         <input v-model="logStartTime" type="datetime-local" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" />
         <span class="text-xs text-apple-gray-400">至</span>
         <input v-model="logEndTime" type="datetime-local" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" />
-        <button class="px-2.5 py-1 text-xs rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="fetchAll()">搜索</button>
+        <button class="px-2.5 py-1 text-xs rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="fetchAll(true)">搜索</button>
         <button class="px-2.5 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300" @click="resetLogFilters()">重置</button>
       </div>
 
