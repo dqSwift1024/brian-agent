@@ -71,7 +71,8 @@ describe('MQCoreProvider', () => {
       expect(output.worker_id).toBeTruthy();
     });
 
-    it('should start multiple workers on same queue', async () => {
+    it('should reuse existing worker when starting same queue again', async () => {
+      // 幂等防重：同一队列只保留一个常驻 worker，重复 start 直接复用既有实例
       const handler = vi.fn().mockResolvedValue(true);
       const input1 = new StartWorkerInput();
       input1.queue = 'shared-queue';
@@ -87,11 +88,11 @@ describe('MQCoreProvider', () => {
       const output2 = new StartWorkerOutput();
       await mqCore.startWorker(input2, output2, new MQCoreContext());
 
-      expect(output1.worker_id).not.toBe(output2.worker_id);
+      expect(output2.worker_id).toBe(output1.worker_id);
 
       const soOutput = new SoWorkerOutput();
       await mqCore.soWorker({ queue: 'shared-queue' }, soOutput, new MQCoreContext());
-      expect(soOutput.workers.length).toBe(2);
+      expect(soOutput.workers.length).toBe(1);
     });
 
     it('should process published messages', async () => {
@@ -140,7 +141,8 @@ describe('MQCoreProvider', () => {
       expect(stopOutput.stopped_count).toBe(1);
     });
 
-    it('should stop all workers by queue name', async () => {
+    it('should stop all workers by queue name (dedup keeps one per queue)', async () => {
+      // 幂等防重下重复 start 同一队列只存在一个 worker，按队列停止应恰停 1 个
       const handler = vi.fn().mockResolvedValue(true);
       for (let i = 0; i < 3; i++) {
         const input = new StartWorkerInput();
@@ -154,7 +156,7 @@ describe('MQCoreProvider', () => {
       stopInput.identifier = 'batch-queue';
       const stopOutput = new StopWorkerOutput();
       await mqCore.stopWorker(stopInput, stopOutput, new MQCoreContext());
-      expect(stopOutput.stopped_count).toBe(3);
+      expect(stopOutput.stopped_count).toBe(1);
     });
 
     it('should return 0 for unknown identifier', async () => {

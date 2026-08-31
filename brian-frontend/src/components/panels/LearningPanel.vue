@@ -143,6 +143,8 @@ onMounted(() => {
 })
 onUnmounted(() => {
   if (pollTimer.value) clearInterval(pollTimer.value)
+  heatmapObserver?.disconnect()
+  heatmapObserver = null
 })
 </script>
 

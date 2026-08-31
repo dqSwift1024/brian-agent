@@ -256,9 +256,6 @@ export class LogService {
 
   /** 判断某级别日志是否应被 min_level 过滤丢弃 */
   private shouldDropByMinLevel(level: string): boolean {
-    if (this.minLevel === DEFAULT_MIN_LEVEL) {
-      return false;
-    }
     const weight = LogService.LEVEL_WEIGHT[level.toUpperCase()];
     if (weight === undefined) {
       return false;
@@ -593,8 +590,10 @@ export class LogService {
       conditions.push({ field: 'created', operator: Operator.LE, value: options.end_time });
     }
 
-    const page = options.page ?? 1;
-    const pageSize = options.pageSize ?? 50;
+    // 分页参数钳制：pageSize 上限 500，防止异常入参一次性物化大量行
+    // 阻塞事件循环（log_record 为高频写入大表，全量拉取代价高）
+    const page = Math.max(1, Math.floor(options.page ?? 1) || 1);
+    const pageSize = Math.min(500, Math.max(1, Math.floor(options.pageSize ?? 50) || 50));
 
     const selectOpts: Record<string, unknown> = {
       order_by: [{ field: 'created', direction: 'DESC' }],

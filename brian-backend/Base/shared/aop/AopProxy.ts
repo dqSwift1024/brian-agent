@@ -315,18 +315,12 @@ export class AopProxy {
 
   /**
    * 创建使用 Logger 的内置拦截器（向后兼容）。
+   *
+   * 方法进入（invoke）/完成（done）属于高频噪声日志，默认不再输出；
+   * 仅在方法执行失败时输出 ERROR（保留故障定位能力）。
    */
   private static createLoggerInterceptor(logger: Logger): Interceptor {
     return {
-      beforeExecute(ctx: InterceptContext): void {
-        logger.debug(`${ctx.methodName} invoke`, {
-          source: ctx.targetName,
-          args: AopProxy.summarizeValue(ctx.input),
-          trace_id: AopProxy.pickTraceId(ctx),
-          work_id: AopProxy.pickField(ctx.input, 'work_id'),
-          interact_id: AopProxy.pickField(ctx.input, 'interact_id'),
-        });
-      },
       afterExecute(ctx: InterceptContext, error?: Error): void {
         if (error) {
           logger.error(`${ctx.methodName} failed`, {
@@ -334,12 +328,6 @@ export class AopProxy {
             elapsed_ms: ctx.elapsedMs,
             trace_id: AopProxy.pickTraceId(ctx),
             error: error.message,
-          });
-        } else {
-          logger.debug(`${ctx.methodName} done`, {
-            source: ctx.targetName,
-            elapsed_ms: ctx.elapsedMs,
-            trace_id: AopProxy.pickTraceId(ctx),
           });
         }
       },
@@ -364,21 +352,4 @@ export class AopProxy {
     return undefined;
   }
 
-  /**
-   * 简化值摘要，避免序列化大对象或循环引用。
-   */
-  private static summarizeValue(value: unknown): unknown {
-    try {
-      if (value === null || value === undefined) {
-        return value;
-      }
-      if (typeof value === 'object') {
-        const keys = Object.keys(value);
-        return `{${keys.slice(0, 8).join(', ')}${keys.length > 8 ? ', ...' : ''}}`;
-      }
-      return value;
-    } catch {
-      return '[unserializable]';
-    }
-  }
 }

@@ -6,7 +6,7 @@
  * - 可视化：visualizedLog（health / volume / levelDistribution / sourceDistribution）
  * - 运维：enableLog（日志规则配置）/ configLog（组件配置）
  * - 老化策略：applyAging（按保留天数 / 最大条数清理）
- * - AOP 切面：LogInterceptor（beforeExecute / afterExecute）
+ * - AOP 切面：LogInterceptor（仅失败时记录 ERROR，invoke/done 埋点已移除）
  * - 组件生命周期：initialize / enabled 状态
  *
  * 日志仅持久化于 SQLite（log_record 表），不写入本地文件。
@@ -306,7 +306,9 @@ describe('LogProvider', () => {
       ).rejects.toThrow(ComponentDisabledError);
     });
 
-    it('应支持 DEBUG 级别日志', async () => {
+    it('应支持 DEBUG 级别日志（需调低 min_level）', async () => {
+      // 默认 min_level=INFO 会丢弃 DEBUG；显式调低后 DEBUG 应可写入并查回
+      await logAccess.configLog({ min_level: LogLevel.DEBUG } as any, {} as any, new LogContext());
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.DEBUG }) } as AddLogInput,
         new AddLogOutput(), new LogContext(),
@@ -435,7 +437,7 @@ describe('LogProvider', () => {
         new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
-        { data: makeLogData({ source: 'ServiceB', level: LogLevel.DEBUG, message: '调试信息', trace_id: 'trace-001' }) } as AddLogInput,
+        { data: makeLogData({ source: 'ServiceB', level: LogLevel.INFO, message: '调试信息', trace_id: 'trace-001' }) } as AddLogInput,
         new AddLogOutput(), new LogContext(),
       );
     });
@@ -634,13 +636,13 @@ describe('LogProvider', () => {
   // ==========================================================================
 
   describe('min_level 过滤', () => {
-    it('默认 min_level 为 DEBUG，不过滤任何级别', async () => {
+    it('默认 min_level 为 INFO，DEBUG 日志应被丢弃', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.DEBUG, source: 'MinLevelModule', message: 'debug log' }) } as AddLogInput,
         new AddLogOutput(), new LogContext(),
       );
       const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
-      expect(ql.total).toBe(1);
+      expect(ql.total).toBe(0);
     });
 
     it('min_level=INFO 时应丢弃 DEBUG 日志', async () => {
@@ -871,7 +873,7 @@ describe('LogProvider', () => {
         new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
-        { data: makeLogData({ source: 'VisB', level: LogLevel.DEBUG, message: 'c' }) } as AddLogInput,
+        { data: makeLogData({ source: 'VisB', level: LogLevel.WARN, message: 'c' }) } as AddLogInput,
         new AddLogOutput(), new LogContext(),
       );
     });
@@ -912,8 +914,8 @@ describe('LogProvider', () => {
       const distribution = data.distribution as Record<string, number>;
       expect(distribution.INFO).toBe(1);
       expect(distribution.ERROR).toBe(1);
-      expect(distribution.DEBUG).toBe(1);
-      expect(distribution.WARN).toBe(0);
+      expect(distribution.WARN).toBe(1);
+      expect(distribution.DEBUG).toBe(0);
     });
 
     it('scope=sourceDistribution 应返回模块分布', async () => {
@@ -1150,28 +1152,11 @@ describe('LogProvider', () => {
       interceptor = new LogInterceptor(rawService);
     });
 
-    it('beforeExecute 应写入 DEBUG 级别日志', async () => {
-      const ctx: InterceptContext = {
-        targetName: 'SoulService',
-        methodName: 'addSoul',
-        input: undefined,
-        context: undefined,
-        output: undefined,
-        startedAt: Date.now(),
-        elapsedMs: 0,
-      };
-
-      interceptor.beforeExecute(ctx);
-      await wait(30);
-
-      const ql = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(ql.logs.length).toBeGreaterThan(0);
-      const debugLog = ql.logs.find((l) => l.level === 'DEBUG');
-      expect(debugLog).toBeDefined();
-      expect(debugLog!.message).toContain('addSoul invoke');
+    it('invoke/done 埋点已移除：不应再有 beforeExecute 钩子', () => {
+      expect((interceptor as unknown as Record<string, unknown>).beforeExecute).toBeUndefined();
     });
 
-    it('afterExecute 成功时应写入 INFO 级别日志', async () => {
+    it('afterExecute 成功时不应写入任何日志', async () => {
       const startedAt = Date.now();
       await wait(5);
       const ctx: InterceptContext = {
@@ -1188,7 +1173,7 @@ describe('LogProvider', () => {
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(ql.logs.some((l) => l.level === 'INFO' && l.message.includes('addSoul done'))).toBe(true);
+      expect(ql.total).toBe(0);
     });
 
     it('afterExecute 失败时应写入 ERROR 级别日志', async () => {
@@ -1212,7 +1197,7 @@ describe('LogProvider', () => {
       expect(errorLog!.message).toContain('连接超时');
     });
 
-    it('beforeExecute 应提取 input.trace_id', async () => {
+    it('失败日志应提取 input.trace_id', async () => {
       const ctx: InterceptContext = {
         targetName: 'TraceService',
         methodName: 'tracedMethod',
@@ -1223,14 +1208,14 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'TraceService' });
       expect(ql.logs[0].trace_id).toBe('trace-from-input');
     });
 
-    it('afterExecute 应包含 elapsed_ms', async () => {
+    it('失败日志应包含 elapsed_ms', async () => {
       const ctx: InterceptContext = {
         targetName: 'ElapsedService',
         methodName: 'slowMethod',
@@ -1241,14 +1226,14 @@ describe('LogProvider', () => {
         elapsedMs: 250,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'ElapsedService' });
       expect(ql.logs[0].elapsed_ms).toBe(250);
     });
 
-    it('afterExecute 应提取 context.caller', async () => {
+    it('失败日志应提取 context.caller', async () => {
       const ctx: InterceptContext = {
         targetName: 'CallerService',
         methodName: 'calledMethod',
@@ -1259,14 +1244,14 @@ describe('LogProvider', () => {
         elapsedMs: 10,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'CallerService' });
       expect(ql.logs[0].caller).toBe('test-caller-id');
     });
 
-    it('日志中应包含 AOP 来源标识', async () => {
+    it('失败日志应包含 AOP 来源标识', async () => {
       const ctx: InterceptContext = {
         targetName: 'AopModule',
         methodName: 'aopMethod',
@@ -1277,14 +1262,33 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'AopModule' });
       expect(ql.logs[0].metadata).toEqual({ log_source: 'AOP' });
     });
 
-    it('应遵循 enableLog 规则（未启用的模块不记录）', async () => {
+    it('失败日志应提取 work_id / interact_id', async () => {
+      const ctx: InterceptContext = {
+        targetName: 'WorkIdService',
+        methodName: 'workMethod',
+        input: { work_id: 'w-1', interact_id: 'i-1' },
+        context: undefined,
+        output: undefined,
+        startedAt: Date.now(),
+        elapsedMs: 0,
+      };
+
+      interceptor.afterExecute(ctx, new Error('boom'));
+      await wait(30);
+
+      const ql = await logAccess.queryLogs({ source: 'WorkIdService' });
+      expect(ql.logs[0].work_id).toBe('w-1');
+      expect(ql.logs[0].interact_id).toBe('i-1');
+    });
+
+    it('应遵循 enableLog 规则（未启用的模块失败也不记录）', async () => {
       await logAccess.enableLog(
         { rules: [
           { source: '*', method: '*', enable: false },
@@ -1313,18 +1317,18 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(allowedCtx);
-      interceptor.beforeExecute(blockedCtx);
+      interceptor.afterExecute(allowedCtx, new Error('boom'));
+      interceptor.afterExecute(blockedCtx, new Error('boom'));
       await wait(30);
 
       const allowedQl = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(allowedQl.logs.some((l) => l.message.includes('allowedMethod invoke'))).toBe(true);
+      expect(allowedQl.logs.some((l) => l.message.includes('allowedMethod failed'))).toBe(true);
 
       const blockedQl = await logAccess.queryLogs({ source: 'BlockedService' });
       expect(blockedQl.total).toBe(0);
     });
 
-    it('afterExecute 在规则禁用时不应写入日志', async () => {
+    it('afterExecute 在规则禁用时不写入失败日志', async () => {
       await logAccess.enableLog(
         { rules: [
           { source: '*', method: '*', enable: false },
@@ -1342,14 +1346,14 @@ describe('LogProvider', () => {
         elapsedMs: 100,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'DisabledService' });
       expect(ql.total).toBe(0);
     });
 
-    it('interceptor 应能处理无 input 的上下文', async () => {
+    it('应能处理无 input 的上下文（失败路径不抛错）', () => {
       const ctx: InterceptContext = {
         targetName: 'NoInputService',
         methodName: 'noInputMethod',
@@ -1360,35 +1364,7 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      expect(() => interceptor.beforeExecute(ctx)).not.toThrow();
-    });
-
-    it('beforeExecute 和 afterExecute 应各自记录独立的日志', async () => {
-      const startedAt = Date.now();
-      const ctx: InterceptContext = {
-        targetName: 'FullCycle',
-        methodName: 'cycleMethod',
-        input: undefined,
-        context: undefined,
-        output: undefined,
-        startedAt,
-        elapsedMs: 0,
-      };
-
-      interceptor.beforeExecute(ctx);
-
-      await wait(10);
-      const afterCtx: InterceptContext = {
-        ...ctx,
-        elapsedMs: Date.now() - startedAt,
-      };
-      interceptor.afterExecute(afterCtx);
-      await wait(30);
-
-      const ql = await logAccess.queryLogs({ source: 'FullCycle' });
-      expect(ql.total).toBe(2);
-      expect(ql.logs.some((l) => l.message.includes('invoke'))).toBe(true);
-      expect(ql.logs.some((l) => l.message.includes('done'))).toBe(true);
+      expect(() => interceptor.afterExecute(ctx, new Error('boom'))).not.toThrow();
     });
   });
 

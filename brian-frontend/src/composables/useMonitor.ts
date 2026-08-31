@@ -64,19 +64,26 @@ export function useMonitor() {
   }
 
   // ===== 修改后的方法：并行请求，减少加载时间 =====
-  async function fetchAll() {
-    const [healthR, resourcesR, tokenTrendR, modelDistR, logsR] = await Promise.allSettled([
+  /**
+   * 拉取监控数据。
+   * @param includeLogs 是否同时查询日志表：日志查询在大库上是重操作（COUNT 全表
+   * 扫描会同步阻塞事件循环数秒~数十秒），只应在进入页面与用户主动搜索/刷新时
+   * 执行，绝不参与 10 秒轮询。
+   */
+  async function fetchAll(includeLogs = false) {
+    const logsTask = includeLogs ? monitorApi.logs(buildLogQuery()) : undefined
+    const all = await Promise.allSettled([
       monitorApi.health(),
       monitorApi.resources(),
       monitorApi.tokenTrend(),
       monitorApi.modelDistribution(),
-      monitorApi.logs(buildLogQuery()),
+      ...(logsTask ? [logsTask] : []),
     ])
-    if (healthR.status === 'fulfilled') health.value = healthR.value
-    if (resourcesR.status === 'fulfilled') resources.value = resourcesR.value
-    if (tokenTrendR.status === 'fulfilled') tokenTrend.value = tokenTrendR.value
-    if (modelDistR.status === 'fulfilled') modelDist.value = modelDistR.value
-    if (logsR.status === 'fulfilled') logs.value = logsR.value
+    if (all[0].status === 'fulfilled') health.value = all[0].value
+    if (all[1].status === 'fulfilled') resources.value = all[1].value
+    if (all[2].status === 'fulfilled') tokenTrend.value = all[2].value
+    if (all[3].status === 'fulfilled') modelDist.value = all[3].value
+    if (logsTask && all[4] && all[4].status === 'fulfilled') logs.value = all[4].value as Awaited<typeof logsTask>
   }
 
   async function loadLogSources() {
@@ -147,7 +154,7 @@ export function useMonitor() {
         next.delete(id)
         selectedLogs.value = next
       }
-      await fetchAll()
+      await fetchAll(true)
     } catch { /* */ }
   }
 
@@ -157,7 +164,7 @@ export function useMonitor() {
     try {
       await monitorApi.deleteLogs(ids)
       selectedLogs.value = new Set()
-      await fetchAll()
+      await fetchAll(true)
     } catch { /* */ }
   }
 
@@ -166,7 +173,7 @@ export function useMonitor() {
     try {
       await monitorApi.clearLogs()
       selectedLogs.value = new Set()
-      await fetchAll()
+      await fetchAll(true)
     } catch { /* */ }
   }
 
@@ -179,9 +186,9 @@ export function useMonitor() {
   let healthResizeObserver: ResizeObserver | null = null
 
   onMounted(() => {
-    fetchAll()
+    fetchAll(true) // 首次进入页面：含日志查询
     loadLogSources()
-    pollTimer.value = setInterval(fetchAll, 10000)
+    pollTimer.value = setInterval(() => fetchAll(false), 10000) // 轮询不含日志
   })
   onUnmounted(() => {
     if (pollTimer.value) clearInterval(pollTimer.value)

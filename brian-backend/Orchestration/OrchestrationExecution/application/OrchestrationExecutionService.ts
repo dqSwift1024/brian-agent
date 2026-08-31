@@ -340,13 +340,28 @@ export class OrchestrationExecutionService {
     };
   }
 
+  /**
+   * 执行记录大字段入库截断。
+   * task_content 会随上游摘要拼接滚雪球（存量平均 104KB、最大 750KB），超长内容入 SQLite
+   * 放大行体积与查询成本；answer 为 LLM 完整输出，同样设上限兜底。
+   */
+  private static trimExecText(value: unknown, limit: number): unknown {
+    if (typeof value !== 'string' || value.length <= limit) return value;
+    return value.slice(0, limit) + `\n…[已截断，原始 ${value.length} 字符]`;
+  }
+
   /** 组合任务执行内容：父任务结合子任务结果汇总，叶子任务携带上游工作摘要。 */
   private buildExecTaskContent(node: AgentNode, upstreamSummaries: string[]): string {
     if (upstreamSummaries.length === 0) return node.task_content;
-    if (node.node_kind === 'PARENT') {
-      return `子任务已完成的结果：\n${upstreamSummaries.join('\n')}\n---\n请结合上述子任务结果，汇总产出父任务结果：${node.task_content}`;
-    }
-    return `上游Agent完成的工作摘要：\n${upstreamSummaries.join('\n')}\n---\n当前任务：${node.task_content}`;
+    // 上游摘要逐条截断：父任务聚合全部子任务结果，不截断会随 DAG 层级滚雪球，
+    // 同时挤爆 LLM 上下文窗口（拼接结果同时作为执行输入）
+    const summaries = upstreamSummaries.map(
+      (s) => OrchestrationExecutionService.trimExecText(s, 4 * 1024) as string,
+    );
+    const merged = node.node_kind === 'PARENT'
+      ? `子任务已完成的结果：\n${summaries.join('\n')}\n---\n请结合上述子任务结果，汇总产出父任务结果：${node.task_content}`
+      : `上游Agent完成的工作摘要：\n${summaries.join('\n')}\n---\n当前任务：${node.task_content}`;
+    return OrchestrationExecutionService.trimExecText(merged, 32 * 1024) as string;
   }
 
   // -------------------------------------------------------------------------
@@ -379,7 +394,7 @@ export class OrchestrationExecutionService {
         { field: 'plan_id', value: plan_id ?? '' },
         { field: 'task_id', value: task_id ?? '' },
         { field: 'execution_type', value: 'SINGLE' },
-        { field: 'task_content', value: enhancedContent },
+        { field: 'task_content', value: OrchestrationExecutionService.trimExecText(enhancedContent, 32 * 1024) },
         { field: 'status', value: 'RUNNING' },
         { field: 'answer', value: '' },
         { field: 'trace_id', value: '' },
@@ -443,7 +458,7 @@ export class OrchestrationExecutionService {
         table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
         data: [
           { field: 'status', value: 'COMPLETED' },
-          { field: 'answer', value: execOutput.answer },
+          { field: 'answer', value: OrchestrationExecutionService.trimExecText(execOutput.answer, 64 * 1024) },
           { field: 'trace_id', value: execOutput.trace_id },
           { field: 'iterations', value: execOutput.iterations },
           { field: 'elapsed_ms', value: elapsed },
@@ -601,9 +616,9 @@ export class OrchestrationExecutionService {
         { field: 'plan_id', value: '' },
         { field: 'task_id', value: '' },
         { field: 'execution_type', value: 'SYSTEM' },
-        { field: 'task_content', value: input.task_content },
+        { field: 'task_content', value: OrchestrationExecutionService.trimExecText(input.task_content, 32 * 1024) },
         { field: 'status', value: 'COMPLETED' },
-        { field: 'answer', value: input.answer },
+        { field: 'answer', value: OrchestrationExecutionService.trimExecText(input.answer, 64 * 1024) },
         { field: 'trace_id', value: input.trace_id ?? '' },
         { field: 'iterations', value: 0 },
         { field: 'elapsed_ms', value: input.elapsed_ms ?? 0 },
@@ -750,10 +765,12 @@ export class OrchestrationExecutionService {
         await this.mqAccess.sendMQ(sendInput, {}, {});
 
         if (this.mqCore) {
-          const getWorkerInput = Object.assign({}, { identifier: 'orchestration.dag_execution' });
-          const getWorkerOutput = Object.assign({}, { worker: null });
-          await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
-          if (!getWorkerOutput.worker) {
+          // 查重：orchestration.dag_execution 常驻 worker 已存在则跳过。
+          // 此前误调不存在的 getWorker，TypeError 直接跳到外层 catch，
+          // 导致 worker 从未建立、每次都走 setImmediate 同步 fallback、队列消息滞留。
+          const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+          await this.mqCore.soWorker({ queue: 'orchestration.dag_execution' }, {}, soWorkerOutput);
+          if ((soWorkerOutput.workers as unknown[]).length === 0) {
             const startWorkerInput = Object.assign({}, {
               queue: 'orchestration.dag_execution',
               handler: async (msg: Record<string, unknown>) => {
@@ -1025,13 +1042,13 @@ export class OrchestrationExecutionService {
     output.mq_queue_status = null;
     if (this.mqCore) {
       try {
-        const getWorkerInput = Object.assign({}, { identifier: 'orchestration.dag_execution' });
-        const getWorkerOutput = Object.assign({}, { worker: null });
-        await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
+        const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+        await this.mqCore.soWorker({ queue: 'orchestration.dag_execution' }, {}, soWorkerOutput);
+        const workers = soWorkerOutput.workers as unknown[];
         output.mq_queue_status = {
           queue: 'orchestration.dag_execution',
-          worker_active: getWorkerOutput.worker !== null,
-          worker_info: getWorkerOutput.worker ?? null,
+          worker_active: workers.length > 0,
+          worker_info: workers[0] ?? null,
         };
       } catch (err: unknown) {
         this.logger?.error?.('soExecQueueStatus: MQ queue query failed', {

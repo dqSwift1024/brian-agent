@@ -450,10 +450,12 @@ export class OrchestrationEntryService {
         await this.mqAccess.sendMQ(sendInput, {}, {});
 
         if (this.mqCore) {
-          const getWorkerInput = Object.assign({}, { identifier: 'orchestration.work' });
-          const getWorkerOutput = Object.assign({}, { worker: null });
-          await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
-          if (!getWorkerOutput.worker) {
+          // 查重：orchestration.work 常驻 worker 已存在则跳过。
+          // 此前误调不存在的 getWorker，TypeError 直接跳到外层 catch，
+          // 导致 worker 从未建立、每次都走 setImmediate 同步 fallback、队列消息滞留。
+          const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+          await this.mqCore.soWorker({ queue: 'orchestration.work' }, {}, soWorkerOutput);
+          if ((soWorkerOutput.workers as unknown[]).length === 0) {
             const startWorkerInput = Object.assign({}, {
               queue: 'orchestration.work',
               handler: async (msg: Record<string, unknown>) => {

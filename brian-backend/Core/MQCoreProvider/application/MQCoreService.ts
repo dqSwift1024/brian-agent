@@ -87,6 +87,18 @@ export class MQCoreService {
     const { queue, handler } = input;
     const interval = input.interval ?? 1000;
 
+    // 幂等防重：同一队列只保留一个常驻 worker，重复 start 直接复用既有实例。
+    // 调用方（startEvalSchedule / receiveWorkAsync / execAgentAsync 等）存在
+    // "重复调用以防重启"的路径，此前每次调用都会新建 setInterval 且永不停止，
+    // 造成定时器随业务量无界累积（每完成一次对话净增 3 个 1s 轮询）。
+    // 需要更换 handler 时应先 stopWorker（支持按队列批量停止）再 start。
+    for (const state of this.workers.values()) {
+      if (state.queue === queue) {
+        output.worker_id = state.worker_id;
+        return true;
+      }
+    }
+
     const workerId = uuidv4();
     const state: WorkerState = {
       worker_id: workerId,

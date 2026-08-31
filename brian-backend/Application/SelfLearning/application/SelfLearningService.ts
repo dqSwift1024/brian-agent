@@ -1050,7 +1050,22 @@ export class SelfLearningService {
   // startTagConnectionEstablishment
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * 标签图全量维护的分批让出：RelationDB(better-sqlite3) 与 TinyGraphDB(leveldb)
+   * 均为同步驱动，逐标签建图/激活边是 O(标签数×邻居) 的纯 CPU 计算，
+   * 不让出事件循环会冻结全部 HTTP 请求数分钟（页面表现为"切几个页面就卡死"）。
+   */
+  private static readonly TAG_MAINTENANCE_BATCH = 20;
+  /** 标签维护重入守卫：启动 / 30min timer / 随机 tick 三路都可能触发全量计算，禁止叠加执行 */
+  private tagMaintenanceRunning = false;
+
+  private async yieldToEventLoop(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   async startTagConnectionEstablishment(): Promise<void> {
+    if (this.tagMaintenanceRunning) return;
+    this.tagMaintenanceRunning = true;
     try {
       const now = IdGenerator.now();
       const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
@@ -1082,6 +1097,9 @@ export class SelfLearningService {
         } catch {
           // skip failed graph tags
         }
+        if (count % SelfLearningService.TAG_MAINTENANCE_BATCH === 0) {
+          await this.yieldToEventLoop();
+        }
       }
 
       if (count > 0) {
@@ -1089,6 +1107,8 @@ export class SelfLearningService {
       }
     } catch (err: unknown) {
       this.logger?.error?.('startTagConnectionEstablishment error', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.tagMaintenanceRunning = false;
     }
   }
 
@@ -1097,6 +1117,8 @@ export class SelfLearningService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async startTagActivation(): Promise<void> {
+    if (this.tagMaintenanceRunning) return;
+    this.tagMaintenanceRunning = true;
     try {
       const now = IdGenerator.now();
       const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
@@ -1132,6 +1154,7 @@ export class SelfLearningService {
       );
 
       let activatedCount = 0;
+      let scannedNodes = 0;
       for (const node of graphSelOutput.list) {
         if (!('node_type' in node)) continue;
         const content = (node as any).content as Record<string, unknown> | undefined;
@@ -1164,6 +1187,10 @@ export class SelfLearningService {
             // skip
           }
         }
+        scannedNodes++;
+        if (scannedNodes % SelfLearningService.TAG_MAINTENANCE_BATCH === 0) {
+          await this.yieldToEventLoop();
+        }
       }
 
       if (activatedCount > 0) {
@@ -1171,6 +1198,8 @@ export class SelfLearningService {
       }
     } catch (err: unknown) {
       this.logger?.error?.('startTagActivation error', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.tagMaintenanceRunning = false;
     }
   }
 

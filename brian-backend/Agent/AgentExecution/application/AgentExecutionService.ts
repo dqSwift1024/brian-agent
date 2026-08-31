@@ -121,6 +121,9 @@ interface AgentExecutionEnv {
 }
 
 export class AgentExecutionService {
+  // 全量 LLM 轨迹（各阶段 prompt/raw_response/工具结果）单条可达数百 KB，
+  // 上限淘汰防止随执行次数无界增长；需要完整轨迹走 agent_execution_trace 落库查询。
+  private static readonly TRACES_MAX = 100;
   private readonly traces = new Map<string, {
     agent_id: string;
     start_time: number;
@@ -366,6 +369,12 @@ export class AgentExecutionService {
     }
 
     const end = IdGenerator.now();
+    while (this.traces.size >= AgentExecutionService.TRACES_MAX) {
+      // Map 迭代序即插入序，淘汰最早写入的轨迹
+      const oldest = this.traces.keys().next().value;
+      if (oldest === undefined) break;
+      this.traces.delete(oldest);
+    }
     this.traces.set(traceId, {
       agent_id: input.agent_id,
       start_time: start,

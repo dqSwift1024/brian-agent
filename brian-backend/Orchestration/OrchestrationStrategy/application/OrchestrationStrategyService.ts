@@ -575,10 +575,12 @@ export class OrchestrationStrategyService {
         let shouldStart = true;
         if (this.mqCore) {
           try {
-            const getWorkerInput = Object.assign({}, { identifier: 'eval_schedule' });
-            const getWorkerOutput = Object.assign({}, { worker: null });
-            await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
-            if (getWorkerOutput.worker) {
+            // 查重：EVAL_SCHEDULE_QUEUE 常驻 worker 已存在则跳过。
+            // 此前误调不存在的 getWorker，TypeError 被 catch 吞掉，防重失效，
+            // 每次编排后处理都会经 startEvalSchedule 新建 3 个 MQ worker（1s 轮询定时器）永不释放。
+            const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+            await this.mqCore.soWorker({ queue: 'eval_schedule' }, {}, soWorkerOutput);
+            if ((soWorkerOutput.workers as unknown[]).length > 0) {
               shouldStart = false;
             }
           } catch { /* continue to start if check fails */ }

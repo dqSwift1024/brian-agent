@@ -168,7 +168,7 @@ const {
         <h3 class="text-sm font-semibold flex items-center gap-2">
           <Eye :size="16" class="text-brian-blue" /> 最近日志
         </h3>
-        <button class="p-1.5 rounded-lg text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800" @click="fetchAll()">
+        <button class="p-1.5 rounded-lg text-apple-gray-400 hover:text-brian-blue hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800" @click="fetchAll(true)">
           <RefreshCw :size="14" />
         </button>
       </div>
@@ -176,14 +176,14 @@ const {
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <div class="relative">
           <Search :size="13" class="absolute left-2 top-1/2 -translate-y-1/2 text-apple-gray-400" />
-          <input v-model="logKeyword" class="pl-7 pr-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-40" placeholder="内容搜索" @keyup.enter="fetchAll()" />
+          <input v-model="logKeyword" class="pl-7 pr-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-40" placeholder="内容搜索" @keyup.enter="fetchAll(true)" />
         </div>
-        <input v-model="logTraceId" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="traceId" @keyup.enter="fetchAll()" />
-        <select v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
+        <input v-model="logTraceId" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none w-32" placeholder="traceId" @keyup.enter="fetchAll(true)" />
+        <select v-model="logSourceFilter" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll(true)">
           <option value="">全部模块</option>
           <option v-for="s in logSources" :key="s" :value="s">{{ s }}</option>
         </select>
-        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll()">
+        <select v-model="logSourceType" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" @change="fetchAll(true)">
           <option v-for="o in LOG_SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
         <select v-model="logLevel" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none">
@@ -196,7 +196,7 @@ const {
         <input v-model="logStartTime" type="datetime-local" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" />
         <span class="text-xs text-apple-gray-400">至</span>
         <input v-model="logEndTime" type="datetime-local" class="px-2 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-800 border border-apple-gray-200 dark:border-apple-gray-700 focus:outline-none" />
-        <button class="px-2.5 py-1 text-xs rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="fetchAll()">搜索</button>
+        <button class="px-2.5 py-1 text-xs rounded-lg bg-brian-blue text-white hover:bg-brian-blue/90" @click="fetchAll(true)">搜索</button>
         <button class="px-2.5 py-1 text-xs rounded-lg bg-apple-gray-100 dark:bg-apple-gray-700 text-apple-gray-600 dark:text-apple-gray-300" @click="resetLogFilters()">重置</button>
       </div>
 

@@ -88,6 +88,8 @@ export class CDTService {
   private pid = 0;
   private port = CDT_DEFAULT_PORT;
   private endpoint = '';
+  /** 最近一次拉起 Chrome 使用的 profile 绝对路径（供启动前清理残留实例匹配） */
+  private lastProfileDir = '';
   private dataDir = '';
   private wsSequentialId = 0;
   private screencastWs: import('ws').WebSocket | null = null;
@@ -103,6 +105,21 @@ export class CDTService {
   constructor(private readonly relationDb: RelationDBAccess, dataDir: string = '', private readonly logger?: Logger) {
     this.config = new ConfigService(relationDb, CDT_CONFIG_TABLE);
     this.dataDir = dataDir;
+
+    // 进程退出兜底：未走 stopCDT 的异常退出（uncaughtException / process.exit）时，
+    // 同步终止本服务拉起的 Chrome，避免非 systemd 环境（便携包 / nohup / 终端直跑）
+    // 下遗留孤儿实例；systemd 部署下 cgroup 清理是第一道防线，此处为第二道。
+    // 正常关闭路径已由 stopCDT 将 this.process 置空，钩子不会误杀新实例。
+    process.on('exit', () => {
+      const child = this.process;
+      if (child && child.pid && child.exitCode === null) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* 进程已退出 */
+        }
+      }
+    });
   }
 
   async initialize(): Promise<void> {
@@ -215,6 +232,7 @@ export class CDTService {
         detached: false,
       });
 
+      this.lastProfileDir = absProfileDir;
       this.pid = this.process.pid || 0;
 
       this.process.on('exit', (code, signal) => {
@@ -588,6 +606,16 @@ export class CDTService {
       execSync(`fuser -k ${this.port}/tcp 2>/dev/null || true`, { timeout: 3000 });
     } catch {
       /* fuser 不可用或端口未被占用 */
+    }
+    // 兜底：按 profile 目录清理残留 Chrome。覆盖端口已被其他进程占用或配置端口
+    // 已变更的场景（如非 systemd 环境下后端被 SIGKILL 后遗留的孤儿实例）。
+    // 模式为完整 profile 路径，不会误杀用户自己的浏览器。
+    if (this.lastProfileDir) {
+      try {
+        execSync(`pkill -KILL -f "user-data-dir=${this.lastProfileDir}" 2>/dev/null || true`, { timeout: 3000 });
+      } catch {
+        /* pkill 不可用或无匹配进程 */
+      }
     }
   }
 

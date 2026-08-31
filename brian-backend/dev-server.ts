@@ -477,6 +477,28 @@ async function buildCooccurGraphFromGraphDB(
   return { nodes, edges };
 }
 
+// 图谱数据内存缓存：避免 GraphDB 同步查询在高并发页面切换时阻塞事件循环
+// （keywordCooccur 边 5288 条，每次 selectGraph 是 3 表 JOIN 同步 SQL，5 并发即超时）
+const graphCache = new Map<string, { data: { nodes: Array<{ id: string; name: string; weight: number; degree: number }>; edges: Array<{ source: string; target: string; weight: number }> }; ts: number }>();
+const GRAPH_CACHE_TTL = 30_000; // 30 秒
+
+async function buildCooccurGraphFromGraphDBCached(
+  ctx: any,
+  nodeType: string,
+  textField: string,
+  edgeType: string,
+  limit = 100,
+): Promise<{ nodes: Array<{ id: string; name: string; weight: number; degree: number }>; edges: Array<{ source: string; target: string; weight: number }> }> {
+  const cacheKey = `${nodeType}:${edgeType}:${limit}`;
+  const cached = graphCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < GRAPH_CACHE_TTL) {
+    return cached.data;
+  }
+  const data = await buildCooccurGraphFromGraphDB(ctx, nodeType, textField, edgeType, limit);
+  graphCache.set(cacheKey, { data, ts: Date.now() });
+  return data;
+}
+
 async function buildContext() {
   // ---- Base Providers ----
   const relationDb = new RelationDBAccess({ dbPath: path.join(DATA_DIR, 'brian.db'), wal: true, autoCreateConfigTable: true });
@@ -3233,14 +3255,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
       } else if (method === 'GET' && pathname === '/api/memory/tag-graph') {
         try {
           const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100));
-          const g = await buildCooccurGraphFromGraphDB(ctx, 'Tag', 'tag', 'cooccur', limit);
+          const g = await buildCooccurGraphFromGraphDBCached(ctx, 'Tag', 'tag', 'cooccur', limit);
           sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
 
       } else if (method === 'GET' && pathname === '/api/memory/keyword-graph') {
         try {
           const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100));
-          const g = await buildCooccurGraphFromGraphDB(ctx, 'keyword', 'keyword', 'keywordCooccur', limit);
+          const g = await buildCooccurGraphFromGraphDBCached(ctx, 'keyword', 'keyword', 'keywordCooccur', limit);
           sendJson(res, 200, g);
         } catch { sendJson(res, 200, { nodes: [], edges: [] }); }
 

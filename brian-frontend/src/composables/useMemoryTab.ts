@@ -350,6 +350,13 @@ function clickHeatmapDay(day: number | null) {
 
 // Library tab
 
+  // 注意：清理钩子必须在 return 之前注册——return 之后本函数已退出，代码不可达
+  onBeforeUnmount(() => {
+    memoryObserver?.disconnect()
+    memoryObserver = null
+    stopDateCountRefresh()
+  })
+
   return {
     activeMemoryDate,
     allMemoriesSelected,
@@ -403,9 +410,4 @@ function clickHeatmapDay(day: number | null) {
     typeColors,
     typeLabels,
   }
-
-  onBeforeUnmount(() => {
-    memoryObserver?.disconnect()
-    memoryObserver = null
-  })
 }

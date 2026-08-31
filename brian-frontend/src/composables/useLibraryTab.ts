@@ -395,6 +395,12 @@ watch(fileKeyword, () => {
   fileSearchTimer = setTimeout(() => { loadLibraryFiles(true) }, 300)
 })
 
+  // 注意：清理钩子必须在 return 之前注册——return 之后本函数已退出，代码不可达
+  onBeforeUnmount(() => {
+    libraryFileObserver?.disconnect()
+    libraryFileObserver = null
+  })
+
   return {
     activeAnnotationId,
     annotationLines,
@@ -446,9 +452,4 @@ watch(fileKeyword, () => {
     showAddLib,
     submitAsk,
   }
-
-  onBeforeUnmount(() => {
-    libraryFileObserver?.disconnect()
-    libraryFileObserver = null
-  })
 }
