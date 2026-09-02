@@ -25,6 +25,7 @@ export const useSessionStore = defineStore('session', () => {
   // ChatMap 与对话列表双向定位：focusInfoId 由 ChatMap 触发滚动列表，centerInfoId 由列表触发平移 ChatMap
   const focusInfoId = ref<string | null>(null)
   const centerInfoId = ref<string | null>(null)
+  let pendingRaf: number | null = null
 
   function setSplitRatio(ratio: number) {
     splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
@@ -32,7 +33,8 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function loadChatList(userId: string) {
-    chatList.value = await chatApi.list(userId)
+    const data = await chatApi.list(userId)
+    chatList.value = data.sessions
   }
 
   async function ensureSession(): Promise<string> {
@@ -165,12 +167,21 @@ export const useSessionStore = defineStore('session', () => {
       const block = blocks.value[idx]
       if ('content' in block) {
         (block as { content: string }).content += text
-        triggerRef(blocks)
+        if (!pendingRaf) {
+          pendingRaf = requestAnimationFrame(() => {
+            pendingRaf = null
+            triggerRef(blocks)
+          })
+        }
       }
     }
   }
 
   function finalizeBlocks(msgId: string) {
+    if (pendingRaf !== null) {
+      cancelAnimationFrame(pendingRaf)
+      pendingRaf = null
+    }
     for (let i = 0; i < blocks.value.length; i++) {
       if (blocks.value[i].msgId === msgId) {
         blocks.value[i] = { ...blocks.value[i], meta: { ...blocks.value[i].meta, status: 'done' as const } } as Block

@@ -1,7 +1,7 @@
 ﻿import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { Metrics, Report } from '@brian-agent/base';
 import { IdGenerator, Operator, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, PromptContext, SoPromptInput, SoPromptOutput, GetSoulInput, GetSoulOutput, SoulContext, HandleResultType, PROMPT_IDS, type DataObject } from '@brian-agent/base';
-import type { SoulAccess } from '@brian-agent/base';
+import type { SoulAccess, StreamAccess } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import { ContextInfoInput, ContextInfoOutput, InfoCoreContext } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
@@ -45,6 +45,7 @@ export class WriterAgentService {
     private readonly agentLibrary: AgentLibraryAccess,
     private readonly soulAccess?: SoulAccess,
     private readonly llmCore?: LLMCoreAccess,
+    private readonly streamAccess?: StreamAccess,
   ) {
     this.traceStore = new TraceStore(relationDb);
   }
@@ -188,12 +189,29 @@ export class WriterAgentService {
     );
 
     const llmOut = new ExecLLMOutput();
+    const hasStreamAccess = this.streamAccess && typeof this.streamAccess.pushText === 'function';
+    const execInput = Object.assign(new ExecLLMInput(), {
+      id: llmId,
+      prompt,
+      ...(system ? { system } : {}),
+      ...(hasStreamAccess ? {
+        stream: true,
+        onDelta: (delta: string) => {
+          this.streamAccess!.pushText(
+            ctx.session_id || '',
+            'text_chunk',
+            delta,
+            {
+              work_id: input.work_id || ctx.work_id,
+              interact_id: input.interact_id || ctx.interact_id,
+              chunk_delay_ms: 0,
+            },
+          );
+        },
+      } : {}),
+    });
     const ok = await this.llmAccess.execLLM(
-      Object.assign(new ExecLLMInput(), {
-        id: llmId,
-        prompt,
-        ...(system ? { system } : {}),
-      }),
+      execInput,
       llmOut,
       new LLMContext(),
     );

@@ -280,4 +280,17 @@ export class RelationDBAccess implements IConfigStorage {
   transactionRaw(operations: import('../../shared/query').Operation[]): boolean {
     return this.repository.transaction(operations);
   }
+
+  /**
+   * 执行 WAL checkpoint 以回收 WAL 文件磁盘空间。
+   *
+   * 在 WAL 模式下，写事务会追加到 WAL 文件；长时间不 checkpoint 会导致 WAL 文件
+   * 持续膨胀。在批量写入后调用此方法可回收磁盘空间。
+   *
+   * @param mode checkpoint 模式：PASSIVE（默认，不阻塞）、TRUNCATE（截断 WAL 文件至 0）
+   * @returns checkpoint 结果
+   */
+  walCheckpoint(mode: 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE' = 'PASSIVE'): { busy: boolean; log: number; checkpointed: number } {
+    return this.repository.walCheckpoint(mode);
+  }
 }

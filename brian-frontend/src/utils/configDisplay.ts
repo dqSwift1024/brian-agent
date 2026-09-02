@@ -26,6 +26,32 @@ export interface ConfigField {
   value: string | number | boolean; options?: { label: string; value: string | number | boolean }[]
 }
 
+export interface DisplayItem {
+  key: string; name: string; desc: string
+  valueSummary: string; configurable: boolean
+  raw?: RawItem; configItem?: ConfigTreeItem
+  isEntityItem?: boolean
+}
+
+export interface DisplayCategory {
+  key: string; name: string; desc: string
+  configurable: boolean; itemCount: number
+  items: DisplayItem[]; isEntityCategory?: boolean
+}
+
+export interface DisplayModule {
+  key: string; name: string; desc: string
+  icon: typeof Cpu; configurable: boolean
+  apiModule?: ModuleKey; categoryCount: number
+  categories: DisplayCategory[]
+}
+
+export interface DisplayLayer {
+  key: string; name: string; desc: string
+  icon: typeof Server; hasConfigurable: boolean
+  modules: DisplayModule[]
+}
+
 export interface NavSubSection {
   key: string; label: string; icon: typeof Cpu
   type: 'entity' | 'params' | 'snapshot'

@@ -1,5 +1,5 @@
 import { Metrics, Report } from '@brian-agent/base';
-import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
+import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
@@ -28,10 +28,11 @@ export class WriterAgentAccess {
     soulAccess?: SoulAccess,
     llmCore?: LLMCoreAccess,
     logger?: Logger,
+    streamAccess?: StreamAccess,
   ) {
     this.initPromise = new WriterAgentSchemaInitializer(relationDb).init();
     const raw = new WriterAgentService(
-      relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore,
+      relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore, streamAccess,
     );
     this.service = AopProxy.wrap(raw, { logger });
   }

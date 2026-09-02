@@ -384,7 +384,7 @@ export class CloseGraphDBOutput extends Output {}
 /** 图节点表名 */
 export const GRAPH_NODE_TABLE = 'graph_node';
 
-/** 图边表名 */
+/** 图激活事件表名 */
 export const GRAPH_ACTIVATION_EVENT_TABLE = 'graph_activation_event';
 
 /** 图边表名 */

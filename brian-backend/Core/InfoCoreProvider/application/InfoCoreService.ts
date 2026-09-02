@@ -788,9 +788,10 @@ export class InfoCoreService {
       .sort((a, b) => a[1] - b[1])
       .map((e) => e[0]);
 
+    const infoMap = await this.getInfoBatchByInfoIds(sortedIds);
     const results: Array<InfoRawRecord & { keyword_match_count?: number; keyword_score?: number }> = [];
     for (const infoId of sortedIds) {
-      const infoRow = await this.getInfoByInfoId(infoId);
+      const infoRow = infoMap.get(infoId);
       if (infoRow) {
         results.push({
           ...infoRow,
@@ -915,9 +916,11 @@ export class InfoCoreService {
     const entries = [...weightedIds.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, topN);
+    const infoIds = entries.map((e) => e[0]);
+    const infoMap = await this.getInfoBatchByInfoIds(infoIds);
     const results: Array<InfoRawRecord & { relevance_score?: number }> = [];
     for (const [infoId, weight] of entries) {
-      const row = await this.getInfoByInfoId(infoId);
+      const row = infoMap.get(infoId);
       if (row) {
         results.push({ ...row, relevance_score: weight });
       }
@@ -1161,19 +1164,12 @@ export class InfoCoreService {
     ];
     const priorityOrderStr = contextConfig?.priority_order;
 
-    // Helper: 将 raw record 转为标准 ContextInfoItem
-    const toContextItem = async (
+    // Helper: 将 raw record 转为标准 ContextInfoItem（接受预取的 summaries 避免 N+1）
+    const toContextItem = (
       raw: InfoRawRecord,
       collectionSource: ContextCollectionSource,
-    ): Promise<ContextInfoItem> => {
-      let summaryText = '';
-      try {
-        const summaryRow = await this.getInfoSummaryRow(raw.info_id);
-        if (summaryRow?.summary) {
-          summaryText = summaryRow.summary;
-        }
-      } catch { /* best-effort */ }
-
+      summaryText?: string,
+    ): ContextInfoItem => {
       let contentText = raw.info || '';
       if (!contentText && summaryText) {
         contentText = `[摘要] ${summaryText}`;
@@ -1190,8 +1186,8 @@ export class InfoCoreService {
         info_creator_id: raw.info_creator_id,
         info: contentText,
         content: contentText,
-        summary: summaryText,
-        summary_length: summaryText.length,
+        summary: summaryText || '',
+        summary_length: summaryText ? summaryText.length : 0,
         info_length: contentText.length,
         content_length: contentText.length,
         collection_source: collectionSource,
@@ -1283,55 +1279,54 @@ export class InfoCoreService {
       }
     }
 
-    // TAG_RELATIVE (全系统标签相关性消息)
-    const tagCandidates: InfoRawRecord[] = [];
-    if (refInfoRow && tagLimit > 0 && enableCrossSession) {
-      try {
-        const relInput = new RelationKInfoInput();
-        relInput.info_id = refInfoRow.info_id;
-        relInput.topN = tagLimit;
-        const relOutput = new RelationKInfoOutput();
-        await this.relationKInfo(relInput, relOutput, _context, metrics, report);
-        for (const item of relOutput.list) {
-          tagCandidates.push(item);
-        }
-      } catch { /* ignore */ }
-    }
-
-    // SIMILARITY (全系统向量语义相似消息)
-    const simCandidates: InfoRawRecord[] = [];
-    if (refText && simLimit > 0 && enableCrossSession) {
-      try {
-        const simInput = new SimilarKInfoInput();
-        simInput.info = refText;
-        simInput.topK = simLimit;
-        const simOutput = new SimilarKInfoOutput();
-        await this.similarKInfo(simInput, simOutput, _context, metrics, report);
-        for (const item of simOutput.list) {
-          if (!this.isCorrectInfo(item)) continue;
-          simCandidates.push(item);
-        }
-      } catch { /* ignore */ }
-    }
-
-    // KEYWORD (全系统关键词匹配消息)
-    const kwCandidates: InfoRawRecord[] = [];
-    if (refText && kwLimit > 0 && enableCrossSession) {
-      try {
-        const kwInput = new KeywordKInfoInput();
-        kwInput.info = refText;
-        const kwOutput = new KeywordKInfoOutput();
-        await this.keywordKInfo(kwInput, kwOutput, _context, metrics, report);
-        // bm25 归一化评分截断：仅保留 keyword_score >= 阈值（默认 95/100）的高相关命中；
-        // 列表已按相关性降序，达到 kwLimit 即可停止。
-        for (const item of kwOutput.list) {
-          if (!this.isCorrectInfo(item)) continue;
-          if ((item.keyword_score ?? 0) < kwScoreThreshold) continue;
-          kwCandidates.push(item);
-          if (kwCandidates.length >= kwLimit) break;
-        }
-      } catch { /* ignore */ }
-    }
+    // TAG_RELATIVE / SIMILARITY / KEYWORD 三个维度无依赖，并行执行
+    const [tagResult, simResult, kwResult] = await Promise.all([
+      // TAG_RELATIVE (全系统标签相关性消息)
+      (async (): Promise<InfoRawRecord[]> => {
+        if (!refInfoRow || tagLimit <= 0 || !enableCrossSession) return [];
+        try {
+          const relInput = new RelationKInfoInput();
+          relInput.info_id = refInfoRow.info_id;
+          relInput.topN = tagLimit;
+          const relOutput = new RelationKInfoOutput();
+          await this.relationKInfo(relInput, relOutput, _context, metrics, report);
+          return relOutput.list;
+        } catch { return []; }
+      })(),
+      // SIMILARITY (全系统向量语义相似消息)
+      (async (): Promise<InfoRawRecord[]> => {
+        if (!refText || simLimit <= 0 || !enableCrossSession) return [];
+        try {
+          const simInput = new SimilarKInfoInput();
+          simInput.info = refText;
+          simInput.topK = simLimit;
+          const simOutput = new SimilarKInfoOutput();
+          await this.similarKInfo(simInput, simOutput, _context, metrics, report);
+          return simOutput.list.filter((item) => this.isCorrectInfo(item));
+        } catch { return []; }
+      })(),
+      // KEYWORD (全系统关键词匹配消息)
+      (async (): Promise<InfoRawRecord[]> => {
+        if (!refText || kwLimit <= 0 || !enableCrossSession) return [];
+        try {
+          const kwInput = new KeywordKInfoInput();
+          kwInput.info = refText;
+          const kwOutput = new KeywordKInfoOutput();
+          await this.keywordKInfo(kwInput, kwOutput, _context, metrics, report);
+          const result: InfoRawRecord[] = [];
+          for (const item of kwOutput.list) {
+            if (!this.isCorrectInfo(item)) continue;
+            if ((item.keyword_score ?? 0) < kwScoreThreshold) continue;
+            result.push(item);
+            if (result.length >= kwLimit) break;
+          }
+          return result;
+        } catch { return []; }
+      })(),
+    ]);
+    const tagCandidates: InfoRawRecord[] = tagResult;
+    const simCandidates: InfoRawRecord[] = simResult;
+    const kwCandidates: InfoRawRecord[] = kwResult;
 
     // RANDOM (随机采样消息：优先抽取未在前面维度被选中的新消息；限额已按基础上下文动态收缩)
     let randCandidates: InfoRawRecord[] = [];
@@ -1343,40 +1338,30 @@ export class InfoCoreService {
           ...timelineCandidates.map((c) => c.info_id),
         ]);
 
-        const sessionAllRows = await this.relationDb.select(INFO_RAW_TABLE, {
-          conditions: [
-            { field: 'session_id', operator: Operator.EQ, value: input.session_id },
-          ],
-        });
-        const sessionCandidates = sessionAllRows
-          .map((r) => this.toInfoRawRecord(r))
-          .filter((c) => !existingIds.has(c.info_id))
-          .filter((c) => this.isCorrectInfo(c));
-
-        if (sessionCandidates.length > 0) {
-          const shuffled = [...sessionCandidates];
-          for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-          }
-          randCandidates = shuffled.slice(0, randLimit);
-        } else if (enableCrossSession) {
-          // 若当前 session 消息均已被已有维度采集，则在全局原始消息库中随机调取其他历史消息
-          const globalRows = await this.relationDb.select(INFO_RAW_TABLE, {
-            page: { current: 1, size: 100 },
-          });
-          const globalCandidates = globalRows
+        // 使用 ORDER BY RANDOM() LIMIT 避免全表扫描
+        const count = await this.relationDb.count(INFO_RAW_TABLE, [
+          { field: 'session_id', operator: Operator.EQ, value: input.session_id },
+        ]);
+        if (count > 0) {
+          const randomRows = this.relationDb.queryRaw<Record<string, unknown>>(
+            `SELECT * FROM "${INFO_RAW_TABLE}" WHERE "session_id" = ? ORDER BY RANDOM() LIMIT ?`,
+            [input.session_id, Math.min(randLimit * 3, count)],
+          );
+          const sessionCandidates = randomRows
             .map((r) => this.toInfoRawRecord(r))
             .filter((c) => !existingIds.has(c.info_id))
             .filter((c) => this.isCorrectInfo(c));
-          if (globalCandidates.length > 0) {
-            const shuffled = [...globalCandidates];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-            randCandidates = shuffled.slice(0, randLimit);
-          }
+          randCandidates = sessionCandidates.slice(0, randLimit);
+        } else if (enableCrossSession) {
+          const randomRows = this.relationDb.queryRaw<Record<string, unknown>>(
+            `SELECT * FROM "${INFO_RAW_TABLE}" ORDER BY RANDOM() LIMIT ?`,
+            [Math.min(randLimit * 3, 100)],
+          );
+          const globalCandidates = randomRows
+            .map((r) => this.toInfoRawRecord(r))
+            .filter((c) => !existingIds.has(c.info_id))
+            .filter((c) => this.isCorrectInfo(c));
+          randCandidates = globalCandidates.slice(0, randLimit);
         }
       } catch { /* ignore */ }
     }
@@ -1426,9 +1411,21 @@ const rawPriority = priorityOrderStr
       }
     }
 
-    // 2.4 按优先级依次收集去重
+    // 2.4 按优先级依次收集去重（批量预取摘要避免 N+1）
     const seenIds = new Set<string>();
     const collectedItems: ContextInfoItem[] = [];
+
+    // 收集所有候选 info_id 用于批量查询摘要
+    const allCandidateIds = new Set<string>();
+    for (const sourceKey of priorityList) {
+      const candidates = candidatesMap.get(sourceKey) || [];
+      for (const cand of candidates) {
+        if (cand?.info_id) allCandidateIds.add(cand.info_id);
+      }
+    }
+    if (currentCandidate?.info_id) allCandidateIds.add(currentCandidate.info_id);
+
+    const summaryMap = await this.getInfoSummaryBatchByInfoIds([...allCandidateIds]);
 
     for (const sourceKey of priorityList) {
       const candidates = candidatesMap.get(sourceKey) || [];
@@ -1437,7 +1434,8 @@ const rawPriority = priorityOrderStr
           continue;
         }
         seenIds.add(cand.info_id);
-        const item = await toContextItem(cand, sourceKey);
+        const summary = summaryMap.get(cand.info_id)?.summary;
+        const item = toContextItem(cand, sourceKey, summary);
         collectedItems.push(item);
       }
     }
@@ -1445,7 +1443,8 @@ const rawPriority = priorityOrderStr
     // 当前消息：作为 CURRENT 类型加入结果（供溯源/落盘），但不参与时间线上下文拼接；
     // 若当前消息已通过其它维度（如钉住/引用）采集，则去重，不再重复标记为 CURRENT。
     if (currentCandidate && !seenIds.has(currentCandidate.info_id)) {
-      const currentItem = await toContextItem(currentCandidate, CollectionSource.CURRENT);
+      const summary = summaryMap.get(currentCandidate.info_id)?.summary;
+      const currentItem = toContextItem(currentCandidate, CollectionSource.CURRENT, summary);
       collectedItems.unshift(currentItem);
     }
 
@@ -1979,6 +1978,20 @@ const rawPriority = priorityOrderStr
     return rows.length > 0 ? this.toInfoRawRecord(rows[0]) : null;
   }
 
+  /** 批量查询 info_raw 记录，使用 IN 操作符避免 N+1 查询 */
+  private async getInfoBatchByInfoIds(infoIds: string[]): Promise<Map<string, InfoRawRecord>> {
+    const result = new Map<string, InfoRawRecord>();
+    if (infoIds.length === 0) return result;
+    const rows = await this.relationDb.select(INFO_RAW_TABLE, {
+      conditions: [{ field: 'info_id', operator: Operator.IN, value: infoIds }],
+    });
+    for (const row of rows) {
+      const record = this.toInfoRawRecord(row);
+      result.set(record.info_id, record);
+    }
+    return result;
+  }
+
   private async getInfoById(id: string): Promise<InfoRawRecord | null> {
     const rows = await this.relationDb.select(INFO_RAW_TABLE, {
       conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
@@ -1994,6 +2007,20 @@ const rawPriority = priorityOrderStr
     });
     if (rows.length === 0) return null;
     return this.toInfoSummaryRecord(rows[0]);
+  }
+
+  /** 批量查询 info_summary 记录，使用 IN 操作符避免 N+1 查询 */
+  private async getInfoSummaryBatchByInfoIds(infoIds: string[]): Promise<Map<string, InfoSummaryRecord>> {
+    const result = new Map<string, InfoSummaryRecord>();
+    if (infoIds.length === 0) return result;
+    const rows = await this.relationDb.select(INFO_SUMMARY_TABLE, {
+      conditions: [{ field: 'info_id', operator: Operator.IN, value: infoIds }],
+    });
+    for (const row of rows) {
+      const record = this.toInfoSummaryRecord(row);
+      result.set(record.info_id, record);
+    }
+    return result;
   }
 
   private async getInfoTagConfig(): Promise<InfoTagConfigRecord | null> {

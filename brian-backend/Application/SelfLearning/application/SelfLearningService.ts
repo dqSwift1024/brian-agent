@@ -668,8 +668,11 @@ export class SelfLearningService {
     }
 
     const learningIntervalMs = (config.learning_interval_ms as number) ?? 600000;
+    let tickRunning = false;
 
     const tick = async () => {
+      if (tickRunning) return;
+      tickRunning = true;
       try {
         const hasRecentActivity = await this.checkUserRecentActivity(5 * 60 * 1000);
         if (hasRecentActivity) return;
@@ -698,6 +701,8 @@ export class SelfLearningService {
         }
       } catch (err: unknown) {
         this.logger?.error?.('Random trigger learning error', { error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        tickRunning = false;
       }
     };
 
@@ -733,7 +738,10 @@ export class SelfLearningService {
       this.documentLearningTimer = null;
     }
 
+    let docTickRunning = false;
     const tick = async () => {
+      if (docTickRunning) return;
+      docTickRunning = true;
       try {
         const libraryConditions: Condition[] = [
           { field: 'enable_self_learning', operator: Operator.EQ, value: 1 },
@@ -773,6 +781,8 @@ export class SelfLearningService {
         }
       } catch (err: unknown) {
         this.logger?.error?.('Document learning tick error', { error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        docTickRunning = false;
       }
     };
 
@@ -1624,27 +1634,23 @@ export class SelfLearningService {
     await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     const results: Array<Record<string, unknown>> = [];
+    const resultIds = selOutput.rows.map(r => r.result_id as string).filter(Boolean);
+    const tagMap = new Map<string, string[]>();
+    if (resultIds.length > 0) {
+      const placeholders = resultIds.map(() => '?').join(',');
+      const tagRows = this.relationDb.queryRaw<{ result_id: string; tag: string }>(
+        `SELECT "result_id", "tag" FROM "self_learning_result_tag" WHERE "result_id" IN (${placeholders})`,
+        resultIds,
+      );
+      for (const tr of tagRows) {
+        const list = tagMap.get(tr.result_id) || [];
+        list.push(tr.tag);
+        tagMap.set(tr.result_id, list);
+      }
+    }
     for (const row of selOutput.rows) {
       const resultId = row.result_id as string | undefined;
-      const tags: string[] = [];
-      if (resultId) {
-        const tagRows = Object.assign(new SelectDBOutput(), {});
-        await this.relationDb.selectDB(
-          Object.assign(new SelectDBInput(), {
-            query_param: {
-              table: 'self_learning_result_tag',
-              conditions: [
-                { field: 'result_id', operator: Operator.EQ, value: resultId },
-              ] as Condition[],
-            },
-          }),
-          tagRows,
-          new DBContext(),
-        );
-        for (const tr of tagRows.rows) {
-          if (tr.tag) tags.push(tr.tag as string);
-        }
-      }
+      const tags = resultId ? (tagMap.get(resultId) || []) : [];
       results.push({ ...row, tags });
     }
 
@@ -1698,59 +1704,65 @@ export class SelfLearningService {
     let agedEdgesThisWeek = 0;
     let newEdgesThisWeek = 0;
 
-    try {
-      const graphNodes = Object.assign(new SelectGraphOutput(), {});
-      await this.graphDBAccess.selectGraph(
-        Object.assign(new SelectGraphInput(), {
-          target: GraphTarget.NODE,
-          node_type: 'Tag',
-        }),
-        graphNodes,
-        new GraphContext(),
-      );
-      totalTagNodes = graphNodes.list.length;
-
-      const nodeNeighborMap = new Map<string, number>();
-      for (const node of graphNodes.list) {
-        if (!('node_type' in node)) continue;
-        const neighbors = Object.assign(new GetGraphNeighborsOutput(), {});
-        await this.graphDBAccess.soGraphNeighbors(
-          Object.assign(new GetGraphNeighborsInput(), {
-            node_id: node.id,
-            direction: GraphDirection.BOTH,
+    // ===== 修改后：仅在全局统计（无 source 过滤）时扫描图数据库 ====
+    // 图数据库统计（Tag 节点/边数量、孤立标签等）是全局数据，不随 source 变化。
+    // 按 source 过滤的场景（如学习页面 3 个模式卡片并发请求）跳过此扫描，
+    // 避免 O(节点数) 的图数据库全量扫描被重复执行 3 次导致事件循环阻塞。
+    if (!input.source) {
+      try {
+        const graphNodes = Object.assign(new SelectGraphOutput(), {});
+        await this.graphDBAccess.selectGraph(
+          Object.assign(new SelectGraphInput(), {
+            target: GraphTarget.NODE,
+            node_type: 'Tag',
           }),
-          neighbors,
+          graphNodes,
           new GraphContext(),
         );
-        nodeNeighborMap.set(node.id, neighbors.list.length);
-      }
-      orphanTags = Array.from(nodeNeighborMap.values()).filter((c) => c === 0).length;
+        totalTagNodes = graphNodes.list.length;
 
-      const graphEdges = Object.assign(new SelectGraphOutput(), {});
-      await this.graphDBAccess.selectGraph(
-        Object.assign(new SelectGraphInput(), {
-          target: GraphTarget.EDGE,
-        }),
-        graphEdges,
-        new GraphContext(),
-      );
-      totalTagEdges = graphEdges.list.length;
+        const nodeNeighborMap = new Map<string, number>();
+        for (const node of graphNodes.list) {
+          if (!('node_type' in node)) continue;
+          const neighbors = Object.assign(new GetGraphNeighborsOutput(), {});
+          await this.graphDBAccess.soGraphNeighbors(
+            Object.assign(new GetGraphNeighborsInput(), {
+              node_id: node.id,
+              direction: GraphDirection.BOTH,
+            }),
+            neighbors,
+            new GraphContext(),
+          );
+          nodeNeighborMap.set(node.id, neighbors.list.length);
+        }
+        orphanTags = Array.from(nodeNeighborMap.values()).filter((c) => c === 0).length;
 
-      for (const edge of graphEdges.list) {
-        if (!('node_type' in edge)) continue;
-        const e = (edge as any);
-        if (e.is_active === true || e.is_active === 1) {
-          activeEdges++;
+        const graphEdges = Object.assign(new SelectGraphOutput(), {});
+        await this.graphDBAccess.selectGraph(
+          Object.assign(new SelectGraphInput(), {
+            target: GraphTarget.EDGE,
+          }),
+          graphEdges,
+          new GraphContext(),
+        );
+        totalTagEdges = graphEdges.list.length;
+
+        for (const edge of graphEdges.list) {
+          if (!('node_type' in edge)) continue;
+          const e = (edge as any);
+          if (e.is_active === true || e.is_active === 1) {
+            activeEdges++;
+          }
+          if (e.last_aged_at && (e.last_aged_at as number) >= thisWeekStart) {
+            agedEdgesThisWeek++;
+          }
+          if (e.created && (e.created as number) >= thisWeekStart) {
+            newEdgesThisWeek++;
+          }
         }
-        if (e.last_aged_at && (e.last_aged_at as number) >= thisWeekStart) {
-          agedEdgesThisWeek++;
-        }
-        if (e.created && (e.created as number) >= thisWeekStart) {
-          newEdgesThisWeek++;
-        }
+      } catch {
+        /* graph DB might not have Tag nodes yet */
       }
-    } catch {
-      /* graph DB might not have Tag nodes yet */
     }
 
     // 学习趋势：近 365 天，用单条 GROUP BY 查询统计每日学习次数

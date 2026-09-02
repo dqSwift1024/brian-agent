@@ -1066,43 +1066,120 @@ export class LLMService {
     const strategy = LLMStrategyFactory.soStrategyById(provider);
     const req = strategy.buildChatRequest(provider, llm, input);
 
-    try {
-      const httpInput = Object.assign(new ExecRequestInput(), {
-        url: req.url,
-        method: req.method,
-        headers: req.headers,
-        body: req.body,
-        timeout_ms: EXEC_TIMEOUT_MS,
-      });
-      const httpOutput = new ExecRequestOutput();
-      await this.http.execRequest(httpInput, httpOutput, new HttpContext());
-      const res = httpOutput.response;
-      if (!res.ok) {
-        const text = res.bodyText;
-        output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
-        output.error_code = 'REMOTE_ERROR';
+    // 流式调用：使用 SSE 解析逐 token 推送
+    if (input.stream && typeof input.onDelta === 'function') {
+      try {
+        const streamBody = JSON.parse(req.body as string);
+        streamBody.stream = true;
+        const streamBodyStr = JSON.stringify(streamBody);
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), EXEC_TIMEOUT_MS);
+
+        const res = await fetch(req.url, {
+          method: req.method || 'POST',
+          headers: req.headers,
+          body: streamBodyStr,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => '');
+          output.error = `LLM 调用失败: HTTP ${res.status} ${errorText}`;
+          output.error_code = 'REMOTE_ERROR';
+          output.duration_ms = Date.now() - startTime;
+          return false;
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          output.error = 'LLM 流式响应无 body';
+          output.error_code = 'CONNECT_ERROR';
+          output.duration_ms = Date.now() - startTime;
+          return false;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullContent = '';
+
+        while (true) { // eslint-disable-line no-constant-condition
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed?.choices?.[0]?.delta?.content;
+              if (delta) {
+                fullContent += delta;
+                input.onDelta!(delta);
+              }
+            } catch {
+              /* 忽略半包/心跳帧 */
+            }
+          }
+        }
+
+        output.raw_response = fullContent;
+        output.result = fullContent;
+        output.input_prompt = prompt;
+        output.input_tokens = 0;
+        output.output_tokens = 0;
+        output.duration_ms = Date.now() - startTime;
+      } catch (err) {
+        output.error = err instanceof Error ? err.message : String(err);
+        output.error_code = 'CONNECT_ERROR';
         output.duration_ms = Date.now() - startTime;
         return false;
       }
-      const rawText = res.bodyText;
-      output.raw_response = rawText;
-      let json: unknown = {};
+    } else {
+      // 非流式调用（原有逻辑）
       try {
-        json = JSON.parse(rawText);
-      } catch {
-        json = {};
+        const httpInput = Object.assign(new ExecRequestInput(), {
+          url: req.url,
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          timeout_ms: EXEC_TIMEOUT_MS,
+        });
+        const httpOutput = new ExecRequestOutput();
+        await this.http.execRequest(httpInput, httpOutput, new HttpContext());
+        const res = httpOutput.response;
+        if (!res.ok) {
+          const text = res.bodyText;
+          output.error = `LLM 调用失败: HTTP ${res.status} ${text}`;
+          output.error_code = 'REMOTE_ERROR';
+          output.duration_ms = Date.now() - startTime;
+          return false;
+        }
+        const rawText = res.bodyText;
+        output.raw_response = rawText;
+        let json: unknown = {};
+        try {
+          json = JSON.parse(rawText);
+        } catch {
+          json = {};
+        }
+        const parsed = strategy.parseChatResponse(json, rawText);
+        output.result = parsed.content;
+        output.input_prompt = prompt;
+        output.input_tokens = parsed.inputTokens;
+        output.output_tokens = parsed.outputTokens;
+        output.duration_ms = Date.now() - startTime;
+      } catch (err) {
+        output.error = err instanceof Error ? err.message : String(err);
+        output.error_code = 'CONNECT_ERROR';
+        output.duration_ms = Date.now() - startTime;
+        return false;
       }
-      const parsed = strategy.parseChatResponse(json, rawText);
-      output.result = parsed.content;
-      output.input_prompt = prompt;
-      output.input_tokens = parsed.inputTokens;
-      output.output_tokens = parsed.outputTokens;
-      output.duration_ms = Date.now() - startTime;
-    } catch (err) {
-      output.error = err instanceof Error ? err.message : String(err);
-      output.error_code = 'CONNECT_ERROR';
-      output.duration_ms = Date.now() - startTime;
-      return false;
     }
 
     // 成功后更新 llm_usage 表当天的 usage_count 与 token 用量

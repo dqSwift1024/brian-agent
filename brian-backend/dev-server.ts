@@ -600,6 +600,16 @@ async function buildContext() {
     logger.warn('[startup] migrate citation edges', 'failed', e?.message || String(e));
   }
 
+  // WAL checkpoint：启动期批量重建/迁移后回收 WAL 文件磁盘空间
+  try {
+    for (const db of [relationDb, logRelationDb]) {
+      const result = db.walCheckpoint('TRUNCATE');
+      logger.info('[startup] WAL checkpoint', `busy=${result.busy} log=${result.log} checkpointed=${result.checkpointed}`);
+    }
+  } catch (e: any) {
+    logger.warn('[startup] WAL checkpoint', 'failed', e?.message || String(e));
+  }
+
   // 向量维度统一由 SQLite 的 info_vector_config.dimension 管理（配置中心可修改），
   // 读取后作为向量表（LanceDB）的维度来源初始化。
   const vectorDimension = readVectorDimension(relationDb);
@@ -632,7 +642,7 @@ async function buildContext() {
   await agentBuilder.initialize();
   const agentExecution = new AgentExecutionAccess(relationDb, llmAccess, promptsAccess, skillAccess, soulAccess, mcpAccess, mqAccess, agentLibrary, agentStrategy, infoCore, mqCore, skillCore, mcpCore, llmCore, cdtCore, logger, streamAccess);
   await agentExecution.initialize();
-  const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore, logger);
+  const writerAgent = new WriterAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, soulAccess, llmCore, logger, streamAccess);
   await writerAgent.initialize();
   const plannerAgent = new PlannerAgentAccess(relationDb, llmAccess, promptsAccess, infoCore, agentBuilder, agentLibrary, llmCore, logger);
   await plannerAgent.initialize();
@@ -820,14 +830,23 @@ async function buildContext() {
   }
   scheduleInfoCleanup();
 
-  // 周期性同步 MCP 安装状态（每 5 分钟通过 npm list -g 清理全局已卸载的 npm 记录）
+  // 周期性同步 MCP 安装状态（每 1 小时通过 npm list -g 清理全局已卸载的 npm 记录）
   setInterval(() => {
     try {
       mcpAccess.syncInstallStatus().then((removed) => {
         if (removed > 0) logger.info('[cron] MCP install sync', `清理了 ${removed} 条已卸载的 npm 安装记录`);
       }).catch(() => {});
     } catch { /* ignore */ }
-  }, 5 * 60 * 1000);
+  }, 60 * 60 * 1000);
+
+  // 周期性 WAL checkpoint（每 30 分钟），回收 WAL 文件磁盘空间
+  setInterval(() => {
+    try {
+      for (const db of [relationDb, logRelationDb]) {
+        db.walCheckpoint('PASSIVE');
+      }
+    } catch { /* ignore */ }
+  }, 30 * 60 * 1000);
 
   // 每日午夜 0:00 执行 Skill/Soul 老化（按 opt_rule 规则禁用不活跃实体）
   function scheduleDailyAging() {
@@ -871,9 +890,19 @@ async function buildContext() {
 }
 
 function jsonBody(req: http.IncomingMessage): Promise<any> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB 上限
     let body = '';
-    req.on('data', (c) => { body += c; });
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY_SIZE) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+        return;
+      }
+      body += c;
+    });
     req.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
   });
 }
@@ -928,7 +957,10 @@ function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
   }
   const ext = path.extname(rel);
   const mime = FRONTEND_MIME_TYPES[ext] || 'application/octet-stream';
-  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' });
+  // index.html 保持 no-store 以确保 SPA 路由更新即时生效；
+  // 其他静态资源（JS/CSS/图片/字体等）使用长缓存（Vite 构建已带内容 hash）
+  const cacheControl = rel === 'index.html' ? 'no-store' : 'public, max-age=31536000, immutable';
+  res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cacheControl });
   res.end(Buffer.from(b64, 'base64'));
   return true;
 }
@@ -2597,6 +2629,8 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           keyword: params.get('keyword') || undefined,
           start_time: params.get('start_time') ? parseInt(params.get('start_time')!, 10) : undefined,
           end_time: params.get('end_time') ? parseInt(params.get('end_time')!, 10) : undefined,
+          page_current: params.get('page_current') ? parseInt(params.get('page_current')!, 10) : undefined,
+          page_size: params.get('page_size') ? parseInt(params.get('page_size')!, 10) : undefined,
         });
         const output = new SearchSessionOutput();
         const context = new ChatContext();
@@ -3201,7 +3235,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           args.push(startTime);
         }
         if (endTime !== undefined) {
-          conds.push('"created" <= ?');
+          conds.push('"created" < ?');
           args.push(endTime);
         }
         if (cursor) {
@@ -3394,15 +3428,35 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { year, month, days });
 
       } else if (method === 'GET' && pathname === '/api/memory/date-counts') {
+        // tz：客户端东偏分钟数（-getTimezoneOffset()），按客户端本地日分桶，避免 UTC 桶把凌晨数据落到前一天
+        const tzMs = (parseInt(params.get('tz') || '0', 10) || 0) * 60000;
         const rows = ctx.relationDb.queryRaw<{ day_num: number; cnt: number }>(
-          'SELECT CAST("created" / 86400000 AS INTEGER) AS day_num, COUNT(*) AS cnt FROM "info_raw" GROUP BY day_num',
+          'SELECT CAST(("created" + ?) / 86400000 AS INTEGER) AS day_num, COUNT(*) AS cnt FROM "info_raw" WHERE "created" IS NOT NULL GROUP BY day_num',
+          [tzMs],
+        );
+        const dates: Record<string, number> = {};
+        for (const r of rows) {
+          if (r.day_num == null) continue;
+          const d = new Date(r.day_num * 86400000);
+          const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+          dates[key] = r.cnt;
+        }
+        sendJson(res, 200, { dates });
+
+      } else if (method === 'GET' && pathname === '/api/chat/date-counts') {
+        // 会话历史热力图：每个会话按其最后一条消息时间归入本地日，返回每日会话数
+        // 仅统计 chat_session 表中存在的会话，避免 info_raw 孤儿数据导致热力图与列表不一致
+        const tzMs = (parseInt(params.get('tz') || '0', 10) || 0) * 60000;
+        const rows = ctx.relationDb.queryRaw<{ last_ts: number }>(
+          'SELECT MAX(ir."created") AS "last_ts" FROM "info_raw" ir INNER JOIN "chat_session" cs ON ir."session_id" = cs."session_id" WHERE ir."session_id" IS NOT NULL AND ir."session_id" != \'\' AND ir."created" IS NOT NULL GROUP BY ir."session_id"',
           [],
         );
         const dates: Record<string, number> = {};
         for (const r of rows) {
-          const d = new Date(r.day_num * 86400000);
-          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-          dates[key] = r.cnt;
+          if (!r.last_ts) continue;
+          const d = new Date(Number(r.last_ts) + tzMs);
+          const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+          dates[key] = (dates[key] || 0) + 1;
         }
         sendJson(res, 200, { dates });
 

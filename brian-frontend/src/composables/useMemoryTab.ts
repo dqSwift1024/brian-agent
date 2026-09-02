@@ -8,6 +8,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { memoryApi } from '../api'
 import type { MemoryItem } from '../api/types'
+import {
+  compareDateKeys, dateKeyToRange, hasDataInMonth, latestDateKey, toLocalInputValue,
+} from '../utils/heatmap'
 
 /**
  * 记忆页签状态与操作。
@@ -196,7 +199,7 @@ function onMemoryScroll() {
 const dateNavTimeline = computed(() => {
   return Object.entries(dateCountCache.value)
     .filter(([, count]) => count > 0)
-    .sort(([a], [b]) => b.localeCompare(a))
+    .sort(([a], [b]) => compareDateKeys(b, a))
     .map(([dateKey, count]) => {
       const [y, m, d] = dateKey.split('-').map(Number)
       const date = new Date(y, m, d)
@@ -212,13 +215,6 @@ const dateNavTimeline = computed(() => {
 
 const memoryDateFilter = ref<string | null>(null)
 
-function dateKeyToRange(dateKey: string): { start: number; end: number } {
-  const [y, m, d] = dateKey.split('-').map(Number)
-  const start = new Date(y, m, d).getTime()
-  const end = new Date(y, m, d + 1).getTime()
-  return { start, end }
-}
-
 function clickDateNav(dateKey: string) {
   if (memoryDateFilter.value === dateKey) {
     memoryDateFilter.value = null
@@ -229,8 +225,8 @@ function clickDateNav(dateKey: string) {
   } else {
     memoryDateFilter.value = dateKey
     const { start, end } = dateKeyToRange(dateKey)
-    memoryStartTime.value = new Date(start).toISOString().slice(0, 16)
-    memoryEndTime.value = new Date(end - 1).toISOString().slice(0, 16)
+    memoryStartTime.value = toLocalInputValue(start)
+    memoryEndTime.value = toLocalInputValue(end)
     if (memorySearchTimer.value) clearTimeout(memorySearchTimer.value)
     loadMemory()
   }
@@ -244,35 +240,33 @@ function clickDateNav(dateKey: string) {
   })
 }
 
-// Memory heatmap & date count cache（全量日期计数，历史永久缓存，当天1分钟刷新）
+// Memory heatmap & date count cache（全量日期计数，历史永久缓存，1 分钟轮询保持当天计数新鲜）
 const dateCountCache = ref<Record<string, number>>({})
 let dateCountRefreshTimer: ReturnType<typeof setInterval> | null = null
-
-const todayDateKey = computed(() => {
-  const now = new Date()
-  return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`
-})
+const heatmapAutoJumped = ref(false)
 
 async function loadAllDateCounts() {
   try {
     const data = await memoryApi.dateCounts()
     dateCountCache.value = data.dates
+    // 首次加载后：若当前月无数据则自动定位到最近有数据的月份，避免打开即空白
+    if (!heatmapAutoJumped.value && Object.keys(data.dates).length > 0) {
+      heatmapAutoJumped.value = true
+      if (!hasDataInMonth(data.dates, heatmapYear.value, heatmapMonth.value)) {
+        const latest = latestDateKey(data.dates)
+        if (latest) {
+          const [y, m] = latest.split('-').map(Number)
+          heatmapYear.value = y
+          heatmapMonth.value = m + 1
+        }
+      }
+    }
   } catch { /* ignore */ }
 }
 
 function startDateCountRefresh() {
   stopDateCountRefresh()
-  dateCountRefreshTimer = setInterval(async () => {
-    const now = new Date()
-    try {
-      const data = await memoryApi.heatmap(now.getFullYear(), now.getMonth() + 1)
-      const todayDay = String(now.getDate())
-      dateCountCache.value = {
-        ...dateCountCache.value,
-        [todayDateKey.value]: data.days[todayDay] || 0,
-      }
-    } catch { /* ignore */ }
-  }, 60_000)
+  dateCountRefreshTimer = setInterval(() => { loadAllDateCounts() }, 60_000)
 }
 
 function stopDateCountRefresh() {
@@ -289,16 +283,6 @@ function getDateCount(dateKey: string): number {
 const heatmapYear = ref(new Date().getFullYear())
 const heatmapMonth = ref(new Date().getMonth() + 1)
 
-const heatmapDays = computed(() => {
-  const days: Record<string, number> = {}
-  const daysInMonth = new Date(heatmapYear.value, heatmapMonth.value, 0).getDate()
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = `${heatmapYear.value}-${heatmapMonth.value - 1}-${d}`
-    days[String(d)] = dateCountCache.value[key] || 0
-  }
-  return days
-})
-
 const heatmapCells = computed(() => {
   const daysInMonth = new Date(heatmapYear.value, heatmapMonth.value, 0).getDate()
   const firstDay = new Date(heatmapYear.value, heatmapMonth.value - 1, 1).getDay()
@@ -306,18 +290,12 @@ const heatmapCells = computed(() => {
   const cells: { day: number | null; count: number }[] = []
   for (let i = 0; i < leading; i++) cells.push({ day: null, count: 0 })
   for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, count: heatmapDays.value[String(d)] || 0 })
+    const key = `${heatmapYear.value}-${heatmapMonth.value - 1}-${d}`
+    cells.push({ day: d, count: dateCountCache.value[key] || 0 })
   }
   while (cells.length % 7 !== 0) cells.push({ day: null, count: 0 })
   return cells
 })
-
-function heatmapColor(count: number): string {
-  if (count <= 0) return 'bg-apple-gray-100 dark:bg-apple-gray-800'
-  if (count === 1) return 'bg-brian-blue/30'
-  if (count <= 3) return 'bg-brian-blue/60'
-  return 'bg-brian-blue'
-}
 
 function isCurrentHeatmapMonth(): boolean {
   const now = new Date()
@@ -339,9 +317,11 @@ function heatmapDateKey(day: number): string {
   return `${heatmapYear.value}-${heatmapMonth.value - 1}-${day}`
 }
 
-function isHeatmapCellActive(day: number): boolean {
-  return activeMemoryDate.value === heatmapDateKey(day)
-}
+const heatmapActiveDay = computed(() => {
+  if (!activeMemoryDate.value) return null
+  const [y, m, d] = activeMemoryDate.value.split('-').map(Number)
+  return y === heatmapYear.value && m === heatmapMonth.value - 1 ? d : null
+})
 
 function clickHeatmapDay(day: number | null) {
   if (!day) return
@@ -373,13 +353,11 @@ function clickHeatmapDay(day: number | null) {
     getDateCount,
     hasMoreMemory,
     heatmapCells,
-    heatmapColor,
+    heatmapActiveDay,
     heatmapDateKey,
-    heatmapDays,
     heatmapMonth,
     heatmapYear,
     isCurrentHeatmapMonth,
-    isHeatmapCellActive,
     loadAllDateCounts,
     loadMemory,
     loadMoreMemory,
@@ -404,7 +382,6 @@ function clickHeatmapDay(day: number | null) {
     selectedMemories,
     startDateCountRefresh,
     stopDateCountRefresh,
-    todayDateKey,
     toggleMemorySelect,
     toggleSelectAllMemory,
     typeColors,

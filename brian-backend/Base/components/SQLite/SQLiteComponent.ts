@@ -156,4 +156,27 @@ export class SQLiteComponent {
       // 忽略重复关闭
     }
   }
+
+  /**
+   * 执行 WAL checkpoint 以回收 WAL 文件磁盘空间。
+   *
+   * 在 WAL 模式下，写事务会追加到 WAL 文件；长时间不 checkpoint 会导致 WAL 文件
+   * 持续膨胀（已观测到 graph.db-wal 达 608MB）。在批量写入后调用此方法可回收磁盘。
+   *
+   * @param mode checkpoint 模式：PASSIVE（默认，不阻塞）、FULL（阻塞写事务）、
+   *   RESTART（阻塞写事务）、TRUNCATE（阻塞写事务，截断 WAL 文件至 0）
+   * @returns checkpoint 结果（busy: 是否有未完成的读事务阻塞了 checkpoint）
+   */
+  walCheckpoint(mode: 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE' = 'PASSIVE'): { busy: boolean; log: number; checkpointed: number } {
+    try {
+      const result = this.db.pragma(`wal_checkpoint(${mode})`) as { busy: number; log: number; checkpointed: number };
+      return {
+        busy: result.busy === 1,
+        log: result.log,
+        checkpointed: result.checkpointed,
+      };
+    } catch {
+      return { busy: false, log: 0, checkpointed: 0 };
+    }
+  }
 }

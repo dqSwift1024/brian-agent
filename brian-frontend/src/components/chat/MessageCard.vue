@@ -25,6 +25,7 @@ const props = withDefaults(
     mode?: 'map' | 'timeline'
     active?: boolean
     nodeMap?: Map<string, { summary?: string; info?: string }>
+    isStreaming?: boolean
   }>(),
   {
     infoId: '',
@@ -41,6 +42,7 @@ const props = withDefaults(
     mode: 'timeline',
     active: false,
     nodeMap: undefined,
+    isStreaming: false,
   },
 )
 
@@ -76,8 +78,13 @@ const targetId = computed(() => props.infoId || props.id)
 const isUser = computed(() => props.role === 'user' || props.role === 'USER' || props.role === 'REQUEST')
 const isError = computed(() => props.content.startsWith('[错误]') || props.summary.startsWith('[错误]'))
 
-// 消息内容按 Markdown 渲染
-const renderedContent = computed(() => renderMarkdown(props.content))
+// 消息内容按 Markdown 渲染（流式期间使用纯文本渲染以避免 O(n²) 解析成本）
+const renderedContent = computed(() => {
+  if (props.isStreaming) {
+    return props.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+  }
+  return renderMarkdown(props.content)
+})
 
 // 摘要按 Markdown 渲染（无摘要时回退原文）
 const renderedSummary = computed(() => {

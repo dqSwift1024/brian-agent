@@ -312,13 +312,6 @@ export class ChatService {
           chunk_delay_ms: 0,
         });
       }
-
-      // 兼容回调
-      for (let i = 0; i < finalResponse.length; ) {
-        const chunkSize = Math.floor(Math.random() * 4) + 2;
-        emit('text', { work_id: workId, chunk: finalResponse.substring(i, i + chunkSize) });
-        i += chunkSize;
-      }
     }
 
     emit('done', { work_id: workId, interact_id: interactId, trace_id: traceId, final_response: paused ? '' : finalResponse, elapsed_ms: elapsedMs, token_usage: tokenUsage, paused });
@@ -449,7 +442,7 @@ export class ChatService {
         timeArgs.push(input.start_time);
       }
       if (input.end_time !== undefined) {
-        timeConds.push('"created" <= ?');
+        timeConds.push('"created" < ?');
         timeArgs.push(input.end_time);
       }
       const timeRows = this.relationDb.queryRaw<{ session_id: string }>(
@@ -584,47 +577,42 @@ export class ChatService {
 
     const sessions: SearchSessionOutput['sessions'] = [];
 
+    // 批量查询消息计数与最后消息，消除逐会话 N+1
+    const countMap = new Map<string, number>();
+    const lastMsgMap = new Map<string, { time: number; msg: string }>();
+    if (sessionIds.length > 0) {
+      try {
+        const cntRows = this.relationDb.queryRaw<{ session_id: string; cnt: number }>(
+          `SELECT "session_id", COUNT(*) AS cnt FROM "info_raw" WHERE "session_id" IN (${placeholders}) GROUP BY "session_id"`,
+          sessionIds,
+        );
+        for (const r of cntRows) countMap.set(String(r.session_id), Number(r.cnt));
+      } catch { /* degrade gracefully */ }
+
+      try {
+        const lastRows = this.relationDb.queryRaw<{ session_id: string; created: number; info: string }>(
+          `SELECT ir."session_id", ir."created", ir."info"
+           FROM "info_raw" ir
+           INNER JOIN (
+             SELECT "session_id", MAX("created") AS max_created
+             FROM "info_raw" WHERE "session_id" IN (${placeholders}) GROUP BY "session_id"
+           ) latest ON ir."session_id" = latest."session_id" AND ir."created" = latest.max_created`,
+          sessionIds,
+        );
+        for (const r of lastRows) {
+          lastMsgMap.set(String(r.session_id), { time: Number(r.created), msg: String(r.info ?? '') });
+        }
+      } catch { /* degrade gracefully */ }
+    }
+
     for (const row of selOutput.rows) {
       const sessionId = row.session_id as string;
 
-      let messageCount = 0;
-      let lastMessageTime = 0;
-      let lastMessage = '';
-
-      try {
-        const cntInput = Object.assign(new CountDBInput(), {
-          table: 'info_raw',
-          conditions: [
-            { field: 'session_id', operator: Operator.EQ, value: sessionId },
-          ] as Condition[],
-        });
-        const cntOutput = Object.assign(new CountDBOutput(), {});
-        await this.relationDb.countDB(cntInput, cntOutput, new DBContext());
-        messageCount = cntOutput.count;
-      } catch {
-        /* degrade gracefully */
-      }
-
-      try {
-        const lastSelInput = Object.assign(new SelectDBInput(), {
-          query_param: {
-            table: 'info_raw',
-            conditions: [
-              { field: 'session_id', operator: Operator.EQ, value: sessionId },
-            ] as Condition[],
-            order_by: [{ field: 'created', direction: 'DESC' }],
-            page: { current: 1, size: 1 },
-          },
-        });
-        const lastSelOutput = Object.assign(new SelectDBOutput(), {});
-        await this.relationDb.selectDB(lastSelInput, lastSelOutput, new DBContext());
-        if (lastSelOutput.rows.length > 0) {
-          lastMessageTime = lastSelOutput.rows[0].created as number;
-          lastMessage = (lastSelOutput.rows[0].info as string) ?? '';
-        }
-      } catch {
-        /* degrade gracefully */
-      }
+      const countInfo = countMap.get(sessionId);
+      const messageCount = countInfo ?? 0;
+      const lastInfo = lastMsgMap.get(sessionId);
+      const lastMessageTime = lastInfo?.time ?? 0;
+      const lastMessage = lastInfo?.msg ?? '';
 
       const stat = statMap.get(sessionId) ?? { qa_count: 0, question_chars: 0, answer_chars: 0 };
       const token = tokenMap.get(sessionId) ?? { input_tokens: 0, output_tokens: 0 };

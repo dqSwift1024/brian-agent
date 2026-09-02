@@ -1,8 +1,8 @@
 /**
  * @fileoverview GraphDBProvider 应用服务层。
  *
- * 依赖 GraphDBComponent（基于 SQLite + CTE 的图数据库组件）操作图数据（节点、边、遍历），
- * 通过 Cypher 查询语言（经 CypherTranslator 翻译为 SQL）执行所有图数据 CRUD。
+ * 依赖 GraphDBComponent（基于 LeanGraph 的嵌入式图数据库）操作图数据（节点、边、遍历），
+ * 通过 Cypher 查询语言执行所有图数据 CRUD。
  * 依赖 RelationDBAccess（通过 ConfigService）管理 graphdb_config 配置表。
  *
  * 图数据（节点、边、激活事件、按天激活统计）均存储于 SQLite 图数据库：
@@ -286,10 +286,13 @@ export class GraphDBService {
     const n =
       (row.n as Record<string, unknown> | undefined) ?? row;
     let content: Record<string, unknown> = {};
-    try {
-      content = JSON.parse(String(n.content)) as Record<string, unknown>;
-    } catch {
-      content = {};
+    const rawContent = n.content;
+    if (rawContent !== null && rawContent !== undefined) {
+      if (typeof rawContent === 'string') {
+        try { content = JSON.parse(rawContent); } catch { content = {}; }
+      } else if (typeof rawContent === 'object') {
+        content = rawContent as Record<string, unknown>;
+      }
     }
     return {
       id: String(n.id),
@@ -314,14 +317,12 @@ export class GraphDBService {
     const e =
       (row.e as Record<string, unknown> | undefined) ?? row;
     let properties: Record<string, unknown> | null = null;
-    if (e.properties !== null && e.properties !== undefined) {
-      try {
-        properties = JSON.parse(String(e.properties)) as Record<
-          string,
-          unknown
-        >;
-      } catch {
-        properties = null;
+    const rawProps = e.properties;
+    if (rawProps !== null && rawProps !== undefined) {
+      if (typeof rawProps === 'string') {
+        try { properties = JSON.parse(rawProps) as Record<string, unknown>; } catch { properties = null; }
+      } else if (typeof rawProps === 'object') {
+        properties = rawProps as Record<string, unknown>;
       }
     }
     return {
@@ -576,7 +577,9 @@ export class GraphDBService {
 
     const id = IdGenerator.generate();
     const now = IdGenerator.now();
-    const propsStr = data.properties ? JSON.stringify(data.properties) : '';
+    const propsPart = data.properties
+      ? `properties: '${this.escape(JSON.stringify(data.properties))}', `
+      : '';
 
     await this.graphDb.execute(
       `MATCH (from:graph_node {id: '${fromIdEsc}'}), (to:graph_node {id: '${toIdEsc}'}) ` +
@@ -584,9 +587,7 @@ export class GraphDBService {
           id,
         )}', created: ${now}, updated: ${now}, ` +
         `edge_type: '${this.escape(data.edge_type)}', weight: ${weight}, ` +
-        `properties: '${this.escape(
-          propsStr,
-        )}', last_activation_time: null, is_active: 1}]->(to)`,
+        `${propsPart}last_activation_time: null, is_active: 1}]->(to)`,
     );
     output.id = id;
     return true;
@@ -998,7 +999,7 @@ export class GraphDBService {
     const dir = direction === GraphDirection.OUT ? 'OUT'
       : direction === GraphDirection.IN ? 'IN'
       : 'BOTH';
-    const neighborIds = this.graphDb.queryNeighborsByCTE({
+    const neighborIds = await this.graphDb.queryNeighborsByCTE({
       startNodeId: input.node_id,
       maxDepth,
       direction: dir,

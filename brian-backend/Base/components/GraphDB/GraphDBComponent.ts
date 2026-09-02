@@ -1,28 +1,32 @@
 /**
  * @fileoverview GraphDB 数据库组件。
  *
- * 基于 SQLite + CTE 实现图数据库的底层操作能力。
- * 通过 CypherTranslator 将 Cypher 查询翻译为 SQL，使用 better-sqlite3 执行。
+ * 基于 LeanGraph（100% openCypher TCK 兼容的嵌入式图数据库）提供图数据库操作能力。
+ * LeanGraph 底层使用 SQLite，支持完整 Cypher 查询、参数化查询、多跳遍历等。
  * GraphDBProvider 集成此组件，通过 Cypher 查询语言操作图数据（节点、边、遍历）。
  *
  * 生命周期：
- * - 构造时自动调用 open() 打开数据库连接；
+ * - 首次调用 query/execute 时自动初始化 LeanGraph 客户端；
  * - open() / disconnect()：可逆的打开 / 断开（供 enableGraphDB 使用）；
  * - close()：终态关闭，执行后不可再 open，需重新初始化组件。
  */
 
-import type { Database as SqliteDatabase } from 'better-sqlite3';
-import BetterSqlite3 from 'better-sqlite3';
-import { existsSync, mkdirSync, statSync } from 'fs';
-import { dirname } from 'path';
+import { statSync } from 'fs';
+import { dirname, basename, extname } from 'path';
 import { DatabaseError } from '../../shared/errors';
-import { CypherTranslator } from './CypherTranslator';
+
+/** LeanGraph 客户端接口（避免 ESM 模块的 type-only import 问题） */
+interface LeanGraphClient {
+  query<T = Record<string, unknown>>(cypher: string, params?: Record<string, unknown>): Promise<T[]>;
+  execute(cypher: string, params?: Record<string, unknown>): Promise<void>;
+  close(): void;
+}
 
 /**
  * GraphDB 组件选项。
  */
 export interface GraphDBComponentOptions {
-  /** 图数据库文件路径 */
+  /** 图数据库文件路径（LeanGraph 自动推导 project 和 dataPath） */
   dbPath: string;
   /** 兼容参数（保留） */
   bufferManagerSize?: number;
@@ -33,12 +37,12 @@ export interface GraphDBComponentOptions {
 }
 
 /** 兼容原有类型引用 */
-export type Connection = SqliteDatabase;
+export type Connection = unknown;
 
 /**
  * GraphDB 数据库组件。
  *
- * 基于 SQLite 提供图数据库操作能力，通过 CypherTranslator 将 Cypher 翻译为 SQL。
+ * 基于 LeanGraph 提供图数据库操作能力，直接使用 Cypher 查询语言。
  *
  * 生命周期方法：
  * - open()：打开数据库连接（可恢复）
@@ -46,37 +50,41 @@ export type Connection = SqliteDatabase;
  * - close()：终态关闭（不可恢复，供 closeGraphDB 使用）
  */
 export class GraphDBComponent {
-  private db: SqliteDatabase | null = null;
+  private client: LeanGraphClient | null = null;
+  private initPromise: Promise<LeanGraphClient> | null = null;
   private readonly options: GraphDBComponentOptions;
   private terminated = false;
-  private readonly translator = new CypherTranslator();
+  private _project: string;
+  private _dataPath: string;
 
   constructor(options: GraphDBComponentOptions) {
     this.options = options;
-    this.open();
+    const dir = dirname(options.dbPath);
+    const file = basename(options.dbPath, extname(options.dbPath));
+    this._dataPath = dir;
+    this._project = file;
   }
 
-  /**
-   * 打开图数据库连接。
-   */
-  open(): void {
+  private async ensureClient(): Promise<LeanGraphClient> {
     if (this.terminated) {
       throw new DatabaseError('图数据库已终态关闭，不可重新打开');
     }
-    if (this.db) {
-      return;
+    if (this.client) return this.client;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const { LeanGraph } = await import('leangraph');
+        return LeanGraph({
+          mode: 'local',
+          project: this._project,
+          dataPath: this._dataPath,
+        });
+      })();
     }
     try {
-      const dir = dirname(this.options.dbPath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-      this.db = new BetterSqlite3(this.options.dbPath, {
-        readonly: this.options.readOnly ?? false,
-      });
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
+      this.client = await this.initPromise;
+      return this.client;
     } catch (err) {
+      this.initPromise = null;
       throw new DatabaseError(
         `初始化 GraphDB 失败: ${this.options.dbPath} - ${
           err instanceof Error ? err.message : String(err)
@@ -86,16 +94,26 @@ export class GraphDBComponent {
   }
 
   /**
+   * 打开图数据库连接（首次调用时自动初始化）。
+   */
+  open(): void {
+    if (this.terminated) {
+      throw new DatabaseError('图数据库已终态关闭，不可重新打开');
+    }
+  }
+
+  /**
    * 断开图数据库连接（可恢复）。
    */
   disconnect(): void {
-    if (this.db) {
+    if (this.client) {
       try {
-        this.db.close();
+        this.client.close();
       } catch {
         // 忽略关闭错误
       }
-      this.db = null;
+      this.client = null;
+      this.initPromise = null;
     }
   }
 
@@ -109,95 +127,15 @@ export class GraphDBComponent {
 
   /** 图数据库是否已打开 */
   get isOpen(): boolean {
-    return this.db !== null;
-  }
-
-  /** 确保数据库连接可用 */
-  private get dbOrThrow(): SqliteDatabase {
-    if (!this.db) {
-      throw new DatabaseError('图数据库连接未打开');
-    }
-    return this.db;
-  }
-
-  /**
-   * 初始化图数据库 schema（创建表与索引）。
-   * 幂等操作，可安全重复调用。
-   */
-  initSchema(): void {
-    const db = this.dbOrThrow;
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS graph_node (
-        id          TEXT    NOT NULL PRIMARY KEY,
-        created     INTEGER NOT NULL,
-        updated     INTEGER NOT NULL,
-        node_type   TEXT    NOT NULL,
-        content     TEXT    NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_graph_node_node_type ON graph_node(node_type);
-      CREATE INDEX IF NOT EXISTS idx_graph_node_created    ON graph_node(created);
-      CREATE INDEX IF NOT EXISTS idx_graph_node_updated    ON graph_node(updated);
-
-      CREATE TABLE IF NOT EXISTS graph_edge (
-        id                    TEXT    NOT NULL PRIMARY KEY,
-        created               INTEGER NOT NULL,
-        updated               INTEGER NOT NULL,
-        from_node_id          TEXT    NOT NULL,
-        to_node_id            TEXT    NOT NULL,
-        edge_type             TEXT    NOT NULL,
-        weight                REAL    NOT NULL DEFAULT 1.0,
-        properties            TEXT,
-        last_activation_time  INTEGER,
-        is_active             INTEGER NOT NULL DEFAULT 1,
-        FOREIGN KEY (from_node_id) REFERENCES graph_node(id) ON DELETE CASCADE,
-        FOREIGN KEY (to_node_id)   REFERENCES graph_node(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_edge_type  ON graph_edge(edge_type);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_is_active  ON graph_edge(is_active);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_created    ON graph_edge(created);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_updated    ON graph_edge(updated);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_from_node  ON graph_edge(from_node_id);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_to_node    ON graph_edge(to_node_id);
-
-      CREATE TABLE IF NOT EXISTS graph_activation_event (
-        id              TEXT    NOT NULL PRIMARY KEY,
-        created         INTEGER NOT NULL,
-        updated         INTEGER NOT NULL,
-        graph_edge_id   TEXT    NOT NULL,
-        from_node_id    TEXT    NOT NULL,
-        to_node_id      TEXT    NOT NULL,
-        activation_time INTEGER NOT NULL,
-        trigger_type    TEXT    NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_graph_activation_event_edge_id ON graph_activation_event(graph_edge_id);
-      CREATE INDEX IF NOT EXISTS idx_graph_activation_event_time    ON graph_activation_event(activation_time);
-      CREATE INDEX IF NOT EXISTS idx_graph_activation_event_created ON graph_activation_event(created);
-      CREATE INDEX IF NOT EXISTS idx_graph_activation_event_updated ON graph_activation_event(updated);
-
-      CREATE TABLE IF NOT EXISTS graph_edge_daily_activation (
-        id               TEXT    NOT NULL PRIMARY KEY,
-        created          INTEGER NOT NULL,
-        updated          INTEGER NOT NULL,
-        graph_edge_id    TEXT    NOT NULL,
-        stat_date        TEXT    NOT NULL,
-        activation_count INTEGER NOT NULL DEFAULT 1,
-        UNIQUE(graph_edge_id, stat_date)
-      );
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_daily_activation_edge_id ON graph_edge_daily_activation(graph_edge_id);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_daily_activation_date    ON graph_edge_daily_activation(stat_date);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_daily_activation_created ON graph_edge_daily_activation(created);
-      CREATE INDEX IF NOT EXISTS idx_graph_edge_daily_activation_updated ON graph_edge_daily_activation(updated);
-    `);
+    return this.client !== null;
   }
 
   /**
    * 执行 Cypher 查询并返回所有行。
    */
   async queryAll(cypher: string): Promise<Array<Record<string, unknown>>> {
-    const { sql } = this.translator.translate(cypher);
-    const db = this.dbOrThrow;
-    const rows = db.prepare(sql).all() as Array<Record<string, unknown>>;
-    return rows;
+    const c = await this.ensureClient();
+    return c.query(cypher);
   }
 
   /**
@@ -212,57 +150,29 @@ export class GraphDBComponent {
    * 执行 Cypher 写操作（CREATE / DELETE / SET / MERGE）。
    */
   async execute(cypher: string): Promise<Array<Record<string, unknown>>> {
-    const { sql, detachDelete } = this.translator.translate(cypher);
-    const db = this.dbOrThrow;
-
-    if (detachDelete) {
-      // DETACH DELETE: run in transaction for cascade
-      const runAll = db.transaction(() => {
-        db.prepare(sql).run();
-      });
-      runAll();
-      return [];
-    }
-
-    db.prepare(sql).run();
+    const c = await this.ensureClient();
+    await c.execute(cypher);
     return [];
   }
 
   /**
    * 执行带命名参数的 Cypher 查询。
-   *
-   * 保持与原有接口兼容：将 $paramName 占位符替换为转义后的值。
    */
   async queryWithParams(
     cypher: string,
     params: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> {
-    let interpolated = cypher;
-    for (const [key, value] of Object.entries(params)) {
-      const placeholder = `$${key}`;
-      let replacement: string;
-      if (value === null || value === undefined) {
-        replacement = 'null';
-      } else if (typeof value === 'number') {
-        replacement = String(value);
-      } else if (typeof value === 'boolean') {
-        replacement = value ? 'true' : 'false';
-      } else {
-        replacement = `'${this.escape(String(value))}'`;
-      }
-      interpolated = interpolated.split(placeholder).join(replacement);
-    }
-    return this.queryAll(interpolated);
+    const c = await this.ensureClient();
+    return c.query(cypher, params);
   }
 
   /**
    * 检查节点是否存在。
    */
   async nodeExists(table: string, id: string): Promise<boolean> {
-    const row = await this.queryOne(
-      `MATCH (n:${table} {id: '${this.escape(id)}'}) RETURN n.id AS id`,
-    );
-    return row !== null;
+    const c = await this.ensureClient();
+    const rows = await c.query(`MATCH (n:${table} {id: $id}) RETURN n.id AS id`, { id });
+    return rows.length > 0;
   }
 
   /**
@@ -276,67 +186,70 @@ export class GraphDBComponent {
     return Number(row?.cnt ?? 0);
   }
 
-  /** 获取底层数据库实例 */
-  getConnection(): SqliteDatabase {
-    return this.dbOrThrow;
+  /** 获取底层数据库实例（LeanGraph 不暴露底层连接） */
+  getConnection(): Connection {
+    return null;
   }
 
   /**
-   * 基于 SQLite 递归 CTE（WITH RECURSIVE）计算多跳邻居节点 ID。
+   * 基于 Cypher 边匹配计算多跳邻居节点 ID。
    *
-   * 作为图遍历的底层能力，一次 SQL 完成有界深度内的可达性展开，支持：
-   * - direction：OUT / IN / BOTH 遍历方向；
-   * - edge_type：按边类型过滤（可选）；
-   * - only_active：仅遍历激活边；
-   * - maxDepth：最大跳数（递归深度上限，防环）；
-   * - fanOutThreshold：扇出熔断阈值，扇出度超过该值的 hub 节点不展开其邻居（防图爆炸）。
+   * LeanGraph 不支持变长路径上的 all() 过滤，因此：
+   * - depth=1：使用单边匹配 + 内联属性过滤；
+   * - depth>1：迭代 BFS 逐跳展开，每跳用单边匹配 + 去重。
    *
    * @returns 邻居节点 ID 列表（不含起始节点，去重）
    */
-  queryNeighborsByCTE(params: {
+  async queryNeighborsByCTE(params: {
     startNodeId: string;
     maxDepth: number;
     direction: 'OUT' | 'IN' | 'BOTH';
     edgeType?: string;
     onlyActive: boolean;
     fanOutThreshold: number;
-  }): string[] {
-    const { startNodeId, maxDepth, direction, edgeType, onlyActive, fanOutThreshold } = params;
-    const esc = (s: string) => this.escape(s);
+  }): Promise<string[]> {
+    const { startNodeId, maxDepth, direction, edgeType, onlyActive } = params;
+    const c = await this.ensureClient();
+    const depth = Math.max(1, Math.floor(maxDepth));
+
+    const esc = (s: string) => s.replace(/'/g, "\\'");
 
     const filterParts: string[] = [];
-    if (onlyActive) filterParts.push('is_active = 1');
-    if (edgeType) filterParts.push(`edge_type = '${esc(edgeType)}'`);
-    const filter = filterParts.length > 0 ? ` WHERE ${filterParts.join(' AND ')}` : '';
+    if (onlyActive) filterParts.push('is_active: 1');
+    if (edgeType) filterParts.push(`edge_type: '${esc(edgeType)}'`);
+    const filterStr = filterParts.length > 0 ? ` {${filterParts.join(', ')}}` : '';
 
-    const outNeighbor = `SELECT from_node_id AS parent_id, to_node_id AS node_id FROM graph_edge${filter}`;
-    const inNeighbor = `SELECT to_node_id AS parent_id, from_node_id AS node_id FROM graph_edge${filter}`;
-    const neighborSQL =
-      direction === 'OUT' ? outNeighbor :
-        direction === 'IN' ? inNeighbor :
-          `${outNeighbor} UNION ALL ${inNeighbor}`;
+    let arrowLeft: string;
+    let arrowRight: string;
+    if (direction === 'OUT')          { arrowLeft = '';  arrowRight = '>'; }
+    else if (direction === 'IN')      { arrowLeft = '<'; arrowRight = '';  }
+    else                               { arrowLeft = '';  arrowRight = '';  }
 
-    const fanoutSQL = `SELECT parent_id, COUNT(*) AS cnt FROM (${neighborSQL}) GROUP BY parent_id`;
+    const visited = new Set<string>([startNodeId]);
+    const allNeighbors = new Set<string>();
+    let frontier = new Set<string>([startNodeId]);
 
-    const sql = `
-      WITH RECURSIVE reachable(depth, node_id) AS (
-        SELECT 0 AS depth, '${esc(startNodeId)}' AS node_id
-        UNION ALL
-        SELECT r.depth + 1, n.node_id
-        FROM reachable r
-        JOIN (${neighborSQL}) n ON n.parent_id = r.node_id
-        LEFT JOIN (${fanoutSQL}) f ON f.parent_id = r.node_id
-        WHERE r.depth < ${Math.max(1, Math.floor(maxDepth))}
-          AND (f.cnt IS NULL OR f.cnt <= ${Math.max(0, Math.floor(fanOutThreshold))})
-      )
-      SELECT DISTINCT node_id FROM reachable WHERE node_id != '${esc(startNodeId)}'
-    `;
+    for (let hop = 0; hop < depth; hop++) {
+      if (frontier.size === 0) break;
+      const nextFrontier = new Set<string>();
+      const ids = Array.from(frontier).map((id) => `'${esc(id)}'`).join(',');
+      const query = `MATCH (n:graph_node) WHERE n.id IN [${ids}] ` +
+        `MATCH (n)${arrowLeft}-[e:graph_edge${filterStr}]-${arrowRight}(m) ` +
+        `RETURN DISTINCT m.id AS node_id`;
+      const rows = await c.query(query);
+      for (const row of rows) {
+        const nid = String(row.node_id);
+        if (!visited.has(nid)) {
+          visited.add(nid);
+          nextFrontier.add(nid);
+          allNeighbors.add(nid);
+        }
+      }
+      frontier = nextFrontier;
+    }
 
-    const db = this.dbOrThrow;
-    const rows = db.prepare(sql).all() as Array<{ node_id: unknown }>;
-    return rows.map((r) => String(r.node_id));
+    return Array.from(allNeighbors);
   }
-
 
   /**
    * 获取数据库文件磁盘占用大小（字节）。
@@ -347,14 +260,5 @@ export class GraphDBComponent {
     } catch {
       return 0;
     }
-  }
-
-  // -------------------------------------------------------------------------
-  // 私有工具
-  // -------------------------------------------------------------------------
-
-  /** 转义字符串字面量 */
-  private escape(str: string): string {
-    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 }

@@ -88,10 +88,10 @@ export class GraphDBAccess {
     graphDbOptions: GraphDBComponentOptions,
     logger?: Logger,
   ) {
-    // 创建 GraphDB 组件（原生图数据库）
+    // 创建 GraphDB 组件（LeanGraph 嵌入式图数据库）
     this.graphDb = new GraphDBComponent(graphDbOptions);
-    // 初始化表结构（图数据表 + 配置表）
-    new GraphDBSchemaInitializer(relationDb, this.graphDb).init();
+    // 初始化配置表（图数据表由 LeanGraph 自动管理）
+    new GraphDBSchemaInitializer(relationDb).init();
     // 创建 Service 并通过代理模式增加切面注入能力
     const rawService = new GraphDBService(this.graphDb, relationDb);
     this.service = AopProxy.wrap(rawService, { logger });

@@ -18,6 +18,7 @@
     "http-proxy-agent": "^5.0.0",
     "https-proxy-agent": "^5.0.0",
     "isolated-vm": "file:./SkillProvider/infrastructure/sandbox/vendor/isolated-vm",
+    "leangraph": "^1.2.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

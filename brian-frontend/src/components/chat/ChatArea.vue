@@ -238,6 +238,7 @@ function startResize(e: MouseEvent) {
                 :work-id="entry.message.workId"
                 mode="timeline"
                 :node-map="nodeMap"
+                :is-streaming="sessionStore.isStreaming && entry.message.role !== 'user'"
                 @toggle-select="sessionStore.toggleMsgSelection"
                 @toggle-pin="togglePin"
                 @click-card="centerMapOn"

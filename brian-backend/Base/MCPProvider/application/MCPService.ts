@@ -7,7 +7,9 @@
 
 import { Metrics } from '../../shared/base/Metrics';
 import { Report } from '../../shared/base/Report';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ExecRequestInput, ExecRequestOutput, HttpContext } from '../../ToolProvider/domain/HttpTypes';
 import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
@@ -102,11 +104,11 @@ export class MCPService {
       }
     };
     try {
-      globalPkgs = parse(execSync('npm list -g --depth=0 --json', {
+      const { stdout } = await execAsync('npm list -g --depth=0 --json', {
         timeout: 20000,
-        stdio: ['ignore', 'pipe', 'ignore'],
         encoding: 'utf-8',
-      }));
+      });
+      globalPkgs = parse(stdout);
     } catch (e) {
       // npm list 存在缺失依赖时返回非零退出码，但 JSON 仍输出在 stdout
       globalPkgs = parse(String((e as { stdout?: string }).stdout ?? ''));

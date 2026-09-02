@@ -54,9 +54,7 @@ async function fetchAll() {
       }
     }
   } catch { /* */ }
-  for (const m of modeKeys) {
-    await fetchModeData(m)
-  }
+  await Promise.all(modeKeys.map(m => fetchModeData(m)))
 }
 
 async function triggerMode(mode: string) {
