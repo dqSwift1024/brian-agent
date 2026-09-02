@@ -5,9 +5,10 @@
  */
 import { inject } from 'vue'
 import {
-  Search, Trash2, CheckSquare, Square, ChevronRight, ChevronLeft, X,
+  Search, Trash2, CheckSquare, Square, ChevronRight, X,
 } from '@lucide/vue'
 import { INFO_TABS_KEY } from '@/composables/useInfoTabs'
+import HeatmapCard from '@/components/info/HeatmapCard.vue'
 
 const {
   activeMemoryDate,
@@ -20,11 +21,10 @@ const {
   getDateCount,
   hasMoreMemory,
   heatmapCells,
-  heatmapColor,
+  heatmapActiveDay,
   heatmapMonth,
   heatmapYear,
   isCurrentHeatmapMonth,
-  isHeatmapCellActive,
   loadingMemory,
   loadingMoreMemory,
   memories,
@@ -49,8 +49,8 @@ const {
 
 <template>
   <div class="px-6 pb-8 space-y-4">
-    <div v-if="loadingMemory" class="text-center py-8 text-apple-gray-400">加载中...</div>
-    <div v-else-if="dateNavTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
+    <div v-if="loadingMemory && memoryTimeline.length === 0" class="text-center py-8 text-apple-gray-400">加载中...</div>
+    <div v-else-if="!loadingMemory && dateNavTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无记忆</div>
     <div v-else class="flex gap-6">
       <div class="w-40 flex-shrink-0">
         <div class="sticky top-[160px] space-y-1 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
@@ -100,7 +100,13 @@ const {
             <Trash2 :size="14" /> 删除所选{{ selectedMemories.size > 0 ? `(${selectedMemories.size})` : '' }}
           </button>
         </div>
-        <div class="space-y-3">
+        <div class="space-y-3 relative">
+          <Transition name="list-loading">
+            <div v-if="loadingMemory" class="absolute top-0 left-0 right-0 z-10 flex justify-center pointer-events-none">
+              <span class="px-4 py-1.5 rounded-full bg-white/90 dark:bg-apple-gray-800/90 text-xs text-brian-blue shadow-sm backdrop-blur-sm">加载中...</span>
+            </div>
+          </Transition>
+          <TransitionGroup name="list-fade" tag="div" class="space-y-3">
           <template v-for="group in memoryTimeline" :key="group.dateKey">
             <div :id="`memory-group-${group.dateKey}`" :data-memory-date="group.dateKey" class="flex items-center gap-2 pt-1 scroll-mt-[210px]">
               <span class="text-sm font-semibold">{{ group.label }}</span>
@@ -142,6 +148,7 @@ const {
               </div>
             </div>
           </template>
+          </TransitionGroup>
           <div v-if="memoryDateFilter && memoryTimeline.length === 0 && !loadingMemory" class="text-center py-8 text-apple-gray-400">该日期暂无记忆</div>
           <div ref="memorySentinel" v-if="!memoryDateFilter && (hasMoreMemory || loadingMoreMemory)" class="text-center py-4 text-xs text-apple-gray-400">
             {{ loadingMoreMemory ? '加载中...' : '继续上滑加载更多' }}
@@ -149,39 +156,18 @@ const {
         </div>
       </div>
     </div>
-    <div v-if="dateNavTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-32 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-1.5 shadow-sm">
-      <div class="grid grid-cols-7 gap-1">
-        <div
-          v-for="(cell, i) in heatmapCells"
-          :key="i"
-          :title="cell.day ? `${cell.day}日: ${cell.count} 条记忆` : ''"
-          class="aspect-square rounded-[3px]"
-          :class="[
-            cell.day ? heatmapColor(cell.count) : 'bg-transparent',
-            cell.day ? 'cursor-pointer hover:ring-2 hover:ring-brian-blue/60' : '',
-            cell.day && isHeatmapCellActive(cell.day) ? 'ring-2 ring-brian-blue' : '',
-          ]"
-          @click="clickHeatmapDay(cell.day)"
-        />
-      </div>
-      <div class="flex items-center justify-between mt-2">
-        <button
-          class="p-0.5 rounded text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10 transition-colors"
-          @click="prevHeatmapMonth"
-        >
-          <ChevronLeft :size="14" />
-        </button>
-        <span class="text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300">{{ heatmapYear }}/{{ String(heatmapMonth).padStart(2, '0') }}</span>
-        <button
-          class="p-0.5 rounded transition-colors"
-          :class="isCurrentHeatmapMonth() ? 'text-apple-gray-300 cursor-not-allowed' : 'text-apple-gray-400 hover:text-brian-blue hover:bg-brian-blue/10'"
-          :disabled="isCurrentHeatmapMonth()"
-          @click="nextHeatmapMonth"
-        >
-          <ChevronRight :size="14" />
-        </button>
-      </div>
-    </div>
+    <HeatmapCard
+      v-if="dateNavTimeline.length > 0"
+      :cells="heatmapCells"
+      :year="heatmapYear"
+      :month="heatmapMonth"
+      unit="条记忆"
+      :active-day="heatmapActiveDay"
+      :can-go-next="!isCurrentHeatmapMonth()"
+      @select="clickHeatmapDay"
+      @prev="prevHeatmapMonth"
+      @next="nextHeatmapMonth"
+    />
     <!-- 记忆删除确认弹窗 -->
     <div v-if="memoryDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="memoryDeleteConfirm = null">
       <div class="block-card w-full max-w-sm mx-4 p-6">

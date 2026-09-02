@@ -2,21 +2,29 @@
 /**
  * 信息页「会话历史」页签视图：会话卡片时间线 / 日期导航 / 热力图 / 删除与标签弹窗。
  * 业务逻辑来自 useHistoryTab（经 InfoView 注入）。
+ *
+ * 修改：
+ * - 左侧日期导航改用 historyDateNavTimeline（来自 dateCountCache，与热力图一致）
+ * - 添加无限滚动 sentinel 支持分页加载
  */
 import { inject } from 'vue'
 import {
   Search, Trash2, CheckSquare, Square, Tag, X,
 } from '@lucide/vue'
 import { INFO_TABS_KEY } from '@/composables/useInfoTabs'
+import HeatmapCard from '@/components/info/HeatmapCard.vue'
 import { formatTime, formatTokens } from '@/utils/format'
 
 const {
   historySearch, historyStartTime, historyEndTime,
-  loadingHistory, selectedSessions,
+  loadingHistory, loadingMoreHistory, hasMoreHistory, selectedSessions,
   viewingTagsSession, openViewTags,
-  filteredHistory, historyTimeline, activeHistoryDate, scrollToHistoryDate,
+  filteredHistory, historyTimeline, historyDateNavTimeline, activeHistoryDate, scrollToHistoryDate,
   historyHeatmapYear, historyHeatmapMonth, historyHeatmapCells,
-  historyHeatmapColor, isHistoryHeatmapCellActive, clickHistoryHeatmapDay,
+  historyHasDateData, historyHeatmapActiveDay,
+  isCurrentHistoryHeatmapMonth, prevHistoryHeatmapMonth, nextHistoryHeatmapMonth,
+  clickHistoryHeatmapDay, clickHistoryDateNav,
+  historySentinel, historyDateFilter,
   allHistorySelected, toggleHistorySelectAll, toggleHistorySelect,
   deleteConfirm, requestDeleteSession, requestBatchDelete, confirmDelete,
   openSession,
@@ -25,26 +33,30 @@ const {
 
 <template>
   <div class="px-6 pb-8 space-y-4">
-    <div v-if="loadingHistory" class="text-center py-8 text-apple-gray-400">加载中...</div>
-    <div v-else-if="historyTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无历史会话</div>
+    <div v-if="loadingHistory && historyTimeline.length === 0" class="text-center py-8 text-apple-gray-400">加载中...</div>
+    <div v-else-if="!loadingHistory && historyDateNavTimeline.length === 0" class="text-center py-8 text-apple-gray-400">暂无历史会话</div>
     <div v-else class="flex gap-6">
       <div class="w-40 flex-shrink-0">
         <div class="sticky top-[160px] space-y-1 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
           <button
-            v-for="group in historyTimeline"
-            :key="group.dateKey"
-            :id="`history-nav-${group.dateKey}`"
+            v-for="item in historyDateNavTimeline"
+            :key="item.dateKey"
+            :id="`history-nav-${item.dateKey}`"
             class="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            :class="activeHistoryDate === group.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
-            @click="scrollToHistoryDate(group.dateKey)"
+            :class="activeHistoryDate === item.dateKey ? 'bg-brian-blue/10 text-brian-blue' : 'text-apple-gray-500 hover:bg-apple-gray-100 dark:hover:bg-apple-gray-800'"
+            @click="scrollToHistoryDate(item.dateKey); clickHistoryDateNav(item.dateKey)"
           >
-            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeHistoryDate === group.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
-            <span>{{ group.label }}</span>
-            <span class="ml-auto text-apple-gray-300">{{ group.items.length }}</span>
+            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="activeHistoryDate === item.dateKey ? 'bg-brian-blue' : 'bg-apple-gray-300'" />
+            <span>{{ item.label }}</span>
+            <span class="ml-auto text-apple-gray-300">{{ item.count }}</span>
           </button>
         </div>
       </div>
       <div class="flex-1 min-w-0 space-y-4">
+        <div v-if="historyDateFilter" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-brian-blue/5 text-sm text-brian-blue">
+          <span>已筛选: {{ historyDateNavTimeline.find(i => i.dateKey === historyDateFilter)?.label || historyDateFilter }}</span>
+          <button class="ml-auto px-2 py-0.5 text-xs rounded bg-brian-blue/10 hover:bg-brian-blue/20 transition-colors" @click="clickHistoryDateNav(historyDateFilter)">清除筛选</button>
+        </div>
         <div class="sticky top-[160px] z-20 flex items-center gap-3 flex-wrap bg-white dark:bg-apple-dark-bg py-2 -mx-1 px-1 border-b border-apple-gray-200/60 dark:border-apple-gray-700/60">
           <div class="relative flex-1 max-w-md">
             <Search :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-apple-gray-400" />
@@ -71,7 +83,14 @@ const {
             <Trash2 :size="14" /> 删除所选{{ selectedSessions.size > 0 ? `(${selectedSessions.size})` : '' }}
           </button>
         </div>
-        <div class="space-y-3">
+        <div v-if="historyTimeline.length === 0 && !loadingHistory" class="text-center py-8 text-apple-gray-400">该日期暂无会话</div>
+        <div v-else class="space-y-3 relative">
+          <Transition name="list-loading">
+            <div v-if="loadingHistory" class="absolute top-0 left-0 right-0 z-10 flex justify-center pointer-events-none">
+              <span class="px-4 py-1.5 rounded-full bg-white/90 dark:bg-apple-gray-800/90 text-xs text-brian-blue shadow-sm backdrop-blur-sm">加载中...</span>
+            </div>
+          </Transition>
+          <TransitionGroup name="list-fade" tag="div" class="space-y-3">
           <template v-for="group in historyTimeline" :key="group.dateKey">
           <div :id="`history-group-${group.dateKey}`" class="flex items-center gap-2 pt-1 scroll-mt-[210px]">
             <span class="text-sm font-semibold">{{ group.label }}</span>
@@ -122,29 +141,26 @@ const {
             </div>
           </div>
         </template>
+          </TransitionGroup>
+          <div ref="historySentinel" v-if="!historyDateFilter && (hasMoreHistory || loadingMoreHistory)" class="text-center py-4 text-xs text-apple-gray-400">
+            {{ loadingMoreHistory ? '加载中...' : '继续上滑加载更多' }}
+          </div>
         </div>
       </div>
     </div>
 
-    <div v-if="historyTimeline.length > 0" class="fixed bottom-6 left-6 z-20 w-40 bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm rounded-xl p-2 shadow-sm">
-      <div class="grid grid-cols-7 gap-0.5">
-        <div
-          v-for="(cell, i) in historyHeatmapCells"
-          :key="i"
-          :title="cell.day ? `${cell.day}日: ${cell.count} 个会话` : ''"
-          class="aspect-square rounded-[3px]"
-          :class="[
-            cell.day ? historyHeatmapColor(cell.count) : 'bg-transparent',
-            cell.day ? 'cursor-pointer hover:ring-2 hover:ring-brian-blue/60' : '',
-            cell.day && isHistoryHeatmapCellActive(cell.day) ? 'ring-2 ring-brian-blue' : '',
-          ]"
-          @click="clickHistoryHeatmapDay(cell.day)"
-        />
-      </div>
-      <div class="flex items-center justify-center mt-2">
-        <span class="text-xs font-medium text-apple-gray-600 dark:text-apple-gray-300">{{ historyHeatmapYear }}/{{ String(historyHeatmapMonth).padStart(2, '0') }}</span>
-      </div>
-    </div>
+    <HeatmapCard
+      v-if="historyHasDateData"
+      :cells="historyHeatmapCells"
+      :year="historyHeatmapYear"
+      :month="historyHeatmapMonth"
+      unit="个会话"
+      :active-day="historyHeatmapActiveDay"
+      :can-go-next="!isCurrentHistoryHeatmapMonth()"
+      @select="clickHistoryHeatmapDay"
+      @prev="prevHistoryHeatmapMonth"
+      @next="nextHistoryHeatmapMonth"
+    />
 
     <!-- 删除确认弹窗 -->
     <div v-if="deleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="deleteConfirm = null">
