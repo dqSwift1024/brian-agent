@@ -36,3 +36,7 @@ CLAUDE.md
 
 # ===== 历史备份文档（含敏感信息，不入仓库） =====
 docs/BackUP/
+
+# ===== 开发过程测试产物（含本机路径，不入仓库） =====
+brian-backend/Agent/TestResult/
+docs/_3_BackendDesign/_03_Agent/TestResult/

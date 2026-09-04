@@ -7,6 +7,7 @@
 # 安装（一次性）:
 #   mkdir -p ~/.config/systemd/user
 #   cp packaging/brian-backend-dev.service ~/.config/systemd/user/
+#   # 按本机实际仓库位置修改下方 WorkingDirectory（systemd 要求绝对路径）
 #   systemctl --user daemon-reload
 #   # 先停掉 nohup 方式启动的旧实例: ./brian stop backend
 #   systemctl --user enable --now brian-backend-dev
@@ -27,7 +28,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/CodeSpace/GitHub/brian-agent/brian-backend
+# %h = 用户主目录；请按本机实际仓库位置调整
+WorkingDirectory=%h/brian-agent/brian-backend
 ExecStart=/bin/bash -lc 'exec npx tsx dev-server.ts'
 Restart=always
 RestartSec=2
@@ -39,7 +41,9 @@ Environment=BRIAN_HOST=127.0.0.1
 # 开发机低内存默认关闭 CDT 常驻 Chrome（需要浏览器自动化设为 1）
 Environment=BRIAN_CDT_AUTO=0
 # tsx 源码热更新模式；改代码自动生效
-Environment="PATH=/home/user/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin"
+# bash -lc 登录 shell 会加载用户 profile（nvm/nvm 管理的 node 由 profile 解析），
+# 此处只保留系统级 PATH，不写死个人环境路径
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment=NODE_ENV=development
 StandardOutput=journal
 StandardError=journal
