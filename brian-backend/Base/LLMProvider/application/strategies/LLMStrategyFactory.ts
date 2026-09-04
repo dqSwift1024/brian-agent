@@ -45,7 +45,7 @@ export class LLMStrategyFactory {
    * @param provider LLM 提供商记录
    * @returns 匹配的策略实例；若无特殊匹配则返回通用 OpenAI 兼容策略
    */
-  static getStrategy(provider: LLMProviderRecord): ILLMProviderStrategy {
+  static soStrategyById(provider: LLMProviderRecord): ILLMProviderStrategy {
     for (const strategy of this.strategies) {
       // 避免 BaseLLMStrategy / OpenAIStrategy 在特定提供商之前过早拦截
       if (strategy.name === 'openai-compatible' || strategy.name === 'openai') {

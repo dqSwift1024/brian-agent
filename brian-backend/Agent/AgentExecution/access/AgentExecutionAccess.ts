@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type {
   RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess, StreamAccess, Logger,
 } from '@brian-agent/base';
@@ -56,58 +57,53 @@ export class AgentExecutionAccess {
     await this.initPromise;
   }
 
-  async execAgent(
-    i: ExecAgentInput, c: AgentExecutionContext, o: ExecAgentOutput,
+  async execAgent(i: ExecAgentInput, o: ExecAgentOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execAgent(i, c, o);
+    return this.service.execAgent(i, o, c, metrics, report);
   }
 
-  async execAgentAsync(
-    i: ExecAgentAsyncInput, c: AgentExecutionContext, o: ExecAgentAsyncOutput,
+  async execAgentAsync(i: ExecAgentAsyncInput, o: ExecAgentAsyncOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execAgentAsync(i, c, o);
+    return this.service.execAgentAsync(i, o, c, metrics, report);
   }
 
-  async think(i: ThinkInput, c: AgentExecutionContext, o: ThinkOutput): Promise<boolean> {
+  async execThink(i: ThinkInput, o: ThinkOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.think(i, c, o);
+    return this.service.execThink(i, o, c, metrics, report);
   }
 
-  async act(i: ActInput, c: AgentExecutionContext, o: ActOutput): Promise<boolean> {
+  async execAct(i: ActInput, o: ActOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.act(i, c, o);
+    return this.service.execAct(i, o, c, metrics, report);
   }
 
-  async reflect(i: ReflectInput, c: AgentExecutionContext, o: ReflectOutput): Promise<boolean> {
+  async execReflect(i: ReflectInput, o: ReflectOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.reflect(i, c, o);
+    return this.service.execReflect(i, o, c, metrics, report);
   }
 
-  async answer(i: AnswerInput, c: AgentExecutionContext, o: AnswerOutput): Promise<boolean> {
+  async execAnswer(i: AnswerInput, o: AnswerOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     await this.initPromise;
-    return this.service.answer(i, c, o);
+    return this.service.execAnswer(i, o, c, metrics, report);
   }
 
-  async getTrace(
-    i: GetTraceInput, c: AgentExecutionContext, o: GetTraceOutput,
+  async soTrace(i: GetTraceInput, o: GetTraceOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getTrace(i, c, o);
+    return this.service.soTrace(i, o, c, metrics, report);
   }
 
-  async getExecQueueStatus(
-    i: GetExecQueueStatusInput, c: AgentExecutionContext, o: GetExecQueueStatusOutput,
+  async soExecQueueStatus(i: GetExecQueueStatusInput, o: GetExecQueueStatusOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getExecQueueStatus(i, c, o);
+    return this.service.soExecQueueStatus(i, o, c, metrics, report);
   }
 
-  async configAgentExecution(
-    i: ConfigAgentExecutionInput, c: AgentExecutionContext, o: ConfigAgentExecutionOutput,
+  async configAgentExecution(i: ConfigAgentExecutionInput, o: ConfigAgentExecutionOutput, c: AgentExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configAgentExecution(i, c, o);
+    return this.service.configAgentExecution(i, o, c, metrics, report);
   }
 }

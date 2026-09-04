@@ -5,6 +5,8 @@
  * 通过 AOP 代理注入日志记录与耗时统计切面。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { ChunkService } from '../application/ChunkService';
 import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
 import {
@@ -23,19 +25,13 @@ export class ChunkAccess {
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
-  async chunkText(
-    input: ChunkTextInput,
-    context: ChunkContext,
-    output: ChunkTextOutput,
+  async chunkText(input: ChunkTextInput, output: ChunkTextOutput, context: ChunkContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.chunkText(input, context, output);
+    return this.service.chunkText(input, output, context, metrics, report);
   }
 
-  async chunkFile(
-    input: ChunkFileInput,
-    context: ChunkContext,
-    output: ChunkFileOutput,
+  async chunkFile(input: ChunkFileInput, output: ChunkFileOutput, context: ChunkContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.chunkFile(input, context, output);
+    return this.service.chunkFile(input, output, context, metrics, report);
   }
 }

@@ -11,6 +11,7 @@
  * 上层（Core 层的 Agent 等模块）通过本类访问 Soul 匹配与老化能力。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
@@ -50,8 +51,7 @@ import {
  * const output = new MatchSoulOutput();
  * await soulCore.matchSoul(
  *   { agent_id: '...', context_id: '...', interact_id: '...' },
- *   new SoulCoreContext(),
- *   output,
+ *   output, new SoulCoreContext(),
  * );
  * ```
  */
@@ -98,12 +98,9 @@ export class SoulCoreAccess {
    *
    * 若无可用 Soul，将调用 LLM 自生成并持久化。
    */
-  async matchSoul(
-    input: MatchSoulInput,
-    context: SoulCoreContext,
-    output: MatchSoulOutput,
+  async matchSoul(input: MatchSoulInput, output: MatchSoulOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.matchSoul(input, context, output);
+    return this.service.matchSoul(input, output, context, metrics, report);
   }
 
   /**
@@ -111,55 +108,40 @@ export class SoulCoreAccess {
    *
    * 若候选更好则替换绑定；记录使用到 soul_core_usage 与 Base 层 soul_usage。
    */
-  async optSoul(
-    input: OptSoulInput,
-    context: SoulCoreContext,
-    output: OptSoulOutput,
+  async optSoul(input: OptSoulInput, output: OptSoulOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.optSoul(input, context, output);
+    return this.service.optSoul(input, output, context, metrics, report);
   }
 
   /**
    * 依据 soul_opt_rule 规则老化不活跃的 Soul（禁用）。
    */
-  async ageSoul(
-    input: AgeSoulInput,
-    context: SoulCoreContext,
-    output: AgeSoulOutput,
+  async ageSoul(input: AgeSoulInput, output: AgeSoulOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.ageSoul(input, context, output);
+    return this.service.ageSoul(input, output, context, metrics, report);
   }
 
   /**
    * 查询 Soul 优化规则。
    */
-  async soSoulRule(
-    input: SoSoulRuleInput,
-    context: SoulCoreContext,
-    output: SoSoulRuleOutput,
+  async soSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soSoulRule(input, context, output);
+    return this.service.soSoulRule(input, output, context, metrics, report);
   }
 
   /**
    * 批量更新 Soul 优化规则（事务）。
    */
-  async updateSoulRule(
-    input: UpdateSoulRuleInput,
-    context: SoulCoreContext,
-    output: UpdateSoulRuleOutput,
+  async updateSoulRule(input: UpdateSoulRuleInput, output: UpdateSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSoulRule(input, context, output);
+    return this.service.updateSoulRule(input, output, context, metrics, report);
   }
 
   /**
    * 获取当前 SoulCore 配置。
    */
-  async configSoulCore(
-    input: ConfigSoulCoreInput,
-    context: SoulCoreContext,
-    output: ConfigSoulCoreOutput,
+  async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configSoulCore(input, context, output);
+    return this.service.configSoulCore(input, output, context, metrics, report);
   }
 }

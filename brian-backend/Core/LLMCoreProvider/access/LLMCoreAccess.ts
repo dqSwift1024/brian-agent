@@ -11,6 +11,7 @@
  * 上层（Core 层的 Agent 等模块）通过本类访问 LLM 匹配与配额能力。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { AopProxy, type Logger } from '@brian-agent/base';
 import { LLMCoreSchemaInitializer } from '../infrastructure/LLMCoreSchemaInitializer';
@@ -51,8 +52,7 @@ import {
  * const output = new MatchLLMOutput();
  * await llmCore.matchLLM(
  *   { agent_id: 'xxx', context_id: 'yyy', interact_id: 'zzz' },
- *   new LLMCoreContext(),
- *   output,
+ *   output, new LLMCoreContext(),
  * );
  * ```
  */
@@ -92,23 +92,17 @@ export class LLMCoreAccess {
    *
    * 包含缓存检查与 regen_rate 重新评估机制。
    */
-  async matchLLM(
-    input: MatchLLMInput,
-    context: LLMCoreContext,
-    output: MatchLLMOutput,
+  async matchLLM(input: MatchLLMInput, output: MatchLLMOutput, context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.matchLLM(input, context, output);
+    return this.service.matchLLM(input, output, context, metrics, report);
   }
 
   /**
    * 为指定 LLM 提供商设置配额限制（upsert）。
    */
-  async limitLLM(
-    input: LimitLLMInput,
-    context: LLMCoreContext,
-    output: LimitLLMOutput,
+  async limitLLM(input: LimitLLMInput, output: LimitLLMOutput, context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.limitLLM(input, context, output);
+    return this.service.limitLLM(input, output, context, metrics, report);
   }
 
   /**
@@ -116,33 +110,24 @@ export class LLMCoreAccess {
    *
    * 返回每日/每周/每月维度的限额、已用量与可用余量。
    */
-  async checkLLMQuota(
-    input: CheckLLMQuotaInput,
-    context: LLMCoreContext,
-    output: CheckLLMQuotaOutput,
+  async checkLLMQuota(input: CheckLLMQuotaInput, output: CheckLLMQuotaOutput, context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.checkLLMQuota(input, context, output);
+    return this.service.checkLLMQuota(input, output, context, metrics, report);
   }
 
   /**
    * 获取当前 LLMCore 配置。
    */
-  async configLLMCore(
-    input: ConfigLLMCoreInput,
-    context: LLMCoreContext,
-    output: ConfigLLMCoreOutput,
+  async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configLLMCore(input, context, output);
+    return this.service.configLLMCore(input, output, context, metrics, report);
   }
 
   /**
    * 记录一次 LLM 用量的使用条目供配额统计。
    */
-  async recordLLMUsage(
-    input: RecordLLMUsageInput,
-    context: LLMCoreContext,
-    output: RecordLLMUsageOutput,
+  async recordLLMUsage(input: RecordLLMUsageInput, output: RecordLLMUsageOutput, context: LLMCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.recordLLMUsage(input, context, output);
+    return this.service.recordLLMUsage(input, output, context, metrics, report);
   }
 }

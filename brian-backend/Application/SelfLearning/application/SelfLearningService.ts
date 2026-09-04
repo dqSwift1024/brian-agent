@@ -1,20 +1,7 @@
+import { Metrics, Report } from '@brian-agent/base';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  RelationDBAccess, SelectDBInput, SelectDBOutput,
-  SelectOneDBInput, SelectOneDBOutput,
-  UpdateDBInput, UpdateDBOutput,
-  DeleteDBInput, DeleteDBOutput,
-  InsertDBInput, InsertDBOutput,
-  CountDBInput, CountDBOutput,
-  TransactionDBInput, TransactionDBOutput,
-  Operator, DataObject, DBContext, IdGenerator, NotFoundError, ValidationError,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  InfoType,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-  type Logger, type Condition,
-} from '@brian-agent/base';
+import { RelationDBAccess, SelectDBInput, SelectDBOutput, SelectOneDBInput, SelectOneDBOutput, UpdateDBInput, UpdateDBOutput, CountDBInput, CountDBOutput, TransactionDBInput, TransactionDBOutput, Operator, DataObject, DBContext, IdGenerator, NotFoundError, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, InfoType, PROMPT_IDS, getBuiltinTemplate, renderTemplate, type Logger, type Condition } from '@brian-agent/base';
 import type { GraphDBAccess, ChunkAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import type {
   InfoCoreAccess, MQCoreAccess, LLMCoreAccess,
@@ -102,10 +89,7 @@ export class SelfLearningService {
   // addLibrary
   // ─────────────────────────────────────────────────────────────────────────
 
-  async addLibrary(
-    input: AddLibraryInput,
-    _context: SelfLearningContext,
-    output: AddLibraryOutput,
+  async addLibrary(input: AddLibraryInput, output: AddLibraryOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const libraryPath = path.resolve(input.library_path);
     fs.accessSync(libraryPath, fs.constants.R_OK);
@@ -219,10 +203,7 @@ export class SelfLearningService {
   // deleteLibrary
   // ─────────────────────────────────────────────────────────────────────────
 
-  async deleteLibrary(
-    input: DeleteLibraryInput,
-    _context: SelfLearningContext,
-    _output: DeleteLibraryOutput,
+  async deleteLibrary(input: DeleteLibraryInput, _output: DeleteLibraryOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const txInput = Object.assign(new TransactionDBInput(), {
       operations: [
@@ -242,7 +223,7 @@ export class SelfLearningService {
         },
       ],
     });
-    await this.relationDb.transactionDB(txInput, new DBContext(), Object.assign(new TransactionDBOutput(), {}));
+    await this.relationDb.transactionDB(txInput, Object.assign(new TransactionDBOutput(), {}), new DBContext());
     this.logger?.debug?.('deleteLibrary done', { libraryId: input.library_id });
     return true;
   }
@@ -251,10 +232,7 @@ export class SelfLearningService {
   // setLibraryEnabled
   // ─────────────────────────────────────────────────────────────────────────
 
-  async setLibraryEnabled(
-    input: SetLibraryEnabledInput,
-    _context: SelfLearningContext,
-    output: SetLibraryEnabledOutput,
+  async setLibraryEnabled(input: SetLibraryEnabledInput, output: SetLibraryEnabledOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const libRow = await this.relationDb.selectOne('self_learning_library', [
       { field: 'library_id', operator: Operator.EQ, value: input.library_id },
@@ -292,13 +270,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // searchLibrary
+  // soLibrary
   // ─────────────────────────────────────────────────────────────────────────
 
-  async searchLibrary(
-    input: SearchLibraryInput,
-    _context: SelfLearningContext,
-    output: SearchLibraryOutput,
+  async soLibrary(input: SearchLibraryInput, output: SearchLibraryOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
     if (input.keyword) {
@@ -313,7 +288,7 @@ export class SelfLearningService {
       conditions,
     });
     const countOutput = Object.assign(new CountDBOutput(), {});
-    await this.relationDb.countDB(countInput, new DBContext(), countOutput);
+    await this.relationDb.countDB(countInput, countOutput, new DBContext());
     const total = countOutput.count;
 
     const selInput = Object.assign(new SelectDBInput(), {
@@ -325,25 +300,7 @@ export class SelfLearningService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
-
-    // ===== 原始方法（保留作为参考）=====
-    // const libraries: Array<Record<string, unknown>> = [];
-    // for (const row of selOutput.rows) {
-    //   const libId = row.library_id as string;
-    //   const totalFiles = await this.relationDb.count('self_learning_file', [
-    //     { field: 'library_id', operator: Operator.EQ, value: libId },
-    //   ]);
-    //   const learnedFiles = await this.relationDb.count('self_learning_file', [
-    //     { field: 'library_id', operator: Operator.EQ, value: libId },
-    //     { field: 'status', operator: Operator.EQ, value: 'COMPLETED' },
-    //   ]);
-    //   libraries.push({
-    //     ...row,
-    //     total_files: totalFiles,
-    //     learned_files: learnedFiles,
-    //   });
-    // }
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     // ===== 修改后的方法：单次 GROUP BY 查询替代 N+1 count =====
     const libraryIds = selOutput.rows.map(r => r.library_id as string);
@@ -376,13 +333,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getLibraryFiles
+  // soLibraryFiles
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getLibraryFiles(
-    input: GetLibraryFilesInput,
-    _context: SelfLearningContext,
-    output: GetLibraryFilesOutput,
+  async soLibraryFiles(input: GetLibraryFilesInput, output: GetLibraryFilesOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const baseConds: string[] = ['"library_id" = ?'];
     const baseArgs: unknown[] = [input.library_id];
@@ -415,9 +369,6 @@ export class SelfLearningService {
       // 旧 offset 分页（兼容既有调用与测试）
       const pageSize = input.page_size;
       const offset = (input.page_current - 1) * pageSize;
-      // ===== 原始（SELECT *）=====
-      // const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
-
       // ===== 修改后：明确列名，排除 error_message 大字段 =====
       const fileColumns = '"id","created","updated","library_id","file_id","file_name","file_path","relative_path","parent_path","is_directory","file_size","status","learned_at"';
       const sql = `SELECT ${fileColumns} FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${pageSize} OFFSET ${offset}`;
@@ -437,9 +388,6 @@ export class SelfLearningService {
         args.push(cCreated, cCreated, cId);
       }
     }
-    // ===== 原始（SELECT *）=====
-    // const sql = `SELECT * FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
-
     // ===== 修改后：明确列名，排除 error_message 大字段 =====
     const fileColumns = '"id","created","updated","library_id","file_id","file_name","file_path","relative_path","parent_path","is_directory","file_size","status","learned_at"';
     const sql = `SELECT ${fileColumns} FROM "self_learning_file" WHERE ${conds.join(' AND ')} ORDER BY "created" ASC, "file_id" ASC LIMIT ${limit + 1}`;
@@ -455,20 +403,11 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getLibraryTree
+  // soLibraryTree
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getLibraryTree(
-    input: GetLibraryTreeInput,
-    _context: SelfLearningContext,
-    output: GetLibraryTreeOutput,
+  async soLibraryTree(input: GetLibraryTreeInput, output: GetLibraryTreeOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    // ===== 原始（无 LIMIT）=====
-    // const rows = this.relationDb.queryRaw<Record<string, unknown>>(
-    //   `SELECT "file_id", "file_name", "relative_path", "parent_path", "is_directory" FROM "self_learning_file" WHERE "library_id" = ? ORDER BY "is_directory" DESC, "file_name" ASC`,
-    //   [input.library_id],
-    // );
-
     // ===== 修改后：添加 LIMIT 防止大库全量加载 =====
     const treeLimit = 5000;
     const rows = this.relationDb.queryRaw<Record<string, unknown>>(
@@ -515,13 +454,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getFileContent
+  // soFileContent
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getFileContent(
-    input: GetFileContentInput,
-    _context: SelfLearningContext,
-    output: GetFileContentOutput,
+  async soFileContent(input: GetFileContentInput, output: GetFileContentOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: {
@@ -532,11 +468,11 @@ export class SelfLearningService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const file = selOutput.row;
     if (!file) {
-      this.logger?.debug?.('getFileContent: file not found', { fileId: input.file_id });
+      this.logger?.debug?.('soFileContent: file not found', { fileId: input.file_id });
       return false;
     }
 
@@ -553,10 +489,7 @@ export class SelfLearningService {
   // queryDocument（文档内容选中解释）
   // ─────────────────────────────────────────────────────────────────────────
 
-  async queryDocument(
-    input: QueryDocumentInput,
-    _context: SelfLearningContext,
-    output: QueryDocumentOutput,
+  async queryDocument(input: QueryDocumentInput, output: QueryDocumentOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selection = (input.selection || input.content || '').trim();
     if (!selection) {
@@ -593,8 +526,8 @@ export class SelfLearningService {
             context_id: 'document_query',
             interact_id: IdGenerator.generate(),
           }),
-          new LLMCoreContext(),
           matchOut,
+          new LLMCoreContext(),
         );
         llmId = matchOut.llm_id || '';
       } catch {
@@ -617,8 +550,8 @@ export class SelfLearningService {
           temperature: 0.3,
           max_tokens: 1024,
         }),
-        new LLMContext(),
         llmOut,
+        new LLMContext(),
       );
       output.result = llmOut.result || '';
     } catch (err: unknown) {
@@ -650,8 +583,8 @@ export class SelfLearningService {
       const promptOut = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
         promptOut,
+        new PromptContext(),
       );
       if (promptOut.prompt) return promptOut.prompt;
     } catch { /* use fallback */ }
@@ -663,10 +596,7 @@ export class SelfLearningService {
   // saveAnnotation（保存文档咨询卡片）
   // ─────────────────────────────────────────────────────────────────────────
 
-  async saveAnnotation(
-    input: SaveAnnotationInput,
-    _context: SelfLearningContext,
-    output: SaveAnnotationOutput,
+  async saveAnnotation(input: SaveAnnotationInput, output: SaveAnnotationOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const now = IdGenerator.now();
     const id = IdGenerator.generate();
@@ -688,13 +618,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getFileAnnotations（查询文件的咨询卡片）
+  // soFileAnnotations（查询文件的咨询卡片）
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getFileAnnotations(
-    input: GetFileAnnotationsInput,
-    _context: SelfLearningContext,
-    output: GetFileAnnotationsOutput,
+  async soFileAnnotations(input: GetFileAnnotationsInput, output: GetFileAnnotationsOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = this.relationDb.queryRaw<Record<string, unknown>>(
       `SELECT "id", "file_id", "selection_text", "selection_start", "selection_end", "question", "result", "llm_id", "created" FROM "document_annotation" WHERE "file_id" = ? ORDER BY "created" ASC`,
@@ -708,10 +635,7 @@ export class SelfLearningService {
   // startLearning
   // ─────────────────────────────────────────────────────────────────────────
 
-  async startLearning(
-    input: StartLearningInput,
-    _context: SelfLearningContext,
-    _output: StartLearningOutput,
+  async startLearning(input: StartLearningInput, _output: StartLearningOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const learningRate = input.learning_rate ?? (config.learning_rate as number) ?? 5;
@@ -744,8 +668,11 @@ export class SelfLearningService {
     }
 
     const learningIntervalMs = (config.learning_interval_ms as number) ?? 600000;
+    let tickRunning = false;
 
     const tick = async () => {
+      if (tickRunning) return;
+      tickRunning = true;
       try {
         const hasRecentActivity = await this.checkUserRecentActivity(5 * 60 * 1000);
         if (hasRecentActivity) return;
@@ -774,6 +701,8 @@ export class SelfLearningService {
         }
       } catch (err: unknown) {
         this.logger?.error?.('Random trigger learning error', { error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        tickRunning = false;
       }
     };
 
@@ -792,7 +721,7 @@ export class SelfLearningService {
         ] as Condition[],
       });
       const countOutput = Object.assign(new CountDBOutput(), {});
-      await this.relationDb.countDB(countInput, new DBContext(), countOutput);
+      await this.relationDb.countDB(countInput, countOutput, new DBContext());
       return countOutput.count > 0;
     } catch {
       return false;
@@ -809,7 +738,10 @@ export class SelfLearningService {
       this.documentLearningTimer = null;
     }
 
+    let docTickRunning = false;
     const tick = async () => {
+      if (docTickRunning) return;
+      docTickRunning = true;
       try {
         const libraryConditions: Condition[] = [
           { field: 'enable_self_learning', operator: Operator.EQ, value: 1 },
@@ -822,7 +754,7 @@ export class SelfLearningService {
           query_param: { table: 'self_learning_library', conditions: libraryConditions },
         });
         const libOut = Object.assign(new SelectDBOutput(), {});
-        await this.relationDb.selectDB(libSel, new DBContext(), libOut);
+        await this.relationDb.selectDB(libSel, libOut, new DBContext());
 
         for (const lib of libOut.rows) {
           const lid = lib.library_id as string;
@@ -841,7 +773,7 @@ export class SelfLearningService {
             },
           });
           const fileOut = Object.assign(new SelectDBOutput(), {});
-          await this.relationDb.selectDB(fileSel, new DBContext(), fileOut);
+          await this.relationDb.selectDB(fileSel, fileOut, new DBContext());
 
           for (const file of fileOut.rows) {
             await this.handleDocumentLearning(file);
@@ -849,6 +781,8 @@ export class SelfLearningService {
         }
       } catch (err: unknown) {
         this.logger?.error?.('Document learning tick error', { error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        docTickRunning = false;
       }
     };
 
@@ -860,7 +794,7 @@ export class SelfLearningService {
     if (this.evalScheduleRunning) return;
     const scheduleInput = Object.assign(new StartEvalScheduleInput(), {});
     const scheduleOutput = Object.assign(new StartEvalScheduleOutput(), {});
-    await this.evolutorAgent.startEvalSchedule(scheduleInput, new EvolutorAgentContext(), scheduleOutput);
+    await this.evolutorAgent.startEvalSchedule(scheduleInput, scheduleOutput, new EvolutorAgentContext());
     this.evalScheduleRunning = true;
   }
 
@@ -899,10 +833,7 @@ export class SelfLearningService {
   // stopLearning
   // ─────────────────────────────────────────────────────────────────────────
 
-  async stopLearning(
-    input: StopLearningInput,
-    _context: SelfLearningContext,
-    _output: StopLearningOutput,
+  async stopLearning(input: StopLearningInput, _output: StopLearningOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const mode = input.learning_mode ?? 'ALL';
 
@@ -924,7 +855,7 @@ export class SelfLearningService {
       if (this.evalScheduleRunning) {
         const stopInput = Object.assign(new StopEvalScheduleInput(), {});
         const stopOutput = Object.assign(new StopEvalScheduleOutput(), {});
-        await this.evolutorAgent.stopEvalSchedule(stopInput, new EvolutorAgentContext(), stopOutput);
+        await this.evolutorAgent.stopEvalSchedule(stopInput, stopOutput, new EvolutorAgentContext());
         this.evalScheduleRunning = false;
       }
     }
@@ -944,7 +875,6 @@ export class SelfLearningService {
     const fileId = file.file_id as string;
     const fileName = file.file_name as string;
     const filePath = file.file_path as string;
-    const now = IdGenerator.now();
 
     try {
       let content: string;
@@ -969,8 +899,8 @@ export class SelfLearningService {
             content,
             config: { windowSize: splitThreshold, overlapRatio },
           }),
-          new ChunkContext(),
           chunkOutput,
+          new ChunkContext(),
         );
         chunks = chunkOutput.chunks.map(c => c.content);
       } else {
@@ -993,7 +923,7 @@ export class SelfLearningService {
           info_creator_id: '',
         });
         const recvOutput = Object.assign(new ReceiveWorkAsyncOutput(), {});
-        await this.orchestrationEntry.receiveWorkAsync(recvInput, new OrchestrationEntryContext(), recvOutput);
+        await this.orchestrationEntry.receiveWorkAsync(recvInput, recvOutput, new OrchestrationEntryContext());
       }
 
       await this.updateFileStatus(fileId, 'COMPLETED', null);
@@ -1018,7 +948,7 @@ export class SelfLearningService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     if (!selOutput.row) {
       const now = IdGenerator.now();
@@ -1090,7 +1020,7 @@ export class SelfLearningService {
         { field: 'file_id', operator: Operator.EQ, value: fileId },
       ] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   private async insertLearningResult(
@@ -1130,19 +1060,26 @@ export class SelfLearningService {
   // startTagConnectionEstablishment
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * 标签图全量维护的分批让出：RelationDB(better-sqlite3) 与 TinyGraphDB(leveldb)
+   * 均为同步驱动，逐标签建图/激活边是 O(标签数×邻居) 的纯 CPU 计算，
+   * 不让出事件循环会冻结全部 HTTP 请求数分钟（页面表现为"切几个页面就卡死"）。
+   */
+  private static readonly TAG_MAINTENANCE_BATCH = 20;
+  /** 标签维护重入守卫：启动 / 30min timer / 随机 tick 三路都可能触发全量计算，禁止叠加执行 */
+  private tagMaintenanceRunning = false;
+
+  private async yieldToEventLoop(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   async startTagConnectionEstablishment(): Promise<void> {
+    if (this.tagMaintenanceRunning) return;
+    this.tagMaintenanceRunning = true;
     try {
       const now = IdGenerator.now();
       const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
 
-      const selInput = Object.assign(new SelectOneDBInput(), {
-        query_param: {
-          table: 'info_tag',
-          conditions: [
-            { field: 'created', operator: Operator.GE, value: twentyFourHoursAgo },
-          ] as Condition[],
-        },
-      });
       const selOutput = Object.assign(new SelectDBOutput(), {});
       await this.relationDb.selectDB(
         Object.assign(new SelectDBInput(), {
@@ -1153,8 +1090,8 @@ export class SelfLearningService {
             ] as Condition[],
           },
         }),
-        new DBContext(),
         selOutput,
+        new DBContext(),
       );
 
       let count = 0;
@@ -1165,10 +1102,13 @@ export class SelfLearningService {
         try {
           const graphInput = Object.assign(new GraphTagInput(), { tag_id: tagId });
           const graphOutput = Object.assign(new GraphTagOutput(), {});
-          await this.infoCore.graphTag(graphInput, new InfoCoreContext(), graphOutput);
+          await this.infoCore.graphTag(graphInput, graphOutput, new InfoCoreContext());
           count++;
         } catch {
           // skip failed graph tags
+        }
+        if (count % SelfLearningService.TAG_MAINTENANCE_BATCH === 0) {
+          await this.yieldToEventLoop();
         }
       }
 
@@ -1177,6 +1117,8 @@ export class SelfLearningService {
       }
     } catch (err: unknown) {
       this.logger?.error?.('startTagConnectionEstablishment error', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.tagMaintenanceRunning = false;
     }
   }
 
@@ -1185,6 +1127,8 @@ export class SelfLearningService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async startTagActivation(): Promise<void> {
+    if (this.tagMaintenanceRunning) return;
+    this.tagMaintenanceRunning = true;
     try {
       const now = IdGenerator.now();
       const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
@@ -1199,8 +1143,8 @@ export class SelfLearningService {
             ] as Condition[],
           },
         }),
-        new DBContext(),
         selOutput,
+        new DBContext(),
       );
 
       const activeTags: Record<string, string> = {};
@@ -1215,11 +1159,12 @@ export class SelfLearningService {
           target: GraphTarget.NODE,
           node_type: 'Tag',
         }),
-        new GraphContext(),
         graphSelOutput,
+        new GraphContext(),
       );
 
       let activatedCount = 0;
+      let scannedNodes = 0;
       for (const node of graphSelOutput.list) {
         if (!('node_type' in node)) continue;
         const content = (node as any).content as Record<string, unknown> | undefined;
@@ -1232,7 +1177,7 @@ export class SelfLearningService {
           edge_type: 'similarTo',
           only_active: false,
         });
-        await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+        await this.graphDBAccess.soGraphNeighbors(neighborInput, neighbors, new GraphContext());
 
         for (const edgeRow of neighbors.list) {
           try {
@@ -1244,13 +1189,17 @@ export class SelfLearningService {
                 edge_id: edgeId,
                 trigger_type: 'tag_maintenance',
               }),
-              new GraphContext(),
               Object.assign(new ActivateGraphEdgeOutput(), {}),
+              new GraphContext(),
             );
             activatedCount++;
           } catch {
             // skip
           }
+        }
+        scannedNodes++;
+        if (scannedNodes % SelfLearningService.TAG_MAINTENANCE_BATCH === 0) {
+          await this.yieldToEventLoop();
         }
       }
 
@@ -1259,6 +1208,8 @@ export class SelfLearningService {
       }
     } catch (err: unknown) {
       this.logger?.error?.('startTagActivation error', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.tagMaintenanceRunning = false;
     }
   }
 
@@ -1270,7 +1221,7 @@ export class SelfLearningService {
     try {
       const ageInput = Object.assign(new AgeGraphEdgeInput(), {});
       const ageOutput = Object.assign(new AgeGraphEdgeOutput(), {});
-      await this.graphDBAccess.ageGraphEdge(ageInput, new GraphContext(), ageOutput);
+      await this.graphDBAccess.ageGraphEdge(ageInput, ageOutput, new GraphContext());
 
       if (ageOutput.aged_count > 0) {
         await this.insertLearningResult('TAG_MAINTENANCE', 'aging', `Aged ${ageOutput.aged_count} graph edges`, null);
@@ -1292,8 +1243,8 @@ export class SelfLearningService {
           target: GraphTarget.NODE,
           node_type: 'Tag',
         }),
-        new GraphContext(),
         graphSelOutput,
+        new GraphContext(),
       );
 
       let orphanCount = 0;
@@ -1304,7 +1255,7 @@ export class SelfLearningService {
           node_id: node.id,
           direction: GraphDirection.BOTH,
         });
-        await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+        await this.graphDBAccess.soGraphNeighbors(neighborInput, neighbors, new GraphContext());
 
         if (neighbors.list.length === 0) {
           try {
@@ -1313,7 +1264,7 @@ export class SelfLearningService {
             if (tagName) {
               const graphTagInput = Object.assign(new GraphTagInput(), { tag_id: node.id });
               const graphTagOutput = Object.assign(new GraphTagOutput(), {});
-              await this.infoCore.graphTag(graphTagInput, new InfoCoreContext(), graphTagOutput);
+              await this.infoCore.graphTag(graphTagInput, graphTagOutput, new InfoCoreContext());
               orphanCount++;
             }
           } catch {
@@ -1331,13 +1282,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getTagGraph
+  // soTagGraph
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getTagGraph(
-    input: GetTagGraphInput,
-    _context: SelfLearningContext,
-    output: GetTagGraphOutput,
+  async soTagGraph(input: GetTagGraphInput, output: GetTagGraphOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const graphSelOutput = Object.assign(new SelectGraphOutput(), {});
     await this.graphDBAccess.selectGraph(
@@ -1345,8 +1293,8 @@ export class SelfLearningService {
         target: GraphTarget.NODE,
         node_type: 'Tag',
       }),
-      new GraphContext(),
       graphSelOutput,
+      new GraphContext(),
     );
 
     const onlyActive = input.only_active ?? true;
@@ -1384,7 +1332,7 @@ export class SelfLearningService {
         node_id: nid,
         direction: GraphDirection.BOTH,
       });
-      await this.graphDBAccess.getGraphNeighbors(neighborInput, new GraphContext(), neighbors);
+      await this.graphDBAccess.soGraphNeighbors(neighborInput, neighbors, new GraphContext());
 
       for (const n of neighbors.list) {
         if (!('node_type' in n)) continue;
@@ -1495,13 +1443,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getTagRelatedInfo
+  // soTagRelatedInfo
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getTagRelatedInfo(
-    input: GetTagRelatedInfoInput,
-    _context: SelfLearningContext,
-    output: GetTagRelatedInfoOutput,
+  async soTagRelatedInfo(input: GetTagRelatedInfoInput, output: GetTagRelatedInfoOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const pageCurrent = input.page_current ?? 1;
     const pageSize = input.page_size ?? 20;
@@ -1515,7 +1460,7 @@ export class SelfLearningService {
         ] as Condition[],
       },
     });
-    await this.relationDb.selectOneDB(tagSel, new DBContext(), tagRow);
+    await this.relationDb.selectOneDB(tagSel, tagRow, new DBContext());
 
     let tagName: string | undefined;
     if (tagRow.row) {
@@ -1526,7 +1471,7 @@ export class SelfLearningService {
       lastN: pageSize,
     });
     const lastNOutput = Object.assign(new LastNInfoOutput(), {});
-    await this.infoCore.lastNInfo(lastNInput, new InfoCoreContext(), lastNOutput);
+    await this.infoCore.lastNInfo(lastNInput, lastNOutput, new InfoCoreContext());
 
     const infos: Array<Record<string, unknown>> = [];
     if (tagName) {
@@ -1541,8 +1486,8 @@ export class SelfLearningService {
             page: { current: pageCurrent, size: pageSize },
           },
         }),
-        new DBContext(),
         infoTagRows,
+        new DBContext(),
       );
 
       for (const row of infoTagRows.rows) {
@@ -1558,8 +1503,8 @@ export class SelfLearningService {
               ] as Condition[],
             },
           }),
-          new DBContext(),
           summaryRow,
+          new DBContext(),
         );
 
         infos.push({
@@ -1583,13 +1528,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getLearningProgress
+  // soLearningProgress
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getLearningProgress(
-    input: GetLearningProgressInput,
-    _context: SelfLearningContext,
-    output: GetLearningProgressOutput,
+  async soLearningProgress(input: GetLearningProgressInput, output: GetLearningProgressOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sourceCond = input.source
       ? [{ field: 'task_type', operator: Operator.EQ, value: input.source }] as Condition[]
@@ -1605,8 +1547,8 @@ export class SelfLearningService {
           ] as Condition[],
         },
       }),
-      new DBContext(),
       runningSel,
+      new DBContext(),
     );
     output.current_task = runningSel.row;
 
@@ -1622,8 +1564,8 @@ export class SelfLearningService {
           order_by: [{ field: 'created', direction: 'ASC' }],
         },
       }),
-      new DBContext(),
       pendingSel,
+      new DBContext(),
     );
     output.task_queue = pendingSel.rows;
 
@@ -1634,8 +1576,8 @@ export class SelfLearningService {
           table: 'self_learning_builtin_task',
         },
       }),
-      new DBContext(),
       builtinSel,
+      new DBContext(),
     );
     output.builtin_tasks = builtinSel.rows;
 
@@ -1657,13 +1599,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getLearningResults
+  // soLearningResults
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getLearningResults(
-    input: GetLearningResultsInput,
-    _context: SelfLearningContext,
-    output: GetLearningResultsOutput,
+  async soLearningResults(input: GetLearningResultsInput, output: GetLearningResultsOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions: Condition[] = [];
     if (input.type) {
@@ -1681,7 +1620,7 @@ export class SelfLearningService {
       conditions,
     });
     const countOutput = Object.assign(new CountDBOutput(), {});
-    await this.relationDb.countDB(countInput, new DBContext(), countOutput);
+    await this.relationDb.countDB(countInput, countOutput, new DBContext());
 
     const selInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -1692,30 +1631,26 @@ export class SelfLearningService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     const results: Array<Record<string, unknown>> = [];
+    const resultIds = selOutput.rows.map(r => r.result_id as string).filter(Boolean);
+    const tagMap = new Map<string, string[]>();
+    if (resultIds.length > 0) {
+      const placeholders = resultIds.map(() => '?').join(',');
+      const tagRows = this.relationDb.queryRaw<{ result_id: string; tag: string }>(
+        `SELECT "result_id", "tag" FROM "self_learning_result_tag" WHERE "result_id" IN (${placeholders})`,
+        resultIds,
+      );
+      for (const tr of tagRows) {
+        const list = tagMap.get(tr.result_id) || [];
+        list.push(tr.tag);
+        tagMap.set(tr.result_id, list);
+      }
+    }
     for (const row of selOutput.rows) {
       const resultId = row.result_id as string | undefined;
-      const tags: string[] = [];
-      if (resultId) {
-        const tagRows = Object.assign(new SelectDBOutput(), {});
-        await this.relationDb.selectDB(
-          Object.assign(new SelectDBInput(), {
-            query_param: {
-              table: 'self_learning_result_tag',
-              conditions: [
-                { field: 'result_id', operator: Operator.EQ, value: resultId },
-              ] as Condition[],
-            },
-          }),
-          new DBContext(),
-          tagRows,
-        );
-        for (const tr of tagRows.rows) {
-          if (tr.tag) tags.push(tr.tag as string);
-        }
-      }
+      const tags = resultId ? (tagMap.get(resultId) || []) : [];
       results.push({ ...row, tags });
     }
 
@@ -1725,13 +1660,10 @@ export class SelfLearningService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // getLearningStats
+  // soLearningStats
   // ─────────────────────────────────────────────────────────────────────────
 
-  async getLearningStats(
-    input: GetLearningStatsInput,
-    _context: SelfLearningContext,
-    output: GetLearningStatsOutput,
+  async soLearningStats(input: GetLearningStatsInput, output: GetLearningStatsOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const now = IdGenerator.now();
     const sourceConds = input.source
@@ -1772,59 +1704,65 @@ export class SelfLearningService {
     let agedEdgesThisWeek = 0;
     let newEdgesThisWeek = 0;
 
-    try {
-      const graphNodes = Object.assign(new SelectGraphOutput(), {});
-      await this.graphDBAccess.selectGraph(
-        Object.assign(new SelectGraphInput(), {
-          target: GraphTarget.NODE,
-          node_type: 'Tag',
-        }),
-        new GraphContext(),
-        graphNodes,
-      );
-      totalTagNodes = graphNodes.list.length;
-
-      const nodeNeighborMap = new Map<string, number>();
-      for (const node of graphNodes.list) {
-        if (!('node_type' in node)) continue;
-        const neighbors = Object.assign(new GetGraphNeighborsOutput(), {});
-        await this.graphDBAccess.getGraphNeighbors(
-          Object.assign(new GetGraphNeighborsInput(), {
-            node_id: node.id,
-            direction: GraphDirection.BOTH,
+    // ===== 修改后：仅在全局统计（无 source 过滤）时扫描图数据库 ====
+    // 图数据库统计（Tag 节点/边数量、孤立标签等）是全局数据，不随 source 变化。
+    // 按 source 过滤的场景（如学习页面 3 个模式卡片并发请求）跳过此扫描，
+    // 避免 O(节点数) 的图数据库全量扫描被重复执行 3 次导致事件循环阻塞。
+    if (!input.source) {
+      try {
+        const graphNodes = Object.assign(new SelectGraphOutput(), {});
+        await this.graphDBAccess.selectGraph(
+          Object.assign(new SelectGraphInput(), {
+            target: GraphTarget.NODE,
+            node_type: 'Tag',
           }),
+          graphNodes,
           new GraphContext(),
-          neighbors,
         );
-        nodeNeighborMap.set(node.id, neighbors.list.length);
-      }
-      orphanTags = Array.from(nodeNeighborMap.values()).filter((c) => c === 0).length;
+        totalTagNodes = graphNodes.list.length;
 
-      const graphEdges = Object.assign(new SelectGraphOutput(), {});
-      await this.graphDBAccess.selectGraph(
-        Object.assign(new SelectGraphInput(), {
-          target: GraphTarget.EDGE,
-        }),
-        new GraphContext(),
-        graphEdges,
-      );
-      totalTagEdges = graphEdges.list.length;
+        const nodeNeighborMap = new Map<string, number>();
+        for (const node of graphNodes.list) {
+          if (!('node_type' in node)) continue;
+          const neighbors = Object.assign(new GetGraphNeighborsOutput(), {});
+          await this.graphDBAccess.soGraphNeighbors(
+            Object.assign(new GetGraphNeighborsInput(), {
+              node_id: node.id,
+              direction: GraphDirection.BOTH,
+            }),
+            neighbors,
+            new GraphContext(),
+          );
+          nodeNeighborMap.set(node.id, neighbors.list.length);
+        }
+        orphanTags = Array.from(nodeNeighborMap.values()).filter((c) => c === 0).length;
 
-      for (const edge of graphEdges.list) {
-        if (!('node_type' in edge)) continue;
-        const e = (edge as any);
-        if (e.is_active === true || e.is_active === 1) {
-          activeEdges++;
+        const graphEdges = Object.assign(new SelectGraphOutput(), {});
+        await this.graphDBAccess.selectGraph(
+          Object.assign(new SelectGraphInput(), {
+            target: GraphTarget.EDGE,
+          }),
+          graphEdges,
+          new GraphContext(),
+        );
+        totalTagEdges = graphEdges.list.length;
+
+        for (const edge of graphEdges.list) {
+          if (!('node_type' in edge)) continue;
+          const e = (edge as any);
+          if (e.is_active === true || e.is_active === 1) {
+            activeEdges++;
+          }
+          if (e.last_aged_at && (e.last_aged_at as number) >= thisWeekStart) {
+            agedEdgesThisWeek++;
+          }
+          if (e.created && (e.created as number) >= thisWeekStart) {
+            newEdgesThisWeek++;
+          }
         }
-        if (e.last_aged_at && (e.last_aged_at as number) >= thisWeekStart) {
-          agedEdgesThisWeek++;
-        }
-        if (e.created && (e.created as number) >= thisWeekStart) {
-          newEdgesThisWeek++;
-        }
+      } catch {
+        /* graph DB might not have Tag nodes yet */
       }
-    } catch {
-      /* graph DB might not have Tag nodes yet */
     }
 
     // 学习趋势：近 365 天，用单条 GROUP BY 查询统计每日学习次数
@@ -1876,16 +1814,13 @@ export class SelfLearningService {
   // configSelfLearning
   // ─────────────────────────────────────────────────────────────────────────
 
-  async configSelfLearning(
-    input: ConfigSelfLearningInput,
-    _context: SelfLearningContext,
-    output: ConfigSelfLearningOutput,
+  async configSelfLearning(input: ConfigSelfLearningInput, output: ConfigSelfLearningOutput, _context: SelfLearningContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'self_learning_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
     const configId = (current.id as string) || 'self_learning_config_default';
@@ -1923,14 +1858,14 @@ export class SelfLearningService {
           { field: 'id', operator: Operator.EQ, value: configId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     const refreshed = Object.assign(new SelectOneDBOutput(), {});
     await this.relationDb.selectOneDB(
       Object.assign(new SelectOneDBInput(), { query_param: { table: 'self_learning_config' } }),
-      new DBContext(),
       refreshed,
+      new DBContext(),
     );
     output.config = (refreshed.row ?? {}) as Record<string, unknown>;
     return true;
@@ -1945,7 +1880,7 @@ export class SelfLearningService {
       query_param: { table: 'self_learning_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
     return (selOutput.row ?? {}) as Record<string, unknown>;
   }
 }

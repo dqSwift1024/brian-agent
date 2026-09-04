@@ -29,10 +29,9 @@ import {
   MessageSquare
 } from '@lucide/vue'
 import type { ThinkingBlock } from '@/api/types'
-import { useSessionStore } from '@/stores/session'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { useChatUiStore } from '@/stores/chatUi'
 import { copyToClipboard } from '@/utils/clipboard'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = withDefaults(
   defineProps<{
@@ -51,7 +50,7 @@ const props = withDefaults(
   },
 )
 
-const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 const isExpanded = ref(props.startExpanded)
 const activeTab = ref<'io' | 'chain' | 'prompt'>(props.defaultTab)
 
@@ -61,7 +60,7 @@ const isStreaming = computed(() => props.block.meta.status === 'streaming')
 const runtimeStatus = computed(() => {
   const id = props.block.agentInfo?.id
   if (id) {
-    const rt = sessionStore.agentExecutions[id]
+    const rt = chatUi.agentExecutions[id]
     if (rt && rt.status) return rt.status
   }
   return isStreaming.value ? 'RUNNING' : 'SUCCESS'
@@ -122,34 +121,7 @@ const fullRawResponse = computed(() => {
 })
 
 // Markdown 格式化渲染模型的完整回复
-const renderedRawResponseHtml = computed(() => {
-  const raw = fullRawResponse.value
-  if (!raw) return ''
-  try {
-    return DOMPurify.sanitize(marked.parse(raw) as string)
-  } catch {
-    return raw
-  }
-})
-
-// ===== 原始代码（保留参考）=====
-// const copiedPrompt = ref(false)
-// async function copyPromptText() {
-//   try {
-//     await navigator.clipboard.writeText(fullPrompt.value)
-//     copiedPrompt.value = true
-//     setTimeout(() => (copiedPrompt.value = false), 1800)
-//   } catch { /* ignore */ }
-// }
-// 
-// const copiedResponse = ref(false)
-// async function copyResponseText() {
-//   try {
-//     await navigator.clipboard.writeText(fullRawResponse.value)
-//     copiedResponse.value = true
-//     setTimeout(() => (copiedResponse.value = false), 1800)
-//   } catch { /* ignore */ }
-// }
+const renderedRawResponseHtml = computed(() => renderMarkdown(fullRawResponse.value))
 
 // ===== 修改后的代码：使用跨平台剪贴板工具函数 copyToClipboard =====
 const copiedPrompt = ref(false)
@@ -445,47 +417,3 @@ function msgContent(val: unknown): string {
     </div>
   </div>
 </template>
-
-<style scoped>
-.markdown-body :deep(h1) { font-size: 1.3em; font-weight: 700; margin: 0.5em 0 0.3em; }
-.markdown-body :deep(h2) { font-size: 1.15em; font-weight: 600; margin: 0.5em 0 0.3em; }
-.markdown-body :deep(h3) { font-size: 1.05em; font-weight: 600; margin: 0.4em 0 0.2em; }
-.markdown-body :deep(h4) { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
-.markdown-body :deep(p) { margin: 0.4em 0; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.3em; margin: 0.4em 0; }
-.markdown-body :deep(li) { margin: 0.2em 0; }
-.markdown-body :deep(code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9em;
-  padding: 0.15em 0.35em;
-  border-radius: 4px;
-  background-color: rgba(175, 184, 193, 0.2);
-}
-.markdown-body :deep(pre) {
-  padding: 0.6em 0.8em;
-  border-radius: 6px;
-  overflow-x: auto;
-  background-color: rgba(175, 184, 193, 0.15);
-  margin: 0.5em 0;
-}
-.markdown-body :deep(pre code) { background: transparent; padding: 0; }
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid #0071e3;
-  padding-left: 0.8em;
-  color: #6e6e73;
-  margin: 0.5em 0;
-}
-.markdown-body :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.5em 0;
-}
-.markdown-body :deep(th), .markdown-body :deep(td) {
-  border: 1px solid rgba(175, 184, 193, 0.3);
-  padding: 0.3em 0.6em;
-  text-align: left;
-}
-.markdown-body :deep(a) { color: #0071e3; text-decoration: underline; }
-.markdown-body :deep(hr) { border: none; border-top: 1px solid #d1d1d6; margin: 0.8em 0; }
-.markdown-body :deep(img) { max-width: 100%; border-radius: 6px; }
-</style>

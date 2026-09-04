@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, InsertDBInput, InsertDBOutput,
   SelectDBInput, SelectDBOutput,
@@ -88,8 +89,8 @@ export class OrchestrationExecutionService {
         Object.assign(new SelectOneDBInput(), {
           query_param: { table: ORCHESTRATION_CONFIG_TABLE },
         }),
-        new DBContext(),
         selOutput,
+        new DBContext(),
       );
       const current = (selOutput.row ?? {}) as Record<string, unknown>;
       if (current.max_concurrent !== undefined && current.max_concurrent !== null) {
@@ -111,10 +112,7 @@ export class OrchestrationExecutionService {
   // buildAgentDAG
   // -------------------------------------------------------------------------
 
-  async buildAgentDAG(
-    input: BuildAgentDAGInput,
-    context: OrchestrationExecutionContext,
-    output: BuildAgentDAGOutput,
+  async buildAgentDAG(input: BuildAgentDAGInput, output: BuildAgentDAGOutput, context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.ensureConfigLoaded();
     const { plan_id, task_dag, interact_id, force_new } = input;
@@ -168,36 +166,6 @@ export class OrchestrationExecutionService {
     }
     await Promise.all(workers);
 
-    // ===== 原始实现（保留参考）：直接插入所有边，跨 plan 复用同一对 Agent 时可能触发唯一索引冲突 =====
-    // const agentEdges: AgentEdge[] = [];
-    // for (const edge of edges) {
-    //   const fromAgentId = taskAgentMap[edge.from_task_id];
-    //   const toAgentId = taskAgentMap[edge.to_task_id];
-    //   if (fromAgentId && toAgentId) {
-    //     const edgeId = IdGenerator.generate();
-    //     const edgeNow = IdGenerator.now();
-    //
-    //     const insInput = Object.assign(new InsertDBInput(), {
-    //       table: ORCHESTRATION_AGENT_DAG_TABLE,
-    //       data: [
-    //         { field: 'id', value: edgeId },
-    //         { field: 'created', value: edgeNow },
-    //         { field: 'updated', value: edgeNow },
-    //         { field: 'plan_id', value: plan_id },
-    //         { field: 'from_agent_id', value: fromAgentId },
-    //         { field: 'to_agent_id', value: toAgentId },
-    //       ] as DataObject[],
-    //     });
-    //     await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
-    //
-    //     agentEdges.push({
-    //       from_agent_id: fromAgentId,
-    //       to_agent_id: toAgentId,
-    //       data_dependency: `task_${edge.from_task_id} → task_${edge.to_task_id}`,
-    //     });
-    //   }
-    // }
-
     // ===== 修改后实现：task 级边与 agent 级边分离 =====
     // 执行拓扑以 task 级边（from_task_id/to_task_id）为权威来源，规避多 task 复用同一 Agent
     // 时 agent 级边展开成环的死锁问题；agent 级边仅用于可视化，按 plan 去重后落库。
@@ -247,7 +215,7 @@ export class OrchestrationExecutionService {
           { field: 'to_agent_id', value: toAgentId },
         ] as DataObject[],
       });
-      await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+      await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     }
 
     const agentDag: AgentDAG = {
@@ -270,7 +238,7 @@ export class OrchestrationExecutionService {
         { field: 'agent_dag_json', value: JSON.stringify(agentDag) },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insDagInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insDagInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     output.agent_dag = agentDag;
     output.task_agent_map = taskAgentMap;
@@ -307,7 +275,7 @@ export class OrchestrationExecutionService {
         { field: 'task_domain', value: taskNode.task_domain ?? null },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     return taskAgentRecordId;
   }
 
@@ -333,7 +301,7 @@ export class OrchestrationExecutionService {
         work_id: workId,
         interact_id: interactId,
       });
-      const ok = await this.agentBuilder.buildAgent(buildInput, builderCtx, buildOutput);
+      const ok = await this.agentBuilder.buildAgent(buildInput, buildOutput, builderCtx);
       if (!ok || !buildOutput.agent_id) return { agentId: '', status: 'BUILD_FAILED' };
       return { agentId: buildOutput.agent_id, status: 'PENDING' };
     } catch (err: unknown) {
@@ -354,7 +322,7 @@ export class OrchestrationExecutionService {
       ] as DataObject[],
       conditions: [{ field: 'id', operator: Operator.EQ, value: recordId }] as Condition[],
     });
-    await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+    await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
   }
 
   private buildAgentNode(taskNode: TaskNode, agentId: string, status: string, childMap: Map<string, number>): AgentNode {
@@ -372,23 +340,35 @@ export class OrchestrationExecutionService {
     };
   }
 
+  /**
+   * 执行记录大字段入库截断。
+   * task_content 会随上游摘要拼接滚雪球（存量平均 104KB、最大 750KB），超长内容入 SQLite
+   * 放大行体积与查询成本；answer 为 LLM 完整输出，同样设上限兜底。
+   */
+  private static trimExecText(value: unknown, limit: number): unknown {
+    if (typeof value !== 'string' || value.length <= limit) return value;
+    return value.slice(0, limit) + `\n…[已截断，原始 ${value.length} 字符]`;
+  }
+
   /** 组合任务执行内容：父任务结合子任务结果汇总，叶子任务携带上游工作摘要。 */
   private buildExecTaskContent(node: AgentNode, upstreamSummaries: string[]): string {
     if (upstreamSummaries.length === 0) return node.task_content;
-    if (node.node_kind === 'PARENT') {
-      return `子任务已完成的结果：\n${upstreamSummaries.join('\n')}\n---\n请结合上述子任务结果，汇总产出父任务结果：${node.task_content}`;
-    }
-    return `上游Agent完成的工作摘要：\n${upstreamSummaries.join('\n')}\n---\n当前任务：${node.task_content}`;
+    // 上游摘要逐条截断：父任务聚合全部子任务结果，不截断会随 DAG 层级滚雪球，
+    // 同时挤爆 LLM 上下文窗口（拼接结果同时作为执行输入）
+    const summaries = upstreamSummaries.map(
+      (s) => OrchestrationExecutionService.trimExecText(s, 4 * 1024) as string,
+    );
+    const merged = node.node_kind === 'PARENT'
+      ? `子任务已完成的结果：\n${summaries.join('\n')}\n---\n请结合上述子任务结果，汇总产出父任务结果：${node.task_content}`
+      : `上游Agent完成的工作摘要：\n${summaries.join('\n')}\n---\n当前任务：${node.task_content}`;
+    return OrchestrationExecutionService.trimExecText(merged, 32 * 1024) as string;
   }
 
   // -------------------------------------------------------------------------
   // execSingleAgent
   // -------------------------------------------------------------------------
 
-  async execSingleAgent(
-    input: ExecSingleAgentInput,
-    context: OrchestrationExecutionContext,
-    output: ExecSingleAgentOutput,
+  async execSingleAgent(input: ExecSingleAgentInput, output: ExecSingleAgentOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { work_id, interact_id, agent_id, task_content, plan_id, task_id } = input;
 
@@ -414,7 +394,7 @@ export class OrchestrationExecutionService {
         { field: 'plan_id', value: plan_id ?? '' },
         { field: 'task_id', value: task_id ?? '' },
         { field: 'execution_type', value: 'SINGLE' },
-        { field: 'task_content', value: enhancedContent },
+        { field: 'task_content', value: OrchestrationExecutionService.trimExecText(enhancedContent, 32 * 1024) },
         { field: 'status', value: 'RUNNING' },
         { field: 'answer', value: '' },
         { field: 'trace_id', value: '' },
@@ -423,7 +403,7 @@ export class OrchestrationExecutionService {
         { field: 'error_info', value: '' },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
 
     const startedAt = Date.now();
 
@@ -443,7 +423,7 @@ export class OrchestrationExecutionService {
         interact_id,
         trace_id: input.trace_id,
       });
-      const execSuccess = await this.agentExecution.execAgent(execInput, agentCtx, execOutput);
+      const execSuccess = await this.agentExecution.execAgent(execInput, execOutput, agentCtx, metrics, report);
       if (!execSuccess) {
         const elapsed = Date.now() - startedAt;
         const errorMsg = (execOutput as unknown as Record<string, unknown>).error as string ?? 'execAgent returned false';
@@ -459,7 +439,7 @@ export class OrchestrationExecutionService {
             { field: 'id', operator: Operator.EQ, value: execRecordId },
           ] as Condition[],
         });
-        await this.relationDb.updateDB(updFailInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        await this.relationDb.updateDB(updFailInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
         if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
           await this.streamAccess.pushEvent(context.session_id, 'agent_error', 'TRACE', {
             agent_id,
@@ -478,7 +458,7 @@ export class OrchestrationExecutionService {
         table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
         data: [
           { field: 'status', value: 'COMPLETED' },
-          { field: 'answer', value: execOutput.answer },
+          { field: 'answer', value: OrchestrationExecutionService.trimExecText(execOutput.answer, 64 * 1024) },
           { field: 'trace_id', value: execOutput.trace_id },
           { field: 'iterations', value: execOutput.iterations },
           { field: 'elapsed_ms', value: elapsed },
@@ -488,7 +468,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: execRecordId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
       const usageInput = Object.assign(new RecordAgentUsageInput(), {
         agent_id,
@@ -496,7 +476,7 @@ export class OrchestrationExecutionService {
         interact_id,
         usage_context: task_content.slice(0, 256),
       });
-      await this.agentLibrary.recordAgentUsage(usageInput, new AgentLibraryContext(), new RecordAgentUsageOutput());
+      await this.agentLibrary.recordAgentUsage(usageInput, new RecordAgentUsageOutput(), new AgentLibraryContext());
 
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: context.session_id ?? '',
@@ -507,34 +487,10 @@ export class OrchestrationExecutionService {
         info_creator_id: agent_id,
         info: `${task_content} → ${execOutput.answer}`,
       });
-      await this.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await this.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       // Agent 执行完成事件：前端据此将对应 AgentDAG 节点 / 工作 Agent 标记为执行成功（绿色）
       if (this.streamAccess && typeof this.streamAccess.pushEvent === 'function' && context.session_id) {
-        // ===== 原始代码（保留参考）=====
-        // let totalTokens = 0;
-        // try {
-        //   if (execOutput.trace_id) {
-        //     const traceRows = this.relationDb.queryRaw<{ total_token_usage: number }>(
-        //       `SELECT "total_token_usage" FROM "agent_execution_trace" WHERE "trace_id" = ? LIMIT 1`,
-        //       [execOutput.trace_id],
-        //     );
-        //     if (traceRows.length > 0) totalTokens = Number(traceRows[0].total_token_usage ?? 0);
-        //   }
-        // } catch { /* best-effort */ }
-        // await this.streamAccess.pushEvent(context.session_id, 'agent_output', 'TRACE', {
-        //   agent_id,
-        //   answer: execOutput.answer,
-        //   iterations: execOutput.iterations,
-        //   elapsed_ms: elapsed,
-        //   token_usage: totalTokens,
-        // }, {
-        //   work_id,
-        //   interact_id,
-        //   agent_id,
-        //   node_id: 'ANSWER',
-        // });
-
         // ===== 修改后的代码：提取输入与输出 Token 细项并在 agent_output 事件中透传 =====
         let totalTokens = 0;
         let inputTokens = 0;
@@ -617,7 +573,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: execRecordId },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
 
       this.logger?.error?.('execSingleAgent: execution failed', {
         agent_id,
@@ -646,10 +602,7 @@ export class OrchestrationExecutionService {
   // execSingleAgent 的 RUNNING→COMPLETED 生命周期；此处仅记录其完成态执行结果，
   // 写入与 execSingleAgent 相同的 orchestration_agent_execution 表，供
   // buildThinkingBlocksAndDag 统一采集展示，保证与其他 Agent 采集方式一致。
-  async recordSystemAgentExecution(
-    input: RecordSystemAgentExecutionInput,
-    _context: OrchestrationExecutionContext,
-    _output: RecordSystemAgentExecutionOutput,
+  async recordSystemAgentExecution(input: RecordSystemAgentExecutionInput, _output: RecordSystemAgentExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const now = IdGenerator.now();
     const insInput = Object.assign(new InsertDBInput(), {
@@ -663,16 +616,16 @@ export class OrchestrationExecutionService {
         { field: 'plan_id', value: '' },
         { field: 'task_id', value: '' },
         { field: 'execution_type', value: 'SYSTEM' },
-        { field: 'task_content', value: input.task_content },
+        { field: 'task_content', value: OrchestrationExecutionService.trimExecText(input.task_content, 32 * 1024) },
         { field: 'status', value: 'COMPLETED' },
-        { field: 'answer', value: input.answer },
+        { field: 'answer', value: OrchestrationExecutionService.trimExecText(input.answer, 64 * 1024) },
         { field: 'trace_id', value: input.trace_id ?? '' },
         { field: 'iterations', value: 0 },
         { field: 'elapsed_ms', value: input.elapsed_ms ?? 0 },
         { field: 'error_info', value: '' },
       ] as DataObject[],
     });
-    await this.relationDb.insertDB(insInput, new DBContext(), Object.assign(new InsertDBOutput(), {}));
+    await this.relationDb.insertDB(insInput, Object.assign(new InsertDBOutput(), {}), new DBContext());
     return true;
   }
 
@@ -680,293 +633,8 @@ export class OrchestrationExecutionService {
   // execDAG
   // -------------------------------------------------------------------------
 
-  // ===== 原始 execDAG 方法（保留作为参考） =====
-  /*
-  async originalExecDAG(
-    input: ExecDAGInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGOutput,
-  ): Promise<boolean> {
-    const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
-    const concurrency = max_concurrent ?? this.config.max_concurrent;
-    const timeoutMs = dag_timeout_ms ?? this.config.dag_timeout_ms;
-
-    const nodes = agent_dag.agent_nodes;
-    const edges = agent_dag.agent_edges;
-
-    const adjList = new Map<string, string[]>();
-    const indegree = new Map<string, number>();
-
-    for (const node of nodes) {
-      adjList.set(node.agent_id, []);
-      indegree.set(node.agent_id, 0);
-    }
-
-    for (const edge of edges) {
-      const neighbors = adjList.get(edge.from_agent_id);
-      if (neighbors) {
-        neighbors.push(edge.to_agent_id);
-      }
-      indegree.set(edge.to_agent_id, (indegree.get(edge.to_agent_id) ?? 0) + 1);
-    }
-
-    const incomingMap = new Map<string, string[]>();
-    for (const node of nodes) {
-      incomingMap.set(node.agent_id, []);
-    }
-    for (const edge of edges) {
-      const parents = incomingMap.get(edge.to_agent_id);
-      if (parents) {
-        parents.push(edge.from_agent_id);
-      }
-    }
-
-    const readyQueue: AgentNode[] = nodes.filter((n) => indegree.get(n.agent_id) === 0);
-
-    const agentOutputs: Record<string, string> = {};
-    const results: AgentResult[] = [];
-    const nodeMap = new Map(nodes.map((n) => [n.agent_id, n]));
-
-    const dagStartedAt = Date.now();
-    let failedCount = 0;
-
-    const execOne = async (agentNode: AgentNode): Promise<AgentResult> => {
-      let enhancedContent = agentNode.task_content;
-
-      if (concurrency === 1) {
-        const upstreamAgentIds = incomingMap.get(agentNode.agent_id) ?? [];
-        const upstreamOutputs: string[] = [];
-        for (const upId of upstreamAgentIds) {
-          const upOutput = agentOutputs[upId];
-          if (upOutput) {
-            const summary = upOutput.slice(0, 500);
-            upstreamOutputs.push(summary);
-          }
-        }
-        if (upstreamOutputs.length > 0) {
-          const upstreamSummary = upstreamOutputs.join('\n');
-          enhancedContent = `上游Agent完成的工作摘要：\n${upstreamSummary}\n---\n当前任务：${agentNode.task_content}`;
-        }
-      }
-
-      const singleInput = Object.assign(new ExecSingleAgentInput(), {
-        work_id,
-        interact_id: context.interact_id ?? '',
-        agent_id: agentNode.agent_id,
-        task_content: enhancedContent,
-        plan_id: agent_dag.plan_id,
-        task_id: agentNode.task_id,
-        work_context: work_context,
-        trace_id: input.trace_id,
-      });
-      const singleOutput = new ExecSingleAgentOutput();
-      const ok = await this.execSingleAgent(singleInput, context, singleOutput);
-
-      if (!ok) {
-        failedCount++;
-
-        const updExecInput = Object.assign(new UpdateDBInput(), {
-          table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-          data: [
-            { field: 'status', value: 'EXEC_FAILED' },
-            { field: 'updated', value: IdGenerator.now() },
-          ] as DataObject[],
-          conditions: [
-            { field: 'work_id', operator: Operator.EQ, value: work_id },
-            { field: 'agent_id', operator: Operator.EQ, value: agentNode.agent_id },
-            { field: 'status', operator: Operator.EQ, value: 'RUNNING' },
-          ] as Condition[],
-        });
-        await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-
-        throw {
-          failed: true,
-          agent_id: agentNode.agent_id,
-          task_id: agentNode.task_id,
-          reason: 'Agent execution failed',
-          failed_count: failedCount,
-          completed_results: results.slice(),
-        };
-      }
-
-      agentOutputs[agentNode.agent_id] = singleOutput.answer;
-
-      return {
-        agent_id: agentNode.agent_id,
-        task_id: agentNode.task_id,
-        answer: singleOutput.answer,
-        trace_id: singleOutput.trace_id,
-        iterations: singleOutput.iterations,
-        elapsed_ms: singleOutput.elapsed_ms,
-        status: 'COMPLETED',
-        handle_result_type: HandleResultType.CORRECT,
-      };
-    };
-
-    while (readyQueue.length > 0) {
-      const elapsed = Date.now() - dagStartedAt;
-      if (timeoutMs > 0 && elapsed >= timeoutMs) {
-        const cancelOps: Operation[] = [];
-        const now = IdGenerator.now();
-        const readyAgentIds: string[] = [];
-        for (const node of readyQueue) {
-          readyAgentIds.push(node.agent_id);
-          cancelOps.push({
-            type: OperationType.UPDATE,
-            table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-            data: [
-              { field: 'status', value: 'CANCELLED' },
-              { field: 'error_info', value: 'DAG timeout exceeded' },
-              { field: 'updated', value: now },
-            ] as DataObject[],
-            conditions: [
-              { field: 'work_id', operator: Operator.EQ, value: work_id },
-              { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-            ] as Condition[],
-          });
-        }
-        const pendingAgents: typeof nodes = [];
-        for (const node of nodes) {
-          const isPending = indegree.get(node.agent_id)! > 0 && !agentOutputs[node.agent_id];
-          if (isPending) {
-            pendingAgents.push(node);
-            cancelOps.push({
-              type: OperationType.UPDATE,
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: now },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-          }
-        }
-
-        let transactionOk = false;
-        try {
-          if (cancelOps.length > 0) {
-            transactionOk = this.relationDb.transactionRaw(cancelOps);
-          } else {
-            transactionOk = true;
-          }
-        } catch {
-          transactionOk = false;
-        }
-        if (!transactionOk) {
-          for (const node of readyQueue) {
-            const updExecInput = Object.assign(new UpdateDBInput(), {
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: IdGenerator.now() },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-          }
-          for (const node of pendingAgents) {
-            const updExecInput = Object.assign(new UpdateDBInput(), {
-              table: ORCHESTRATION_AGENT_EXECUTION_TABLE,
-              data: [
-                { field: 'status', value: 'CANCELLED' },
-                { field: 'error_info', value: 'DAG timeout exceeded' },
-                { field: 'updated', value: IdGenerator.now() },
-              ] as DataObject[],
-              conditions: [
-                { field: 'work_id', operator: Operator.EQ, value: work_id },
-                { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
-              ] as Condition[],
-            });
-            await this.relationDb.updateDB(updExecInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
-            failedCount++;
-          }
-          break;
-        }
-
-        failedCount += pendingAgents.length;
-        break;
-      }
-
-      const batch = readyQueue.splice(0, Math.max(1, concurrency));
-
-      if (batch.length === 1) {
-        try {
-          const result = await execOne(batch[0]);
-          results.push(result);
-          const downstreamIds = adjList.get(batch[0].agent_id) ?? [];
-          for (const downId of downstreamIds) {
-            const deg = (indegree.get(downId) ?? 1) - 1;
-            indegree.set(downId, deg);
-            if (deg === 0) {
-              const downNode = nodeMap.get(downId);
-              if (downNode) {
-                readyQueue.push(downNode);
-              }
-            }
-          }
-        } catch (err: unknown) {
-          throw err;
-        }
-      } else {
-        const settled = await Promise.allSettled(batch.map((n) => execOne(n)));
-        let batchFailure: unknown = null;
-
-        for (let i = 0; i < settled.length; i++) {
-          const s = settled[i];
-          if (s.status === 'fulfilled') {
-            results.push(s.value);
-            const downstreamIds = adjList.get(batch[i].agent_id) ?? [];
-            for (const downId of downstreamIds) {
-              const deg = (indegree.get(downId) ?? 1) - 1;
-              indegree.set(downId, deg);
-              if (deg === 0) {
-                const downNode = nodeMap.get(downId);
-                if (downNode) {
-                  readyQueue.push(downNode);
-                }
-              }
-            }
-          } else {
-            batchFailure = s.reason;
-          }
-        }
-
-        if (batchFailure) {
-          const err = batchFailure as Record<string, unknown>;
-          throw {
-            failed: true,
-            agent_id: (err.agent_id as string) ?? '',
-            task_id: (err.task_id as string) ?? '',
-            reason: (err.reason as string) ?? 'Agent execution failed',
-            failed_count: failedCount,
-            completed_results: results.slice(),
-          };
-        }
-
-        continue;
-      }
-    }
-
-    output.agent_results = results;
-    output.total_elapsed_ms = Date.now() - dagStartedAt;
-    output.failed_count = failedCount;
-    return true;
-  }
-  */
-
   // ===== 修改后的 execDAG 方法（重构：基于 DagScheduler 的任务级拓扑调度） =====
-  async execDAG(
-    input: ExecDAGInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGOutput,
+  async execDAG(input: ExecDAGInput, output: ExecDAGOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const { work_id, agent_dag, work_context, max_concurrent, dag_timeout_ms } = input;
     const concurrency = max_concurrent ?? this.config.max_concurrent;
@@ -992,7 +660,7 @@ export class OrchestrationExecutionService {
         trace_id: input.trace_id,
       });
       const singleOutput = new ExecSingleAgentOutput();
-      const ok = await this.execSingleAgent(singleInput, context, singleOutput);
+      const ok = await this.execSingleAgent(singleInput, singleOutput, context, metrics, report);
       if (!ok) {
         throw new DagNodeFailureError(
           node.agent_id,
@@ -1030,8 +698,8 @@ export class OrchestrationExecutionService {
                 { field: 'work_id', operator: Operator.EQ, value: work_id },
               ] as Condition[],
             }),
-            new DBContext(),
             Object.assign(new UpdateDBOutput(), {}),
+            new DBContext(),
           );
         } catch {
           // ignore
@@ -1054,8 +722,8 @@ export class OrchestrationExecutionService {
                   { field: 'agent_id', operator: Operator.EQ, value: node.agent_id },
                 ] as Condition[],
               }),
-              new DBContext(),
               Object.assign(new UpdateDBOutput(), {}),
+              new DBContext(),
             );
           } catch {
             // ignore
@@ -1074,10 +742,7 @@ export class OrchestrationExecutionService {
   // execDAGAsync
   // -------------------------------------------------------------------------
 
-  async execDAGAsync(
-    input: ExecDAGAsyncInput,
-    context: OrchestrationExecutionContext,
-    output: ExecDAGAsyncOutput,
+  async execDAGAsync(input: ExecDAGAsyncInput, output: ExecDAGAsyncOutput, context: OrchestrationExecutionContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const jobId = IdGenerator.generate();
     output.job_id = jobId;
@@ -1100,10 +765,12 @@ export class OrchestrationExecutionService {
         await this.mqAccess.sendMQ(sendInput, {}, {});
 
         if (this.mqCore) {
-          const getWorkerInput = Object.assign({}, { identifier: 'orchestration.dag_execution' });
-          const getWorkerOutput = Object.assign({}, { worker: null });
-          await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
-          if (!getWorkerOutput.worker) {
+          // 查重：orchestration.dag_execution 常驻 worker 已存在则跳过。
+          // 此前误调不存在的 getWorker，TypeError 直接跳到外层 catch，
+          // 导致 worker 从未建立、每次都走 setImmediate 同步 fallback、队列消息滞留。
+          const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+          await this.mqCore.soWorker({ queue: 'orchestration.dag_execution' }, {}, soWorkerOutput);
+          if ((soWorkerOutput.workers as unknown[]).length === 0) {
             const startWorkerInput = Object.assign({}, {
               queue: 'orchestration.dag_execution',
               handler: async (msg: Record<string, unknown>) => {
@@ -1116,7 +783,7 @@ export class OrchestrationExecutionService {
                     max_concurrent: payload.max_concurrent as number | undefined,
                   });
                   const dagOutput = new ExecDAGOutput();
-                  await this.execDAG(dagInput, context, dagOutput);
+                  await this.execDAG(dagInput, dagOutput, context, metrics, report);
 
                   if (payload.callback_queue && this.mqAccess) {
                     const cbInput = Object.assign({}, {
@@ -1150,7 +817,7 @@ export class OrchestrationExecutionService {
               max_concurrent: input.max_concurrent,
             });
             const dagOutput = new ExecDAGOutput();
-            await this.execDAG(dagInput, context, dagOutput);
+            await this.execDAG(dagInput, dagOutput, context, metrics, report);
             this.logger?.debug?.('execDAGAsync: DAG execution completed', {
               job_id: jobId, work_id: input.work_id, failed_count: dagOutput.failed_count,
             });
@@ -1172,7 +839,7 @@ export class OrchestrationExecutionService {
             max_concurrent: input.max_concurrent,
           });
           const dagOutput = new ExecDAGOutput();
-          await this.execDAG(dagInput, context, dagOutput);
+          await this.execDAG(dagInput, dagOutput, context, metrics, report);
           this.logger?.debug?.('execDAGAsync: DAG execution completed', {
             job_id: jobId, work_id: input.work_id, failed_count: dagOutput.failed_count,
           });
@@ -1189,13 +856,10 @@ export class OrchestrationExecutionService {
   }
 
   // -------------------------------------------------------------------------
-  // getDAGProgress
+  // soDAGProgress
   // -------------------------------------------------------------------------
 
-  async getDAGProgress(
-    input: GetDAGProgressInput,
-    _context: OrchestrationExecutionContext,
-    output: GetDAGProgressOutput,
+  async soDAGProgress(input: GetDAGProgressInput, output: GetDAGProgressOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selExecInput = Object.assign(new SelectDBInput(), {
       query_param: {
@@ -1206,7 +870,7 @@ export class OrchestrationExecutionService {
       },
     });
     const selExecOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selExecInput, new DBContext(), selExecOutput);
+    await this.relationDb.selectDB(selExecInput, selExecOutput, new DBContext());
 
     const records = selExecOutput.rows;
     const totalTasks = records.length;
@@ -1270,10 +934,7 @@ export class OrchestrationExecutionService {
   // cancelExecution
   // -------------------------------------------------------------------------
 
-  async cancelExecution(
-    input: CancelExecutionInput,
-    _context: OrchestrationExecutionContext,
-    output: CancelExecutionOutput,
+  async cancelExecution(input: CancelExecutionInput, output: CancelExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.mqCore) {
       try {
@@ -1296,7 +957,7 @@ export class OrchestrationExecutionService {
       },
     });
     const selOutput = Object.assign(new SelectDBOutput(), {});
-    await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectDB(selInput, selOutput, new DBContext());
 
     const records = selOutput.rows;
     let cancelledCount = 0;
@@ -1314,7 +975,7 @@ export class OrchestrationExecutionService {
             { field: 'id', operator: Operator.EQ, value: rec.id },
           ] as Condition[],
         });
-        await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+        await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
         cancelledCount++;
       }
     }
@@ -1324,20 +985,17 @@ export class OrchestrationExecutionService {
   }
 
   // -------------------------------------------------------------------------
-  // getExecQueueStatus
+  // soExecQueueStatus
   // -------------------------------------------------------------------------
 
-  async getExecQueueStatus(
-    _input: GetOrchestrationExecQueueStatusInput,
-    _context: OrchestrationExecutionContext,
-    output: GetOrchestrationExecQueueStatusOutput,
+  async soExecQueueStatus(_input: GetOrchestrationExecQueueStatusInput, output: GetOrchestrationExecQueueStatusOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     try {
       const execSelInput = Object.assign(new SelectDBInput(), {
         query_param: { table: ORCHESTRATION_AGENT_EXECUTION_TABLE },
       });
       const execSelOutput = Object.assign(new SelectDBOutput(), {});
-      await this.relationDb.selectDB(execSelInput, new DBContext(), execSelOutput);
+      await this.relationDb.selectDB(execSelInput, execSelOutput, new DBContext());
 
       let pending = 0;
       let processing = 0;
@@ -1369,7 +1027,7 @@ export class OrchestrationExecutionService {
         },
       });
       const stratSelOutput = Object.assign(new SelectDBOutput(), {});
-      await this.relationDb.selectDB(stratSelInput, new DBContext(), stratSelOutput);
+      await this.relationDb.selectDB(stratSelInput, stratSelOutput, new DBContext());
       output.workers = stratSelOutput.rows.map((row) => ({
         work_id: (row.work_id as string) ?? '',
         execution_id: (row.execution_id as string) ?? '',
@@ -1384,16 +1042,16 @@ export class OrchestrationExecutionService {
     output.mq_queue_status = null;
     if (this.mqCore) {
       try {
-        const getWorkerInput = Object.assign({}, { identifier: 'orchestration.dag_execution' });
-        const getWorkerOutput = Object.assign({}, { worker: null });
-        await this.mqCore.getWorker(getWorkerInput, {}, getWorkerOutput);
+        const soWorkerOutput = Object.assign({}, { workers: [] as unknown[] });
+        await this.mqCore.soWorker({ queue: 'orchestration.dag_execution' }, {}, soWorkerOutput);
+        const workers = soWorkerOutput.workers as unknown[];
         output.mq_queue_status = {
           queue: 'orchestration.dag_execution',
-          worker_active: getWorkerOutput.worker !== null,
-          worker_info: getWorkerOutput.worker ?? null,
+          worker_active: workers.length > 0,
+          worker_info: workers[0] ?? null,
         };
       } catch (err: unknown) {
-        this.logger?.error?.('getExecQueueStatus: MQ queue query failed', {
+        this.logger?.error?.('soExecQueueStatus: MQ queue query failed', {
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -1406,10 +1064,7 @@ export class OrchestrationExecutionService {
   // configOrchestrationExecution
   // -------------------------------------------------------------------------
 
-  async configOrchestrationExecution(
-    input: ConfigOrchestrationExecutionInput,
-    _context: OrchestrationExecutionContext,
-    output: ConfigOrchestrationExecutionOutput,
+  async configOrchestrationExecution(input: ConfigOrchestrationExecutionInput, output: ConfigOrchestrationExecutionOutput, _context: OrchestrationExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (input.max_concurrent !== undefined && input.max_concurrent <= 0) {
       throw new ValidationError('max_concurrent must be positive');
@@ -1425,7 +1080,7 @@ export class OrchestrationExecutionService {
       query_param: { table: ORCHESTRATION_CONFIG_TABLE },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
 
@@ -1461,7 +1116,7 @@ export class OrchestrationExecutionService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
     }
 
     output.config = { ...this.config };

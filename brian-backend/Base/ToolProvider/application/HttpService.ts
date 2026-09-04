@@ -102,7 +102,7 @@ export class HttpService {
       const res = await fetch(req.url, {
         method: req.method || 'GET',
         headers: req.headers,
-        body: req.body,
+        body: Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : req.body,
         signal,
       });
       const bodyText = await res.text();
@@ -161,10 +161,12 @@ export class HttpService {
     try {
       if (parsedUrl.protocol === 'https:') {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { HttpsProxyAgent } = require('https-proxy-agent');
         return new HttpsProxyAgent(proxy);
       }
       // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { HttpProxyAgent } = require('http-proxy-agent');
       return new HttpProxyAgent(proxy);
     } catch {

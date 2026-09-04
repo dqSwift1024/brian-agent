@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SummaryAgentService } from '../SummaryAgent/application/SummaryAgentService';
 import {
@@ -6,37 +7,37 @@ import {
 
 function makeMocks() {
   const infoCore = {
-    soInfoSummaryConfig: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soInfoSummaryConfig: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.config = { id: 'cfg1', created: 0, updated: 0, llm_id: '', prompt_template_id: '', enable: 1, threshold: 100, info_types: 'RESPONSE' };
       return true;
     }),
   };
   const promptsAccess = {
-    soPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soPrompt: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.list = [];
       o.total = 0;
       return true;
     }),
-    execPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.prompt = 'rendered-prompt'; return true; }),
-    addPrompt: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.id = 'p-new'; return true; }),
+    execPrompt: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.prompt = 'rendered-prompt'; return true; }),
+    addPrompt: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.id = 'p-new'; return true; }),
   };
   const soulAccess = {
-    soSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.list = []; o.total = 0; return true; }),
-    addSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.id = 'soul-builtin'; return true; }),
-    getSoul: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.soul = { soul_content: '摘要专家', soul_brief: '摘要生成专家', soul_usage: '摘要' }; return true; }),
+    soSoul: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.list = []; o.total = 0; return true; }),
+    addSoul: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.id = 'soul-builtin'; return true; }),
+    soSoulById: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.soul = { soul_content: '摘要专家', soul_brief: '摘要生成专家', soul_usage: '摘要' }; return true; }),
   };
   const agentBuilder = {
-    buildSystemAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.agent_id = 'agent-summary'; return true; }),
+    buildSystemAgent: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.agent_id = 'agent-summary'; return true; }),
   };
   const agentLibrary = {
-    getAgent: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+    soAgent: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.agents = [{ agent_id: 'agent-summary', agent_type: 'SUMMARY', soul_id: 'soul-builtin', llm_id: 'llm-1', enable: 1 }];
       return true;
     }),
     updateAgent: vi.fn().mockResolvedValue(true),
   };
   const llmAccess = {
-    execLLM: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => { o.result = '这是 LLM 生成的摘要'; return true; }),
+    execLLM: vi.fn().mockImplementation(async (_i: any, o: any, _c: any, ) => { o.result = '这是 LLM 生成的摘要'; return true; }),
   };
   return { infoCore, promptsAccess, soulAccess, agentBuilder, agentLibrary, llmAccess };
 }
@@ -63,15 +64,15 @@ describe('SummaryAgent', () => {
       const out = new GenerateSummaryOutput();
       await svc.generateSummary(
         Object.assign(new GenerateSummaryInput(), { info_type: 'RESPONSE', info: '短内容' }),
-        new SummaryAgentContext(),
         out,
+        new SummaryAgentContext(),
       );
       expect(out.summary).toBe('短内容');
       expect(mocks.llmAccess.execLLM).not.toHaveBeenCalled();
     });
 
     it('TC-SUM-002: 内容超过阈值时调用 LLM 生成摘要', async () => {
-      mocks.promptsAccess.soPrompt.mockImplementation(async (_i: any, _c: any, o: any) => {
+      mocks.promptsAccess.soPrompt.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'p1', prompt_template_title: '系统响应摘要生成', prompt_template: '{{text}}' }];
         o.total = 1;
         return true;
@@ -80,8 +81,8 @@ describe('SummaryAgent', () => {
       const out = new GenerateSummaryOutput();
       await svc.generateSummary(
         Object.assign(new GenerateSummaryInput(), { info_type: 'RESPONSE', info: long }),
-        new SummaryAgentContext(),
         out,
+        new SummaryAgentContext(),
       );
       expect(out.summary).toBe('这是 LLM 生成的摘要');
       expect(mocks.llmAccess.execLLM).toHaveBeenCalled();
@@ -91,23 +92,23 @@ describe('SummaryAgent', () => {
       const out = new GenerateSummaryOutput();
       await svc.generateSummary(
         Object.assign(new GenerateSummaryInput(), { info_type: 'THINK', info: '长'.repeat(150) }),
-        new SummaryAgentContext(),
         out,
+        new SummaryAgentContext(),
       );
       expect(out.summary).toBe('');
       expect(mocks.llmAccess.execLLM).not.toHaveBeenCalled();
     });
 
     it('TC-SUM-004: 摘要生成禁用时返回空摘要', async () => {
-      mocks.infoCore.soInfoSummaryConfig.mockImplementation(async (_i: any, _c: any, o: any) => {
+      mocks.infoCore.soInfoSummaryConfig.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.config = { enable: 0, threshold: 100, info_types: 'RESPONSE' };
         return true;
       });
       const out = new GenerateSummaryOutput();
       await svc.generateSummary(
         Object.assign(new GenerateSummaryInput(), { info_type: 'RESPONSE', info: '长'.repeat(150) }),
-        new SummaryAgentContext(),
         out,
+        new SummaryAgentContext(),
       );
       expect(out.summary).toBe('');
     });
@@ -122,7 +123,7 @@ describe('SummaryAgent', () => {
     });
 
     it('TC-SUM-011: 内置 Soul 已存在时复用', async () => {
-      mocks.soulAccess.soSoul.mockImplementation(async (_i: any, _c: any, o: any) => {
+      mocks.soulAccess.soSoul.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [{ id: 'soul-existing', soul_brief: '摘要生成专家', soul_content: 'x', soul_usage: 'x' }];
         o.total = 1;
         return true;

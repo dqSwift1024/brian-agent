@@ -11,6 +11,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { ExecRequestInput, ExecRequestOutput, HttpContext } from '../../ToolProvider/domain/HttpTypes';
 import { HttpAccess } from '../../ToolProvider/access/HttpAccess';
 
 /** MCP 通信方式 */
@@ -258,7 +259,10 @@ export async function callToolOverHttp(
     method: 'tools/call',
     params: { name: toolName, arguments: args },
   });
-  const res = await http.request({ url: config.url, method: 'POST', headers, body, timeoutMs });
+  const httpInput = Object.assign(new ExecRequestInput(), { url: config.url, method: 'POST', headers, body, timeout_ms: timeoutMs });
+  const httpOutput = new ExecRequestOutput();
+  await http.execRequest(httpInput, httpOutput, new HttpContext());
+  const res = httpOutput.response;
   const text = res.bodyText;
   if (!res.ok) throw new Error(`MCP HTTP 调用失败: HTTP ${res.status} ${text}`);
   const contentType = res.headers['content-type'] || '';
@@ -296,7 +300,10 @@ export async function callToolOverRest(
   };
   if (config.auth_token) headers.Authorization = `Bearer ${config.auth_token}`;
   const body = JSON.stringify({ tool: toolName, ...args });
-  const res = await http.request({ url: config.url, method, headers, body, timeoutMs });
+  const httpInput = Object.assign(new ExecRequestInput(), { url: config.url, method, headers, body, timeout_ms: timeoutMs });
+  const httpOutput = new ExecRequestOutput();
+  await http.execRequest(httpInput, httpOutput, new HttpContext());
+  const res = httpOutput.response;
   const text = res.bodyText;
   if (!res.ok) throw new Error(`MCP REST 调用失败: HTTP ${res.status} ${text}`);
   let result: unknown = text;

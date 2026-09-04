@@ -12,6 +12,8 @@
  * 不直接接触 Service 或 LLM 提供商 API。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import type { PromptsAccess } from '../../PromptsProvider/access/PromptsAccess';
 import { LLMSchemaInitializer } from '../infrastructure/LLMSchemaInitializer';
@@ -69,8 +71,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddLLMProviderOutput();
  * await llm.addLLMProvider(
  *   { data: { llm_provider_url: 'https://api.openai.com', llm_provider_title: 'OpenAI' } },
- *   new LLMContext(),
- *   output,
+ *   output, new LLMContext(),
  * );
  * ```
  */
@@ -104,57 +105,39 @@ export class LLMAccess {
   // -------------------------------------------------------------------------
 
   /** 新增 LLM 提供商 */
-  async addLLMProvider(
-    input: AddLLMProviderInput,
-    context: LLMContext,
-    output: AddLLMProviderOutput,
+  async addLLMProvider(input: AddLLMProviderInput, output: AddLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addLLMProvider(input, context, output);
+    return this.service.addLLMProvider(input, output, context, metrics, report);
   }
 
   /** 更新 LLM 提供商 */
-  async updateLLMProvider(
-    input: UpdateLLMProviderInput,
-    context: LLMContext,
-    output: UpdateLLMProviderOutput,
+  async updateLLMProvider(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateLLMProvider(input, context, output);
+    return this.service.updateLLMProvider(input, output, context, metrics, report);
   }
 
   /** 删除 LLM 提供商（级联删除 llm_cache + llm_available + llm_usage） */
-  async delLLMProvider(
-    input: DelLLMProviderInput,
-    context: LLMContext,
-    output: DelLLMProviderOutput,
+  async delLLMProvider(input: DelLLMProviderInput, output: DelLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delLLMProvider(input, context, output);
+    return this.service.delLLMProvider(input, output, context, metrics, report);
   }
 
   /** 搜索 LLM 提供商 */
-  async soLLMProvider(
-    input: SoLLMProviderInput,
-    context: LLMContext,
-    output: SoLLMProviderOutput,
+  async soLLMProvider(input: SoLLMProviderInput, output: SoLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soLLMProvider(input, context, output);
+    return this.service.soLLMProvider(input, output, context, metrics, report);
   }
 
   /** 测试 LLM 提供商连接 */
-  async testLLMProvider(
-    input: TestLLMProviderInput,
-    context: LLMContext,
-    output: TestLLMProviderOutput,
+  async testLLMProvider(input: TestLLMProviderInput, output: TestLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.testLLMProvider(input, context, output);
+    return this.service.testLLMProvider(input, output, context, metrics, report);
   }
 
   /** 获取 LLM 模型列表（从提供商 API 拉取并保存到 llm_model） */
-  async listLLM(
-    input: ListLLMInput,
-    context: LLMContext,
-    output: ListLLMOutput,
+  async listLLM(input: ListLLMInput, output: ListLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.listLLM(input, context, output);
+    return this.service.listLLM(input, output, context, metrics, report);
   }
 
   // -------------------------------------------------------------------------
@@ -162,46 +145,31 @@ export class LLMAccess {
   // -------------------------------------------------------------------------
 
   /** 新增 LLM（添加到启用列表 llm_enable） */
-  async addLLM(
-    input: AddLLMInput,
-    context: LLMContext,
-    output: AddLLMOutput,
+  async addLLM(input: AddLLMInput, output: AddLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addLLM(input, context, output);
+    return this.service.addLLM(input, output, context, metrics, report);
   }
 
   /** 删除 LLM */
-  async delLLM(
-    input: DelLLMInput,
-    context: LLMContext,
-    output: DelLLMOutput,
+  async delLLM(input: DelLLMInput, output: DelLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delLLM(input, context, output);
+    return this.service.delLLM(input, output, context, metrics, report);
   }
 
   /** 更新 LLM */
-  async updateLLM(
-    input: UpdateLLMInput,
-    context: LLMContext,
-    output: UpdateLLMOutput,
+  async updateLLM(input: UpdateLLMInput, output: UpdateLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateLLM(input, context, output);
+    return this.service.updateLLM(input, output, context, metrics, report);
   }
 
   /** 搜索可用模型（支持关键词搜索名称） */
-  async soLLM(
-    input: SoLLMInput,
-    context: LLMContext,
-    output: SoLLMOutput,
+  async soLLM(input: SoLLMInput, output: SoLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soLLM(input, context, output);
+    return this.service.soLLM(input, output, context, metrics, report);
   }
 
   /** @deprecated 已合并到 soLLM */
-  async getLLM(
-    input: GetLLMInput,
-    context: LLMContext,
-    output: GetLLMOutput,
+  async soLLMById(input: GetLLMInput, output: GetLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     const soInput = Object.assign(new SoLLMInput(), {
       conditions: input.id
@@ -209,7 +177,7 @@ export class LLMAccess {
         : input.conditions,
     });
     const soOutput = new SoLLMOutput();
-    await this.soLLM(soInput, context, soOutput);
+    await this.soLLM(soInput, soOutput, context, metrics, report);
     output.llm = (soOutput.list[0] as unknown as GetLLMOutput['llm']) || null;
     return true;
   }
@@ -219,47 +187,32 @@ export class LLMAccess {
   // -------------------------------------------------------------------------
 
   /** 调用 LLM 执行推理 */
-  async execLLM(
-    input: ExecLLMInput,
-    context: LLMContext,
-    output: ExecLLMOutput,
+  async execLLM(input: ExecLLMInput, output: ExecLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.execLLM(input, context, output);
+    return this.service.execLLM(input, output, context, metrics, report);
   }
 
   /** 调用 LLM 生成向量 */
-  async embedLLM(
-    input: EmbedLLMInput,
-    context: LLMContext,
-    output: EmbedLLMOutput,
+  async embedLLM(input: EmbedLLMInput, output: EmbedLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.embedLLM(input, context, output);
+    return this.service.embedLLM(input, output, context, metrics, report);
   }
 
   /** 一键补全模型属性（生成简介与模型用途） */
-  async genLLMAttr(
-    input: GenLLMAttrInput,
-    context: LLMContext,
-    output: GenLLMAttrOutput,
+  async genLLMAttr(input: GenLLMAttrInput, output: GenLLMAttrOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.genLLMAttr(input, context, output);
+    return this.service.genLLMAttr(input, output, context, metrics, report);
   }
 
   /** 可视化数据 */
-  async visualizedLLM(
-    input: VisualizedLLMInput,
-    context: LLMContext,
-    output: VisualizedLLMOutput,
+  async visualizedLLM(input: VisualizedLLMInput, output: VisualizedLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.visualizedLLM(input, context, output);
+    return this.service.visualizedLLM(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 LLM 组件 */
-  async enableLLM(
-    input: EnableLLMInput,
-    context: LLMContext,
-    output: EnableLLMOutput,
+  async enableLLM(input: EnableLLMInput, output: EnableLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableLLM(input, context, output);
+    return this.service.enableLLM(input, output, context, metrics, report);
   }
 }

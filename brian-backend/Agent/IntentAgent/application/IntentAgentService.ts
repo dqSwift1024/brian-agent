@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import {
   Operator, ValidationError,
@@ -45,32 +46,29 @@ export class IntentAgentService {
     const buildOut = new BuildSystemAgentOutput();
     await this.agentBuilder.buildSystemAgent(
       Object.assign(new BuildSystemAgentInput(), { agent_type: 'INTENT' }),
-      new AgentBuilderContext(),
       buildOut,
+      new AgentBuilderContext(),
     );
     if (!buildOut.agent_id) throw new ValidationError('buildIntentAgent failed');
 
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      new AgentLibraryContext(),
       getOut,
+      new AgentLibraryContext(),
     );
     const agent = getOut.agents[0];
     if (agent && builtinSoulId && agent.soul_id !== builtinSoulId) {
       await this.agentLibrary.updateAgent(
         Object.assign(new UpdateAgentInput(), { agent_id: buildOut.agent_id, soul_id: builtinSoulId }),
-        new AgentLibraryContext(),
         new UpdateAgentOutput(),
+        new AgentLibraryContext(),
       );
     }
     return true;
   }
 
-  async understandRequirement(
-    input: UnderstandRequirementInput,
-    _ctx: IntentAgentContext,
-    output: UnderstandRequirementOutput,
+  async understandRequirement(input: UnderstandRequirementInput, output: UnderstandRequirementOutput, _ctx: IntentAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.user_query || !input.user_query.trim()) {
       output.understood_requirement = input.user_query ?? '';
@@ -107,14 +105,14 @@ export class IntentAgentService {
       },
     });
     const promptOut = new ExecPromptOutput();
-    await this.promptsAccess.execPrompt(promptIn, new PromptContext(), promptOut);
+    await this.promptsAccess.execPrompt(promptIn, promptOut, new PromptContext());
     output.prompt = promptOut.prompt;
 
     const llmIn = Object.assign(new ExecLLMInput(), {
       prompt: promptOut.prompt,
     });
     const llmOut = new ExecLLMOutput();
-    await this.llmAccess.execLLM(llmIn, new LLMContext(), llmOut);
+    await this.llmAccess.execLLM(llmIn, llmOut, new LLMContext());
 
     // 回填输入 / 输出 Token 用量，供前端"思考过程"弹窗展示
     output.input_tokens = llmOut.input_tokens ?? 0;
@@ -140,8 +138,8 @@ export class IntentAgentService {
     const so = new SoSoulOutput();
     await this.soulAccess.soSoul(
       { conditions: [{ field: 'soul_brief', operator: Operator.EQ, value: INTENT_SOUL_BRIEF }] },
-      new SoulContext(),
       so,
+      new SoulContext(),
     );
     if (so.list.length > 0) return so.list[0].id;
 
@@ -154,8 +152,8 @@ export class IntentAgentService {
           soul_usage: INTENT_SOUL_USAGE,
         },
       },
-      new SoulContext(),
       addOut,
+      new SoulContext(),
     );
     return addOut.id;
   }
@@ -183,7 +181,7 @@ export class IntentAgentService {
         lastN: 10,
       });
       const historyOut = new LastNInfoOutput();
-      await this.infoCore.lastNInfo(historyIn, new InfoCoreContext(), historyOut);
+      await this.infoCore.lastNInfo(historyIn, historyOut, new InfoCoreContext());
 
       return (historyOut.list ?? [])
         .map((info: any) => `[${info.info_creator_role || 'USER'}]: ${info.info_content}`)
@@ -202,7 +200,7 @@ export class IntentAgentService {
         persist_snapshot: false,
       });
       const ctxOut = new ContextInfoOutput();
-      await this.infoCore.context(ctxIn, new InfoCoreContext(), ctxOut);
+      await this.infoCore.context(ctxIn, ctxOut, new InfoCoreContext());
 
       return (ctxOut.categories?.pinned ?? [])
         .map((pin: any, idx: number) => `${idx + 1}. ${pin.info ?? pin.content ?? ''}`)
@@ -225,7 +223,7 @@ export class IntentAgentService {
         lastN: 50,
       });
       const historyOut = new LastNInfoOutput();
-      await this.infoCore.lastNInfo(historyIn, new InfoCoreContext(), historyOut);
+      await this.infoCore.lastNInfo(historyIn, historyOut, new InfoCoreContext());
 
       const matched = (historyOut.list ?? []).filter((info: any) =>
         allIds.includes(info.id) || (info.info_id && allIds.includes(info.info_id)),

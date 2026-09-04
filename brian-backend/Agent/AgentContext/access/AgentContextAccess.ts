@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -25,21 +26,15 @@ export class AgentContextAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async getContextDetail(
-    i: GetContextDetailInput,
-    c: AgentContextContext,
-    o: GetContextDetailOutput,
+  async soContextDetail(i: GetContextDetailInput, o: GetContextDetailOutput, c: AgentContextContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getContextDetail(i, c, o);
+    return this.service.soContextDetail(i, o, c, metrics, report);
   }
 
-  async configAgentContext(
-    i: ConfigAgentContextInput,
-    c: AgentContextContext,
-    o: ConfigAgentContextOutput,
+  async configAgentContext(i: ConfigAgentContextInput, o: ConfigAgentContextOutput, c: AgentContextContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configAgentContext(i, c, o);
+    return this.service.configAgentContext(i, o, c, metrics, report);
   }
 }

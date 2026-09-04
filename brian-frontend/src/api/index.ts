@@ -25,13 +25,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const chatApi = {
-  list: (userId: string, keyword?: string, startTime?: number, endTime?: number) =>
-    request<{ sessions: ChatSession[] }>(`/chat/list?userId=${encodeURIComponent(userId)}${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}${startTime ? `&start_time=${startTime}` : ''}${endTime ? `&end_time=${endTime}` : ''}`).then(r => r.sessions),
+  list: (userId: string, keyword?: string, startTime?: number, endTime?: number, pageCurrent?: number, pageSize?: number) =>
+    request<{ sessions: ChatSession[]; total: number }>(`/chat/list?userId=${encodeURIComponent(userId)}${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}${startTime ? `&start_time=${startTime}` : ''}${endTime ? `&end_time=${endTime}` : ''}${pageCurrent ? `&page_current=${pageCurrent}` : ''}${pageSize ? `&page_size=${pageSize}` : ''}`),
   history: (sessionId: string, userId: string) =>
     request<{ messages: ChatMessage[] }>(`/chat/history/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.messages),
-  // ===== 原始 exchanges 方法（保留参考）：前端加载后丢弃结果、无实际用途，已移除前端调用 =====
-  // exchanges: (sessionId: string, userId: string) =>
-  //   request<{ exchanges: unknown[] }>(`/chat/exchanges/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(userId)}`).then(r => r.exchanges),
   dag: (sessionId: string, userId: string) =>
     request<{ work_id: string; nodes: DagNode[]; edges: DagEdge[] }>(`/chat/dag?sessionId=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(userId)}`),
   sendMessage: (sessionId: string, content: string, citingIds?: string[], selectedMsgIds?: string[]) =>
@@ -60,12 +57,11 @@ export const chatApi = {
     }),
   search: (keyword: string) =>
     request<{ sessions: ChatSession[] }>(`/chat/search?keyword=${encodeURIComponent(keyword)}`).then(r => r.sessions),
+  // 会话历史热力图：每日会话数（后端按客户端时区分桶，与列表无关，不受搜索/时间过滤影响）
+  dateCounts: () =>
+    request<{ dates: Record<string, number> }>(`/chat/date-counts?tz=${-new Date().getTimezoneOffset()}`),
   pinMessage: (infoId: string) =>
     request<{ pin: boolean }>(`/chat/message/${encodeURIComponent(infoId)}/pin`, { method: 'POST' }),
-  // ===== 原始 thinking 方法（保留参考） =====
-  // thinking: (infoId: string) =>
-  //   request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null }>(`/chat/thinking?info_id=${encodeURIComponent(infoId)}`).then(r => r),
-
   // ===== 修改后：支持模块化独立的思考过程数据采集 (module='all'|'dag'|'blocks') =====
   thinking: (infoId: string, module: 'all' | 'dag' | 'blocks' = 'all') =>
     request<{ work_id: string; interact_id: string; count: number; blocks: Block[]; dag: AgentDagData | null; module?: string }>(
@@ -125,10 +121,8 @@ export const memoryApi = {
     request<{ deleted_nodes: number }>('/memory/keyword-graph', { method: 'DELETE' }),
   stats: (userId: string) =>
     request<{ totalMemories: number; byType: Record<string, number> }>(`/memory/stats/${encodeURIComponent(userId)}`),
-heatmap: (year: number, month: number) =>
-    request<{ year: number; month: number; days: Record<string, number> }>(`/memory/heatmap?year=${year}&month=${month}`),
   dateCounts: () =>
-    request<{ dates: Record<string, number> }>('/memory/date-counts'),
+    request<{ dates: Record<string, number> }>(`/memory/date-counts?tz=${-new Date().getTimezoneOffset()}`),
 }
 
 export interface GraphSearchNode { id: string; tag: string; info_ids: string[]; depth: number }

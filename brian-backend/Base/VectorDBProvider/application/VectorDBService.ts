@@ -8,13 +8,15 @@
  * 向量数据（vector_record 表）存储于 VectorDB 组件（LanceDB），相似度搜索使用 LanceDB 原生 ANN 搜索；
  * 配置项（启用 / 禁用状态、搜索默认参数）存储于关系数据库配置表 vectordb_config。
  *
- * 实现所有用例：addVector / delVector / delVectorByFilter / soVector / getVector /
+ * 实现所有用例：addVector / delVector / delVectorByFilter / soVector / soVectorById /
  * countVector / visualizedVector / enableVectorDB / closeVectorDB。
  *
  * 所有方法返回 Promise<boolean>，true 表示执行完成；
  * 实际数据通过 output 参数（引用传递）回传。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { VectorDBComponent } from '../../components/VectorDB/VectorDBComponent';
 import { ConfigService } from '../../shared/config/ConfigService';
@@ -167,10 +169,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（ids 列表）
    */
-  async addVector(
-    input: AddVectorInput,
-    _context: VectorContext,
-    output: AddVectorOutput,
+  async addVector(input: AddVectorInput, output: AddVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.vectors || input.vectors.length === 0) {
@@ -211,10 +210,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（影响行数）
    */
-  async delVector(
-    input: DelVectorInput,
-    _context: VectorContext,
-    output: DelVectorOutput,
+  async delVector(input: DelVectorInput, output: DelVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids || input.ids.length === 0) {
@@ -236,10 +232,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（删除的向量数量）
    */
-  async delVectorByFilter(
-    input: DelVectorByFilterInput,
-    _context: VectorContext,
-    output: DelVectorByFilterOutput,
+  async delVectorByFilter(input: DelVectorByFilterInput, output: DelVectorByFilterOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.filters || input.filters.length === 0) {
@@ -266,10 +259,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（list 搜索结果）
    */
-  async soVector(
-    input: SoVectorInput,
-    _context: VectorContext,
-    output: SoVectorOutput,
+  async soVector(input: SoVectorInput, output: SoVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const param = input.query_param;
@@ -330,7 +320,7 @@ export class VectorDBService {
   }
 
   /**
-   * 获取向量（getVector）。
+   * 获取向量（soVectorById）。
    *
    * PRD 3.5 条：按 ID 获取向量完整信息，不存在返回 null。
    *
@@ -338,10 +328,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（vector 向量信息）
    */
-  async getVector(
-    input: GetVectorInput,
-    _context: VectorContext,
-    output: GetVectorOutput,
+  async soVectorById(input: GetVectorInput, output: GetVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -362,10 +349,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（count 数量）
    */
-  async countVector(
-    input: CountVectorInput,
-    _context: VectorContext,
-    output: CountVectorOutput,
+  async countVector(input: CountVectorInput, output: CountVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -392,10 +376,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参（data 可视化数据）
    */
-  async visualizedVector(
-    input: VisualizedVectorInput,
-    _context: VectorContext,
-    output: VisualizedVectorOutput,
+  async visualizedVector(input: VisualizedVectorInput, output: VisualizedVectorOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -455,10 +436,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async enableVectorDB(
-    input: EnableVectorDBInput,
-    _context: VectorContext,
-    _output: EnableVectorDBOutput,
+  async enableVectorDB(input: EnableVectorDBInput, _output: EnableVectorDBOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(
@@ -487,10 +465,7 @@ export class VectorDBService {
    * @param context 执行上下文
    * @param output 出参
    */
-  async closeVectorDB(
-    _input: CloseVectorDBInput,
-    _context: VectorContext,
-    _output: CloseVectorDBOutput,
+  async closeVectorDB(_input: CloseVectorDBInput, _output: CloseVectorDBOutput, _context: VectorContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;

@@ -23,19 +23,15 @@ export interface ChatMapLayoutEdge {
   edgeType: ChatMapEdgeType
 }
 
-// ===== 原始常量（保留作为参考） =====
-// export const CHAT_MAP_ROW_H = 285
-// export const CHAT_MAP_COL_W = 390
-// export const CHAT_MAP_BASE_Y = 180
-// ===== 修改后：增大间距避免消息框重叠 =====
 export const CHAT_MAP_ROW_H = 320
 export const CHAT_MAP_COL_W = 440
 export const CHAT_MAP_BASE_Y = 180
 
 const CITATION_EXTRA_COL_GAP = 60
 
-const NODE_W = 330
-const NODE_H = 162
+/** 消息框尺寸：宽/高在原始基础上放大为 1.5 倍（220→330，108→162），布局与视图共用 */
+export const NODE_W = 330
+export const NODE_H = 162
 
 const RESPONSE_TYPE = 'RESPONSE'
 
@@ -143,20 +139,6 @@ function placeRequest(
   return false
 }
 
-// ===== 原始 placeCited（保留作为参考） =====
-// function placeCited(
-//   node: ChatMapLayoutNode,
-//   citations: ChatMapLayoutEdge[],
-//   col: Map<string, number>,
-//   row: Map<string, number>,
-// ): boolean {
-//   const citedRows = citations.map((e) => row.get(e.source) ?? 0)
-//   const citedCols = citations.map((e) => col.get(e.source) ?? 0)
-//   col.set(node.id, Math.max(...citedCols) + 1)
-//   row.set(node.id, Math.max(...citedRows))
-//   return true
-// }
-
 // ===== 修改后：引用列标记，同一列内所有节点共享横向偏移，实现居中对齐 =====
 function placeCited(
   node: ChatMapLayoutNode,
@@ -175,18 +157,6 @@ function placeCited(
   return true
 }
 
-// ===== 原始 applyCoordinates（保留作为参考） =====
-// function applyCoordinates(
-//   nodes: ChatMapLayoutNode[],
-//   col: Map<string, number>,
-//   row: Map<string, number>,
-// ): void {
-//   for (const node of nodes) {
-//     node.x = (col.get(node.id) ?? 0) * CHAT_MAP_COL_W
-//     node.y = (row.get(node.id) ?? 0) * CHAT_MAP_ROW_H + CHAT_MAP_BASE_Y
-//   }
-// }
-
 // ===== 修改后：按列标记决定横向偏移，同一列内所有节点（提问+回答）共享同一 X 坐标 =====
 function applyCoordinates(
   nodes: ChatMapLayoutNode[],
@@ -202,7 +172,8 @@ function applyCoordinates(
 }
 
 // ===== 后处理：检测并解决节点重叠（完全消除重叠） =====
-function rectsOverlap(
+/** 碰撞检测：两个矩形是否重叠（布局重叠消解与拖拽推离共用） */
+export function rectsOverlap(
   ax: number, ay: number, aw: number, ah: number,
   bx: number, by: number, bw: number, bh: number,
 ): boolean {

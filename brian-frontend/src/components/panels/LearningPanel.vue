@@ -54,9 +54,7 @@ async function fetchAll() {
       }
     }
   } catch { /* */ }
-  for (const m of modeKeys) {
-    await fetchModeData(m)
-  }
+  await Promise.all(modeKeys.map(m => fetchModeData(m)))
 }
 
 async function triggerMode(mode: string) {
@@ -143,6 +141,8 @@ onMounted(() => {
 })
 onUnmounted(() => {
   if (pollTimer.value) clearInterval(pollTimer.value)
+  heatmapObserver?.disconnect()
+  heatmapObserver = null
 })
 </script>
 

@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import { IdGenerator, Operator, ValidationError } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -25,10 +26,7 @@ export class AgentContextService {
    * 按 work_id 查询该次问答的上下文（三对象结构），历史上下文查看入口。
    * 上下文来源关系由 InfoCoreProvider 落盘到 info_context_source 表。
    */
-  async getContextDetail(
-    input: GetContextDetailInput,
-    _ctx: AgentContextContext,
-    output: GetContextDetailOutput,
+  async soContextDetail(input: GetContextDetailInput, output: GetContextDetailOutput, _ctx: AgentContextContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.work_id) {
       throw new ValidationError('work_id 为必填');
@@ -36,7 +34,7 @@ export class AgentContextService {
 
     const soInput = Object.assign(new SoContextByWorkInput(), { work_id: input.work_id });
     const soOutput = new SoContextByWorkOutput();
-    await this.infoCore.soContextByWork(soInput, new InfoCoreContext(), soOutput);
+    await this.infoCore.soContextByWork(soInput, soOutput, new InfoCoreContext());
 
     output.source_ids_map = soOutput.source_ids_map as Record<string, string[]>;
     output.content_map = soOutput.content_map;
@@ -45,10 +43,7 @@ export class AgentContextService {
     return true;
   }
 
-  async configAgentContext(
-    input: ConfigAgentContextInput,
-    _ctx: AgentContextContext,
-    output: ConfigAgentContextOutput,
+  async configAgentContext(input: ConfigAgentContextInput, output: ConfigAgentContextOutput, _ctx: AgentContextContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 校验 max_context_items：必须为正整数
     if (input.max_context_items !== undefined) {

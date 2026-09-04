@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -62,7 +63,7 @@ describe('LLMCoreProvider', () => {
       input.interact_id = 'i1';
 
       await expect(
-        llmCore.matchLLM(input, new LLMCoreContext(), new MatchLLMOutput()),
+        llmCore.matchLLM(input, new MatchLLMOutput(), new LLMCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -100,7 +101,7 @@ describe('LLMCoreProvider', () => {
       input.context_id = 'c1';
       input.interact_id = 'i1';
       const output = new MatchLLMOutput();
-      await llmCore.matchLLM(input, new LLMCoreContext(), output);
+      await llmCore.matchLLM(input, output, new LLMCoreContext());
       expect(output.from_cache).toBe(true);
     });
 
@@ -111,7 +112,7 @@ describe('LLMCoreProvider', () => {
       input.interact_id = 'i1';
 
       await expect(
-        llmCore.matchLLM(input, new LLMCoreContext(), new MatchLLMOutput()),
+        llmCore.matchLLM(input, new MatchLLMOutput(), new LLMCoreContext()),
       ).rejects.toThrow(NotFoundError);
     });
   });
@@ -123,7 +124,7 @@ describe('LLMCoreProvider', () => {
       input.quota_tokens_per_day = 10000;
       const output = new LimitLLMOutput();
 
-      await llmCore.limitLLM(input, new LLMCoreContext(), output);
+      await llmCore.limitLLM(input, output, new LLMCoreContext());
       expect(output.id).toBeTruthy();
     });
 
@@ -132,13 +133,13 @@ describe('LLMCoreProvider', () => {
       input1.llm_provider_id = 'provider-update';
       input1.quota_tokens_per_day = 5000;
       const out1 = new LimitLLMOutput();
-      await llmCore.limitLLM(input1, new LLMCoreContext(), out1);
+      await llmCore.limitLLM(input1, out1, new LLMCoreContext());
 
       const input2 = new LimitLLMInput();
       input2.llm_provider_id = 'provider-update';
       input2.quota_tokens_per_day = 10000;
       const out2 = new LimitLLMOutput();
-      await llmCore.limitLLM(input2, new LLMCoreContext(), out2);
+      await llmCore.limitLLM(input2, out2, new LLMCoreContext());
 
       expect(out1.id).toBe(out2.id);
     });
@@ -148,7 +149,7 @@ describe('LLMCoreProvider', () => {
       input.llm_provider_id = '';
 
       await expect(
-        llmCore.limitLLM(input, new LLMCoreContext(), new LimitLLMOutput()),
+        llmCore.limitLLM(input, new LimitLLMOutput(), new LLMCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -158,12 +159,12 @@ describe('LLMCoreProvider', () => {
       input.quota_tokens_per_day = 1000;
       input.quota_calls_per_month = 100;
       const output = new LimitLLMOutput();
-      await llmCore.limitLLM(input, new LLMCoreContext(), output);
+      await llmCore.limitLLM(input, output, new LLMCoreContext());
 
       const checkInput = new CheckLLMQuotaInput();
       checkInput.llm_provider_id = 'provider-full';
       const checkOutput = new CheckLLMQuotaOutput();
-      await llmCore.checkLLMQuota(checkInput, new LLMCoreContext(), checkOutput);
+      await llmCore.checkLLMQuota(checkInput, checkOutput, new LLMCoreContext());
 
       expect(checkOutput.quota.daily.limit).toBe(1000);
       expect(checkOutput.quota.monthly.limit).toBe(100);
@@ -174,14 +175,13 @@ describe('LLMCoreProvider', () => {
     it('should return zero usage for provider with no usage', async () => {
       await llmCore.limitLLM(
         { llm_provider_id: 'provider-empty' } as LimitLLMInput,
-        new LLMCoreContext(),
-        new LimitLLMOutput(),
+        new LimitLLMOutput(), new LLMCoreContext(),
       );
 
       const input = new CheckLLMQuotaInput();
       input.llm_provider_id = 'provider-empty';
       const output = new CheckLLMQuotaOutput();
-      await llmCore.checkLLMQuota(input, new LLMCoreContext(), output);
+      await llmCore.checkLLMQuota(input, output, new LLMCoreContext());
 
       expect(output.quota.daily.used).toBe(0);
       expect(output.quota.weekly.used).toBe(0);
@@ -191,19 +191,17 @@ describe('LLMCoreProvider', () => {
     it('should reflect usage from recordLLMUsage', async () => {
       await llmCore.limitLLM(
         { llm_provider_id: 'provider-with-usage', quota_tokens_per_day: 10000 } as LimitLLMInput,
-        new LLMCoreContext(),
-        new LimitLLMOutput(),
+        new LimitLLMOutput(), new LLMCoreContext(),
       );
       await llmCore.recordLLMUsage(
         { llm_provider_id: 'provider-with-usage', tokens_used: 500 } as RecordLLMUsageInput,
-        new LLMCoreContext(),
-        new RecordLLMUsageOutput(),
+        new RecordLLMUsageOutput(), new LLMCoreContext(),
       );
 
       const input = new CheckLLMQuotaInput();
       input.llm_provider_id = 'provider-with-usage';
       const output = new CheckLLMQuotaOutput();
-      await llmCore.checkLLMQuota(input, new LLMCoreContext(), output);
+      await llmCore.checkLLMQuota(input, output, new LLMCoreContext());
 
       expect(output.quota.daily.used).toBeGreaterThan(0);
     });
@@ -212,8 +210,7 @@ describe('LLMCoreProvider', () => {
       await expect(
         llmCore.checkLLMQuota(
           { llm_provider_id: '' } as CheckLLMQuotaInput,
-          new LLMCoreContext(),
-          new CheckLLMQuotaOutput(),
+          new CheckLLMQuotaOutput(), new LLMCoreContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -222,7 +219,7 @@ describe('LLMCoreProvider', () => {
       const input = new CheckLLMQuotaInput();
       input.llm_provider_id = 'provider-no-quota';
       const output = new CheckLLMQuotaOutput();
-      await llmCore.checkLLMQuota(input, new LLMCoreContext(), output);
+      await llmCore.checkLLMQuota(input, output, new LLMCoreContext());
 
       expect(output.quota.daily.available).toBe(-1);
     });
@@ -231,7 +228,7 @@ describe('LLMCoreProvider', () => {
   describe('configLLMCore', () => {
     it('should return default config', async () => {
       const output = new ConfigLLMCoreOutput();
-      await llmCore.configLLMCore(new ConfigLLMCoreInput(), new LLMCoreContext(), output);
+      await llmCore.configLLMCore(new ConfigLLMCoreInput(), output, new LLMCoreContext());
       expect(output.config).not.toBeNull();
       expect(output.config!.regen_rate).toBeGreaterThanOrEqual(0);
     });
@@ -241,7 +238,7 @@ describe('LLMCoreProvider', () => {
       input.regen_rate = 150;
 
       await expect(
-        llmCore.configLLMCore(input, new LLMCoreContext(), new ConfigLLMCoreOutput()),
+        llmCore.configLLMCore(input, new ConfigLLMCoreOutput(), new LLMCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -250,7 +247,7 @@ describe('LLMCoreProvider', () => {
       input.regen_rate = -5;
 
       await expect(
-        llmCore.configLLMCore(input, new LLMCoreContext(), new ConfigLLMCoreOutput()),
+        llmCore.configLLMCore(input, new ConfigLLMCoreOutput(), new LLMCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -258,7 +255,7 @@ describe('LLMCoreProvider', () => {
       const input = new ConfigLLMCoreInput();
       input.regen_rate = 50;
       const output = new ConfigLLMCoreOutput();
-      await llmCore.configLLMCore(input, new LLMCoreContext(), output);
+      await llmCore.configLLMCore(input, output, new LLMCoreContext());
       expect(output.config!.regen_rate).toBe(50);
     });
 
@@ -267,7 +264,7 @@ describe('LLMCoreProvider', () => {
       input.prompt_template_id = IdGenerator.generate();
 
       await expect(
-        llmCore.configLLMCore(input, new LLMCoreContext(), new ConfigLLMCoreOutput()),
+        llmCore.configLLMCore(input, new ConfigLLMCoreOutput(), new LLMCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -279,21 +276,20 @@ describe('LLMCoreProvider', () => {
       input.tokens_used = 100;
       const output = new RecordLLMUsageOutput();
 
-      await llmCore.recordLLMUsage(input, new LLMCoreContext(), output);
+      await llmCore.recordLLMUsage(input, output, new LLMCoreContext());
       expect(output.id).toBeTruthy();
     });
 
     it('should use default call_count of 1', async () => {
       await llmCore.recordLLMUsage(
         { llm_provider_id: 'provider-callcount', tokens_used: 50 } as RecordLLMUsageInput,
-        new LLMCoreContext(),
-        new RecordLLMUsageOutput(),
+        new RecordLLMUsageOutput(), new LLMCoreContext(),
       );
 
       const quotaInput = new CheckLLMQuotaInput();
       quotaInput.llm_provider_id = 'provider-callcount';
       const quotaOutput = new CheckLLMQuotaOutput();
-      await llmCore.checkLLMQuota(quotaInput, new LLMCoreContext(), quotaOutput);
+      await llmCore.checkLLMQuota(quotaInput, quotaOutput, new LLMCoreContext());
 
       expect(quotaOutput.quota.daily.used).toBeGreaterThanOrEqual(1);
     });
@@ -302,8 +298,7 @@ describe('LLMCoreProvider', () => {
       await expect(
         llmCore.recordLLMUsage(
           { llm_provider_id: '', tokens_used: 100 } as RecordLLMUsageInput,
-          new LLMCoreContext(),
-          new RecordLLMUsageOutput(),
+          new RecordLLMUsageOutput(), new LLMCoreContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -313,16 +308,14 @@ describe('LLMCoreProvider', () => {
       for (let i = 0; i < 3; i++) {
         await llmCore.recordLLMUsage(
           { llm_provider_id: providerId, tokens_used: 10 } as RecordLLMUsageInput,
-          new LLMCoreContext(),
-          new RecordLLMUsageOutput(),
+          new RecordLLMUsageOutput(), new LLMCoreContext(),
         );
       }
 
       const checkOutput = new CheckLLMQuotaOutput();
       await llmCore.checkLLMQuota(
         { llm_provider_id: providerId } as CheckLLMQuotaInput,
-        new LLMCoreContext(),
-        checkOutput,
+        checkOutput, new LLMCoreContext(),
       );
       // call_count contributions reflected in usage
       expect(checkOutput.quota.daily.used).toBeGreaterThan(0);
@@ -335,7 +328,7 @@ describe('LLMCoreProvider', () => {
       input.llm_provider_id = 'provider-aop';
       input.tokens_used = 42;
       const output = new RecordLLMUsageOutput();
-      await llmCore.recordLLMUsage(input, new LLMCoreContext(), output);
+      await llmCore.recordLLMUsage(input, output, new LLMCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
   });

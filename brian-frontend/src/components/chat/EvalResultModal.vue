@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { X, Gauge, Loader2, Lightbulb, CircleCheck, CircleAlert } from '@lucide/vue'
-import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 
-const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 
-const visible = computed(() => sessionStore.evalResultVisible)
-const loading = computed(() => sessionStore.evalResultLoading)
-const error = computed(() => sessionStore.evalResultError)
-const evaluation = computed(() => sessionStore.evalResult)
-const traceId = computed(() => sessionStore.evalTraceId)
+const visible = computed(() => chatUi.evalResultVisible)
+const loading = computed(() => chatUi.evalResultLoading)
+const error = computed(() => chatUi.evalResultError)
+const evaluation = computed(() => chatUi.evalResult)
+const traceId = computed(() => chatUi.evalTraceId)
 
 interface EvalPayload {
   scores?: Record<string, number | string>
@@ -48,7 +48,7 @@ const needOptimize = computed<boolean | null>(() => {
 })
 
 function close() {
-  sessionStore.closeEvalResult()
+  chatUi.closeEvalResult()
 }
 
 function scoreColor(score: number): string {

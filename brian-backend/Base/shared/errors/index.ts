@@ -61,3 +61,14 @@ export class DatabaseError extends ProviderError {
     super(message, 'DATABASE_ERROR');
   }
 }
+
+/**
+ * 处理过程错误。
+ *
+ * 业务规则执行失败（解析失败、生成失败等）时抛出，区别于参数校验与资源不存在。
+ */
+export class ProcessingError extends ProviderError {
+  constructor(message: string) {
+    super(message, 'PROCESSING_ERROR');
+  }
+}

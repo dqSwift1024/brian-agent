@@ -193,8 +193,8 @@ describe('VectorDBAccess.applyDimension 运行时切换维度', () => {
     const out: { ids: string[] } = { ids: [] };
     await access.addVector(
       Object.assign({}, { vectors: [{ content: 'x', embedding: new Array(8).fill(0) }] }),
-      Object.assign({}, {}),
       out,
+      Object.assign({}, {}),
     );
     expect(out.ids.length).toBe(1);
   });

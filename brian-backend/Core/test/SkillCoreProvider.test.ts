@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -118,7 +119,7 @@ describe('SkillCoreProvider', () => {
   describe('configSkillCore', () => {
     it('should return default config', async () => {
       const output = new ConfigSkillCoreOutput();
-      await skillCore.configSkillCore(new ConfigSkillCoreInput(), new SkillCoreContext(), output);
+      await skillCore.configSkillCore(new ConfigSkillCoreInput(), output, new SkillCoreContext());
       expect(output.regen_rate).toBe(75);
     });
 
@@ -126,7 +127,7 @@ describe('SkillCoreProvider', () => {
       const input = new ConfigSkillCoreInput();
       input.regen_rate = 30;
       const output = new ConfigSkillCoreOutput();
-      await skillCore.configSkillCore(input, new SkillCoreContext(), output);
+      await skillCore.configSkillCore(input, output, new SkillCoreContext());
       expect(output.regen_rate).toBe(30);
     });
 
@@ -134,7 +135,7 @@ describe('SkillCoreProvider', () => {
       const input = new ConfigSkillCoreInput();
       input.regen_rate = 150;
       await expect(
-        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+        skillCore.configSkillCore(input, new ConfigSkillCoreOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -142,7 +143,7 @@ describe('SkillCoreProvider', () => {
       const input = new ConfigSkillCoreInput();
       input.regen_rate = -5;
       await expect(
-        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+        skillCore.configSkillCore(input, new ConfigSkillCoreOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -150,13 +151,13 @@ describe('SkillCoreProvider', () => {
       const addInput = new AddPromptInput();
       addInput.data = { prompt_template_title: 'Test Skill Prompt', prompt_template: 'test template' };
       const addOutput = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      await promptsAccess.addPrompt(addInput, addOutput, new PromptContext());
       const realId = addOutput.id;
 
       const input = new ConfigSkillCoreInput();
       input.prompt_template_id = realId;
       const output = new ConfigSkillCoreOutput();
-      await skillCore.configSkillCore(input, new SkillCoreContext(), output);
+      await skillCore.configSkillCore(input, output, new SkillCoreContext());
       expect(output.prompt_template_id).toBe(realId);
     });
 
@@ -164,17 +165,17 @@ describe('SkillCoreProvider', () => {
       const input = new ConfigSkillCoreInput();
       input.prompt_template_id = IdGenerator.generate();
       await expect(
-        skillCore.configSkillCore(input, new SkillCoreContext(), new ConfigSkillCoreOutput()),
+        skillCore.configSkillCore(input, new ConfigSkillCoreOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('should persist and retrieve config across calls', async () => {
       const setInput = new ConfigSkillCoreInput();
       setInput.regen_rate = 20;
-      await skillCore.configSkillCore(setInput, new SkillCoreContext(), new ConfigSkillCoreOutput());
+      await skillCore.configSkillCore(setInput, new ConfigSkillCoreOutput(), new SkillCoreContext());
 
       const getOutput = new ConfigSkillCoreOutput();
-      await skillCore.configSkillCore(new ConfigSkillCoreInput(), new SkillCoreContext(), getOutput);
+      await skillCore.configSkillCore(new ConfigSkillCoreInput(), getOutput, new SkillCoreContext());
       expect(getOutput.regen_rate).toBe(20);
     });
   });
@@ -187,7 +188,7 @@ describe('SkillCoreProvider', () => {
       input.interact_id = 'i1';
 
       await expect(
-        skillCore.matchSkill(input, new SkillCoreContext(), new MatchSkillOutput()),
+        skillCore.matchSkill(input, new MatchSkillOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -198,7 +199,7 @@ describe('SkillCoreProvider', () => {
       input.interact_id = 'i1';
       const output = new MatchSkillOutput();
 
-      const result = await skillCore.matchSkill(input, new SkillCoreContext(), output);
+      const result = await skillCore.matchSkill(input, output, new SkillCoreContext());
       expect(result).toBe(true);
       expect(output.skills).toEqual([]);
     });
@@ -227,7 +228,7 @@ describe('SkillCoreProvider', () => {
       input.context_id = 'c1';
       input.interact_id = 'i1';
       const output = new MatchSkillOutput();
-      await skillCore.matchSkill(input, new SkillCoreContext(), output);
+      await skillCore.matchSkill(input, output, new SkillCoreContext());
 
       expect(Array.isArray(output.skills)).toBe(true);
     });
@@ -240,7 +241,7 @@ describe('SkillCoreProvider', () => {
       input.skill_id = 'skill-opt-1';
       const output = new OptSkillOutput();
 
-      await skillCore.optSkill(input, new SkillCoreContext(), output);
+      await skillCore.optSkill(input, output, new SkillCoreContext());
       expect(output.binding).not.toBeNull();
       expect(output.binding!.agent_id).toBe('agent-opt-skill');
       expect(output.binding!.skill_id).toBe('skill-opt-1');
@@ -255,7 +256,7 @@ describe('SkillCoreProvider', () => {
       input.skill_id = 's1';
 
       await expect(
-        skillCore.optSkill(input, new SkillCoreContext(), new OptSkillOutput()),
+        skillCore.optSkill(input, new OptSkillOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -265,7 +266,7 @@ describe('SkillCoreProvider', () => {
       input.skill_id = '';
 
       await expect(
-        skillCore.optSkill(input, new SkillCoreContext(), new OptSkillOutput()),
+        skillCore.optSkill(input, new OptSkillOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -276,15 +277,13 @@ describe('SkillCoreProvider', () => {
       const out1 = new OptSkillOutput();
       await skillCore.optSkill(
         { agent_id: agentId, skill_id: skillId } as OptSkillInput,
-        new SkillCoreContext(),
-        out1,
+        out1, new SkillCoreContext(),
       );
 
       const out2 = new OptSkillOutput();
       await skillCore.optSkill(
         { agent_id: agentId, skill_id: skillId } as OptSkillInput,
-        new SkillCoreContext(),
-        out2,
+        out2, new SkillCoreContext(),
       );
 
       expect(out1.binding!.id).toBe(out2.binding!.id);
@@ -298,7 +297,7 @@ describe('SkillCoreProvider', () => {
     it('should return aged_count 0 when no rules', async () => {
       const input = new AgeSkillInput();
       const output = new AgeSkillOutput();
-      await skillCore.ageSkill(input, new SkillCoreContext(), output);
+      await skillCore.ageSkill(input, output, new SkillCoreContext());
       expect(output.aged_count).toBe(0);
     });
 
@@ -312,13 +311,13 @@ describe('SkillCoreProvider', () => {
       ]);
 
       const output = new AgeSkillOutput();
-      await skillCore.ageSkill(new AgeSkillInput(), new SkillCoreContext(), output);
+      await skillCore.ageSkill(new AgeSkillInput(), output, new SkillCoreContext());
       expect(output.aged_count).toBe(0);
     });
 
     it('should set elapsed_ms on output', async () => {
       const output = new AgeSkillOutput();
-      await skillCore.ageSkill(new AgeSkillInput(), new SkillCoreContext(), output);
+      await skillCore.ageSkill(new AgeSkillInput(), output, new SkillCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
   });
@@ -326,7 +325,7 @@ describe('SkillCoreProvider', () => {
   describe('soSkillRule', () => {
     it('should return empty list when no rules', async () => {
       const output = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), output);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), output, new SkillCoreContext());
       expect(output.list).toEqual([]);
       expect(output.total).toBe(0);
     });
@@ -348,7 +347,7 @@ describe('SkillCoreProvider', () => {
       ]);
 
       const output = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), output);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), output, new SkillCoreContext());
       expect(output.list.length).toBe(2);
       expect(output.total).toBe(2);
     });
@@ -365,7 +364,7 @@ describe('SkillCoreProvider', () => {
       const input = new SoSkillRuleInput();
       input.conditions = [{ field: 'days', operator: Operator.EQ, value: 7 }];
       const output = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(input, new SkillCoreContext(), output);
+      await skillCore.soSkillRule(input, output, new SkillCoreContext());
       expect(output.list.length).toBe(1);
     });
   });
@@ -376,7 +375,7 @@ describe('SkillCoreProvider', () => {
       input.operations = [];
 
       await expect(
-        skillCore.updateSkillRule(input, new SkillCoreContext(), new UpdateSkillRuleOutput()),
+        skillCore.updateSkillRule(input, new UpdateSkillRuleOutput(), new SkillCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -391,10 +390,10 @@ describe('SkillCoreProvider', () => {
         ],
       }];
 
-      await skillCore.updateSkillRule(input, new SkillCoreContext(), new UpdateSkillRuleOutput());
+      await skillCore.updateSkillRule(input, new UpdateSkillRuleOutput(), new SkillCoreContext());
 
       const soOut = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), soOut);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), soOut, new SkillCoreContext());
       expect(soOut.list.length).toBe(1);
       expect(soOut.list[0].days).toBe(14);
     });
@@ -419,10 +418,10 @@ describe('SkillCoreProvider', () => {
         ],
       }];
 
-      await skillCore.updateSkillRule(input, new SkillCoreContext(), new UpdateSkillRuleOutput());
+      await skillCore.updateSkillRule(input, new UpdateSkillRuleOutput(), new SkillCoreContext());
 
       const soOut = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), soOut);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), soOut, new SkillCoreContext());
       expect(soOut.list[0].days).toBe(60);
     });
 
@@ -443,10 +442,10 @@ describe('SkillCoreProvider', () => {
         conditions: [{ field: 'id', operator: Operator.EQ, value: ruleId }],
       }];
 
-      await skillCore.updateSkillRule(input, new SkillCoreContext(), new UpdateSkillRuleOutput());
+      await skillCore.updateSkillRule(input, new UpdateSkillRuleOutput(), new SkillCoreContext());
 
       const soOut = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), soOut);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), soOut, new SkillCoreContext());
       expect(soOut.list.length).toBe(0);
     });
 
@@ -471,10 +470,10 @@ describe('SkillCoreProvider', () => {
         },
       ];
 
-      await skillCore.updateSkillRule(input, new SkillCoreContext(), new UpdateSkillRuleOutput());
+      await skillCore.updateSkillRule(input, new UpdateSkillRuleOutput(), new SkillCoreContext());
 
       const soOut = new SoSkillRuleOutput();
-      await skillCore.soSkillRule(new SoSkillRuleInput(), new SkillCoreContext(), soOut);
+      await skillCore.soSkillRule(new SoSkillRuleInput(), soOut, new SkillCoreContext());
       expect(soOut.list.length).toBe(2);
     });
   });

@@ -4,13 +4,14 @@
  * 依赖 RelationDBAccess（通过 IConfigStorage / executeRaw）操作关系数据库，
  * 依赖 ConfigService 管理 prompts_config 配置表。
  *
- * 实现所有用例：addPrompt / delPrompt / updatePrompt / getPrompt / soPrompt /
+ * 实现所有用例：addPrompt / delPrompt / updatePrompt / soPromptById / soPrompt /
  * execPrompt / enablePrompts / closePrompts。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
-import { stripEmptyConditionalBlocks } from '../../PromptCatalog/catalog';
 import {
   ComponentDisabledError,
   ValidationError,
@@ -20,30 +21,8 @@ import {
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator, Logic } from '../../shared/query';
 import type { Condition, DataObject, OrderBy, Page } from '../../shared/query';
-import {
-  PromptContext,
-  PromptTemplateData,
-  PromptTemplateRecord,
-  AddPromptInput,
-  AddPromptOutput,
-  DelPromptInput,
-  DelPromptOutput,
-  UpdatePromptInput,
-  UpdatePromptOutput,
-  GetPromptInput,
-  GetPromptOutput,
-  SoPromptInput,
-  SoPromptOutput,
-  ExecPromptInput,
-  ExecPromptOutput,
-  EnablePromptsInput,
-  EnablePromptsOutput,
-  ClosePromptInput,
-  ClosePromptOutput,
-  PROMPT_TEMPLATE_TABLE,
-  PROMPT_TEMPLATE_USAGE_TABLE,
-  PROMPTS_CONFIG_TABLE,
-} from '../domain/types';
+import { PromptContext, PromptTemplateRecord, AddPromptInput, AddPromptOutput, DelPromptInput, DelPromptOutput, UpdatePromptInput, UpdatePromptOutput, GetPromptInput, GetPromptOutput, SoPromptInput, SoPromptOutput, ExecPromptInput, ExecPromptOutput, EnablePromptsInput, EnablePromptsOutput, ClosePromptInput, ClosePromptOutput, PROMPT_TEMPLATE_TABLE, PROMPT_TEMPLATE_USAGE_TABLE, PROMPTS_CONFIG_TABLE } from '../domain/types';
+import { renderPromptTemplate } from '../domain/services/PromptDomainService';
 
 /**
  * PromptsProvider 应用服务。
@@ -103,10 +82,7 @@ export class PromptsService {
    *
    * PRD 3.1.1 条。
    */
-  async addPrompt(
-    input: AddPromptInput,
-    _context: PromptContext,
-    output: AddPromptOutput,
+  async addPrompt(input: AddPromptInput, output: AddPromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -139,10 +115,7 @@ export class PromptsService {
    *
    * PRD 3.1.2 条：支持按 ID 批量删除或按条件删除。
    */
-  async delPrompt(
-    input: DelPromptInput,
-    _context: PromptContext,
-    output: DelPromptOutput,
+  async delPrompt(input: DelPromptInput, output: DelPromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.ids && !input.conditions) {
@@ -172,10 +145,7 @@ export class PromptsService {
    * PRD 3.1.3 条：支持按 ID 或按条件更新。
    * 资源级启用/禁用通过本方法修改 enable 字段实现。
    */
-  async updatePrompt(
-    input: UpdatePromptInput,
-    _context: PromptContext,
-    output: UpdatePromptOutput,
+  async updatePrompt(input: UpdatePromptInput, output: UpdatePromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -210,14 +180,11 @@ export class PromptsService {
   }
 
   /**
-   * 获取 Prompt（getPrompt）。
+   * 获取 Prompt（soPromptById）。
    *
    * PRD 3.1.4 条：按 ID 或按条件获取第一条。
    */
-  async getPrompt(
-    input: GetPromptInput,
-    _context: PromptContext,
-    output: GetPromptOutput,
+  async soPromptById(input: GetPromptInput, output: GetPromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id && !input.conditions) {
@@ -240,10 +207,7 @@ export class PromptsService {
    * 关键词匹配 prompt_template_title 与 prompt_template_brief。
    * 若按使用频率排序，联表查询 prompt_template_usage 统计表。
    */
-  async soPrompt(
-    input: SoPromptInput,
-    _context: PromptContext,
-    output: SoPromptOutput,
+  async soPrompt(input: SoPromptInput, output: SoPromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -433,10 +397,7 @@ export class PromptsService {
    * 3. 生成最终的完整 Prompt 字符串；
    * 4. 调用成功后更新 prompt_template_usage 表当天的 usage_count + 1。
    */
-  async execPrompt(
-    input: ExecPromptInput,
-    _context: PromptContext,
-    output: ExecPromptOutput,
+  async execPrompt(input: ExecPromptInput, output: ExecPromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     if (!input.id) {
@@ -458,24 +419,13 @@ export class PromptsService {
       throw new ValidationError(`Prompt ${input.id} 已禁用`);
     }
 
-    // 2. 变量替换：先处理 {{#if var}}...{{/if}} 条件块（空变量移除整块），
-    //    再将 {{variable_name}} 替换为 variables 中对应的值
-    let rendered = stripEmptyConditionalBlocks(
+    // 2. 模板渲染（条件块清理 + 变量替换）：纯数据加工，委托领域服务
+    output.prompt = renderPromptTemplate(
       record.prompt_template,
       input.variables as Record<string, unknown>,
     );
-    for (const [key, value] of Object.entries(input.variables)) {
-      const pattern = new RegExp(
-        `\\{\\{\\s*${this.escapeRegExp(key)}\\s*\\}\\}`,
-        'g',
-      );
-      rendered = rendered.replace(pattern, () => String(value));
-    }
 
-    // 3. 生成最终的完整 Prompt 字符串
-    output.prompt = rendered;
-
-    // 4. 更新 prompt_template_usage 表当天的 usage_count + 1
+    // 3. 更新 prompt_template_usage 表当天的 usage_count + 1
     await this.upsertUsage(input.id);
 
     return true;
@@ -533,10 +483,7 @@ export class PromptsService {
    *
    * 注：closePrompts 为终态操作，执行后不可通过本方法恢复，需重新初始化组件。
    */
-  async enablePrompts(
-    input: EnablePromptsInput,
-    _context: PromptContext,
-    _output: EnablePromptsOutput,
+  async enablePrompts(input: EnablePromptsInput, _output: EnablePromptsOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new DatabaseError(
@@ -562,10 +509,7 @@ export class PromptsService {
    * PromptsProvider 不持有独立数据库连接（使用 RelationDBProvider 的共享连接），
    * 本方法仅标记终态，后续所有操作将抛出错误。
    */
-  async closePrompts(
-    _input: ClosePromptInput,
-    _context: PromptContext,
-    _output: ClosePromptOutput,
+  async closePrompts(_input: ClosePromptInput, _output: ClosePromptOutput, _context: PromptContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.enabled = false;
     this.closed = true;

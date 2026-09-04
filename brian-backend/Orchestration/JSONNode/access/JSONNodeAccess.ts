@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -56,37 +57,32 @@ export class JSONNodeAccess {
     return this.service;
   }
 
-  async execJSONNode(
-    i: ExecJSONNodeInput, c: JSONNodeContext, o: ExecJSONNodeOutput,
+  async execJSONNode(i: ExecJSONNodeInput, o: ExecJSONNodeOutput, c: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.execJSONNode(i, c, o);
+    return this.service.execJSONNode(i, o, c, metrics, report);
   }
 
-  async getJSONNodeTrace(
-    i: GetJSONNodeTraceInput, c: JSONNodeContext, o: GetJSONNodeTraceOutput,
+  async soJSONNodeTrace(i: GetJSONNodeTraceInput, o: GetJSONNodeTraceOutput, c: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getJSONNodeTrace(i, c, o);
+    return this.service.soJSONNodeTrace(i, o, c, metrics, report);
   }
 
-  registerNodeType(
-    i: RegisterNodeTypeInput, c: JSONNodeContext, o: RegisterNodeTypeOutput,
+  registerNodeType(i: RegisterNodeTypeInput, o: RegisterNodeTypeOutput, c: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): boolean {
-    return this.service.registerNodeType(i, c, o);
+    return this.service.registerNodeType(i, o, c, metrics, report);
   }
 
-  validate(
-    i: ValidateJSONNodeInput, c: JSONNodeContext, o: ValidateJSONNodeOutput,
+  validate(i: ValidateJSONNodeInput, o: ValidateJSONNodeOutput, c: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): boolean {
-    return this.service.validate(i, c, o);
+    return this.service.validate(i, o, c, metrics, report);
   }
 
-  async configJSONNode(
-    i: ConfigJSONNodeInput, c: JSONNodeContext, o: ConfigJSONNodeOutput,
+  async configJSONNode(i: ConfigJSONNodeInput, o: ConfigJSONNodeOutput, c: JSONNodeContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configJSONNode(i, c, o);
+    return this.service.configJSONNode(i, o, c, metrics, report);
   }
 
   /** 确保 orchestration.eval 队列存在常驻消费 Worker（启动期调用）。 */

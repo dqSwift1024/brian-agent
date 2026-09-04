@@ -4,6 +4,10 @@
 export { Input } from './Input';
 export { Context } from './Context';
 export { Output } from './Output';
+export { Metrics } from './Metrics';
+export type { MetricsLogger } from './Metrics';
+export { Report } from './Report';
+export type { ReportChannel, ReportMeta } from './Report';
 export {
   InfoType,
   CollectionSource,

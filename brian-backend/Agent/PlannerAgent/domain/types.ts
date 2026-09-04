@@ -124,7 +124,7 @@ export class ReplanOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getPlan
+// soPlan
 // ---------------------------------------------------------------------------
 
 export class GetPlanInput extends Input {

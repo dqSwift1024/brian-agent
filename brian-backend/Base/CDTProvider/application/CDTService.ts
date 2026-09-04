@@ -4,18 +4,15 @@
  * 管理 Chrome 进程的启动/停止，通过 CDP WebSocket 与浏览器通信。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import http from 'http';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
-import {
-  ComponentDisabledError,
-  ValidationError,
-  NotFoundError,
-} from '../../shared/errors';
-import { IdGenerator } from '../../ToolProvider/IdGenerator';
+import { ComponentDisabledError } from '../../shared/errors';
 import type { Logger } from '../../shared/aop/AopProxy';
 import {
   CDTContext,
@@ -91,6 +88,8 @@ export class CDTService {
   private pid = 0;
   private port = CDT_DEFAULT_PORT;
   private endpoint = '';
+  /** 最近一次拉起 Chrome 使用的 profile 绝对路径（供启动前清理残留实例匹配） */
+  private lastProfileDir = '';
   private dataDir = '';
   private wsSequentialId = 0;
   private screencastWs: import('ws').WebSocket | null = null;
@@ -106,6 +105,21 @@ export class CDTService {
   constructor(private readonly relationDb: RelationDBAccess, dataDir: string = '', private readonly logger?: Logger) {
     this.config = new ConfigService(relationDb, CDT_CONFIG_TABLE);
     this.dataDir = dataDir;
+
+    // 进程退出兜底：未走 stopCDT 的异常退出（uncaughtException / process.exit）时，
+    // 同步终止本服务拉起的 Chrome，避免非 systemd 环境（便携包 / nohup / 终端直跑）
+    // 下遗留孤儿实例；systemd 部署下 cgroup 清理是第一道防线，此处为第二道。
+    // 正常关闭路径已由 stopCDT 将 this.process 置空，钩子不会误杀新实例。
+    process.on('exit', () => {
+      const child = this.process;
+      if (child && child.pid && child.exitCode === null) {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* 进程已退出 */
+        }
+      }
+    });
   }
 
   async initialize(): Promise<void> {
@@ -158,10 +172,7 @@ export class CDTService {
   // 进程生命周期
   // ============================================================
 
-  async startCDT(
-    _input: StartCDTInput,
-    _ctx: CDTContext,
-    output: StartCDTOutput,
+  async startCDT(_input: StartCDTInput, output: StartCDTOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!this.enabled) throw new ComponentDisabledError('CDTProvider');
 
@@ -221,6 +232,7 @@ export class CDTService {
         detached: false,
       });
 
+      this.lastProfileDir = absProfileDir;
       this.pid = this.process.pid || 0;
 
       this.process.on('exit', (code, signal) => {
@@ -264,10 +276,7 @@ export class CDTService {
     return true;
   }
 
-  async stopCDT(
-    _input: StopCDTInput,
-    _ctx: CDTContext,
-    output: StopCDTOutput,
+  async stopCDT(_input: StopCDTInput, _output: StopCDTOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.stopCommandWs();
     this.stopKeepAlive();
@@ -279,19 +288,13 @@ export class CDTService {
     return true;
   }
 
-  async getCDTEndpoint(
-    _input: GetCDTEndpointInput,
-    _ctx: CDTContext,
-    output: GetCDTEndpointOutput,
+  async soCDTEndpoint(_input: GetCDTEndpointInput, output: GetCDTEndpointOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     output.endpoint = this.endpoint;
     return true;
   }
 
-  async isCDTRunning(
-    _input: IsCDTRunningInput,
-    _ctx: CDTContext,
-    output: IsCDTRunningOutput,
+  async isCDTRunning(_input: IsCDTRunningInput, output: IsCDTRunningOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const alive = this.isProcessAlive();
     output.running = alive;
@@ -304,10 +307,7 @@ export class CDTService {
   // CDP 通信
   // ============================================================
 
-  async execCDP(
-    input: ExecCDPInput,
-    _ctx: CDTContext,
-    output: ExecCDPOutput,
+  async execCDP(input: ExecCDPInput, output: ExecCDPOutput, _ctx: CDTContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!this.endpoint) {
       output.error = 'CDT 未启动';
@@ -382,6 +382,7 @@ export class CDTService {
     if (!this.endpoint) return false;
     this.stopScreencast();
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const { WebSocket } = require('ws') as typeof import('ws');
     const ws = new WebSocket(this.endpoint);
 
@@ -606,6 +607,16 @@ export class CDTService {
     } catch {
       /* fuser 不可用或端口未被占用 */
     }
+    // 兜底：按 profile 目录清理残留 Chrome。覆盖端口已被其他进程占用或配置端口
+    // 已变更的场景（如非 systemd 环境下后端被 SIGKILL 后遗留的孤儿实例）。
+    // 模式为完整 profile 路径，不会误杀用户自己的浏览器。
+    if (this.lastProfileDir) {
+      try {
+        execSync(`pkill -KILL -f "user-data-dir=${this.lastProfileDir}" 2>/dev/null || true`, { timeout: 3000 });
+      } catch {
+        /* pkill 不可用或无匹配进程 */
+      }
+    }
   }
 
   /**
@@ -638,6 +649,7 @@ export class CDTService {
     this.stopKeepAlive();
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { WebSocket } = require('ws') as typeof import('ws');
       const ws = new WebSocket(this.endpoint);
 
@@ -748,6 +760,7 @@ export class CDTService {
   private connectWebSocket(): Promise<import('ws').WebSocket> {
     return new Promise((resolve, reject) => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const { WebSocket } = require('ws') as typeof import('ws');
         const ws = new WebSocket(this.endpoint);
         ws.once('open', () => resolve(ws));

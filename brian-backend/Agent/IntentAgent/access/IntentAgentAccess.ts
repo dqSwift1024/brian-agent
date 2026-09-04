@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, SoulAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -33,9 +34,8 @@ export class IntentAgentAccess {
     return this.service.ensureBuiltin(ctx);
   }
 
-  async understandRequirement(
-    i: UnderstandRequirementInput, c: IntentAgentContext, o: UnderstandRequirementOutput,
+  async understandRequirement(i: UnderstandRequirementInput, o: UnderstandRequirementOutput, c: IntentAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.understandRequirement(i, c, o);
+    return this.service.understandRequirement(i, o, c, metrics, report);
   }
 }

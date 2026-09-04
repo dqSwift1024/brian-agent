@@ -11,6 +11,8 @@
  * 上层（其他 Provider、application 层）通过本类访问图数据，不直接接触 Service。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { GraphDBComponent } from '../../components/GraphDB/GraphDBComponent';
 import type { GraphDBComponentOptions } from '../../components/GraphDB/GraphDBComponent';
@@ -67,8 +69,7 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddGraphNodeOutput();
  * await graphDb.addGraphNode(
  *   { data: { node_type: 'concept', content: { text: '示例节点' } } },
- *   new GraphContext(),
- *   output,
+ *   output, new GraphContext(),
  * );
  * console.log(output.id);
  * ```
@@ -87,10 +88,10 @@ export class GraphDBAccess {
     graphDbOptions: GraphDBComponentOptions,
     logger?: Logger,
   ) {
-    // 创建 GraphDB 组件（原生图数据库）
+    // 创建 GraphDB 组件（LeanGraph 嵌入式图数据库）
     this.graphDb = new GraphDBComponent(graphDbOptions);
-    // 初始化表结构（图数据表 + 配置表）
-    new GraphDBSchemaInitializer(relationDb, this.graphDb).init();
+    // 初始化配置表（图数据表由 LeanGraph 自动管理）
+    new GraphDBSchemaInitializer(relationDb).init();
     // 创建 Service 并通过代理模式增加切面注入能力
     const rawService = new GraphDBService(this.graphDb, relationDb);
     this.service = AopProxy.wrap(rawService, { logger });
@@ -106,93 +107,63 @@ export class GraphDBAccess {
   }
 
   /** 新增节点（幂等：content 相同则返回已存在节点 ID） */
-  async addGraphNode(
-    input: AddGraphNodeInput,
-    context: GraphContext,
-    output: AddGraphNodeOutput,
+  async addGraphNode(input: AddGraphNodeInput, output: AddGraphNodeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addGraphNode(input, context, output);
+    return this.service.addGraphNode(input, output, context, metrics, report);
   }
 
   /** 获取节点 */
-  async getGraphNode(
-    input: GetGraphNodeInput,
-    context: GraphContext,
-    output: GetGraphNodeOutput,
+  async soGraphNode(input: GetGraphNodeInput, output: GetGraphNodeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getGraphNode(input, context, output);
+    return this.service.soGraphNode(input, output, context, metrics, report);
   }
 
   /** 更新节点 */
-  async updateGraphNode(
-    input: UpdateGraphNodeInput,
-    context: GraphContext,
-    output: UpdateGraphNodeOutput,
+  async updateGraphNode(input: UpdateGraphNodeInput, output: UpdateGraphNodeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateGraphNode(input, context, output);
+    return this.service.updateGraphNode(input, output, context, metrics, report);
   }
 
   /** 删除节点（级联删除关联边与激活数据） */
-  async delGraphNode(
-    input: DelGraphNodeInput,
-    context: GraphContext,
-    output: DelGraphNodeOutput,
+  async delGraphNode(input: DelGraphNodeInput, output: DelGraphNodeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delGraphNode(input, context, output);
+    return this.service.delGraphNode(input, output, context, metrics, report);
   }
 
   /** 新增边（校验端点节点存在） */
-  async addGraphEdge(
-    input: AddGraphEdgeInput,
-    context: GraphContext,
-    output: AddGraphEdgeOutput,
+  async addGraphEdge(input: AddGraphEdgeInput, output: AddGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addGraphEdge(input, context, output);
+    return this.service.addGraphEdge(input, output, context, metrics, report);
   }
 
   /** 获取边 */
-  async getGraphEdge(
-    input: GetGraphEdgeInput,
-    context: GraphContext,
-    output: GetGraphEdgeOutput,
+  async soGraphEdge(input: GetGraphEdgeInput, output: GetGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getGraphEdge(input, context, output);
+    return this.service.soGraphEdge(input, output, context, metrics, report);
   }
 
   /** 更新边（端点变更时校验新节点存在） */
-  async updateGraphEdge(
-    input: UpdateGraphEdgeInput,
-    context: GraphContext,
-    output: UpdateGraphEdgeOutput,
+  async updateGraphEdge(input: UpdateGraphEdgeInput, output: UpdateGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateGraphEdge(input, context, output);
+    return this.service.updateGraphEdge(input, output, context, metrics, report);
   }
 
   /** 删除边（清理关联激活数据） */
-  async delGraphEdge(
-    input: DelGraphEdgeInput,
-    context: GraphContext,
-    output: DelGraphEdgeOutput,
+  async delGraphEdge(input: DelGraphEdgeInput, output: DelGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delGraphEdge(input, context, output);
+    return this.service.delGraphEdge(input, output, context, metrics, report);
   }
 
   /** 查询图数据（节点或边） */
-  async selectGraph(
-    input: SelectGraphInput,
-    context: GraphContext,
-    output: SelectGraphOutput,
+  async selectGraph(input: SelectGraphInput, output: SelectGraphOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.selectGraph(input, context, output);
+    return this.service.selectGraph(input, output, context, metrics, report);
   }
 
   /** 获取邻居节点（多跳遍历） */
-  async getGraphNeighbors(
-    input: GetGraphNeighborsInput,
-    context: GraphContext,
-    output: GetGraphNeighborsOutput,
+  async soGraphNeighbors(input: GetGraphNeighborsInput, output: GetGraphNeighborsOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getGraphNeighbors(input, context, output);
+    return this.service.soGraphNeighbors(input, output, context, metrics, report);
   }
 
   /** 计算边的复合权重（静态相似度 + 动态活跃度 + 跳衰减） */
@@ -201,47 +172,32 @@ export class GraphDBAccess {
   }
 
   /** 激活边（记录事件、按天累计、更新边状态） */
-  async activateGraphEdge(
-    input: ActivateGraphEdgeInput,
-    context: GraphContext,
-    output: ActivateGraphEdgeOutput,
+  async activateGraphEdge(input: ActivateGraphEdgeInput, output: ActivateGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.activateGraphEdge(input, context, output);
+    return this.service.activateGraphEdge(input, output, context, metrics, report);
   }
 
   /** 老化边（基于保留窗口判定、清理过期数据） */
-  async ageGraphEdge(
-    input: AgeGraphEdgeInput,
-    context: GraphContext,
-    output: AgeGraphEdgeOutput,
+  async ageGraphEdge(input: AgeGraphEdgeInput, output: AgeGraphEdgeOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.ageGraphEdge(input, context, output);
+    return this.service.ageGraphEdge(input, output, context, metrics, report);
   }
 
   /** 可视化数据 */
-  async visualizedGraph(
-    input: VisualizedGraphInput,
-    context: GraphContext,
-    output: VisualizedGraphOutput,
+  async visualizedGraph(input: VisualizedGraphInput, output: VisualizedGraphOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.visualizedGraph(input, context, output);
+    return this.service.visualizedGraph(input, output, context, metrics, report);
   }
 
   /** 启用/禁用图数据库 */
-  async enableGraphDB(
-    input: EnableGraphDBInput,
-    context: GraphContext,
-    output: EnableGraphDBOutput,
+  async enableGraphDB(input: EnableGraphDBInput, output: EnableGraphDBOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableGraphDB(input, context, output);
+    return this.service.enableGraphDB(input, output, context, metrics, report);
   }
 
   /** 关闭图数据库连接（终态操作） */
-  async closeGraphDB(
-    input: CloseGraphDBInput,
-    context: GraphContext,
-    output: CloseGraphDBOutput,
+  async closeGraphDB(input: CloseGraphDBInput, output: CloseGraphDBOutput, context: GraphContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.closeGraphDB(input, context, output);
+    return this.service.closeGraphDB(input, output, context, metrics, report);
   }
 }

@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb, setupTestMocks, resetTestMocks, createMockAgentBuilder, createMockPlannerAgent, createMockWriterAgent, createMockEvolutorAgent, createMockExecutionAccess, createMockMQCore, createMockLogger, initOrchestrationSchema, flushAllCallbacks } from './test-helpers';
 import { RelationDBAccess, IdGenerator, Operator, DBContext, SelectOneDBInput, SelectOneDBOutput, SelectDBInput, SelectDBOutput, InsertDBInput, InsertDBOutput, DataObject } from '@brian-agent/base';
@@ -95,7 +96,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.startOrchestration(input, ctx, output);
+      const result = await strategy.startOrchestration(input, output, ctx);
       expect(result).toBe(true);
       expect(output.final_response).toBeTruthy();
     });
@@ -110,7 +111,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.startOrchestration(input, ctx, output)).rejects.toThrow('force fallback');
+      await expect(strategy.startOrchestration(input, output, ctx)).rejects.toThrow('force fallback');
     });
 
     it('TC-SO-003: work_context 包含完整上下文数据', async () => {
@@ -123,7 +124,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.startOrchestration(input, ctx, output);
+      const result = await strategy.startOrchestration(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -135,7 +136,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.startOrchestration(input, ctx, output)).rejects.toThrow('OrchestrationStrategy');
+      await expect(strategy.startOrchestration(input, output, ctx)).rejects.toThrow('OrchestrationStrategy');
     });
   });
 
@@ -151,7 +152,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecuteSimpleStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executeSimpleStrategy(input, ctx, output);
+      const result = await strategy.executeSimpleStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(1);
       expect(output.agent_results[0].agent_id).toBeTruthy();
@@ -165,7 +166,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecuteSimpleStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await strategy.executeSimpleStrategy(input, ctx, output);
+      await strategy.executeSimpleStrategy(input, output, ctx);
       expect(agentBuilder.buildAgent).toHaveBeenCalled();
       const buildCall = agentBuilder.buildAgent.mock.calls[0];
       const buildInput = buildCall[0];
@@ -173,14 +174,14 @@ describe('OrchestrationStrategy', () => {
     });
 
     it('TC-ESS-005: AgentBuilder.buildAgent 失败', async () => {
-      agentBuilder.buildAgent.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'build failed'; return false; });
+      agentBuilder.buildAgent.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.error = 'build failed'; return false; });
       const input = Object.assign(new ExecuteSimpleStrategyInput(), {
         work_id: 'w7', interact_id: 'i7', session_id: 's7', user_query: '你好',
       });
       const output = new ExecuteSimpleStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executeSimpleStrategy(input, ctx, output);
+      const result = await strategy.executeSimpleStrategy(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -201,7 +202,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecuteSimpleStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await fallbackStrategy.executeSimpleStrategy(input, ctx, output);
+      const result = await fallbackStrategy.executeSimpleStrategy(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -219,13 +220,13 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePlanningStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePlanningStrategy(input, ctx, output);
+      const result = await strategy.executePlanningStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.plan_id).toBeTruthy();
     });
 
     it('TC-EPS-007: PlannerAgent.plan 返回空 task_dag', async () => {
-      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, _c: any, o: any) => {
+      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => {
         o.plan_id = 'empty-plan';
         o.task_dag = { nodes: [], edges: [] };
         return true;
@@ -238,12 +239,12 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePlanningStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePlanningStrategy(input, ctx, output);
+      const result = await strategy.executePlanningStrategy(input, output, ctx);
       expect(result).toBe(true);
     });
 
     it('TC-EPS-008: PlannerAgent.plan 执行失败', async () => {
-      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'plan failed'; return false; });
+      plannerAgent.planHierarchical.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.error = 'plan failed'; return false; });
       const input = Object.assign(new ExecutePlanningStrategyInput(), {
         work_id: 'w11', interact_id: 'i11', session_id: 's11',
         user_query: '请帮我分析数据',
@@ -251,7 +252,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePlanningStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePlanningStrategy(input, ctx, output);
+      const result = await strategy.executePlanningStrategy(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -270,7 +271,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePostProcessingOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePostProcessing(input, ctx, output);
+      const result = await strategy.executePostProcessing(input, output, ctx);
       expect(result).toBe(true);
       expect(output.final_response).toBeTruthy();
     });
@@ -285,7 +286,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePostProcessingOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await strategy.executePostProcessing(input, ctx, output);
+      await strategy.executePostProcessing(input, output, ctx);
       await flushAllCallbacks();
       expect(evolutorAgent.evalWriterAgent).toHaveBeenCalled();
     });
@@ -304,14 +305,14 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePostProcessingOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await strategy.executePostProcessing(input, ctx, output);
+      await strategy.executePostProcessing(input, output, ctx);
       await flushAllCallbacks();
       expect(evolutorAgent.evalWorkAgent).toHaveBeenCalledTimes(3);
     });
 
     it('TC-EPP-007: WriterAgent.write 失败', async () => {
       insertWorkRecord('w15', 's15', 'i15', '你好');
-      writerAgent.write.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'write failed'; return false; });
+      writerAgent.execWrite.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.error = 'write failed'; return false; });
       const input = Object.assign(new ExecutePostProcessingInput(), {
         work_id: 'w15', interact_id: 'i15', session_id: 's15',
         user_query: '你好',
@@ -320,7 +321,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ExecutePostProcessingOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePostProcessing(input, ctx, output);
+      const result = await strategy.executePostProcessing(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -344,7 +345,7 @@ describe('OrchestrationStrategy', () => {
       const output = new AddOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.addStrategy(input, ctx, output);
+      const result = await strategy.addStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategy_id).toBeTruthy();
     });
@@ -364,7 +365,7 @@ describe('OrchestrationStrategy', () => {
       const output = new AddOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.addStrategy(input, ctx, output);
+      const result = await strategy.addStrategy(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -383,7 +384,7 @@ describe('OrchestrationStrategy', () => {
       const output = new AddOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.addStrategy(input, ctx, output)).rejects.toThrow();
+      await expect(strategy.addStrategy(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-AS-005: strategy_label 为空', async () => {
@@ -393,7 +394,7 @@ describe('OrchestrationStrategy', () => {
       const output = new AddOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.addStrategy(input, ctx, output)).rejects.toThrow();
+      await expect(strategy.addStrategy(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -409,7 +410,7 @@ describe('OrchestrationStrategy', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.action).toBe('REPLAN');
       expect(output.max_retry_reached).toBe(false);
@@ -425,22 +426,22 @@ describe('OrchestrationStrategy', () => {
       const output = new HandleDAGFailureOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.handleDAGFailure(input, ctx, output);
+      const result = await strategy.handleDAGFailure(input, output, ctx);
       expect(result).toBe(true);
       expect(output.max_retry_reached).toBe(true);
     });
   });
 
   // =========================================================================
-  // 7. getStrategy
+  // 7. soStrategyById
   // =========================================================================
-  describe('getStrategy', () => {
+  describe('soStrategyById', () => {
     it('TC-SS-001: 按 strategy_label 查询', async () => {
       const input = Object.assign(new GetOrchestrationStrategyInput(), { strategy_label: 'SIMPLE' });
       const output = new GetOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.getStrategy(input, ctx, output);
+      const result = await strategy.soStrategyById(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategies.length).toBeGreaterThanOrEqual(1);
     });
@@ -450,7 +451,7 @@ describe('OrchestrationStrategy', () => {
       const output = new GetOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.getStrategy(input, ctx, output);
+      const result = await strategy.soStrategyById(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategies).toEqual([]);
     });
@@ -465,7 +466,7 @@ describe('OrchestrationStrategy', () => {
       const output = new UpdateOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.updateStrategy(input, ctx, output)).rejects.toThrow();
+      await expect(strategy.updateStrategy(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -478,7 +479,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ConfigOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.configOrchestrationStrategy(input, ctx, output);
+      const result = await strategy.configOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -487,7 +488,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ConfigOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await expect(strategy.configOrchestrationStrategy(input, ctx, output)).rejects.toThrow();
+      await expect(strategy.configOrchestrationStrategy(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-COS-008: max_plan_retries 为 0', async () => {
@@ -495,7 +496,7 @@ describe('OrchestrationStrategy', () => {
       const output = new ConfigOrchestrationStrategyOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.configOrchestrationStrategy(input, ctx, output);
+      const result = await strategy.configOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
     });
   });
@@ -512,7 +513,7 @@ describe('OrchestrationStrategy', () => {
       const output = new StartOrchestrationOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      await strategy.startOrchestration(input, ctx, output);
+      await strategy.startOrchestration(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });
@@ -526,7 +527,7 @@ describe('OrchestrationStrategy', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_strategy' },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -534,7 +535,7 @@ describe('OrchestrationStrategy', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_strategy', conditions: [{ field: 'strategy_label', operator: Operator.EQ, value: 'SIMPLE' }] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows.length).toBe(1);
       expect(selOutput.rows[0].enable).toBe(1);
     });

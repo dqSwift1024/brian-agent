@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   RelationDBAccess, IdGenerator, ValidationError, NotFoundError,
@@ -51,8 +52,8 @@ async function insertInfoRawRow(db: RelationDBAccess, sessionId: string, infoId:
   ];
   await db.insertDB(
     Object.assign(new InsertDBInput(), { table: 'info_raw', data }),
-    new DBContext(),
     Object.assign(new InsertDBOutput(), {}),
+    new DBContext(),
   );
 }
 
@@ -60,8 +61,8 @@ async function insertChatConfig(db: RelationDBAccess, config: Record<string, unk
   const existingOut = Object.assign(new SelectOneDBOutput(), {});
   await db.selectOneDB(
     Object.assign(new SelectOneDBInput(), { query_param: { table: 'chat_config' } }),
-    new DBContext(),
     existingOut,
+    new DBContext(),
   );
   const current = existingOut.row;
   const now = IdGenerator.now();
@@ -77,8 +78,8 @@ async function insertChatConfig(db: RelationDBAccess, config: Record<string, unk
         data: updData,
         conditions: [{ field: 'id', operator: 'EQ', value: current.id }],
       }),
-      new DBContext(),
       Object.assign(new UpdateDBOutput(), {}),
+      new DBContext(),
     );
   } else {
     const data: DataObject[] = [
@@ -91,8 +92,8 @@ async function insertChatConfig(db: RelationDBAccess, config: Record<string, unk
     }
     await db.insertDB(
       Object.assign(new InsertDBInput(), { table: 'chat_config', data }),
-      new DBContext(),
       Object.assign(new InsertDBOutput(), {}),
+      new DBContext(),
     );
   }
 }
@@ -127,14 +128,14 @@ describe('ChatService', () => {
           { field: 'session_title', value: title },
         ],
       }),
-      new DBContext(),
       Object.assign(new InsertDBOutput(), {}),
+      new DBContext(),
     );
   }
 
   function mockReceiveWork(finalResponse: string = 'mock orchestration response') {
     return vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(
-      async (_i: any, _c: any, o: any) => {
+      async (_i: any, o: any, _c: any, ) => {
         o.final_response = finalResponse;
         o.work_id = 'mock-work-id';
         o.interact_id = 'mock-interact-id';
@@ -160,7 +161,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      const result = await service.openChatStream(input, c, output);
+      const result = await service.openChatStream(input, output, c);
 
       expect(result).toBe(true);
       expect(output.events.length).toBeGreaterThanOrEqual(3);
@@ -175,7 +176,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, c, output);
+      await service.openChatStream(input, output, c);
 
       const loadingEvent = output.events.find(e => e.event === 'loading');
       expect(loadingEvent).toBeDefined();
@@ -186,7 +187,7 @@ describe('ChatService', () => {
       const emittedEvents: SSEEvent[] = [];
 
       let onAgentCreated: ((agentId: string, agentName: string) => void) | null = null;
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         if (onAgentCreated) {
           onAgentCreated('agent-1', 'TestPlanner');
         }
@@ -206,7 +207,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      await svc.openChatStream(input, c, output);
+      await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -221,7 +222,7 @@ describe('ChatService', () => {
       const statusEvents: SSEEvent[] = [];
 
       let onAgentStatus: ((agentId: string, status: string, elapsedMs: number) => void) | null = null;
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         if (onAgentStatus) {
           onAgentStatus('agent-1', 'running', 150);
         }
@@ -241,7 +242,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      await svc.openChatStream(input, c, output);
+      await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -261,7 +262,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, c, output);
+      await service.openChatStream(input, output, c);
 
       const textEvents = output.events.filter(e => e.event === 'text');
       expect(textEvents.length).toBeGreaterThan(0);
@@ -277,7 +278,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, c, output);
+      await service.openChatStream(input, output, c);
 
       const lastEvent = output.events[output.events.length - 1];
       expect(lastEvent.event).toBe('done');
@@ -301,7 +302,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      const result = await svc.openChatStream(input, c, output);
+      const result = await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -320,7 +321,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, c, output);
+      await service.openChatStream(input, output, c);
 
       const events = output.events;
       expect(events.length).toBeGreaterThanOrEqual(4);
@@ -347,7 +348,7 @@ describe('ChatService', () => {
       const thinkingEvents: SSEEvent[] = [];
 
       let onAgentThinking: ((agentId: string, thought: string) => void) | null = null;
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         if (onAgentThinking) {
           onAgentThinking('agent-1', 'Analyzing user request...');
         }
@@ -367,7 +368,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      await svc.openChatStream(input, c, output);
+      await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -382,7 +383,7 @@ describe('ChatService', () => {
       const outputEvents: SSEEvent[] = [];
 
       let onAgentOutput: ((agentId: string, output: string) => void) | null = null;
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         if (onAgentOutput) {
           onAgentOutput('agent-2', 'Generated intermediate result');
         }
@@ -402,7 +403,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const out = new OpenChatStreamOutput();
-      await svc.openChatStream(input, c, out);
+      await svc.openChatStream(input, out, c);
 
       spy.mockRestore();
 
@@ -417,7 +418,7 @@ describe('ChatService', () => {
       const heartbeatEvents: SSEEvent[] = [];
       let heartbeatCount = 0;
 
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         heartbeatCount++;
         heartbeatEvents.push({
           event: 'heartbeat',
@@ -434,7 +435,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      await svc.openChatStream(input, c, output);
+      await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -459,7 +460,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
-      const result = await svc.openChatStream(input, c, output);
+      const result = await svc.openChatStream(input, output, c);
 
       spy.mockRestore();
 
@@ -473,7 +474,7 @@ describe('ChatService', () => {
     it('TC-CHAT-013: Duplicate SSE connection closes old connection for same session', async () => {
       let oldConnectionOutput: OpenChatStreamOutput | null = null;
 
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         if (oldConnectionOutput) {
           oldConnectionOutput.events.push({ event: 'closed', data: { reason: 'duplicate_connection' } });
         }
@@ -488,7 +489,7 @@ describe('ChatService', () => {
         session_id: 'test-session', msg_content: 'first message',
       });
       const output1 = new OpenChatStreamOutput();
-      await svc.openChatStream(input1, new ChatContext(), output1);
+      await svc.openChatStream(input1, output1, new ChatContext());
       expect(output1.events[0].event).toBe('connected');
       oldConnectionOutput = output1;
 
@@ -496,7 +497,7 @@ describe('ChatService', () => {
         session_id: 'test-session', msg_content: 'second message',
       });
       const output2 = new OpenChatStreamOutput();
-      await svc.openChatStream(input2, new ChatContext(), output2);
+      await svc.openChatStream(input2, output2, new ChatContext());
 
       spy.mockRestore();
 
@@ -514,7 +515,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await expect(service.openChatStream(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.openChatStream(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-012: session_id not found throws NotFoundError', async () => {
@@ -524,7 +525,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await expect(service.openChatStream(input, c, output)).rejects.toThrow(NotFoundError);
+      await expect(service.openChatStream(input, output, c)).rejects.toThrow(NotFoundError);
     });
 
     it('TC-CHAT-014: session_id missing throws ValidationError', async () => {
@@ -532,7 +533,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await expect(service.openChatStream(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.openChatStream(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-028: msg_content empty string throws ValidationError (openChatStream)', async () => {
@@ -542,7 +543,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await expect(service.openChatStream(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.openChatStream(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('openChatStream: session overflow returns error event instead of throwing', async () => {
@@ -556,7 +557,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      const result = await service.openChatStream(input, c, output);
+      const result = await service.openChatStream(input, output, c);
 
       expect(result).toBe(true);
       expect(output.events.length).toBe(1);
@@ -574,7 +575,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      const result = await service.submitWork(input, c, output);
+      const result = await service.submitWork(input, output, c);
 
       expect(result).toBe(true);
       expect(output.work_id).toEqual(expect.any(String));
@@ -593,7 +594,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await service.submitWork(input, c, output);
+      await service.submitWork(input, output, c);
 
       const saveCalls = saveInfoSpy.mock.calls;
       const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
@@ -612,7 +613,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await service.submitWork(input, c, output);
+      await service.submitWork(input, output, c);
 
       const saveCalls = saveInfoSpy.mock.calls;
       const userSaveCall = saveCalls.find((cal: any[]) => cal[0].info_type === 'REQUEST');
@@ -632,7 +633,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await service.submitWork(input, c, output);
+      await service.submitWork(input, output, c);
 
       const call = spy.mock.calls[0];
       expect(call[0].force_orchestration_strategy).toBe('SIMPLE');
@@ -649,7 +650,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await service.submitWork(input, c, output);
+      await service.submitWork(input, output, c);
 
       const call = spy.mock.calls[0];
       expect(call[0].force_orchestration_strategy).toBe('PLANNING');
@@ -665,7 +666,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await service.submitWork(input, c, output);
+      await service.submitWork(input, output, c);
 
       const call = spy.mock.calls[0];
       expect(call[0].force_orchestration_strategy).toBeUndefined();
@@ -677,7 +678,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await expect(service.submitWork(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.submitWork(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-027: msg_content missing throws ValidationError', async () => {
@@ -686,7 +687,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await expect(service.submitWork(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.submitWork(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-028: msg_content empty string throws ValidationError (submitWork)', async () => {
@@ -696,7 +697,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await expect(service.submitWork(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.submitWork(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-030: session overflow throws ValidationError', async () => {
@@ -710,7 +711,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      await expect(service.submitWork(input, c, output)).rejects.toThrow(ValidationError);
+      await expect(service.submitWork(input, output, c)).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-033: orchestrationEntry.receiveWork throws returns false but sets work_id/interact_id', async () => {
@@ -723,7 +724,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
-      const result = await svc.submitWork(input, c, output);
+      const result = await svc.submitWork(input, output, c);
 
       spy.mockRestore();
 
@@ -743,7 +744,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      const result = await service.submitWork(input, c, output);
+      const result = await service.submitWork(input, output, c);
 
       expect(result).toBe(true);
       expect(output.work_id).toEqual(expect.any(String));
@@ -763,8 +764,8 @@ describe('ChatService', () => {
       });
 
       const [r1, r2] = await Promise.all([
-        service.submitWork(input1, new ChatContext(), out1),
-        service.submitWork(input2, new ChatContext(), out2),
+        service.submitWork(input1, out1, new ChatContext()),
+        service.submitWork(input2, out2, new ChatContext()),
       ]);
 
       expect(r1).toBe(true);
@@ -776,7 +777,7 @@ describe('ChatService', () => {
 
     it('TC-CHAT-031: citing_msg_ids forwarded to orchestration receiveWork', async () => {
       const spy = vi.spyOn(ctx.orchestrationEntry as any, 'receiveWork').mockImplementation(
-        async (_i: any, _c: any, o: any) => {
+        async (_i: any, o: any, _c: any, ) => {
           o.final_response = 'mock orchestration response';
           return true;
         },
@@ -789,7 +790,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
 
-      const result = await service.submitWork(input, c, output);
+      const result = await service.submitWork(input, output, c);
 
       expect(result).toBe(true);
       expect(output.work_id).toEqual(expect.any(String));
@@ -813,7 +814,7 @@ describe('ChatService', () => {
       });
       const c = new ChatContext();
       const output = new SubmitWorkOutput();
-      const result = await svc.submitWork(input, c, output);
+      const result = await svc.submitWork(input, output, c);
 
       spy.mockRestore();
 
@@ -827,7 +828,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new CreateSessionOutput();
 
-      const result = await service.createSession(input, c, output);
+      const result = await service.createSession(input, output, c);
 
       expect(result).toBe(true);
       expect(output.session_id).toEqual(expect.any(String));
@@ -841,7 +842,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new CreateSessionOutput();
 
-      const result = await service.createSession(input, c, output);
+      const result = await service.createSession(input, output, c);
 
       expect(result).toBe(true);
       expect(output.session_id).toBeTruthy();
@@ -853,8 +854,8 @@ describe('ChatService', () => {
       const out2 = new CreateSessionOutput();
 
       await Promise.all([
-        service.createSession(Object.assign(new CreateSessionInput(), { session_title: 'A' }), new ChatContext(), out1),
-        service.createSession(Object.assign(new CreateSessionInput(), { session_title: 'B' }), new ChatContext(), out2),
+        service.createSession(Object.assign(new CreateSessionInput(), { session_title: 'A' }), out1, new ChatContext()),
+        service.createSession(Object.assign(new CreateSessionInput(), { session_title: 'B' }), out2, new ChatContext()),
       ]);
 
       expect(out1.session_id).not.toBe(out2.session_id);
@@ -864,12 +865,12 @@ describe('ChatService', () => {
   describe('deleteSession', () => {
     it('TC-CHAT-050: Delete existing session returns deleted_count=1', async () => {
       const createOut = new CreateSessionOutput();
-      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+      await service.createSession(new CreateSessionInput(), createOut, new ChatContext());
 
       const input = Object.assign(new DeleteSessionInput(), { session_ids: [createOut.session_id] });
       const output = new DeleteSessionOutput();
 
-      const result = await service.deleteSession(input, new ChatContext(), output);
+      const result = await service.deleteSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.deleted_count).toBe(1);
@@ -879,14 +880,14 @@ describe('ChatService', () => {
       const ids: string[] = [];
       for (let i = 0; i < 3; i++) {
         const out = new CreateSessionOutput();
-        await service.createSession(new CreateSessionInput(), new ChatContext(), out);
+        await service.createSession(new CreateSessionInput(), out, new ChatContext());
         ids.push(out.session_id);
       }
 
       const input = Object.assign(new DeleteSessionInput(), { session_ids: ids });
       const output = new DeleteSessionOutput();
 
-      const result = await service.deleteSession(input, new ChatContext(), output);
+      const result = await service.deleteSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.deleted_count).toBe(3);
@@ -896,7 +897,7 @@ describe('ChatService', () => {
       const input = Object.assign(new DeleteSessionInput(), { session_ids: ['no-such-session'] });
       const output = new DeleteSessionOutput();
 
-      const result = await service.deleteSession(input, new ChatContext(), output);
+      const result = await service.deleteSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.deleted_count).toBe(0);
@@ -905,15 +906,15 @@ describe('ChatService', () => {
     it('TC-CHAT-053: Mixed valid/invalid session_ids counts only valid', async () => {
       const out1 = new CreateSessionOutput();
       const out2 = new CreateSessionOutput();
-      await service.createSession(new CreateSessionInput(), new ChatContext(), out1);
-      await service.createSession(new CreateSessionInput(), new ChatContext(), out2);
+      await service.createSession(new CreateSessionInput(), out1, new ChatContext());
+      await service.createSession(new CreateSessionInput(), out2, new ChatContext());
 
       const input = Object.assign(new DeleteSessionInput(), {
         session_ids: [out1.session_id, 'no-such', out2.session_id],
       });
       const output = new DeleteSessionOutput();
 
-      const result = await service.deleteSession(input, new ChatContext(), output);
+      const result = await service.deleteSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.deleted_count).toBe(2);
@@ -923,21 +924,21 @@ describe('ChatService', () => {
       const input = Object.assign(new DeleteSessionInput(), { session_ids: [] });
       const output = new DeleteSessionOutput();
 
-      await expect(service.deleteSession(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.deleteSession(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
   });
 
-  describe('searchSession', () => {
+  describe('soSession', () => {
     it('TC-CHAT-060: No params returns sessions array with default page_size=20', async () => {
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'First' }),
-        new ChatContext(), new CreateSessionOutput(),
+        new CreateSessionOutput(), new ChatContext(),
       );
 
       const input = new SearchSessionInput();
       const output = new SearchSessionOutput();
 
-      const result = await service.searchSession(input, new ChatContext(), output);
+      const result = await service.soSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.sessions.length).toBeGreaterThanOrEqual(1);
@@ -949,17 +950,17 @@ describe('ChatService', () => {
     it('TC-CHAT-061: Keyword search filters by session_title', async () => {
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Alpha Project' }),
-        new ChatContext(), new CreateSessionOutput(),
+        new CreateSessionOutput(), new ChatContext(),
       );
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Beta Test' }),
-        new ChatContext(), new CreateSessionOutput(),
+        new CreateSessionOutput(), new ChatContext(),
       );
 
       const input = Object.assign(new SearchSessionInput(), { keyword: 'Alpha' });
       const output = new SearchSessionOutput();
 
-      const result = await service.searchSession(input, new ChatContext(), output);
+      const result = await service.soSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.sessions.length).toBeGreaterThanOrEqual(1);
@@ -971,14 +972,14 @@ describe('ChatService', () => {
       for (let i = 0; i < 3; i++) {
         await service.createSession(
           Object.assign(new CreateSessionInput(), { session_title: `Session ${i}` }),
-          new ChatContext(), new CreateSessionOutput(),
+          new CreateSessionOutput(), new ChatContext(),
         );
       }
 
       const input = Object.assign(new SearchSessionInput(), { page_size: 2, page_current: 2 });
       const output = new SearchSessionOutput();
 
-      const result = await service.searchSession(input, new ChatContext(), output);
+      const result = await service.soSession(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.sessions.length).toBe(1);
@@ -986,18 +987,18 @@ describe('ChatService', () => {
     });
   });
 
-  describe('getSessionDetail', () => {
+  describe('soSessionDetail', () => {
     it('TC-CHAT-070: Valid session returns session id in output.session', async () => {
       const createOut = new CreateSessionOutput();
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Detail Test' }),
-        new ChatContext(), createOut,
+        createOut, new ChatContext(),
       );
 
       const input = Object.assign(new GetSessionDetailInput(), { session_id: createOut.session_id });
       const output = new GetSessionDetailOutput();
 
-      const result = await service.getSessionDetail(input, new ChatContext(), output);
+      const result = await service.soSessionDetail(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.session.session_id).toBe(createOut.session_id);
@@ -1008,7 +1009,7 @@ describe('ChatService', () => {
       const input = Object.assign(new GetSessionDetailInput(), { session_id: 'no-such-session' });
       const output = new GetSessionDetailOutput();
 
-      await expect(service.getSessionDetail(input, new ChatContext(), output)).rejects.toThrow(NotFoundError);
+      await expect(service.soSessionDetail(input, output, new ChatContext())).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -1017,7 +1018,7 @@ describe('ChatService', () => {
       const createOut = new CreateSessionOutput();
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Old Title' }),
-        new ChatContext(), createOut,
+        createOut, new ChatContext(),
       );
 
       const input = Object.assign(new UpdateSessionTitleInput(), {
@@ -1025,7 +1026,7 @@ describe('ChatService', () => {
       });
       const output = new UpdateSessionTitleOutput();
 
-      const result = await service.updateSessionTitle(input, new ChatContext(), output);
+      const result = await service.updateSessionTitle(input, output, new ChatContext());
 
       expect(result).toBe(true);
     });
@@ -1036,7 +1037,7 @@ describe('ChatService', () => {
       });
       const output = new UpdateSessionTitleOutput();
 
-      await expect(service.updateSessionTitle(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.updateSessionTitle(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-077: Non-existent session throws NotFoundError', async () => {
@@ -1045,12 +1046,12 @@ describe('ChatService', () => {
       });
       const output = new UpdateSessionTitleOutput();
 
-      await expect(service.updateSessionTitle(input, new ChatContext(), output)).rejects.toThrow(NotFoundError);
+      await expect(service.updateSessionTitle(input, output, new ChatContext())).rejects.toThrow(NotFoundError);
     });
 
     it('TC-CHAT-078: First message automatically sets session_title with max 50 chars truncation', async () => {
       const createOut = new CreateSessionOutput();
-      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+      await service.createSession(new CreateSessionInput(), createOut, new ChatContext());
 
       const longMsg = '这是一个超过五十个字符测试消息的超级长的文本输入内容，用来测试系统是否能够自动截断为前五十个字符并成功设置为会话名称！后面还有很多很多废话内容……';
       const submitIn = Object.assign(new SubmitWorkInput(), {
@@ -1058,11 +1059,11 @@ describe('ChatService', () => {
         msg_content: longMsg,
       });
       const submitOut = new SubmitWorkOutput();
-      await service.submitWork(submitIn, new ChatContext(), submitOut);
+      await service.submitWork(submitIn, submitOut, new ChatContext());
 
       const detailIn = Object.assign(new GetSessionDetailInput(), { session_id: createOut.session_id });
       const detailOut = new GetSessionDetailOutput();
-      await service.getSessionDetail(detailIn, new ChatContext(), detailOut);
+      await service.soSessionDetail(detailIn, detailOut, new ChatContext());
 
       expect(detailOut.session.session_title).toBe(longMsg.slice(0, 50));
       expect(detailOut.session.session_title.length).toBe(50);
@@ -1070,25 +1071,25 @@ describe('ChatService', () => {
 
     it('TC-CHAT-079: Subsequent messages do not overwrite existing session_title', async () => {
       const createOut = new CreateSessionOutput();
-      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+      await service.createSession(new CreateSessionInput(), createOut, new ChatContext());
 
       const firstMsg = '第一条消息';
       await service.submitWork(
         Object.assign(new SubmitWorkInput(), { session_id: createOut.session_id, msg_content: firstMsg }),
-        new ChatContext(),
         new SubmitWorkOutput(),
+        new ChatContext(),
       );
 
       const secondMsg = '第二条消息不应该覆盖标题';
       await service.submitWork(
         Object.assign(new SubmitWorkInput(), { session_id: createOut.session_id, msg_content: secondMsg }),
-        new ChatContext(),
         new SubmitWorkOutput(),
+        new ChatContext(),
       );
 
       const detailIn = Object.assign(new GetSessionDetailInput(), { session_id: createOut.session_id });
       const detailOut = new GetSessionDetailOutput();
-      await service.getSessionDetail(detailIn, new ChatContext(), detailOut);
+      await service.soSessionDetail(detailIn, detailOut, new ChatContext());
 
       expect(detailOut.session.session_title).toBe('第一条消息');
     });
@@ -1099,7 +1100,7 @@ describe('ChatService', () => {
       const input = Object.assign(new CheckSessionOverflowInput(), { session_id: 'test-session' });
       const output = new CheckSessionOverflowOutput();
 
-      const result = await service.checkSessionOverflow(input, new ChatContext(), output);
+      const result = await service.checkSessionOverflow(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.is_overflowed).toBe(false);
@@ -1116,7 +1117,7 @@ describe('ChatService', () => {
       const input = Object.assign(new CheckSessionOverflowInput(), { session_id: sessionId });
       const output = new CheckSessionOverflowOutput();
 
-      const result = await service.checkSessionOverflow(input, new ChatContext(), output);
+      const result = await service.checkSessionOverflow(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.is_overflowed).toBe(true);
@@ -1125,7 +1126,7 @@ describe('ChatService', () => {
     });
   });
 
-  describe('getChatHistory', () => {
+  describe('soChatHistory', () => {
     it('TC-CHAT-090: Returns messages with citing_count from lastNInfo', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
@@ -1141,13 +1142,13 @@ describe('ChatService', () => {
         info_type: 'RESPONSE',
         info: 'world',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
-      await ctx.infoCore.saveInfo(saveInput2, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
+      await ctx.infoCore.saveInfo(saveInput2, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetChatHistoryInput(), { session_id: 'test-session' });
       const output = new GetChatHistoryOutput();
 
-      const result = await service.getChatHistory(input, new ChatContext(), output);
+      const result = await service.soChatHistory(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.messages.length).toBeGreaterThanOrEqual(1);
@@ -1156,18 +1157,18 @@ describe('ChatService', () => {
       expect(output.messages[0]).toHaveProperty('citing_count');
     });
 
-    it('getChatHistory: Uses default lastN from chat_config when not provided', async () => {
+    it('soChatHistory: Uses default lastN from chat_config when not provided', async () => {
       await insertChatConfig(ctx.db, { default_history_lastN: 10 });
 
       const input = new GetChatHistoryInput();
       const output = new GetChatHistoryOutput();
 
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(Array.isArray(output.messages)).toBe(true);
     });
 
-    it('getChatHistory: Uses provided lastN when specified', async () => {
+    it('soChatHistory: Uses provided lastN when specified', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test',
         work_id: 'test-work-id',
@@ -1175,17 +1176,17 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: 'test msg',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetChatHistoryInput(), { session_id: 'test', lastN: 5 });
       const output = new GetChatHistoryOutput();
 
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(output.total).toBeGreaterThanOrEqual(1);
     });
 
-    it('getChatHistory: Pagination slices correctly', async () => {
+    it('soChatHistory: Pagination slices correctly', async () => {
       for (const info of ['1', '2', '3']) {
         const saveInput = Object.assign(new SaveInfoInput(), {
           session_id: 'test',
@@ -1194,7 +1195,7 @@ describe('ChatService', () => {
           info_type: 'REQUEST',
           info,
         });
-        await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+        await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
       }
 
       const input = Object.assign(new GetChatHistoryInput(), {
@@ -1202,16 +1203,16 @@ describe('ChatService', () => {
       });
       const output = new GetChatHistoryOutput();
 
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(output.messages.length).toBe(1);
       expect(output.total).toBe(3);
     });
   });
 
-  describe('searchMessage', () => {
+  describe('soMessage', () => {
     it('TC-CHAT-105: Returns filtered results from keywordKInfo', async () => {
-      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { info_id: 'msg-1', info_type: 'REQUEST', info: 'hello world', created: 1000, session_id: 's1' },
           { info_id: 'msg-2', info_type: 'RESPONSE', info: 'hello back', created: 2000, session_id: 's1' },
@@ -1223,7 +1224,7 @@ describe('ChatService', () => {
       const input = Object.assign(new SearchMessageInput(), { keyword: 'hello' });
       const output = new SearchMessageOutput();
 
-      const result = await service.searchMessage(input, new ChatContext(), output);
+      const result = await service.soMessage(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1234,8 +1235,8 @@ describe('ChatService', () => {
       expect(output.messages[0].info_type).toBe('REQUEST');
     });
 
-    it('searchMessage: Filters by session_id when provided', async () => {
-      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
+    it('soMessage: Filters by session_id when provided', async () => {
+      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { info_id: 'msg-1', info_type: 'REQUEST', info: 'hello', created: 1000, session_id: 's1' },
           { info_id: 'msg-2', info_type: 'RESPONSE', info: 'hello', created: 2000, session_id: 's2' },
@@ -1247,7 +1248,7 @@ describe('ChatService', () => {
       const input = Object.assign(new SearchMessageInput(), { keyword: 'hello', session_id: 's1' });
       const output = new SearchMessageOutput();
 
-      await service.searchMessage(input, new ChatContext(), output);
+      await service.soMessage(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1256,11 +1257,11 @@ describe('ChatService', () => {
       expect(output.total).toBe(1);
     });
 
-    it('searchMessage: Throws ValidationError when keyword is empty', async () => {
+    it('soMessage: Throws ValidationError when keyword is empty', async () => {
       const input = Object.assign(new SearchMessageInput(), { keyword: '' });
       const output = new SearchMessageOutput();
 
-      await expect(service.searchMessage(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.soMessage(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
   });
 
@@ -1271,7 +1272,7 @@ describe('ChatService', () => {
       const input = Object.assign(new PinMessageInput(), { info_id: 'pin-info-1' });
       const output = new PinMessageOutput();
 
-      const result = await service.pinMessage(input, new ChatContext(), output);
+      const result = await service.pinMessage(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.pin).toBe(true);
@@ -1282,7 +1283,7 @@ describe('ChatService', () => {
 
       const input = Object.assign(new PinMessageInput(), { info_id: 'pin-info-2' });
       const out1 = new PinMessageOutput();
-      const r1 = await service.pinMessage(input, new ChatContext(), out1);
+      const r1 = await service.pinMessage(input, out1, new ChatContext());
       expect(r1).toBe(true);
       expect(out1.pin).toBe(true);
 
@@ -1292,12 +1293,12 @@ describe('ChatService', () => {
           data: [{ field: 'pin', value: 1 }],
           conditions: [{ field: 'info_id', operator: 'EQ' as any, value: 'pin-info-2' }],
         }),
-        new DBContext(),
         Object.assign(new UpdateDBOutput(), {}),
+        new DBContext(),
       );
 
       const out2 = new PinMessageOutput();
-      const r2 = await service.pinMessage(input, new ChatContext(), out2);
+      const r2 = await service.pinMessage(input, out2, new ChatContext());
       expect(r2).toBe(true);
       expect(out2.pin).toBe(false);
     });
@@ -1307,11 +1308,11 @@ describe('ChatService', () => {
       input.info_id = undefined!;
       const output = new PinMessageOutput();
 
-      await expect(service.pinMessage(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.pinMessage(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
   });
 
-  describe('getMessageGraph', () => {
+  describe('soMessageGraph', () => {
     it('TC-CHAT-115: Valid graph returns graph_structure with nodes and edges', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
@@ -1321,7 +1322,7 @@ describe('ChatService', () => {
         info: 'message 1',
         parent_info_ids: [],
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
@@ -1331,12 +1332,12 @@ describe('ChatService', () => {
         info: 'message 2',
         parent_info_ids: [],
       });
-      await ctx.infoCore.saveInfo(saveInput2, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput2, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetMessageGraphInput(), { session_id: 'test-session' });
       const output = new GetMessageGraphOutput();
 
-      const result = await service.getMessageGraph(input, new ChatContext(), output);
+      const result = await service.soMessageGraph(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.graph_structure).toBeDefined();
@@ -1349,13 +1350,13 @@ describe('ChatService', () => {
       input.session_id = undefined!;
       const output = new GetMessageGraphOutput();
 
-      await expect(service.getMessageGraph(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.soMessageGraph(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
   });
 
   describe('cancelWork', () => {
     it('TC-CHAT-130: Cancel running work returns cancelled=true', async () => {
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.cancelled = true;
         return true;
       });
@@ -1363,7 +1364,7 @@ describe('ChatService', () => {
       const input = Object.assign(new CancelWorkInput(), { work_id: 'work-1' });
       const output = new CancelWorkOutput();
 
-      const result = await service.cancelWork(input, new ChatContext(), output);
+      const result = await service.cancelWork(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1377,7 +1378,7 @@ describe('ChatService', () => {
       const input = Object.assign(new CancelWorkInput(), { work_id: 'work-2', reason: 'user abort' });
       const output = new CancelWorkOutput();
 
-      await service.cancelWork(input, new ChatContext(), output);
+      await service.cancelWork(input, output, new ChatContext());
 
       expect(spy).toHaveBeenCalled();
       const callInput = spy.mock.calls[0][0];
@@ -1393,7 +1394,7 @@ describe('ChatService', () => {
         ctx.evolutorAgent, ctx.orchestrationEntry, ctx.logger);
       const input = Object.assign(new CancelWorkInput(), { work_id: 'work-3' });
       const output = new CancelWorkOutput();
-      const result = await svc.cancelWork(input, new ChatContext(), output);
+      const result = await svc.cancelWork(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1410,7 +1411,7 @@ describe('ChatService', () => {
       });
       const output = new ConfigChatOutput();
 
-      const result = await service.configChat(input, new ChatContext(), output);
+      const result = await service.configChat(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.config.max_messages_per_session).toBe(500);
@@ -1421,7 +1422,7 @@ describe('ChatService', () => {
       const input = Object.assign(new ConfigChatInput(), { sse_heartbeat_interval_ms: 15000 });
       const output = new ConfigChatOutput();
 
-      await service.configChat(input, new ChatContext(), output);
+      await service.configChat(input, output, new ChatContext());
 
       expect(output.config.sse_heartbeat_interval_ms).toBe(15000);
     });
@@ -1430,14 +1431,14 @@ describe('ChatService', () => {
       const input = Object.assign(new ConfigChatInput(), { max_messages_per_session: -1 });
       const output = new ConfigChatOutput();
 
-      await expect(service.configChat(input, new ChatContext(), output)).rejects.toThrow(ValidationError);
+      await expect(service.configChat(input, output, new ChatContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-CHAT-140: configChat is internal method not exposed as independent HTTP route', async () => {
       const input = Object.assign(new ConfigChatInput(), { max_messages_per_session: 250 });
       const output = new ConfigChatOutput();
 
-      const result = await service.configChat(input, new ChatContext(), output);
+      const result = await service.configChat(input, output, new ChatContext());
 
       expect(result).toBe(true);
       expect(output.config.max_messages_per_session).toBe(250);
@@ -1459,7 +1460,7 @@ describe('ChatService', () => {
       const c = new ChatContext();
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, c, output);
+      await service.openChatStream(input, output, c);
 
       for (const evt of output.events) {
         expect(evt).toHaveProperty('event');
@@ -1475,7 +1476,7 @@ describe('ChatService', () => {
       });
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, new ChatContext(), output);
+      await service.openChatStream(input, output, new ChatContext());
 
       expect(output.events[0].event).toBe('connected');
       expect(output.events[0].data.session_id).toBe('sse-headers');
@@ -1488,7 +1489,7 @@ describe('ChatService', () => {
       });
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, new ChatContext(), output);
+      await service.openChatStream(input, output, new ChatContext());
 
       const doneEvent = output.events.find(e => e.event === 'done');
       expect(doneEvent).toBeDefined();
@@ -1502,7 +1503,7 @@ describe('ChatService', () => {
       });
       const output = new OpenChatStreamOutput();
 
-      await service.openChatStream(input, new ChatContext(), output);
+      await service.openChatStream(input, output, new ChatContext());
 
       const doneEvent = output.events.find(e => e.event === 'done');
       expect(doneEvent!.data.token_usage).toEqual(expect.any(Object));
@@ -1515,7 +1516,7 @@ describe('ChatService', () => {
       const output = new OpenChatStreamOutput();
       const received: Array<{ event: string; data: Record<string, unknown> }> = [];
 
-      await service.openChatStream(input, new ChatContext(), output, (evt) => {
+      await service.openChatStream(input, output, new ChatContext(), undefined, undefined, (evt) => {
         received.push({ event: evt.event, data: evt.data });
       });
 
@@ -1528,7 +1529,7 @@ describe('ChatService', () => {
     it('TC-CHAT-042: DB record persisted after createSession', async () => {
       const input = Object.assign(new CreateSessionInput(), { session_title: 'Persist Test' });
       const output = new CreateSessionOutput();
-      await service.createSession(input, new ChatContext(), output);
+      await service.createSession(input, output, new ChatContext());
 
       const sel = Object.assign(new SelectOneDBInput(), {
         query_param: {
@@ -1537,7 +1538,7 @@ describe('ChatService', () => {
         },
       });
       const selOut = Object.assign(new SelectOneDBOutput(), {});
-      await ctx.db.selectOneDB(sel, new DBContext(), selOut);
+      await ctx.db.selectOneDB(sel, selOut, new DBContext());
       expect(selOut.row).toBeTruthy();
       expect(selOut.row.session_id).toBe(output.session_id);
     });
@@ -1545,7 +1546,7 @@ describe('ChatService', () => {
     it('TC-CHAT-044: session_title with unicode/emoji', async () => {
       const input = Object.assign(new CreateSessionInput(), { session_title: '🚀 测试 Unicode Title' });
       const output = new CreateSessionOutput();
-      await service.createSession(input, new ChatContext(), output);
+      await service.createSession(input, output, new ChatContext());
       expect(output.session_title).toBe('🚀 测试 Unicode Title');
     });
   });
@@ -1553,7 +1554,7 @@ describe('ChatService', () => {
   describe('deleteSession - extended', () => {
     it('TC-CHAT-055: cascade delete removes session and associated info_raw rows', async () => {
       const createOut = new CreateSessionOutput();
-      await service.createSession(new CreateSessionInput(), new ChatContext(), createOut);
+      await service.createSession(new CreateSessionInput(), createOut, new ChatContext());
       const sid = createOut.session_id;
 
       await insertInfoRawRow(ctx.db, sid, 'cascade-info-1');
@@ -1561,30 +1562,30 @@ describe('ChatService', () => {
 
       const delInput = Object.assign(new DeleteSessionInput(), { session_ids: [sid] });
       const delOut = new DeleteSessionOutput();
-      await service.deleteSession(delInput, new ChatContext(), delOut);
+      await service.deleteSession(delInput, delOut, new ChatContext());
       expect(delOut.deleted_count).toBe(1);
 
       const detailInput = Object.assign(new GetSessionDetailInput(), { session_id: sid });
       const detailOut = new GetSessionDetailOutput();
-      await expect(service.getSessionDetail(detailInput, new ChatContext(), detailOut)).rejects.toThrow(NotFoundError);
+      await expect(service.soSessionDetail(detailInput, detailOut, new ChatContext())).rejects.toThrow(NotFoundError);
     });
 
     it('TC-CHAT-056: deleteSession transaction rollback - invalid session_ids caused by empty string', async () => {
       const delInput = Object.assign(new DeleteSessionInput(), { session_ids: [''] });
       const delOut = new DeleteSessionOutput();
-      await service.deleteSession(delInput, new ChatContext(), delOut);
+      await service.deleteSession(delInput, delOut, new ChatContext());
       expect(delOut.deleted_count).toBe(0);
     });
   });
 
-  describe('searchSession - extended', () => {
+  describe('soSession - extended', () => {
     it('TC-CHAT-062: time range filter with start_time and end_time', async () => {
       const input = Object.assign(new SearchSessionInput(), {
         start_time: 1600000000000,
         end_time: 2000000000000,
       });
       const output = new SearchSessionOutput();
-      const result = await service.searchSession(input, new ChatContext(), output);
+      const result = await service.soSession(input, output, new ChatContext());
       expect(result).toBe(true);
       expect(Array.isArray(output.sessions)).toBe(true);
     });
@@ -1593,17 +1594,17 @@ describe('ChatService', () => {
       const out1 = new CreateSessionOutput();
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Session-1' }),
-        new ChatContext(), out1,
+        out1, new ChatContext(),
       );
       const out2 = new CreateSessionOutput();
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Session-2' }),
-        new ChatContext(), out2,
+        out2, new ChatContext(),
       );
 
       const input = new SearchSessionInput();
       const output = new SearchSessionOutput();
-      await service.searchSession(input, new ChatContext(), output);
+      await service.soSession(input, output, new ChatContext());
 
       const createdTimes = output.sessions.map(s => s.created).filter(Number);
       for (let i = 1; i < createdTimes.length; i++) {
@@ -1615,14 +1616,14 @@ describe('ChatService', () => {
       const createOut = new CreateSessionOutput();
       await service.createSession(
         Object.assign(new CreateSessionInput(), { session_title: 'Msg Count Test' }),
-        new ChatContext(), createOut,
+        createOut, new ChatContext(),
       );
       await insertInfoRawRow(ctx.db, createOut.session_id, 'mct-1');
       await insertInfoRawRow(ctx.db, createOut.session_id, 'mct-2');
 
       const input = Object.assign(new SearchSessionInput(), { keyword: 'Msg Count' });
       const output = new SearchSessionOutput();
-      await service.searchSession(input, new ChatContext(), output);
+      await service.soSession(input, output, new ChatContext());
 
       const session = output.sessions.find(s => s.session_id === createOut.session_id);
       expect(session).toBeDefined();
@@ -1634,7 +1635,7 @@ describe('ChatService', () => {
         keyword: 'completely_nonexistent_' + Date.now(),
       });
       const output = new SearchSessionOutput();
-      await service.searchSession(input, new ChatContext(), output);
+      await service.soSession(input, output, new ChatContext());
       expect(output.sessions).toEqual([]);
       expect(output.total).toBe(0);
     });
@@ -1645,7 +1646,7 @@ describe('ChatService', () => {
         page_size: 5,
       });
       const output = new SearchSessionOutput();
-      await service.searchSession(input, new ChatContext(), output);
+      await service.soSession(input, output, new ChatContext());
       expect(Array.isArray(output.sessions)).toBe(true);
     });
   });
@@ -1654,7 +1655,7 @@ describe('ChatService', () => {
     it('TC-CHAT-082: max_messages_per_session default=1000', async () => {
       const input = Object.assign(new CheckSessionOverflowInput(), { session_id: 'overflow-default' });
       const output = new CheckSessionOverflowOutput();
-      await service.checkSessionOverflow(input, new ChatContext(), output);
+      await service.checkSessionOverflow(input, output, new ChatContext());
       expect(output.max_messages).toBe(1000);
     });
 
@@ -1663,7 +1664,7 @@ describe('ChatService', () => {
 
       const input = Object.assign(new CheckSessionOverflowInput(), { session_id: 'overflow-custom' });
       const output = new CheckSessionOverflowOutput();
-      await service.checkSessionOverflow(input, new ChatContext(), output);
+      await service.checkSessionOverflow(input, output, new ChatContext());
       expect(output.max_messages).toBe(500);
     });
 
@@ -1672,16 +1673,16 @@ describe('ChatService', () => {
         session_id: 'session-does-not-exist',
       });
       const output = new CheckSessionOverflowOutput();
-      await service.checkSessionOverflow(input, new ChatContext(), output);
+      await service.checkSessionOverflow(input, output, new ChatContext());
       expect(output.is_overflowed).toBe(false);
     });
   });
 
-  describe('getChatHistory - extended', () => {
+  describe('soChatHistory - extended', () => {
     it('TC-CHAT-098: empty session returns messages=[]', async () => {
       const input = Object.assign(new GetChatHistoryInput(), { session_id: 'empty-session' });
       const output = new GetChatHistoryOutput();
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(output.messages).toEqual([]);
       expect(output.total).toBe(0);
@@ -1695,19 +1696,19 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: 'w1-msg',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetChatHistoryInput(), {
         session_id: 'test-session',
         work_id: 'work-1',
       });
       const output = new GetChatHistoryOutput();
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(output.total).toBeGreaterThanOrEqual(1);
     });
 
-    it('getChatHistory: messages contain citing_count field', async () => {
+    it('soChatHistory: messages contain citing_count field', async () => {
       const saveInput = Object.assign(new SaveInfoInput(), {
         session_id: 'test-session',
         work_id: 'test-work-id',
@@ -1715,11 +1716,11 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: 'cited message',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetChatHistoryInput(), { session_id: 'test-session' });
       const output = new GetChatHistoryOutput();
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       if (output.messages.length > 0) {
         expect(output.messages[0]).toHaveProperty('citing_count');
@@ -1728,9 +1729,9 @@ describe('ChatService', () => {
     });
   });
 
-  describe('searchMessage - extended', () => {
+  describe('soMessage - extended', () => {
     it('TC-CHAT-109: no matching keyword returns empty list', async () => {
-      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [];
         o.total = 0;
         return true;
@@ -1738,7 +1739,7 @@ describe('ChatService', () => {
 
       const input = Object.assign(new SearchMessageInput(), { keyword: 'xyznomatch' });
       const output = new SearchMessageOutput();
-      await service.searchMessage(input, new ChatContext(), output);
+      await service.soMessage(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1746,8 +1747,8 @@ describe('ChatService', () => {
       expect(output.total).toBe(0);
     });
 
-    it('searchMessage: pagination works with keyword', async () => {
-      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
+    it('soMessage: pagination works with keyword', async () => {
+      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { info_id: 'm1', info_type: 'REQUEST', info: 'test a', created: 1, session_id: 's1' },
           { info_id: 'm2', info_type: 'REQUEST', info: 'test b', created: 2, session_id: 's1' },
@@ -1761,7 +1762,7 @@ describe('ChatService', () => {
         keyword: 'test', page_current: 1, page_size: 2,
       });
       const output = new SearchMessageOutput();
-      await service.searchMessage(input, new ChatContext(), output);
+      await service.soMessage(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1769,8 +1770,8 @@ describe('ChatService', () => {
       expect(output.messages.length).toBe(2);
     });
 
-    it('TC-CHAT-107: searchMessage pagination returns correct page with offset', async () => {
-      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, _c: any, o: any) => {
+    it('TC-CHAT-107: soMessage pagination returns correct page with offset', async () => {
+      const spy = vi.spyOn(ctx.infoCore as any, 'keywordKInfo').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.list = [
           { info_id: 'p1', info_type: 'REQUEST', info: 'a', created: 1, session_id: 's1' },
           { info_id: 'p2', info_type: 'RESPONSE', info: 'b', created: 2, session_id: 's1' },
@@ -1786,7 +1787,7 @@ describe('ChatService', () => {
         keyword: 'test', page_current: 2, page_size: 2,
       });
       const output = new SearchMessageOutput();
-      await service.searchMessage(input, new ChatContext(), output);
+      await service.soMessage(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1797,11 +1798,11 @@ describe('ChatService', () => {
     });
   });
 
-  describe('getMessageGraph - extended', () => {
+  describe('soMessageGraph - extended', () => {
     it('TC-CHAT-118: nonexistent session_id returns empty nodes', async () => {
       const input = Object.assign(new GetMessageGraphInput(), { session_id: 'non-existent-graph' });
       const output = new GetMessageGraphOutput();
-      await service.getMessageGraph(input, new ChatContext(), output);
+      await service.soMessageGraph(input, output, new ChatContext());
 
       expect(output.graph_structure.nodes).toEqual([]);
       expect(output.graph_structure.edges).toEqual([]);
@@ -1815,11 +1816,11 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: 'node message',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetMessageGraphInput(), { session_id: 'graph-props' });
       const output = new GetMessageGraphOutput();
-      await service.getMessageGraph(input, new ChatContext(), output);
+      await service.soMessageGraph(input, output, new ChatContext());
 
       if (output.graph_structure.nodes.length > 0) {
         const node = output.graph_structure.nodes[0] as Record<string, unknown>;
@@ -1835,7 +1836,7 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: 'edge source',
       });
-      await ctx.infoCore.saveInfo(saveInput, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput, new SaveInfoOutput(), new InfoCoreContext());
 
       const saveInput2 = Object.assign(new SaveInfoInput(), {
         session_id: 'edge-props',
@@ -1844,11 +1845,11 @@ describe('ChatService', () => {
         info_type: 'RESPONSE',
         info: 'edge target',
       });
-      await ctx.infoCore.saveInfo(saveInput2, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(saveInput2, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetMessageGraphInput(), { session_id: 'edge-props' });
       const output = new GetMessageGraphOutput();
-      await service.getMessageGraph(input, new ChatContext(), output);
+      await service.soMessageGraph(input, output, new ChatContext());
 
       if (output.graph_structure.edges.length > 0) {
         const edge = output.graph_structure.edges[0] as Record<string, unknown>;
@@ -1860,14 +1861,14 @@ describe('ChatService', () => {
 
   describe('cancelWork - extended', () => {
     it('TC-CHAT-132: cancel already completed work returns cancelled=false', async () => {
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.cancelled = false;
         return true;
       });
 
       const input = Object.assign(new CancelWorkInput(), { work_id: 'completed-work' });
       const output = new CancelWorkOutput();
-      await service.cancelWork(input, new ChatContext(), output);
+      await service.cancelWork(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1875,14 +1876,14 @@ describe('ChatService', () => {
     });
 
     it('TC-CHAT-133: nonexistent work_id returns cancelled=false', async () => {
-      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, _c: any, o: any) => {
+      const spy = vi.spyOn(ctx.orchestrationEntry as any, 'cancelWork').mockImplementation(async (_i: any, o: any, _c: any, ) => {
         o.cancelled = false;
         return true;
       });
 
       const input = Object.assign(new CancelWorkInput(), { work_id: 'no-such-work' });
       const output = new CancelWorkOutput();
-      await service.cancelWork(input, new ChatContext(), output);
+      await service.cancelWork(input, output, new ChatContext());
 
       spy.mockRestore();
 
@@ -1890,8 +1891,8 @@ describe('ChatService', () => {
     });
   });
 
-  describe('getChatHistory - Agent Trace and Thinking Blocks', () => {
-    it('TC-CHAT-140: getChatHistory populates work_id and message metadata for response messages', async () => {
+  describe('soChatHistory - Agent Trace and Thinking Blocks', () => {
+    it('TC-CHAT-140: soChatHistory populates work_id and message metadata for response messages', async () => {
       const sessId = 'history-trace-sess';
       const workId = 'work-trace-101';
 
@@ -1903,7 +1904,7 @@ describe('ChatService', () => {
         info_type: 'REQUEST',
         info: '分析项目系统架构',
       });
-      await ctx.infoCore.saveInfo(userSave, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(userSave, new SaveInfoOutput(), new InfoCoreContext());
 
       const agentSave = Object.assign(new SaveInfoInput(), {
         session_id: sessId,
@@ -1912,11 +1913,11 @@ describe('ChatService', () => {
         info_type: 'RESPONSE',
         info: '系统采用 Monorepo 分层架构。',
       });
-      await ctx.infoCore.saveInfo(agentSave, new InfoCoreContext(), new SaveInfoOutput());
+      await ctx.infoCore.saveInfo(agentSave, new SaveInfoOutput(), new InfoCoreContext());
 
       const input = Object.assign(new GetChatHistoryInput(), { session_id: sessId });
       const output = new GetChatHistoryOutput();
-      await service.getChatHistory(input, new ChatContext(), output);
+      await service.soChatHistory(input, output, new ChatContext());
 
       expect(output.messages.length).toBe(2);
       const respMsg = output.messages.find((m) => m.info_type === 'RESPONSE');

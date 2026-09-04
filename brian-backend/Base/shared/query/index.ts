@@ -8,6 +8,7 @@ export {
   OperationType,
   VisualScope,
 } from './QueryObjects';
+export { toDataObject, newRecord, newPatch } from './RecordBuilder';
 export type {
   Condition,
   OrderBy,
@@ -16,3 +17,4 @@ export type {
   QueryParam,
   Operation,
 } from './QueryObjects';
+export { ensureColumn, ensureIndex } from './SchemaHelpers';

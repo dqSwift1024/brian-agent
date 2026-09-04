@@ -166,7 +166,11 @@ export class SQLiteRelationDBRepository
 
     const txn = this.getDatabase().transaction(() => {
       for (const op of operations) {
-        switch (this.normalizeOpType(op.type)) {
+        const upperOpType = String(op.type).toUpperCase();
+        const opType = (Object.values(OperationType) as string[]).includes(upperOpType)
+          ? (upperOpType as OperationType)
+          : OperationType.INSERT;
+        switch (opType) {
           case OperationType.INSERT:
             if (!op.data) {
               throw new DatabaseError(
@@ -230,10 +234,4 @@ export class SQLiteRelationDBRepository
   /**
    * 规范化操作类型。
    */
-  private normalizeOpType(type: string): OperationType {
-    const upper = String(type).toUpperCase();
-    return (Object.values(OperationType) as string[]).includes(upper)
-      ? (upper as OperationType)
-      : OperationType.INSERT;
-  }
 }

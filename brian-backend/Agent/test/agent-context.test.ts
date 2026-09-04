@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ValidationError } from '@brian-agent/base';
 import { AgentContextAccess } from '../AgentContext';
@@ -83,7 +84,7 @@ function createMockInfoCore(triples: {
 } = {}) {
   return {
     soContextByWork: vi.fn().mockImplementation(
-      async (_input: unknown, _context: unknown, output: Record<string, unknown>) => {
+      async (_input: unknown, output: Record<string, unknown>, _context: unknown) => {
         output.source_ids_map = triples.source_ids_map ?? {};
         output.content_map = triples.content_map ?? {};
         output.attribute_map = triples.attribute_map ?? {};
@@ -105,7 +106,7 @@ async function createAccess(
 describe('AgentContext', () => {
   beforeEach(() => {});
 
-  describe('getContextDetail', () => {
+  describe('soContextDetail', () => {
     it('TC-AC-031: 通过 soContextByWork 返回三对象结构', async () => {
       const triples = {
         source_ids_map: { PINNED: ['info-1'], TIMELINE: ['info-2'] },
@@ -122,7 +123,7 @@ describe('AgentContext', () => {
       input.work_id = 'work-1';
       const output = new GetContextDetailOutput();
 
-      const result = await access.getContextDetail(input, new AgentContextContext(), output);
+      const result = await access.soContextDetail(input, output, new AgentContextContext());
 
       expect(result).toBe(true);
       expect(output.source_ids_map).toEqual(triples.source_ids_map);
@@ -137,7 +138,7 @@ describe('AgentContext', () => {
 
       const input = new GetContextDetailInput();
       input.work_id = 'work-abc';
-      await access.getContextDetail(input, new AgentContextContext(), new GetContextDetailOutput());
+      await access.soContextDetail(input, new GetContextDetailOutput(), new AgentContextContext());
 
       expect(mockInfoCore.soContextByWork).toHaveBeenCalledTimes(1);
       const callInput = mockInfoCore.soContextByWork.mock.calls[0][0] as { work_id: string };
@@ -149,7 +150,7 @@ describe('AgentContext', () => {
       const input = new GetContextDetailInput();
       input.work_id = '';
 
-      await expect(access.getContextDetail(input, new AgentContextContext(), new GetContextDetailOutput()))
+      await expect(access.soContextDetail(input, new GetContextDetailOutput(), new AgentContextContext()))
         .rejects.toThrow(ValidationError);
     });
 
@@ -160,7 +161,7 @@ describe('AgentContext', () => {
       const input = new GetContextDetailInput();
       input.work_id = 'work-empty';
       const output = new GetContextDetailOutput();
-      await access.getContextDetail(input, new AgentContextContext(), output);
+      await access.soContextDetail(input, output, new AgentContextContext());
 
       expect(output.source_ids_map).toEqual({});
       expect(output.content_map).toEqual({});
@@ -183,7 +184,7 @@ describe('AgentContext', () => {
       input.max_context_items = 500;
       const output = new ConfigAgentContextOutput();
 
-      const result = await access.configAgentContext(input, new AgentContextContext(), output);
+      const result = await access.configAgentContext(input, output, new AgentContextContext());
 
       expect(result).toBe(true);
       expect(output.max_context_items).toBe(500);
@@ -203,7 +204,7 @@ describe('AgentContext', () => {
       input.enable_snapshot_persistence = false;
       const output = new ConfigAgentContextOutput();
 
-      await access.configAgentContext(input, new AgentContextContext(), output);
+      await access.configAgentContext(input, output, new AgentContextContext());
 
       expect(output.enable_snapshot_persistence).toBe(false);
       expect(mockDb.storage.agent_context_config[0].enable_snapshot_persistence).toBe(0);
@@ -214,7 +215,7 @@ describe('AgentContext', () => {
       const input = new ConfigAgentContextInput();
       input.max_context_items = 0;
 
-      await expect(access.configAgentContext(input, new AgentContextContext(), new ConfigAgentContextOutput()))
+      await expect(access.configAgentContext(input, new ConfigAgentContextOutput(), new AgentContextContext()))
         .rejects.toThrow(ValidationError);
     });
 
@@ -230,7 +231,7 @@ describe('AgentContext', () => {
       const input = new ConfigAgentContextInput();
       const output = new ConfigAgentContextOutput();
 
-      await access.configAgentContext(input, new AgentContextContext(), output);
+      await access.configAgentContext(input, output, new AgentContextContext());
 
       expect(output.max_context_items).toBe(DEFAULT_MAX_CONTEXT_ITEMS);
       expect(output.enable_snapshot_persistence).toBe(true);

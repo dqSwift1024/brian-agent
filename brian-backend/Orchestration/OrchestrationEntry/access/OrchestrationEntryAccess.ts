@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, PromptsAccess, LLMAccess, Logger, StreamAccess } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -49,66 +50,57 @@ export class OrchestrationEntryAccess {
     await this.initPromise;
   }
 
-  async receiveWork(
-    i: ReceiveWorkInput, c: OrchestrationEntryContext, o: ReceiveWorkOutput,
+  async receiveWork(i: ReceiveWorkInput, o: ReceiveWorkOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.receiveWork(i, c, o);
+    return this.service.receiveWork(i, o, c, metrics, report);
   }
 
-  async selectOrchestrationStrategy(
-    i: SelectOrchestrationStrategyInput, c: OrchestrationEntryContext, o: SelectOrchestrationStrategyOutput,
+  async selectOrchestrationStrategy(i: SelectOrchestrationStrategyInput, o: SelectOrchestrationStrategyOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.selectOrchestrationStrategy(i, c, o);
+    return this.service.selectOrchestrationStrategy(i, o, c, metrics, report);
   }
 
-  async receiveWorkAsync(
-    i: ReceiveWorkAsyncInput, c: OrchestrationEntryContext, o: ReceiveWorkAsyncOutput,
+  async receiveWorkAsync(i: ReceiveWorkAsyncInput, o: ReceiveWorkAsyncOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.receiveWorkAsync(i, c, o);
+    return this.service.receiveWorkAsync(i, o, c, metrics, report);
   }
 
-  async buildWorkContext(
-    i: BuildWorkContextInput, c: OrchestrationEntryContext, o: BuildWorkContextOutput,
+  async buildWorkContext(i: BuildWorkContextInput, o: BuildWorkContextOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.buildWorkContext(i, c, o);
+    return this.service.buildWorkContext(i, o, c, metrics, report);
   }
 
-  async getWorkStatus(
-    i: GetWorkStatusInput, c: OrchestrationEntryContext, o: GetWorkStatusOutput,
+  async soWorkStatus(i: GetWorkStatusInput, o: GetWorkStatusOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getWorkStatus(i, c, o);
+    return this.service.soWorkStatus(i, o, c, metrics, report);
   }
 
-  async cancelWork(
-    i: CancelWorkInput, c: OrchestrationEntryContext, o: CancelWorkOutput,
+  async cancelWork(i: CancelWorkInput, o: CancelWorkOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.cancelWork(i, c, o);
+    return this.service.cancelWork(i, o, c, metrics, report);
   }
 
-  async confirmIntent(
-    i: ConfirmIntentInput, c: OrchestrationEntryContext, o: ConfirmIntentOutput,
+  async confirmIntent(i: ConfirmIntentInput, o: ConfirmIntentOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.confirmIntent(i, c, o);
+    return this.service.confirmIntent(i, o, c, metrics, report);
   }
 
-  async submitClarification(
-    i: SubmitClarificationInput, c: OrchestrationEntryContext, o: SubmitClarificationOutput,
+  async submitClarification(i: SubmitClarificationInput, o: SubmitClarificationOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.submitClarification(i, c, o);
+    return this.service.submitClarification(i, o, c, metrics, report);
   }
 
-  async configOrchestrationEntry(
-    i: ConfigOrchestrationEntryInput, c: OrchestrationEntryContext, o: ConfigOrchestrationEntryOutput,
+  async configOrchestrationEntry(i: ConfigOrchestrationEntryInput, o: ConfigOrchestrationEntryOutput, c: OrchestrationEntryContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configOrchestrationEntry(i, c, o);
+    return this.service.configOrchestrationEntry(i, o, c, metrics, report);
   }
 }

@@ -6,18 +6,7 @@
  * 所有 Input 继承 {@link Input}，所有 Context 继承 {@link Context}，所有 Output 继承 {@link Output}。
  */
 
-import {
-  Input,
-  Context,
-  Output,
-  InfoType,
-  CollectionSource,
-  ContextSource,
-  HandleResultType,
-  DEFAULT_HANDLE_RESULT_TYPE,
-} from '@brian-agent/base';
-import type { Page } from '@brian-agent/base';
-
+import { Input, Context, Output, InfoType, CollectionSource } from '@brian-agent/base';
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------

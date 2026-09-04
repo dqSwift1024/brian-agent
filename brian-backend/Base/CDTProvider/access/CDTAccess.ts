@@ -2,6 +2,8 @@
  * @fileoverview CDTProvider 接入层。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { CDTSchemaInitializer } from '../infrastructure/CDTSchemaInitializer';
 import { CDTService } from '../application/CDTService';
@@ -33,24 +35,24 @@ export class CDTAccess {
     await this.service.initialize();
   }
 
-  async startCDT(i: StartCDTInput, c: CDTContext, o: StartCDTOutput) {
-    return this.service.startCDT(i, c, o);
+  async startCDT(i: StartCDTInput, o: StartCDTOutput, c: CDTContext, metrics?: Metrics, report?: Report) {
+    return this.service.startCDT(i, o, c, metrics, report);
   }
 
-  async stopCDT(i: StopCDTInput, c: CDTContext, o: StopCDTOutput) {
-    return this.service.stopCDT(i, c, o);
+  async stopCDT(i: StopCDTInput, o: StopCDTOutput, c: CDTContext, metrics?: Metrics, report?: Report) {
+    return this.service.stopCDT(i, o, c, metrics, report);
   }
 
-  async getCDTEndpoint(i: GetCDTEndpointInput, c: CDTContext, o: GetCDTEndpointOutput) {
-    return this.service.getCDTEndpoint(i, c, o);
+  async soCDTEndpoint(i: GetCDTEndpointInput, o: GetCDTEndpointOutput, c: CDTContext, metrics?: Metrics, report?: Report) {
+    return this.service.soCDTEndpoint(i, o, c, metrics, report);
   }
 
-  async execCDP(i: ExecCDPInput, c: CDTContext, o: ExecCDPOutput) {
-    return this.service.execCDP(i, c, o);
+  async execCDP(i: ExecCDPInput, o: ExecCDPOutput, c: CDTContext, metrics?: Metrics, report?: Report) {
+    return this.service.execCDP(i, o, c, metrics, report);
   }
 
-  async isCDTRunning(i: IsCDTRunningInput, c: CDTContext, o: IsCDTRunningOutput) {
-    return this.service.isCDTRunning(i, c, o);
+  async isCDTRunning(i: IsCDTRunningInput, o: IsCDTRunningOutput, c: CDTContext, metrics?: Metrics, report?: Report) {
+    return this.service.isCDTRunning(i, o, c, metrics, report);
   }
 
   // ---- CDT Screencast + 输入转发 ----

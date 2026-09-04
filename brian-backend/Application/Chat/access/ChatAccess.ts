@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess } from '@brian-agent/core';
@@ -43,100 +44,86 @@ export class ChatAccess {
     this.service = AopProxy.wrap(raw, { logger });
   }
 
-  async submitWork(
-    i: SubmitWorkInput, c: ChatContext, o: SubmitWorkOutput,
+  async submitWork(i: SubmitWorkInput, o: SubmitWorkOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.submitWork(i, c, o);
+    return this.service.submitWork(i, o, c, metrics, report);
   }
 
-  async createSession(
-    i: CreateSessionInput, c: ChatContext, o: CreateSessionOutput,
+  async createSession(i: CreateSessionInput, o: CreateSessionOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.createSession(i, c, o);
+    return this.service.createSession(i, o, c, metrics, report);
   }
 
-  async deleteSession(
-    i: DeleteSessionInput, c: ChatContext, o: DeleteSessionOutput,
+  async deleteSession(i: DeleteSessionInput, o: DeleteSessionOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.deleteSession(i, c, o);
+    return this.service.deleteSession(i, o, c, metrics, report);
   }
 
-  async searchSession(
-    i: SearchSessionInput, c: ChatContext, o: SearchSessionOutput,
+  async soSession(i: SearchSessionInput, o: SearchSessionOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.searchSession(i, c, o);
+    return this.service.soSession(i, o, c, metrics, report);
   }
 
-  async getSessionDetail(
-    i: GetSessionDetailInput, c: ChatContext, o: GetSessionDetailOutput,
+  async soSessionDetail(i: GetSessionDetailInput, o: GetSessionDetailOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getSessionDetail(i, c, o);
+    return this.service.soSessionDetail(i, o, c, metrics, report);
   }
 
-  async updateSessionTitle(
-    i: UpdateSessionTitleInput, c: ChatContext, o: UpdateSessionTitleOutput,
+  async updateSessionTitle(i: UpdateSessionTitleInput, o: UpdateSessionTitleOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSessionTitle(i, c, o);
+    return this.service.updateSessionTitle(i, o, c, metrics, report);
   }
 
-  async checkSessionOverflow(
-    i: CheckSessionOverflowInput, c: ChatContext, o: CheckSessionOverflowOutput,
+  async checkSessionOverflow(i: CheckSessionOverflowInput, o: CheckSessionOverflowOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.checkSessionOverflow(i, c, o);
+    return this.service.checkSessionOverflow(i, o, c, metrics, report);
   }
 
-  async getChatHistory(
-    i: GetChatHistoryInput, c: ChatContext, o: GetChatHistoryOutput,
+  async soChatHistory(i: GetChatHistoryInput, o: GetChatHistoryOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getChatHistory(i, c, o);
+    return this.service.soChatHistory(i, o, c, metrics, report);
   }
 
-  async searchMessage(
-    i: SearchMessageInput, c: ChatContext, o: SearchMessageOutput,
+  async soMessage(i: SearchMessageInput, o: SearchMessageOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.searchMessage(i, c, o);
+    return this.service.soMessage(i, o, c, metrics, report);
   }
 
-  async pinMessage(
-    i: PinMessageInput, c: ChatContext, o: PinMessageOutput,
+  async pinMessage(i: PinMessageInput, o: PinMessageOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.pinMessage(i, c, o);
+    return this.service.pinMessage(i, o, c, metrics, report);
   }
 
-  async getMessageGraph(
-    i: GetMessageGraphInput, c: ChatContext, o: GetMessageGraphOutput,
+  async soMessageGraph(i: GetMessageGraphInput, o: GetMessageGraphOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getMessageGraph(i, c, o);
+    return this.service.soMessageGraph(i, o, c, metrics, report);
   }
 
-  async cancelWork(
-    i: CancelWorkInput, c: ChatContext, o: CancelWorkOutput,
+  async cancelWork(i: CancelWorkInput, o: CancelWorkOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.cancelWork(i, c, o);
+    return this.service.cancelWork(i, o, c, metrics, report);
   }
 
-  async confirmIntent(
-    i: ConfirmIntentInput, c: ChatContext, o: ConfirmIntentOutput,
+  async confirmIntent(i: ConfirmIntentInput, o: ConfirmIntentOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.confirmIntent(i, c, o);
+    return this.service.confirmIntent(i, o, c, metrics, report);
   }
 
-  async submitClarification(
-    i: SubmitClarificationInput, c: ChatContext, o: SubmitClarificationOutput,
+  async submitClarification(i: SubmitClarificationInput, o: SubmitClarificationOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.submitClarification(i, c, o);
+    return this.service.submitClarification(i, o, c, metrics, report);
   }
 
   async openChatStream(
-    i: OpenChatStreamInput, c: ChatContext, o: OpenChatStreamOutput,
+    i: OpenChatStreamInput, o: OpenChatStreamOutput, c: ChatContext,
+    metrics?: Metrics, report?: Report,
     onEvent?: (event: SSEEvent) => void,
   ): Promise<boolean> {
-    return this.service.openChatStream(i, c, o, onEvent);
+    return this.service.openChatStream(i, o, c, metrics, report, onEvent);
   }
 
-  async configChat(
-    i: ConfigChatInput, c: ChatContext, o: ConfigChatOutput,
+  async configChat(i: ConfigChatInput, o: ConfigChatOutput, c: ChatContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configChat(i, c, o);
+    return this.service.configChat(i, o, c, metrics, report);
   }
 }

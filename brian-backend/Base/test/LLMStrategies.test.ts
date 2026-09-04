@@ -51,39 +51,39 @@ describe('LLM Strategies & Factory', () => {
   describe('LLMStrategyFactory', () => {
     it('应该将 Google 提供商正确路由到 GoogleStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'Google', llm_provider_url: 'https://generativelanguage.googleapis.com/v1beta' });
-      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(GoogleStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p1)).toBeInstanceOf(GoogleStrategy);
 
       const p2 = createMockProvider({ llm_provider_title: 'Custom', llm_provider_url: 'https://my-proxy.googleapis.com' });
-      expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(GoogleStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p2)).toBeInstanceOf(GoogleStrategy);
     });
 
     it('应该将 Anthropic 提供商正确路由到 AnthropicStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'Anthropic', llm_provider_url: 'https://api.anthropic.com/v1' });
-      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(AnthropicStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p1)).toBeInstanceOf(AnthropicStrategy);
 
       const p2 = createMockProvider({ llm_provider_title: 'Claude Gateway', llm_provider_url: 'https://api.custom.com' });
-      expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(AnthropicStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p2)).toBeInstanceOf(AnthropicStrategy);
     });
 
     it('应该将 Ollama 提供商正确路由到 OllamaStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'Ollama', llm_provider_url: 'http://127.0.0.1:11434' });
-      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(OllamaStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p1)).toBeInstanceOf(OllamaStrategy);
     });
 
     it('通用或 DeepSeek / Moonshot 提供商应路由到通用 OpenAIStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'DeepSeek', llm_provider_url: 'https://api.deepseek.com/v1' });
-      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(OpenAIStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p1)).toBeInstanceOf(OpenAIStrategy);
 
       const p2 = createMockProvider({ llm_provider_title: 'Moonshot', llm_provider_url: 'https://api.moonshot.cn/v1' });
-      expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(OpenAIStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p2)).toBeInstanceOf(OpenAIStrategy);
     });
 
     it('应该将 Volcano Engine 提供商正确路由到 VolcanoEngineStrategy', () => {
       const p1 = createMockProvider({ llm_provider_title: 'Volcano Engine', llm_provider_url: 'https://ark.cn-beijing.volces.com/api/v3' });
-      expect(LLMStrategyFactory.getStrategy(p1)).toBeInstanceOf(VolcanoEngineStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p1)).toBeInstanceOf(VolcanoEngineStrategy);
 
       const p2 = createMockProvider({ llm_provider_title: 'Custom', llm_provider_url: 'https://ark.cn-beijing.volces.com/api/v3' });
-      expect(LLMStrategyFactory.getStrategy(p2)).toBeInstanceOf(VolcanoEngineStrategy);
+      expect(LLMStrategyFactory.soStrategyById(p2)).toBeInstanceOf(VolcanoEngineStrategy);
     });
   });
 

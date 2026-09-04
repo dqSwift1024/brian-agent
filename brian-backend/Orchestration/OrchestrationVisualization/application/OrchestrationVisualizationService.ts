@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import {
   RelationDBAccess, SelectDBInput, SelectDBOutput,
   SelectOneDBInput, SelectOneDBOutput,
@@ -30,10 +31,7 @@ export class OrchestrationVisualizationService {
     private readonly logger?: Logger,
   ) {}
 
-  async visualizeAgentDAG(
-    input: VisualizeAgentDAGInput,
-    context: OrchestrationVisualizationContext,
-    output: VisualizeAgentDAGOutput,
+  async visualizeAgentDAG(input: VisualizeAgentDAGInput, output: VisualizeAgentDAGOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const workId = input.work_id;
 
@@ -47,8 +45,8 @@ export class OrchestrationVisualizationService {
     const nodes: Record<string, unknown>[] = [];
     const edges: Record<string, unknown>[] = [];
 
-    let agentIds: string[] = [];
-    let taskAgentMap = new Map<string, string>(); // agent_id → task_id
+    const agentIds: string[] = [];
+    const taskAgentMap = new Map<string, string>(); // agent_id → task_id
 
     if (strategy === 'PLANNING') {
       const planId = await this.getPlanIdForWork(workId);
@@ -97,7 +95,7 @@ export class OrchestrationVisualizationService {
       query_param: { table: 'orchestration_config' },
     });
     const cfgSelOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(cfgSelInput, new DBContext(), cfgSelOutput);
+    await this.relationDb.selectOneDB(cfgSelInput, cfgSelOutput, new DBContext());
     const maxNodesInGraph = (cfgSelOutput.row?.max_nodes_in_graph as number) ?? 50;
 
     const visibleAgentIds = new Set(agentIds.slice(0, maxNodesInGraph));
@@ -199,10 +197,7 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async visualizeWorkFlow(
-    input: VisualizeWorkFlowInput,
-    _context: OrchestrationVisualizationContext,
-    output: VisualizeWorkFlowOutput,
+  async visualizeWorkFlow(input: VisualizeWorkFlowInput, output: VisualizeWorkFlowOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const workId = input.work_id;
 
@@ -346,10 +341,7 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async getAgentNodeDetail(
-    input: GetAgentNodeDetailInput,
-    _context: OrchestrationVisualizationContext,
-    output: GetAgentNodeDetailOutput,
+  async soAgentNodeDetail(input: GetAgentNodeDetailInput, output: GetAgentNodeDetailOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { work_id: workId, agent_id: agentId } = input;
 
@@ -412,16 +404,13 @@ export class OrchestrationVisualizationService {
     return true;
   }
 
-  async configOrchestrationVisualization(
-    input: ConfigOrchestrationVisualizationInput,
-    _context: OrchestrationVisualizationContext,
-    output: ConfigOrchestrationVisualizationOutput,
+  async configOrchestrationVisualization(input: ConfigOrchestrationVisualizationInput, output: ConfigOrchestrationVisualizationOutput, _context: OrchestrationVisualizationContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const selInput = Object.assign(new SelectOneDBInput(), {
       query_param: { table: 'orchestration_config' },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
 
     const current = (selOutput.row ?? {}) as Record<string, unknown>;
 
@@ -443,7 +432,7 @@ export class OrchestrationVisualizationService {
           { field: 'id', operator: Operator.EQ, value: id },
         ] as Condition[],
       });
-      await this.relationDb.updateDB(updInput, new DBContext(), Object.assign(new UpdateDBOutput(), {}));
+      await this.relationDb.updateDB(updInput, Object.assign(new UpdateDBOutput(), {}), new DBContext());
       current.max_nodes_in_graph = input.max_nodes_in_graph;
     }
 
@@ -465,7 +454,7 @@ export class OrchestrationVisualizationService {
       },
     });
     const selOutput = Object.assign(new SelectOneDBOutput(), {});
-    await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+    await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
     return selOutput.row;
   }
 
@@ -478,7 +467,7 @@ export class OrchestrationVisualizationService {
         query_param: { table, conditions },
       });
       const selOutput = Object.assign(new SelectDBOutput(), {});
-      await this.relationDb.selectDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectDB(selInput, selOutput, new DBContext());
       return selOutput.rows;
     } catch (err: unknown) {
       this.logger?.error?.('queryTable failed', { table, error: err instanceof Error ? err.message : String(err) });
@@ -495,7 +484,7 @@ export class OrchestrationVisualizationService {
         query_param: { table, conditions },
       });
       const selOutput = Object.assign(new SelectOneDBOutput(), {});
-      await this.relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+      await this.relationDb.selectOneDB(selInput, selOutput, new DBContext());
       return selOutput.row;
     } catch (err: unknown) {
       this.logger?.error?.('queryOneTable failed', { table, error: err instanceof Error ? err.message : String(err) });
@@ -588,7 +577,7 @@ export class OrchestrationVisualizationService {
         agent_id: agentId,
       });
       const getAgentOutput = new GetAgentOutput();
-      await this.agentLibrary.getAgent(getAgentInput, new AgentLibraryContext(), getAgentOutput);
+      await this.agentLibrary.soAgent(getAgentInput, getAgentOutput, new AgentLibraryContext());
 
       if (getAgentOutput.agents.length > 0) {
         const agent: AgentRecord = getAgentOutput.agents[0];
@@ -598,7 +587,7 @@ export class OrchestrationVisualizationService {
         refs.agent_type = agent.agent_type ?? '';
       }
     } catch (err: unknown) {
-      this.logger?.error?.('getComponentRefs: agentLibrary.getAgent failed', { agentId, error: err instanceof Error ? err.message : String(err) });
+      this.logger?.error?.('getComponentRefs: agentLibrary.soAgent failed', { agentId, error: err instanceof Error ? err.message : String(err) });
     }
 
     try {
@@ -654,7 +643,7 @@ export class OrchestrationVisualizationService {
     try {
       const getTraceInput = Object.assign(new GetTraceInput(), { trace_id: traceId });
       const getTraceOutput = new GetTraceOutput();
-      await this.agentExecution.getTrace(getTraceInput, new AgentExecutionContext(), getTraceOutput);
+      await this.agentExecution.soTrace(getTraceInput, getTraceOutput, new AgentExecutionContext());
 
       if (getTraceOutput.trace) {
         const traceData = getTraceOutput.trace as Record<string, unknown>;
@@ -663,7 +652,7 @@ export class OrchestrationVisualizationService {
         }
       }
     } catch (err: unknown) {
-      this.logger?.error?.('getContextSourceRefs: getTrace failed', { traceId, error: err instanceof Error ? err.message : String(err) });
+      this.logger?.error?.('getContextSourceRefs: soTrace failed', { traceId, error: err instanceof Error ? err.message : String(err) });
     }
 
     return refs;

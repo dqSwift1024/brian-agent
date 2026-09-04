@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import {
   createTestDb, setupTestMocks,
@@ -34,7 +35,7 @@ describe('OrchestrationEntry.confirmIntent', () => {
 
     // 模拟需求理解 Agent：始终返回低匹配度（should_modify_query=true），触发暂停等待确认
     intentAgent = {
-      understandRequirement: vi.fn().mockImplementation(async (_i: any, _c: any, o: any) => {
+      understandRequirement: vi.fn().mockImplementation(async (_i: any, o: any, _c: any) => {
         o.understood_requirement = '理解后的需求';
         o.match_score = 30;
         o.threshold_score = 80;
@@ -62,18 +63,18 @@ describe('OrchestrationEntry.confirmIntent', () => {
     const input = Object.assign(new ReceiveWorkInput(), { session_id: sessionId, user_query: userQuery });
     const output = new ReceiveWorkOutput();
     const ctx = new OrchestrationEntryContext();
-    await entry.receiveWork(input, ctx, output);
+    await entry.receiveWork(input, output, ctx);
     return output;
   }
 
-  async function getWorkStatus(workId: string): Promise<string> {
+  async function soWorkStatus(workId: string): Promise<string> {
     const selOut = new SelectOneDBOutput();
     await db.selectOneDB(
       Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: workId }] },
       }),
-      new DBContext(),
       selOut,
+      new DBContext(),
     );
     return String(selOut.row?.status ?? '');
   }
@@ -82,7 +83,7 @@ describe('OrchestrationEntry.confirmIntent', () => {
     const rwOut = await pauseWork('ci-s1', '原始提问');
     expect(rwOut.paused).toBe(true);
     expect(rwOut.final_response).toBe('');
-    expect(await getWorkStatus(rwOut.work_id)).toBe('PAUSED_WAITING_CONFIRMATION');
+    expect(await soWorkStatus(rwOut.work_id)).toBe('PAUSED_WAITING_CONFIRMATION');
 
     const input = Object.assign(new ConfirmIntentInput(), {
       session_id: 'ci-s1',
@@ -92,13 +93,13 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    const ok = await entry.confirmIntent(input, ctx, output);
+    const ok = await entry.confirmIntent(input, output, ctx);
 
     expect(ok).toBe(true);
     expect(output.success).toBe(true);
     expect(output.action_applied).toBe('APPROVE');
     expect(output.next_status).toBe('PROCESSING');
-    expect(await getWorkStatus(rwOut.work_id)).toBe('COMPLETED');
+    expect(await soWorkStatus(rwOut.work_id)).toBe('COMPLETED');
   });
 
   it('TC-CI-002: KEEP 按原文执行仍能完成', async () => {
@@ -112,12 +113,12 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    const ok = await entry.confirmIntent(input, ctx, output);
+    const ok = await entry.confirmIntent(input, output, ctx);
 
     expect(ok).toBe(true);
     expect(output.success).toBe(true);
     expect(output.action_applied).toBe('KEEP');
-    expect(await getWorkStatus(rwOut.work_id)).toBe('COMPLETED');
+    expect(await soWorkStatus(rwOut.work_id)).toBe('COMPLETED');
   });
 
   it('TC-CI-003: CANCEL 将 work 置为 CANCELLED 并推送 cancelled 事件', async () => {
@@ -131,13 +132,13 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    const ok = await entry.confirmIntent(input, ctx, output);
+    const ok = await entry.confirmIntent(input, output, ctx);
 
     expect(ok).toBe(true);
     expect(output.success).toBe(true);
     expect(output.action_applied).toBe('CANCEL');
     expect(output.next_status).toBe('CANCELLED');
-    expect(await getWorkStatus(rwOut.work_id)).toBe('CANCELLED');
+    expect(await soWorkStatus(rwOut.work_id)).toBe('CANCELLED');
     expect(streamAccess.pushEvent).toHaveBeenCalled();
   });
 
@@ -148,7 +149,7 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    await expect(entry.confirmIntent(input, ctx, output)).rejects.toBeInstanceOf(ValidationError);
+    await expect(entry.confirmIntent(input, output, ctx)).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('TC-CI-005: 不存在的 work_id 抛 NotFoundError', async () => {
@@ -159,7 +160,7 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    await expect(entry.confirmIntent(input, ctx, output)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(entry.confirmIntent(input, output, ctx)).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('TC-CI-006: APPROVE 重入不再触发 IntentAgent（skip_intent_check）', async () => {
@@ -174,7 +175,7 @@ describe('OrchestrationEntry.confirmIntent', () => {
     });
     const output = new ConfirmIntentOutput();
     const ctx = new OrchestrationEntryContext();
-    await entry.confirmIntent(input, ctx, output);
+    await entry.confirmIntent(input, output, ctx);
 
     expect(intentAgent.understandRequirement).toHaveBeenCalledTimes(1);
   });

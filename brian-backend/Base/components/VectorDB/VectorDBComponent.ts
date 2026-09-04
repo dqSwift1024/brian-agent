@@ -201,9 +201,6 @@ export class VectorDBComponent {
     return null;
   }
 
-  private metadataToStored(meta: Record<string, unknown> | null): string | null {
-    return meta ? JSON.stringify(meta) : null;
-  }
 
   private getFieldValue(
     record: { user_id: string | null; metadata: Record<string, unknown> | null },
@@ -338,11 +335,6 @@ export class VectorDBComponent {
     return t;
   }
 
-  private distanceTypeForLanceDB(): LanceDBDistanceType {
-    if (this.metric === 'euclidean') return 'l2';
-    if (this.metric === 'dot') return 'dot';
-    return 'cosine';
-  }
 
   private buildUserWhere(userIds: string[]): string | null {
     const ids = userIds.filter(Boolean);
@@ -367,7 +359,7 @@ export class VectorDBComponent {
       content: record.content,
       embedding: record.embedding,
       user_id: record.user_id ?? null,
-      metadata: this.metadataToStored(record.metadata),
+      metadata: record.metadata ? JSON.stringify(record.metadata) : null,
       created: record.created,
       updated: record.updated,
     }];
@@ -482,7 +474,9 @@ export class VectorDBComponent {
       .query()
       .nearestTo(queryVector)
       .column('embedding')
-      .distanceType(this.distanceTypeForLanceDB());
+      .distanceType(
+        this.metric === 'euclidean' ? 'l2' : this.metric === 'dot' ? 'dot' : 'cosine',
+      );
 
     if (whereClause) {
       query = query.where(whereClause);

@@ -187,7 +187,7 @@ export class ExecDAGAsyncOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getDAGProgress
+// soDAGProgress
 // ---------------------------------------------------------------------------
 
 export class GetDAGProgressInput extends Input {
@@ -212,7 +212,7 @@ export class CancelExecutionOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getExecQueueStatus
+// soExecQueueStatus
 // ---------------------------------------------------------------------------
 
 export class GetOrchestrationExecQueueStatusInput extends Input {}

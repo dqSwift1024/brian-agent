@@ -7,7 +7,7 @@ AgentDAG Canvas 图（Agent 名称 / 任务 → Agent 映射）：
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Network } from '@lucide/vue'
-import { useSessionStore } from '@/stores/session'
+import { useChatUiStore } from '@/stores/chatUi'
 import type { AgentDagData, AgentExecutionStatus } from '@/api/types'
 import { layoutDag, DAG_NODE_W, DAG_NODE_H } from './dagLayout'
 
@@ -19,7 +19,7 @@ const emit = defineEmits<{
   (e: 'select', agentId: string): void
 }>()
 
-const sessionStore = useSessionStore()
+const chatUi = useChatUiStore()
 
 const selectedId = ref<string | null>(null)
 
@@ -42,9 +42,9 @@ const containerStyle = computed(() => {
 // 所有复用该 Agent 的节点被误标为执行完成。
 function resolveStatus(node: (typeof nodes.value)[number]): AgentExecutionStatus {
   const taskKey = node.taskId ?? node.id
-  const tt = taskKey ? sessionStore.taskExecutions[taskKey] : undefined
+  const tt = taskKey ? chatUi.taskExecutions[taskKey] : undefined
   if (tt) return tt.status
-  const rt = sessionStore.agentExecutions[node.agentId ?? node.id]
+  const rt = chatUi.agentExecutions[node.agentId ?? node.id]
   if (rt) return rt.status
   const s = String(node.status ?? '').toUpperCase()
   if (s.includes('COMPLET') || s.includes('SUCCESS') || s.includes('DONE')) return 'SUCCESS'

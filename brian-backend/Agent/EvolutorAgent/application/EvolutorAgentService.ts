@@ -1,19 +1,8 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, MQAccess } from '@brian-agent/base';
-import {
-  IdGenerator, Operator, ValidationError, NotFoundError,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  SoPromptInput, SoPromptOutput,
-  SendMQInput, SendMQOutput, MQContext,
-  HandleResultType,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-  type DataObject, type Direction,
-} from '@brian-agent/base';
+import { IdGenerator, Operator, ValidationError, NotFoundError, ExecLLMInput, ExecLLMOutput, LLMContext, PromptContext, SoPromptInput, SoPromptOutput, SendMQInput, SendMQOutput, MQContext, HandleResultType, PROMPT_IDS, type DataObject, type Direction } from '@brian-agent/base';
 import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
-import {
-  StartWorkerInput, StartWorkerOutput, StopWorkerInput, StopWorkerOutput, MQCoreContext,
-  MatchLLMInput, MatchLLMOutput, LLMCoreContext,
-} from '@brian-agent/core';
+import { StartWorkerInput, StartWorkerOutput, StopWorkerInput, StopWorkerOutput, MQCoreContext } from '@brian-agent/core';
 import type { AgentBuilderAccess } from '../../AgentBuilder/access/AgentBuilderAccess';
 import type { AgentLibraryAccess } from '../../AgentLibrary/access/AgentLibraryAccess';
 import type { AgentExecutionAccess } from '../../AgentExecution/access/AgentExecutionAccess';
@@ -44,6 +33,7 @@ import {
 import { TraceStore } from '../../AgentExecution/application/trace/TraceStore';
 import { buildSingleAnswerTrace } from '../../AgentExecution/application/trace/TraceCodec';
 import { parseJsonObject } from '../../shared/signature';
+import { renderPromptWithFallback, resolveAgentLlm } from '../../shared/AgentKit';
 
 const OPTIMIZE_QUEUE = 'agent.optimize';
 const EVAL_QUEUE = 'agent.eval';
@@ -84,10 +74,7 @@ export class EvolutorAgentService {
     this.traceStore = new TraceStore(relationDb);
   }
 
-  async evalWorkAgent(
-    input: EvalWorkAgentInput,
-    ctx: EvolutorAgentContext,
-    output: EvalWorkAgentOutput,
+  async evalWorkAgent(input: EvalWorkAgentInput, output: EvalWorkAgentOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
     if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
@@ -99,14 +86,14 @@ export class EvolutorAgentService {
       interact_id: input.interact_id || ctx.interact_id,
     });
     const buildOut = new BuildSystemAgentOutput();
-    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'EVOLUTOR' }), builderCtx, buildOut);
+    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'EVOLUTOR' }), buildOut, builderCtx);
 
     const libCtx = Object.assign(new AgentLibraryContext(), builderCtx);
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      libCtx,
       getOut,
+      libCtx,
     );
     const evolutor = getOut.agents[0];
     const config = await this.getConfig();
@@ -121,10 +108,10 @@ export class EvolutorAgentService {
     if (input.trace_id) {
       try {
         const traceOut = new GetTraceOutput();
-        await this.agentExecution.getTrace(
+        await this.agentExecution.soTrace(
           Object.assign(new GetTraceInput(), { trace_id: input.trace_id }),
-          Object.assign(new AgentExecutionContext(), ctx),
           traceOut,
+          Object.assign(new AgentExecutionContext(), ctx),
         );
         traceData = traceOut.trace;
       } catch { /* best-effort */ }
@@ -149,8 +136,8 @@ export class EvolutorAgentService {
       const llmOut = new ExecLLMOutput();
       const ok = await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), { id: targetLlmId, prompt }),
-        new LLMContext(),
         llmOut,
+        new LLMContext(),
       );
       if (ok && llmOut.result) {
         const parsed = parseJsonObject(llmOut.result);
@@ -216,8 +203,8 @@ export class EvolutorAgentService {
             },
           },
         }),
-        new MQContext(),
         new SendMQOutput(),
+        new MQContext(),
       );
     }
 
@@ -229,10 +216,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async evalWriterAgent(
-    input: EvalWriterAgentInput,
-    ctx: EvolutorAgentContext,
-    output: EvalWriterAgentOutput,
+  async evalWriterAgent(input: EvalWriterAgentInput, output: EvalWriterAgentOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     // 错误信息（call_error / internal_error）不参与评估：直接跳过评分与优化触发
     if (input.handle_result_type === HandleResultType.CALL_ERROR || input.handle_result_type === HandleResultType.INTERNAL_ERROR) {
@@ -245,13 +229,13 @@ export class EvolutorAgentService {
       interact_id: input.interact_id || ctx.interact_id,
     });
     const buildOut = new BuildSystemAgentOutput();
-    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'EVOLUTOR' }), builderCtx, buildOut);
+    await this.agentBuilder.buildSystemAgent(Object.assign(new BuildSystemAgentInput(), { agent_type: 'EVOLUTOR' }), buildOut, builderCtx);
     const libCtx = Object.assign(new AgentLibraryContext(), builderCtx);
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: buildOut.agent_id }),
-      libCtx,
       getOut,
+      libCtx,
     );
     const evolutor = getOut.agents[0];
     const config = await this.getConfig();
@@ -285,8 +269,8 @@ export class EvolutorAgentService {
       const llmOut = new ExecLLMOutput();
       const ok = await this.llmAccess.execLLM(
         Object.assign(new ExecLLMInput(), { id: targetLlmId, prompt }),
-        new LLMContext(),
         llmOut,
+        new LLMContext(),
       );
       inputTokens = Number(llmOut.input_tokens ?? 0);
       outputTokens = Number(llmOut.output_tokens ?? 0);
@@ -337,8 +321,8 @@ export class EvolutorAgentService {
             payload: { agent_id: input.agent_id, interact_id: input.interact_id },
           },
         }),
-        new MQContext(),
         new SendMQOutput(),
+        new MQContext(),
       );
     }
 
@@ -419,10 +403,7 @@ export class EvolutorAgentService {
     }
   }
 
-  async startEvalSchedule(
-    input: StartEvalScheduleInput,
-    ctx: EvolutorAgentContext,
-    output: StartEvalScheduleOutput,
+  async startEvalSchedule(input: StartEvalScheduleInput, output: StartEvalScheduleOutput, ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const interval = input.interval_ms ?? config?.eval_schedule_interval_ms ?? 3600000;
@@ -441,14 +422,14 @@ export class EvolutorAgentService {
                 interact_id: payload.interact_id ?? '',
                 usage_feedback: payload.usage_feedback,
               }),
-              Object.assign(new AgentBuilderContext(), ctx),
               new OptimizeAgentOutput(),
+              Object.assign(new AgentBuilderContext(), ctx),
             );
             return true;
           },
         }),
-        new MQCoreContext(),
         new StartWorkerOutput(),
+        new MQCoreContext(),
       );
     } catch { /* may exist */ }
 
@@ -470,15 +451,15 @@ export class EvolutorAgentService {
                   agent_output: payload.agent_output,
                   trace_id: payload.trace_id,
                 }),
-                ctx,
                 new EvalWorkAgentOutput(),
+                ctx,
               );
             }
             return true;
           },
         }),
-        new MQCoreContext(),
         new StartWorkerOutput(),
+        new MQCoreContext(),
       );
     } catch { /* may exist */ }
 
@@ -540,8 +521,8 @@ export class EvolutorAgentService {
                       },
                     },
                   }),
-                  new MQContext(),
                   new SendMQOutput(),
+                  new MQContext(),
                 );
               }
             }
@@ -552,15 +533,15 @@ export class EvolutorAgentService {
           try {
             await this.agentLibrary.ageAgent(
               new AgeAgentInput(),
-              new AgentLibraryContext(),
               new AgeAgentOutput(),
+              new AgentLibraryContext(),
             );
           } catch { /* best-effort */ }
           return true;
         },
       }),
-      new MQCoreContext(),
       startOut,
+      new MQCoreContext(),
     );
 
     this.scheduleWorkerId = startOut.worker_id;
@@ -568,25 +549,19 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async stopEvalSchedule(
-    input: StopEvalScheduleInput,
-    _ctx: EvolutorAgentContext,
-    _output: StopEvalScheduleOutput,
+  async stopEvalSchedule(input: StopEvalScheduleInput, _output: StopEvalScheduleOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const id = (input as { worker_id?: string }).worker_id || this.scheduleWorkerId || EVAL_SCHEDULE_QUEUE;
     const stopOut = new StopWorkerOutput();
     await this.mqCore.stopWorker(
       Object.assign(new StopWorkerInput(), { identifier: id }),
-      new MQCoreContext(),
       stopOut,
+      new MQCoreContext(),
     );
     return true;
   }
 
-  async getEvaluation(
-    input: GetEvaluationInput,
-    _ctx: EvolutorAgentContext,
-    output: GetEvaluationOutput,
+  async soEvaluation(input: GetEvaluationInput, output: GetEvaluationOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = [...(input.conditions ?? [])];
     if (input.agent_id) {
@@ -604,16 +579,13 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async getEvolutionReport(
-    input: GetEvolutionReportInput,
-    _ctx: EvolutorAgentContext,
-    output: GetEvolutionReportOutput,
+  async soEvolutionReport(input: GetEvolutionReportInput, output: GetEvolutionReportOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: input.agent_id }),
-      new AgentLibraryContext(),
       getOut,
+      new AgentLibraryContext(),
     );
     if (getOut.agents.length === 0) throw new NotFoundError('Agent', input.agent_id);
     const agent = getOut.agents[0];
@@ -673,10 +645,7 @@ export class EvolutorAgentService {
     return true;
   }
 
-  async configEvolutorAgent(
-    input: ConfigEvolutorAgentInput,
-    _ctx: EvolutorAgentContext,
-    output: ConfigEvolutorAgentOutput,
+  async configEvolutorAgent(input: ConfigEvolutorAgentInput, output: ConfigEvolutorAgentOutput, _ctx: EvolutorAgentContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -706,8 +675,8 @@ export class EvolutorAgentService {
             Object.assign(new SoPromptInput(), {
               conditions: [{ field: 'id', operator: Operator.EQ, value: val }],
             }),
-            new PromptContext(),
             so,
+            new PromptContext(),
           );
           if (!so.list?.length) throw new ValidationError(`prompt 不存在: ${val}`);
         }
@@ -753,17 +722,7 @@ export class EvolutorAgentService {
    * 通过 Core.matchLLM 解析 EvolutorAgent 绑定的 LLM（agent_llm）。
    */
   private async resolveLlm(agentId: string): Promise<string> {
-    try {
-      const llmOut = new MatchLLMOutput();
-      await this.llmCore?.matchLLM(
-        Object.assign(new MatchLLMInput(), { agent_id: agentId }),
-        new LLMCoreContext(),
-        llmOut,
-      );
-      return llmOut.llm_id || '';
-    } catch {
-      return '';
-    }
+    return resolveAgentLlm(this.llmCore, agentId);
   }
 
   /**
@@ -774,18 +733,7 @@ export class EvolutorAgentService {
     builtinId: string,
     variables: Record<string, unknown>,
   ): Promise<string> {
-    const id = templateId || builtinId;
-    try {
-      const promptOut = new ExecPromptOutput();
-      await this.promptsAccess.execPrompt(
-        Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
-        promptOut,
-      );
-      if (promptOut.prompt) return promptOut.prompt;
-    } catch { /* use fallback prompt */ }
-    const tpl = getBuiltinTemplate(builtinId);
-    return tpl ? renderTemplate(tpl, variables) : '';
+    return renderPromptWithFallback(this.promptsAccess, templateId, builtinId, variables);
   }
 
   private async getConfig(): Promise<EvolutorAgentConfigRecord | null> {
@@ -821,8 +769,8 @@ export class EvolutorAgentService {
 
     await this.agentLibrary.updateAgent(
       Object.assign(new UpdateAgentInput(), { agent_id: agentId, eval_score: weightedScore }),
-      new AgentLibraryContext(),
       new UpdateAgentOutput(),
+      new AgentLibraryContext(),
     );
   }
 }

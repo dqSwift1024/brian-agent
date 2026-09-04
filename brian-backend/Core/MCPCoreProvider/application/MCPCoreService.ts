@@ -1,11 +1,6 @@
-import type {
-  RelationDBAccess,
-  MCPAccess,
-  LLMAccess,
-  PromptsAccess,
-  Condition,
-  DataObject,
-} from '@brian-agent/base';
+import { Metrics, Report } from '@brian-agent/base';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
+import type { RelationDBAccess, MCPAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import {
   Operator,
   IdGenerator,
@@ -25,13 +20,7 @@ import {
   McpInstallRecord,
   PROMPT_IDS, getBuiltinTemplate, renderTemplate,
 } from '@brian-agent/base';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 import {
   McpCoreContext,
   McpCoreConfigRecord,
@@ -48,24 +37,36 @@ import {
 } from '../domain/types';
 
 export class MCPCoreService {
+  /** 单行配置仓 */
+  private readonly configStore: SingleRowConfigStore<McpCoreConfigRecord>;
+
   constructor(
     private readonly relationDb: RelationDBAccess,
     private readonly mcpAccess: MCPAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<McpCoreConfigRecord>(this.relationDb, {
+      table: MCP_CORE_CONFIG_TABLE,
+      toRecord: (raw) => ({
+        id: String(raw.id),
+        created: Number(raw.created),
+        updated: Number(raw.updated),
+        regen_rate: Number(raw.regen_rate),
+        similarity_threshold: Number(raw.similarity_threshold ?? 0.7),
+        prompt_template_id: String(raw.prompt_template_id ?? ''),
+      }),
+      defaults: [{ field: 'prompt_template_id', value: '' }],
+    });
+  }
 
   /**
    * 为 Agent 匹配 MCP（三层统一匹配/选择逻辑，第3层除外：MCP 没有匹配不可用 MCP）。
    */
-  async matchMCP(
-    input: MatchMcpInput,
-    _context: McpCoreContext,
-    output: MatchMcpOutput,
+  async matchMCP(input: MatchMcpInput, output: MatchMcpOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const config = await this.getConfig();
     const regenRate = config.regen_rate;
-    const similarityThreshold = config.similarity_threshold ?? 0.7;
 
     const availableMcps = await this.getAvailableMcps();
 
@@ -104,10 +105,7 @@ export class MCPCoreService {
     return true;
   }
 
-  async optMCP(
-    input: OptMcpInput,
-    _context: McpCoreContext,
-    output: OptMcpOutput,
+  async optMCP(input: OptMcpInput, output: OptMcpOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(AGENT_MCP_TABLE, [
       { field: 'agent_id', operator: Operator.EQ, value: input.agent_id },
@@ -136,14 +134,8 @@ export class MCPCoreService {
     return true;
   }
 
-  async configMCPCore(
-    input: ConfigMcpCoreInput,
-    _context: McpCoreContext,
-    output: ConfigMcpCoreOutput,
+  async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, _context: McpCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -161,10 +153,9 @@ export class MCPCoreService {
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
           const getPromptOutput = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -172,21 +163,7 @@ export class MCPCoreService {
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || '' });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing.id) {
-        await this.relationDb.update(
-          MCP_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(MCP_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getConfig();
@@ -194,19 +171,7 @@ export class MCPCoreService {
   }
 
   private async getConfig(): Promise<McpCoreConfigRecord> {
-    const rows = await this.relationDb.select(MCP_CORE_CONFIG_TABLE);
-    if (rows.length > 0) {
-      const r = rows[0];
-      return {
-        id: String(r.id),
-        created: Number(r.created),
-        updated: Number(r.updated),
-        regen_rate: Number(r.regen_rate),
-        similarity_threshold: Number(r.similarity_threshold ?? 0.7),
-        prompt_template_id: String(r.prompt_template_id ?? ''),
-      };
-    }
-    return {
+    return (await this.configStore.load()) ?? {
       id: '',
       created: 0,
       updated: 0,
@@ -223,7 +188,7 @@ export class MCPCoreService {
       { field: 'enable', operator: Operator.EQ, value: 1 },
     ];
     const soOutput = new SoMcpOutput();
-    await this.mcpAccess.soMcp(soInput, new McpContext(), soOutput);
+    await this.mcpAccess.soMcp(soInput, soOutput, new McpContext());
     return soOutput.list.filter((r) => String(r.status) === 'running');
   }
 
@@ -235,7 +200,7 @@ export class MCPCoreService {
       ];
     }
     const soOutput = new SoMcpOutput();
-    await this.mcpAccess.soMcp(soInput, new McpContext(), soOutput);
+    await this.mcpAccess.soMcp(soInput, soOutput, new McpContext());
     return soOutput.list;
   }
 
@@ -245,7 +210,7 @@ export class MCPCoreService {
     promptTemplateId: string,
   ): Promise<string[]> {
     const mcpDescriptions = mcps.map(
-      (m, i) =>
+      (m) =>
         `"${m.id}": ${m.mcp_title}${m.mcp_brief ? ` - ${m.mcp_brief}` : ''}`,
     );
 
@@ -264,8 +229,7 @@ export class MCPCoreService {
       const execPromptOutput = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         execPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       prompt = execPromptOutput.prompt;
       if (!prompt) {
@@ -283,8 +247,7 @@ export class MCPCoreService {
     const execOutput = new ExecLLMOutput();
     await this.llmAccess.execLLM(
       execInput,
-      new LLMContext(),
-      execOutput,
+      execOutput, new LLMContext(),
     );
 
     return this.parseLLMRanking(execOutput.result, mcps);

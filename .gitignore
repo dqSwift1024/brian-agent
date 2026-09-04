@@ -1,6 +1,12 @@
 node_modules/
 dist/
 dist-sea/
+dist-pack/
+packaging/.cache/
+packaging/__pycache__/
+
+
+
 build/
 *.log
 .env
@@ -21,3 +27,12 @@ brian-backend/Application/dist/
 
 # isolated-vm 运行时复制产物（由 copy-prebuilt.js 生成，平台特定）
 brian-backend/Base/SkillProvider/infrastructure/sandbox/vendor/isolated-vm/out/
+
+# ===== AI 助手工作区文件（个人环境，不入仓库） =====
+AGENTS.md
+AGENT.md
+CLAUDE.md
+.zcode/
+
+# ===== 历史备份文档（含敏感信息，不入仓库） =====
+docs/BackUP/

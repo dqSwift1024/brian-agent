@@ -109,10 +109,10 @@ export class UpdatePromptOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getPrompt
+// soPromptById
 // ---------------------------------------------------------------------------
 
-/** getPrompt 入参 */
+/** soPromptById 入参 */
 export class GetPromptInput extends Input {
   /** 按 ID 获取 */
   id?: string;
@@ -120,7 +120,7 @@ export class GetPromptInput extends Input {
   conditions?: Condition[];
 }
 
-/** getPrompt 出参 */
+/** soPromptById 出参 */
 export class GetPromptOutput extends Output {
   /** Prompt 信息，无匹配为 null */
   prompt: PromptTemplateRecord | null = null;

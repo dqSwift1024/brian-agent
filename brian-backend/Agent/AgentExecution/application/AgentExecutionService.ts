@@ -1,6 +1,7 @@
 ﻿import type {
   RelationDBAccess, LLMAccess, PromptsAccess, SkillAccess, SoulAccess, MCPAccess, MQAccess, StreamAccess, Logger,
 } from '@brian-agent/base';
+import { Metrics, Report } from '@brian-agent/base';
 import {
   IdGenerator, Operator, ValidationError, NotFoundError,
   ExecLLMInput, ExecLLMOutput, LLMContext,
@@ -65,7 +66,6 @@ import {
 import { parseJsonObject, parseTaskContentAndContext } from '../../shared/signature';
 import { formatContextCategories } from '@brian-agent/base';
 
-const EVAL_QUEUE = 'agent.eval';
 const EXEC_QUEUE = 'agent.execution';
 
 interface RuleStep {
@@ -121,6 +121,9 @@ interface AgentExecutionEnv {
 }
 
 export class AgentExecutionService {
+  // 全量 LLM 轨迹（各阶段 prompt/raw_response/工具结果）单条可达数百 KB，
+  // 上限淘汰防止随执行次数无界增长；需要完整轨迹走 agent_execution_trace 落库查询。
+  private static readonly TRACES_MAX = 100;
   private readonly traces = new Map<string, {
     agent_id: string;
     start_time: number;
@@ -154,10 +157,7 @@ export class AgentExecutionService {
 
   private readonly traceStore: TraceStore;
 
-  async execAgent(
-    input: ExecAgentInput,
-    ctx: AgentExecutionContext,
-    output: ExecAgentOutput,
+  async execAgent(input: ExecAgentInput, output: ExecAgentOutput, ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const start = IdGenerator.now();
     const config = await this.getConfig();
@@ -166,10 +166,10 @@ export class AgentExecutionService {
     const libCtx = this.toLibCtx(ctx, input.work_id, input.interact_id);
 
     const getOut = new GetAgentOutput();
-    await this.agentLibrary.getAgent(
+    await this.agentLibrary.soAgent(
       Object.assign(new GetAgentInput(), { agent_id: input.agent_id }),
-      libCtx,
       getOut,
+      libCtx,
     );
     if (getOut.agents.length === 0 || !getOut.agents[0].enable) {
       throw new NotFoundError('Agent', input.agent_id);
@@ -181,9 +181,6 @@ export class AgentExecutionService {
     const domain = domainMatch ? domainMatch[1] : 'general';
     const agentName = agent.agent_name || agent.agent_id;
 
-    // ===== 原始方法（保留作为参考）=====
-    // let contextData = input.task_content;
-
     // ===== 修改后的方法：剥离 work_context 非内容 JSON 属性，确保 Prompt 仅包含纯净 Task Content =====
     const { cleanTaskContent } = parseTaskContentAndContext(input.task_content);
     input.task_content = cleanTaskContent;
@@ -193,34 +190,7 @@ export class AgentExecutionService {
     if (sessionId) {
       try {
         const ctxOut = new ContextInfoOutput();
-        // ===== 原始代码（保留作为参考）=====
-        // await this.infoCore.context(
-        //   Object.assign(new ContextInfoInput(), {
-        //     session_id: sessionId,
-        //     selected_msg_ids: ctx.selected_msg_ids,
-        //   }),
-        //   new InfoCoreContext(),
-        //   ctxOut,
-        // );
-
         // ===== 修改后的代码：传入 info: input.task_content =====
-        // ===== 原始代码（保留作为参考）：曾传 enable_cross_session: false 关闭跨会话召回 =====
-        //   await this.infoCore.context(
-        //     Object.assign(new ContextInfoInput(), {
-        //       session_id: sessionId,
-        //       work_id: input.work_id || ctx.work_id || '',
-        //       selected_msg_ids: ctx.selected_msg_ids,
-        //       info: input.task_content,
-        //       persist_snapshot: false,
-        //       enable_cross_session: false,
-        //     }),
-        //     new InfoCoreContext(),
-        //     ctxOut,
-        //   );
-        // ===== 修改后的代码：保持默认 enable_cross_session=true =====
-        // 跨会话召回（TAG_RELATIVE / SIMILARITY / KEYWORD / RANDOM）是 Agent 长程记忆的核心维度，
-        // 不应被关闭。此前关闭是为了避免任务漂移，但漂移根因是 think 模板把 context_data 当作 task，
-        // 现已在 think 模板显式注入 task_content 修复，跨会话上下文仅作补充参考，不再取代当前任务。
         await this.infoCore.context(
           Object.assign(new ContextInfoInput(), {
             session_id: sessionId,
@@ -229,14 +199,9 @@ export class AgentExecutionService {
             info: input.task_content,
             persist_snapshot: false,
           }),
-          new InfoCoreContext(),
           ctxOut,
+          new InfoCoreContext(),
         );
-        // ===== 原始方法（保留作为参考）=====
-        // if (ctxOut.list?.length) {
-        //   contextData = `${ctxOut.list.map((i) => String((i as { info?: string }).info ?? i)).join('\n')}\n${input.task_content}`;
-        // }
-
         // ===== 修改后的方法：按分类分类节点包裹内容且脱敏非内容属性 =====
         // 当前消息（本次输入）已由 InfoCoreProvider.context 单独拆出为 CURRENT 类型，
         // 不再拼入上下文；上下文仅包含历史引用消息，任务内容经 task_content 变量单独注入。
@@ -250,10 +215,10 @@ export class AgentExecutionService {
     }
 
     const stratOut = new GetStrategyOutput();
-    await this.agentStrategy.getStrategy(
+    await this.agentStrategy.soStrategyById(
       Object.assign(new GetStrategyInput(), { strategy_id: agent.strategy_id }),
-      new AgentStrategyContext(),
       stratOut,
+      new AgentStrategyContext(),
     );
 
     const skills = await this.loadSkills(input.agent_id, ctx);
@@ -306,24 +271,17 @@ export class AgentExecutionService {
 
     if (!rule?.steps && !rule?.phases) {
       const answerOut = new AnswerOutput();
-      await this.answer(
+      await this.execAnswer(
         Object.assign(new AnswerInput(), {
           agent_id: input.agent_id, agent_name: agentName, domain, llm_id: llmId, soul_id: agent.soul_id,
           history, context_data: contextData, task_content: input.task_content,
           tools_json: toolsJson,
         }),
-        ctx,
         answerOut,
+        ctx,
       );
       finalAnswer = answerOut.answer;
       totalTokens += answerOut.token_usage;
-      // ===== 原始代码（保留参考）=====
-      // traceIterations.push({
-      //   iteration_index: 0,
-      //   answer: { answer: answerOut.answer },
-      //   iteration_elapsed_ms: answerOut.elapsed_ms ?? 0,
-      // });
-
       // ===== 修改后的代码：补全 raw_response 与 input/output tokens 记录（prompt 以引用存储，展示时重建） =====
       traceIterations.push({
         iteration_index: 0,
@@ -346,14 +304,14 @@ export class AgentExecutionService {
 
     if (!finalAnswer) {
       const answerOut = new AnswerOutput();
-      await this.answer(
+      await this.execAnswer(
         Object.assign(new AnswerInput(), {
           agent_id: input.agent_id, agent_name: agentName, domain, llm_id: llmId, soul_id: agent.soul_id,
           history, context_data: contextData, task_content: input.task_content,
           tools_json: toolsJson,
         }),
-        ctx,
         answerOut,
+        ctx,
       );
       finalAnswer = answerOut.answer;
       totalTokens += answerOut.token_usage;
@@ -375,8 +333,8 @@ export class AgentExecutionService {
           agent_output: finalAnswer,
         }),
       }),
-      libCtx,
       new RecordAgentUsageOutput(),
+      libCtx,
     );
 
     // 空答案视为执行失败：LLM 不可用时 ReACT 循环可能“正常”跑完但产出为空，
@@ -402,8 +360,8 @@ export class AgentExecutionService {
             info: JSON.stringify(buildLightTraceRef(traceId, finalAnswer, totalTokens)),
             handle_result_type: traceHandleResult,
           }),
-          new InfoCoreContext(),
           new SaveInfoOutput(),
+          new InfoCoreContext(),
         );
       } catch {
         /* best-effort */
@@ -411,6 +369,12 @@ export class AgentExecutionService {
     }
 
     const end = IdGenerator.now();
+    while (this.traces.size >= AgentExecutionService.TRACES_MAX) {
+      // Map 迭代序即插入序，淘汰最早写入的轨迹
+      const oldest = this.traces.keys().next().value;
+      if (oldest === undefined) break;
+      this.traces.delete(oldest);
+    }
     this.traces.set(traceId, {
       agent_id: input.agent_id,
       start_time: start,
@@ -424,30 +388,6 @@ export class AgentExecutionService {
       iterations: traceIterations, total_token_usage: totalTokens, answer: finalAnswer,
     });
 
-    // ===== 原始代码（保留参考）：WorkAgent 评估由 Orchestration 编排层 EVAL_RESULT 节点统一侧载触发，避免双重评估 =====
-    // try {
-    //   await this.mqAccess.sendMQ(
-    //     Object.assign(new SendMQInput(), {
-    //       data: {
-    //         queue: EVAL_QUEUE,
-    //         payload: {
-    //           type: 'eval_work_agent',
-    //           agent_id: input.agent_id,
-    //           work_id: input.work_id,
-    //           interact_id: input.interact_id,
-    //           task_content: input.task_content,
-    //           agent_output: finalAnswer,
-    //           trace_id: traceId,
-    //         },
-    //       },
-    //     }),
-    //     new MQContext(),
-    //     new SendMQOutput(),
-    //   );
-    // } catch {
-    //   /* best-effort */
-    // }
-
     output.answer = finalAnswer;
     output.iterations = iteration || traceIterations.length;
     output.trace_id = traceId;
@@ -456,10 +396,7 @@ export class AgentExecutionService {
     return producedOutput;
   }
 
-  async execAgentAsync(
-    input: ExecAgentAsyncInput,
-    ctx: AgentExecutionContext,
-    output: ExecAgentAsyncOutput,
+  async execAgentAsync(input: ExecAgentAsyncInput, output: ExecAgentAsyncOutput, ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const jobId = IdGenerator.generate();
     const config = await this.getConfig();
@@ -481,8 +418,8 @@ export class AgentExecutionService {
           },
         },
       }),
-      new MQContext(),
       new SendMQOutput(),
+      new MQContext(),
     );
 
     try {
@@ -506,23 +443,23 @@ export class AgentExecutionService {
                 task_content: payload.task_content,
                 max_iterations: payload.max_iterations,
               }),
-              execCtx,
               execOut,
+              execCtx,
             );
             if (payload.callback_queue) {
               await this.mqAccess.sendMQ(
                 Object.assign(new SendMQInput(), {
                   data: { queue: String(payload.callback_queue), payload: execOut },
                 }),
-                new MQContext(),
                 new SendMQOutput(),
+                new MQContext(),
               );
             }
             return true;
           },
         }),
-        new MQCoreContext(),
         new StartWorkerOutput(),
+        new MQCoreContext(),
       );
     } catch {
       /* worker may already exist */
@@ -550,8 +487,8 @@ export class AgentExecutionService {
         prompt,
         ...(system ? { system } : {}),
       }),
-      new LLMContext(),
       llmOut,
+      new LLMContext(),
     );
     if (!ok) {
       const reason = llmOut.error ?? 'unknown error';
@@ -560,7 +497,7 @@ export class AgentExecutionService {
     return llmOut;
   }
 
-  async think(input: ThinkInput, ctx: AgentExecutionContext, output: ThinkOutput): Promise<boolean> {
+  async execThink(input: ThinkInput, output: ThinkOutput, ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     if (!input.llm_id) throw new ValidationError('think 需要 llm_id');
     const config = await this.getConfig();
     const system = await this.loadSoulSystem(input.soul_id);
@@ -594,7 +531,7 @@ export class AgentExecutionService {
     return true;
   }
 
-  async act(input: ActInput, ctx: AgentExecutionContext, output: ActOutput): Promise<boolean> {
+  async execAct(input: ActInput, output: ActOutput, ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     let action: Record<string, unknown> = {};
     try {
       action = JSON.parse(input.next_action) as Record<string, unknown>;
@@ -618,8 +555,8 @@ export class AgentExecutionService {
         const skillOut = new ExecSkillOutput();
         const ok = await this.skillAccess.execSkill(
           Object.assign(new ExecSkillInput(), { id: toolId, params }),
-          new SkillContext(),
           skillOut,
+          new SkillContext(),
         );
         if (!ok) {
           throw new ValidationError(skillOut.error ?? `execSkill failed: ${toolId}`);
@@ -646,8 +583,8 @@ export class AgentExecutionService {
         const mcpOut = new ExecMcpOutput();
         const ok = await this.mcpAccess.execMcp(
           Object.assign(new ExecMcpInput(), { id: toolId, params }),
-          new McpContext(),
           mcpOut,
+          new McpContext(),
         );
         if (!ok) {
           throw new ValidationError(mcpOut.error ?? `execMcp failed: ${toolId}`);
@@ -686,7 +623,7 @@ export class AgentExecutionService {
     return true;
   }
 
-  async reflect(input: ReflectInput, ctx: AgentExecutionContext, output: ReflectOutput): Promise<boolean> {
+  async execReflect(input: ReflectInput, output: ReflectOutput, ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     if (!input.llm_id) throw new ValidationError('reflect 需要 llm_id');
     if (input.iteration >= input.max_iterations) {
       output.should_continue = false;
@@ -726,7 +663,7 @@ export class AgentExecutionService {
     return true;
   }
 
-  async answer(input: AnswerInput, ctx: AgentExecutionContext, output: AnswerOutput): Promise<boolean> {
+  async execAnswer(input: AnswerInput, output: AnswerOutput, _ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     if (!input.llm_id) throw new ValidationError('answer 需要 llm_id');
     const config = await this.getConfig();
     const system = await this.loadSoulSystem(input.soul_id);
@@ -752,33 +689,10 @@ export class AgentExecutionService {
     output.output_tokens = Number(llmOut.output_tokens ?? 0);
     output.token_usage = Number((llmOut.input_tokens ?? 0) + (llmOut.output_tokens ?? 0));
 
-    // ===== 原始代码（保留参考）：WorkAgent 执行 answer() 时不应保存 final RESPONSE 消息，该消息由编排引擎的 SAVE_RESPONSE 节点保存 =====
-    // if (ctx.session_id) {
-    //   try {
-    //     await this.infoCore.saveInfo(
-    //       Object.assign(new SaveInfoInput(), {
-    //         session_id: ctx.session_id,
-    //         work_id: ctx.work_id || '',
-    //         interact_id: ctx.interact_id || '',
-    //         info_type: InfoType.RESPONSE,
-    //         info_creator_role: 'AGENT',
-    //         info_creator_id: input.agent_id,
-    //         info: output.answer,
-    //       }),
-    //       new InfoCoreContext(),
-    //       new SaveInfoOutput(),
-    //     );
-    //   } catch {
-    //     /* best-effort */
-    //   }
-    // }
     return true;
   }
 
-  async getTrace(
-    input: GetTraceInput,
-    _ctx: AgentExecutionContext,
-    output: GetTraceOutput,
+  async soTrace(input: GetTraceInput, output: GetTraceOutput, _ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const mem = this.traces.get(input.trace_id);
     if (mem) {
@@ -816,8 +730,8 @@ export class AgentExecutionService {
       const lastOut = new LastNInfoOutput();
       await this.infoCore.lastNInfo(
         Object.assign(new LastNInfoInput(), { lastN: 50 }),
-        new InfoCoreContext(),
         lastOut,
+        new InfoCoreContext(),
       );
       const found = (lastOut.list ?? []).find((item) => {
         try {
@@ -848,17 +762,14 @@ export class AgentExecutionService {
     return true;
   }
 
-  async getExecQueueStatus(
-    _input: GetExecQueueStatusInput,
-    _ctx: AgentExecutionContext,
-    output: GetExecQueueStatusOutput,
+  async soExecQueueStatus(_input: GetExecQueueStatusInput, output: GetExecQueueStatusOutput, _ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const statsOut = new GetQueueStatsOutput();
     try {
-      await this.mqAccess.getQueueStats(
+      await this.mqAccess.soQueueStats(
         Object.assign(new GetQueueStatsInput(), { queue: EXEC_QUEUE }),
-        new MQContext(),
         statsOut,
+        new MQContext(),
       );
       const s = statsOut.stats;
       output.queue_stats = {
@@ -875,8 +786,8 @@ export class AgentExecutionService {
     try {
       await this.mqCore.soWorker(
         Object.assign(new SoWorkerInput(), { queue: EXEC_QUEUE }),
-        new MQCoreContext(),
         workersOut,
+        new MQCoreContext(),
       );
       output.workers = workersOut.workers ?? [];
     } catch {
@@ -885,10 +796,7 @@ export class AgentExecutionService {
     return true;
   }
 
-  async configAgentExecution(
-    input: ConfigAgentExecutionInput,
-    _ctx: AgentExecutionContext,
-    output: ConfigAgentExecutionOutput,
+  async configAgentExecution(input: ConfigAgentExecutionInput, output: ConfigAgentExecutionOutput, _ctx: AgentExecutionContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfig();
     if (!config) {
@@ -1163,7 +1071,7 @@ export class AgentExecutionService {
     iteration: number,
   ): Promise<StepResult> {
     const thinkOut = new ThinkOutput();
-    await this.think(this.buildThinkInput(env, history, iteration), env.ctx, thinkOut);
+    await this.execThink(this.buildThinkInput(env, history, iteration), thinkOut, env.ctx);
     this.pushThink(env, step.step, thinkOut, iteration);
     const nextAction = parseJsonObject(thinkOut.next_action);
     const subSteps = this.extractSubSteps(nextAction);
@@ -1184,7 +1092,7 @@ export class AgentExecutionService {
 
   private async runActStep(step: RuleStep, env: AgentExecutionEnv, history: string, iteration: number): Promise<StepResult> {
     const actOut = new ActOutput();
-    await this.act(this.buildActInput(env, history), env.ctx, actOut);
+    await this.execAct(this.buildActInput(env, history), actOut, env.ctx);
     this.pushAct(env, step.step, actOut, iteration);
     return {
       history: `${history}\nAct: ${actOut.result}`,
@@ -1201,7 +1109,7 @@ export class AgentExecutionService {
     maxIter: number,
   ): Promise<StepResult> {
     const reflectOut = new ReflectOutput();
-    await this.reflect(this.buildReflectInput(env, history, iteration, maxIter), env.ctx, reflectOut);
+    await this.execReflect(this.buildReflectInput(env, history, iteration, maxIter), reflectOut, env.ctx);
     this.pushReflect(env, step.step, reflectOut, iteration);
     return {
       history: `${history}\nReflect: ${reflectOut.reflection}`,
@@ -1214,7 +1122,7 @@ export class AgentExecutionService {
 
   private async runAnswerStep(step: RuleStep, env: AgentExecutionEnv, history: string): Promise<StepResult> {
     const answerOut = new AnswerOutput();
-    await this.answer(this.buildAnswerInput(env, history), env.ctx, answerOut);
+    await this.execAnswer(this.buildAnswerInput(env, history), answerOut, env.ctx);
     return {
       history,
       finalAnswer: answerOut.answer,
@@ -1350,8 +1258,8 @@ export class AgentExecutionService {
         context_id: ctx.session_id || '',
         interact_id: ctx.interact_id || '',
       }),
-      new LLMCoreContext(),
       llmOut,
+      new LLMCoreContext(),
     );
     if (!llmOut.llm_id) {
       throw new ValidationError(`Agent ${agentId} 未匹配到可用 LLM`);
@@ -1363,10 +1271,10 @@ export class AgentExecutionService {
     if (!soulId) return '';
     try {
       const out = new GetSoulOutput();
-      await this.soulAccess.getSoul(
+      await this.soulAccess.soSoulById(
         Object.assign(new GetSoulInput(), { id: soulId }),
-        new SoulContext(),
         out,
+        new SoulContext(),
       );
       return out.soul?.soul_content ?? out.soul?.soul_brief ?? '';
     } catch {
@@ -1384,8 +1292,8 @@ export class AgentExecutionService {
       const out = new ExecPromptOutput();
       const ok = await this.promptsAccess.execPrompt(
         Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
         out,
+        new PromptContext(),
       );
       if (ok && out.prompt) return out.prompt;
     } catch {
@@ -1401,8 +1309,8 @@ export class AgentExecutionService {
       Object.assign(new SoPromptInput(), {
         conditions: [{ field: 'id', operator: Operator.EQ, value: id }],
       }),
-      new PromptContext(),
       out,
+      new PromptContext(),
     );
     if (!out.list?.length) throw new ValidationError(`prompt_template_id 不存在: ${id}`);
   }
@@ -1421,20 +1329,12 @@ export class AgentExecutionService {
           context_id: ctx.session_id || '',
           interact_id: ctx.interact_id || '',
         }),
-        new SkillCoreContext(),
         out,
+        new SkillCoreContext(),
       );
       const entries = out.skills ?? [];
       if (entries.length === 0) return [];
       const ids = entries.map((s) => s.skill_id);
-      // ===== 原始代码（保留作为参考）：skill 表无 work 列，查询会抛异常被 catch 吞掉 =====
-      // const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; work: string }>(
-      //   `SELECT "id", "skill_brief", "work" FROM "skill" WHERE "id" IN (${ids.map(() => '?').join(',')})`,
-      //   ids,
-      // );
-      // const workMap = new Map((skillRows || []).map((r) => [r.id, r.work]));
-      // return entries.map((s) => ({ id: s.skill_id, brief: s.skill_brief, work: workMap.get(s.skill_id) || s.skill_brief }));
-
       // ===== 修改后的代码：work 字段取自 skill_md 列（skill 表实际存在的工作指令列）=====
       const skillRows = this.relationDb.queryRaw<{ id: string; skill_brief: string; skill_md: string }>(
         `SELECT "id", "skill_brief", "skill_md" FROM "skill" WHERE "id" IN (${ids.map(() => '?').join(',')})`,
@@ -1461,8 +1361,8 @@ export class AgentExecutionService {
           context_id: ctx.session_id || '',
           interact_id: ctx.interact_id || '',
         }),
-        new McpCoreContext(),
         out,
+        new McpCoreContext(),
       );
       const ids = out.mcp_ids ?? [];
       if (ids.length === 0) return [];
@@ -1516,8 +1416,8 @@ export class AgentExecutionService {
         const out = new CDTCoreNavigateOutput();
         const ok = await cdt.navigate(
           Object.assign(new CDTCoreNavigateInput(), { url, waitForLoad: params.waitForLoad !== false }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT navigate 执行失败');
         return `已打开页面：${url}`;
@@ -1526,8 +1426,8 @@ export class AgentExecutionService {
         const out = new CDTCoreEvaluateOutput();
         const ok = await cdt.evaluate(
           Object.assign(new CDTCoreEvaluateInput(), { expression: 'document.body ? document.body.innerText : ""' }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT getContent 执行失败');
         return this.extractEvalText(out.result).slice(0, 8000);
@@ -1538,8 +1438,8 @@ export class AgentExecutionService {
         const out = new CDTCoreClickOutput();
         const ok = await cdt.click(
           Object.assign(new CDTCoreClickInput(), { selector }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT click 执行失败');
         return `已点击元素：${selector}`;
@@ -1551,8 +1451,8 @@ export class AgentExecutionService {
         const out = new CDTCoreTypeTextOutput();
         const ok = await cdt.typeText(
           Object.assign(new CDTCoreTypeTextInput(), { selector, text }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT typeText 执行失败');
         return `已在 ${selector} 中输入文字`;
@@ -1564,8 +1464,8 @@ export class AgentExecutionService {
             pixels: Number(params.pixels ?? 0) || undefined,
             toBottom: Boolean(params.toBottom),
           }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT scroll 执行失败');
         return '已滚动页面';
@@ -1576,8 +1476,8 @@ export class AgentExecutionService {
         const out = new CDTCoreEvaluateOutput();
         const ok = await cdt.evaluate(
           Object.assign(new CDTCoreEvaluateInput(), { expression }),
-          new CDTCoreContext(),
           out,
+          new CDTCoreContext(),
         );
         if (!ok) throw new ValidationError(out.error || 'CDT evaluate 执行失败');
         return this.extractEvalText(out.result);
@@ -1616,8 +1516,8 @@ export class AgentExecutionService {
           info,
           handle_result_type: handleResultType,
         }),
-        new InfoCoreContext(),
         new SaveInfoOutput(),
+        new InfoCoreContext(),
       );
     } catch {
       /* best-effort */

@@ -3,7 +3,7 @@
  *
  * 测试范围：
  * - 消息操作：sendMQ / consumeMQ / ackMQ / nackMQ
- * - 队列统计：getQueueStats
+ * - 队列统计：soQueueStats
  * - 可视化与运维：enableMQ / closeMQ
  * - config 持久化与初始化
  * - 消息生命周期（send → consume → ack / nack → retry → FAILED）
@@ -16,6 +16,8 @@
  * 每个测试用例在 temp 目录中创建独立的数据库文件，测试后清理。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -104,12 +106,12 @@ describe('MQProvider', () => {
 
   afterEach(async () => {
     try {
-      await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
     } catch {
       // 可能已关闭
     }
     try {
-      await relationDb.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+      await relationDb.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
     } catch {
       // 可能已关闭
     }
@@ -125,8 +127,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       const ok = await mq.sendMQ(
         { data: msg('task', { action: 'sync' }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.id).toBeTruthy();
@@ -138,13 +139,12 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }, 8) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       // 通过 consumeMQ 验证优先级
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message).not.toBeNull();
       expect(consumeOut.message!.priority).toBe(8);
     });
@@ -153,12 +153,11 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!).not.toBeNull();
       expect(consumeOut.message!.priority).toBe(5);
     });
@@ -167,12 +166,11 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }, 0) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.priority).toBe(0);
     });
 
@@ -180,12 +178,11 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }, 10) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.priority).toBe(10);
     });
 
@@ -193,8 +190,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       // 查询数据库验证 max_retries
@@ -209,8 +205,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -223,8 +218,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -237,8 +231,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -255,8 +248,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', payload) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -269,14 +261,12 @@ describe('MQProvider', () => {
       const out1 = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('queue-a', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        out1,
+        out1, new MQContext(),
       );
       const out2 = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('queue-b', { x: 2 }) } as SendMQInput,
-        new MQContext(),
-        out2,
+        out2, new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message');
@@ -292,8 +282,7 @@ describe('MQProvider', () => {
         const output = new SendMQOutput();
         await mq.sendMQ(
           { data: msg('task', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         );
         ids.add(output.id);
       }
@@ -306,8 +295,7 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: null as unknown as MessageData } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -317,8 +305,7 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('', { x: 1 }) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -328,8 +315,7 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }, -1) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -339,8 +325,7 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }, 11) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -350,8 +335,7 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('task', null) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -361,20 +345,18 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }, 'high' as unknown as number) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
 
     it('禁用的 MQ 应拒绝 sendMQ', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
       const output = new SendMQOutput();
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }) } as SendMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
@@ -389,15 +371,13 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { action: 'process' }, 7) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const output = new ConsumeMQOutput();
       const ok = await mq.consumeMQ(
         { queue: 'task' } as ConsumeMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.message).not.toBeNull();
@@ -413,11 +393,10 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput());
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext());
 
       const rows = await relationDb.select('queue_message', {
         conditions: [{ field: 'id', operator: Operator.EQ, value: sendOut.id }],
@@ -429,8 +408,7 @@ describe('MQProvider', () => {
       const output = new ConsumeMQOutput();
       const ok = await mq.consumeMQ(
         { queue: 'empty-queue' } as ConsumeMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.message).toBeNull();
@@ -441,19 +419,17 @@ describe('MQProvider', () => {
       const lowOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { level: 'low' }, 1) } as SendMQInput,
-        new MQContext(),
-        lowOut,
+        lowOut, new MQContext(),
       );
       // 发送高优先级（后发送）
       const highOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { level: 'high' }, 9) } as SendMQInput,
-        new MQContext(),
-        highOut,
+        highOut, new MQContext(),
       );
 
       const output = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), output);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, output, new MQContext());
       expect(output.message!.id).toBe(highOut.id);
       expect(output.message!.payload).toEqual({ level: 'high' });
     });
@@ -463,41 +439,37 @@ describe('MQProvider', () => {
       const out1 = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { idx: 1 }, 5) } as SendMQInput,
-        new MQContext(),
-        out1,
+        out1, new MQContext(),
       );
       // 短暂等待确保 created 时间戳不同
       await new Promise((r) => setTimeout(r, 2));
       const out2 = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { idx: 2 }, 5) } as SendMQInput,
-        new MQContext(),
-        out2,
+        out2, new MQContext(),
       );
 
       const consume1 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consume1);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consume1, new MQContext());
       expect(consume1.message!.payload).toEqual({ idx: 1 });
 
       const consume2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consume2);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consume2, new MQContext());
       expect(consume2.message!.payload).toEqual({ idx: 2 });
     });
 
     it('应只消费指定队列的消息', async () => {
       await mq.sendMQ(
         { data: msg('queue-x', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
       await mq.sendMQ(
         { data: msg('queue-y', { y: 1 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
 
       const output = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'queue-x' } as ConsumeMQInput, new MQContext(), output);
+      await mq.consumeMQ({ queue: 'queue-x' } as ConsumeMQInput, output, new MQContext());
       expect(output.message).not.toBeNull();
       expect(output.message!.queue).toBe('queue-x');
       expect(output.message!.payload).toEqual({ x: 1 });
@@ -507,16 +479,15 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 第一次消费
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput());
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext());
 
       // 第二次消费（消息已是 PROCESSING，不应再被消费）
       const output2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), output2);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, output2, new MQContext());
       expect(output2.message).toBeNull();
     });
 
@@ -524,22 +495,20 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 消费并确认
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       // 再次消费（消息已是 COMPLETED，不应再被消费）
       const output2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), output2);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, output2, new MQContext());
       expect(output2.message).toBeNull();
     });
 
@@ -547,23 +516,21 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 消费并 nack 直到失败
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       for (let i = 0; i < 3; i++) {
         if (consumeOut.message && consumeOut.message.status !== 'PENDING') break;
         await mq.nackMQ(
           { message_id: consumeOut.message!.id } as NackMQInput,
-          new MQContext(),
-          new NackMQOutput(),
+          new NackMQOutput(), new MQContext(),
         );
         // 重新消费
         const reOut = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), reOut);
+        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, reOut, new MQContext());
         if (reOut.message) {
           consumeOut.message = reOut.message;
         } else {
@@ -573,7 +540,7 @@ describe('MQProvider', () => {
 
       // 再次消费（消息已是 FAILED，不应再被消费）
       const output2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), output2);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, output2, new MQContext());
       expect(output2.message).toBeNull();
     });
 
@@ -581,35 +548,33 @@ describe('MQProvider', () => {
     it('应拒绝空 queue', async () => {
       const output = new ConsumeMQOutput();
       await expect(
-        mq.consumeMQ({ queue: '' } as ConsumeMQInput, new MQContext(), output),
+        mq.consumeMQ({ queue: '' } as ConsumeMQInput, output, new MQContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('禁用的 MQ 应拒绝 consumeMQ', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
       await expect(
-        mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput()),
+        mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('应支持消费多队列分别操作', async () => {
       await mq.sendMQ(
         { data: msg('q1', { v: 'a' }, 5) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
       await mq.sendMQ(
         { data: msg('q2', { v: 'b' }, 5) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
 
       const out1 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'q1' } as ConsumeMQInput, new MQContext(), out1);
+      await mq.consumeMQ({ queue: 'q1' } as ConsumeMQInput, out1, new MQContext());
       expect(out1.message!.payload).toEqual({ v: 'a' });
 
       const out2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'q2' } as ConsumeMQInput, new MQContext(), out2);
+      await mq.consumeMQ({ queue: 'q2' } as ConsumeMQInput, out2, new MQContext());
       expect(out2.message!.payload).toEqual({ v: 'b' });
     });
   });
@@ -623,18 +588,16 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
 
       const output = new AckMQOutput();
       const ok = await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.affected_rows).toBe(1);
@@ -652,8 +615,7 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const rowsBefore = await relationDb.select('queue_message', {
@@ -664,11 +626,10 @@ describe('MQProvider', () => {
       await new Promise((r) => setTimeout(r, 2));
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       const rowsAfter = await relationDb.select('queue_message', {
@@ -681,26 +642,23 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
 
       // 第一次 ack
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       // 第二次 ack（幂等）
       const output2 = new AckMQOutput();
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        output2,
+        output2, new MQContext(),
       );
       expect(output2.affected_rows).toBe(1);
     });
@@ -710,8 +668,7 @@ describe('MQProvider', () => {
       await expect(
         mq.ackMQ(
           { message_id: 'nonexistent-id' } as AckMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(NotFoundError);
     });
@@ -720,19 +677,17 @@ describe('MQProvider', () => {
       await expect(
         mq.ackMQ(
           { message_id: '' } as AckMQInput,
-          new MQContext(),
-          new AckMQOutput(),
+          new AckMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
 
     it('禁用的 MQ 应拒绝 ackMQ', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
       await expect(
         mq.ackMQ(
           { message_id: 'any-id' } as AckMQInput,
-          new MQContext(),
-          new AckMQOutput(),
+          new AckMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
@@ -747,18 +702,16 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
 
       const output = new NackMQOutput();
       const ok = await mq.nackMQ(
         { message_id: consumeOut.message!.id, reason: 'test failure' } as NackMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.status).toBe(MESSAGE_STATUS_PENDING);
@@ -776,21 +729,19 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 消费并 nack 3 次（max_retries=3）
       for (let i = 0; i < 3; i++) {
         const consumeOut = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
         expect(consumeOut.message).not.toBeNull();
 
         const nackOut = new NackMQOutput();
         await mq.nackMQ(
           { message_id: consumeOut.message!.id } as NackMQInput,
-          new MQContext(),
-          nackOut,
+          nackOut, new MQContext(),
         );
         if (i < 2) {
           // retry_count 递增但未达到 max_retries（3次）
@@ -844,14 +795,13 @@ describe('MQProvider', () => {
 
       // Try consuming again - it should be PENDING still with retry_count=3
       const consumeFinal = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeFinal);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeFinal, new MQContext());
       expect(consumeFinal.message).not.toBeNull();
 
       const nackFinal = new NackMQOutput();
       await mq.nackMQ(
         { message_id: consumeFinal.message!.id } as NackMQInput,
-        new MQContext(),
-        nackFinal,
+        nackFinal, new MQContext(),
       );
       expect(nackFinal.status).toBe(MESSAGE_STATUS_FAILED);
       expect(nackFinal.retry_count).toBe(3);
@@ -868,31 +818,28 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 第一次消费
       const consume1 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consume1);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consume1, new MQContext());
       // nack 回退
       await mq.nackMQ(
         { message_id: consume1.message!.id } as NackMQInput,
-        new MQContext(),
-        new NackMQOutput(),
+        new NackMQOutput(), new MQContext(),
       );
 
       // 第二次消费（应能消费到同一消息）
       const consume2 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consume2);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consume2, new MQContext());
       expect(consume2.message).not.toBeNull();
       expect(consume2.message!.id).toBe(sendOut.id);
 
       // 成功确认
       await mq.ackMQ(
         { message_id: consume2.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       // 验证最终状态
@@ -908,8 +855,7 @@ describe('MQProvider', () => {
       await expect(
         mq.nackMQ(
           { message_id: 'nonexistent-id' } as NackMQInput,
-          new MQContext(),
-          output,
+          output, new MQContext(),
         ),
       ).rejects.toThrow(NotFoundError);
     });
@@ -918,19 +864,17 @@ describe('MQProvider', () => {
       await expect(
         mq.nackMQ(
           { message_id: '' } as NackMQInput,
-          new MQContext(),
-          new NackMQOutput(),
+          new NackMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
 
     it('禁用的 MQ 应拒绝 nackMQ', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
       await expect(
         mq.nackMQ(
           { message_id: 'any-id' } as NackMQInput,
-          new MQContext(),
-          new NackMQOutput(),
+          new NackMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
@@ -954,8 +898,7 @@ describe('MQProvider', () => {
       const output = new NackMQOutput();
       await mq.nackMQ(
         { message_id: id } as NackMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(output.status).toBe(MESSAGE_STATUS_FAILED);
       expect(output.retry_count).toBe(0);
@@ -963,16 +906,15 @@ describe('MQProvider', () => {
   });
 
   // ==========================================================================
-  // getQueueStats
+  // soQueueStats
   // ==========================================================================
 
-  describe('getQueueStats', () => {
+  describe('soQueueStats', () => {
     it('空队列应返回全 0 统计', async () => {
       const output = new GetQueueStatsOutput();
-      const ok = await mq.getQueueStats(
+      const ok = await mq.soQueueStats(
         { queue: 'empty' } as GetQueueStatsInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.stats).toEqual({
@@ -989,39 +931,36 @@ describe('MQProvider', () => {
       for (let i = 0; i < 5; i++) {
         await mq.sendMQ(
           { data: msg('task', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         );
       }
 
       // 消费 2 条 → PROCESSING
       for (let i = 0; i < 2; i++) {
-        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput());
+        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext());
       }
 
       // ack 1 条 → COMPLETED
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       // nack 1 条 → FAILED (max_retries=3, nack 4 times total)
       const toFail = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), toFail);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, toFail, new MQContext());
       for (let i = 0; i < 4; i++) {
         const nackOut = new NackMQOutput();
         await mq.nackMQ(
           { message_id: toFail.message!.id } as NackMQInput,
-          new MQContext(),
-          nackOut,
+          nackOut, new MQContext(),
         );
         if (nackOut.status === MESSAGE_STATUS_FAILED) break;
         // re-consume
         const reOut = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), reOut);
+        await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, reOut, new MQContext());
         if (reOut.message) {
           toFail.message = reOut.message;
         } else {
@@ -1030,10 +969,9 @@ describe('MQProvider', () => {
       }
 
       const output = new GetQueueStatsOutput();
-      await mq.getQueueStats(
+      await mq.soQueueStats(
         { queue: 'task' } as GetQueueStatsInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
 
       // 5 total = 1 remaining PENDING + 2 PROCESSING + 1 COMPLETED + 1 FAILED
@@ -1047,22 +985,19 @@ describe('MQProvider', () => {
     it('不指定 queue 时应返回所有队列统计', async () => {
       await mq.sendMQ(
         { data: msg('q1', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
       await mq.sendMQ(
         { data: msg('q2', { x: 2 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
       await mq.sendMQ(
         { data: msg('q3', { x: 3 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
 
       const output = new GetQueueStatsOutput();
-      await mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), output);
+      await mq.soQueueStats({} as GetQueueStatsInput, output, new MQContext());
       expect(output.stats.pending).toBe(3);
       expect(output.stats.total).toBe(3);
     });
@@ -1070,32 +1005,30 @@ describe('MQProvider', () => {
     it('指定队列与空队列参数应返回不同结果', async () => {
       await mq.sendMQ(
         { data: msg('qa', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
       await mq.sendMQ(
         { data: msg('qb', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        new SendMQOutput(),
+        new SendMQOutput(), new MQContext(),
       );
 
       const outA = new GetQueueStatsOutput();
-      await mq.getQueueStats({ queue: 'qa' } as GetQueueStatsInput, new MQContext(), outA);
+      await mq.soQueueStats({ queue: 'qa' } as GetQueueStatsInput, outA, new MQContext());
       expect(outA.stats.total).toBe(1);
 
       const outB = new GetQueueStatsOutput();
-      await mq.getQueueStats({ queue: 'qb' } as GetQueueStatsInput, new MQContext(), outB);
+      await mq.soQueueStats({ queue: 'qb' } as GetQueueStatsInput, outB, new MQContext());
       expect(outB.stats.total).toBe(1);
 
       const outAll = new GetQueueStatsOutput();
-      await mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), outAll);
+      await mq.soQueueStats({} as GetQueueStatsInput, outAll, new MQContext());
       expect(outAll.stats.total).toBe(2);
     });
 
-    it('禁用的 MQ 应拒绝 getQueueStats', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+    it('禁用的 MQ 应拒绝 soQueueStats', async () => {
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
       await expect(
-        mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), new GetQueueStatsOutput()),
+        mq.soQueueStats({} as GetQueueStatsInput, new GetQueueStatsOutput(), new MQContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -1108,8 +1041,7 @@ describe('MQProvider', () => {
     it('应可禁用 MQ 组件', async () => {
       const ok = await mq.enableMQ(
         { enable: false } as EnableMQInput,
-        new MQContext(),
-        new EnableMQOutput(),
+        new EnableMQOutput(), new MQContext(),
       );
       expect(ok).toBe(true);
 
@@ -1117,32 +1049,30 @@ describe('MQProvider', () => {
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('应可重新启用 MQ 组件', async () => {
       // 禁用
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 重新启用
-      await mq.enableMQ({ enable: true } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: true } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 启用后应可正常发送消息
       const output = new SendMQOutput();
       const ok = await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(ok).toBe(true);
       expect(output.id).toBeTruthy();
     });
 
     it('enabled 状态应持久化到 mq_config 表', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       const rows = await relationDb.select('mq_config', {
         conditions: [
@@ -1155,10 +1085,10 @@ describe('MQProvider', () => {
 
     it('初始化时应恢复 persisted enabled 状态', async () => {
       // 禁用并持久化
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 关闭旧的 MQAccess
-      await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
 
       // 创建新的 MQAccess（同一个 DB）
       const mq2 = new MQAccess(relationDb);
@@ -1168,50 +1098,47 @@ describe('MQProvider', () => {
       await expect(
         mq2.sendMQ(
           { data: msg('task', { x: 1 }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
 
       // 恢复启用
-      await mq2.enableMQ({ enable: true } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq2.enableMQ({ enable: true } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       const output = new SendMQOutput();
       await mq2.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(output.id).toBeTruthy();
 
       // 清理
-      await mq2.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq2.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
     });
 
     it('禁用后 enableMQ(true) 应立即恢复所有操作', async () => {
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 各操作在禁用后
       const tasks = [
-        () => mq.sendMQ({ data: msg('t', {}) } as SendMQInput, new MQContext(), new SendMQOutput()),
-        () => mq.consumeMQ({ queue: 't' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput()),
-        () => mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), new GetQueueStatsOutput()),
-        () => mq.ackMQ({ message_id: 'x' } as AckMQInput, new MQContext(), new AckMQOutput()),
-        () => mq.nackMQ({ message_id: 'x' } as NackMQInput, new MQContext(), new NackMQOutput()),
+        () => mq.sendMQ({ data: msg('t', {}) } as SendMQInput, new SendMQOutput(), new MQContext()),
+        () => mq.consumeMQ({ queue: 't' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext()),
+        () => mq.soQueueStats({} as GetQueueStatsInput, new GetQueueStatsOutput(), new MQContext()),
+        () => mq.ackMQ({ message_id: 'x' } as AckMQInput, new AckMQOutput(), new MQContext()),
+        () => mq.nackMQ({ message_id: 'x' } as NackMQInput, new NackMQOutput(), new MQContext()),
       ];
       for (const task of tasks) {
         await expect(task()).rejects.toThrow(ComponentDisabledError);
       }
 
       // 重新启用
-      await mq.enableMQ({ enable: true } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: true } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 恢复后操作应成功
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(output.id).toBeTruthy();
     });
@@ -1223,65 +1150,59 @@ describe('MQProvider', () => {
 
   describe('closeMQ', () => {
     it('closeMQ 后所有操作应抛出 ComponentDisabledError', async () => {
-      await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
 
       await expect(
         mq.sendMQ(
           { data: msg('task', { x: 1 }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
 
       await expect(
         mq.consumeMQ(
           { queue: 'task' } as ConsumeMQInput,
-          new MQContext(),
-          new ConsumeMQOutput(),
+          new ConsumeMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
 
       await expect(
         mq.ackMQ(
           { message_id: 'x' } as AckMQInput,
-          new MQContext(),
-          new AckMQOutput(),
+          new AckMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
 
       await expect(
         mq.nackMQ(
           { message_id: 'x' } as NackMQInput,
-          new MQContext(),
-          new NackMQOutput(),
+          new NackMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
 
       await expect(
-        mq.getQueueStats(
+        mq.soQueueStats(
           {} as GetQueueStatsInput,
-          new MQContext(),
-          new GetQueueStatsOutput(),
+          new GetQueueStatsOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('closeMQ 后 enableMQ 也应失效（不可恢复）', async () => {
-      await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
 
       // 尝试重新启用应失败
       await expect(
         mq.enableMQ(
           { enable: true } as EnableMQInput,
-          new MQContext(),
-          new EnableMQOutput(),
+          new EnableMQOutput(), new MQContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
     it('closeMQ 后再次 closeMQ 应幂等', async () => {
-      await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
-      const ok = await mq.closeMQ(new CloseMQInput(), new MQContext(), new CloseMQOutput());
+      await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
+      const ok = await mq.closeMQ(new CloseMQInput(), new CloseMQOutput(), new MQContext());
       expect(ok).toBe(true);
     });
   });
@@ -1295,19 +1216,17 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('lifecycle', { step: 'start' }, 5) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.id).toBe(sendOut.id);
       expect(consumeOut.message!.status).toBe(MESSAGE_STATUS_PROCESSING);
 
       await mq.ackMQ(
         { message_id: consumeOut.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -1321,8 +1240,7 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('lifecycle', { step: 'fail' }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 持续 nack 直到 FAILED
@@ -1332,8 +1250,7 @@ describe('MQProvider', () => {
         const consumeOut = new ConsumeMQOutput();
         await mq.consumeMQ(
           { queue: 'lifecycle' } as ConsumeMQInput,
-          new MQContext(),
-          consumeOut,
+          consumeOut, new MQContext(),
         );
         if (!consumeOut.message) {
           // 可能已是 FAILED 状态无法消费
@@ -1347,8 +1264,7 @@ describe('MQProvider', () => {
         const nackOut = new NackMQOutput();
         await mq.nackMQ(
           { message_id: consumeOut.message!.id, reason: `attempt ${attempt + 1}` } as NackMQInput,
-          new MQContext(),
-          nackOut,
+          nackOut, new MQContext(),
         );
         status = nackOut.status;
       }
@@ -1366,28 +1282,25 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('lifecycle', { step: 'retry-success' }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       // 消费并 nack 2 次
       for (let i = 0; i < 2; i++) {
         const consumeOut = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, new MQContext(), consumeOut);
+        await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, consumeOut, new MQContext());
         await mq.nackMQ(
           { message_id: consumeOut.message!.id } as NackMQInput,
-          new MQContext(),
-          new NackMQOutput(),
+          new NackMQOutput(), new MQContext(),
         );
       }
 
       // 第 3 次消费并成功确认
       const consume3 = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, new MQContext(), consume3);
+      await mq.consumeMQ({ queue: 'lifecycle' } as ConsumeMQInput, consume3, new MQContext());
       await mq.ackMQ(
         { message_id: consume3.message!.id } as AckMQInput,
-        new MQContext(),
-        new AckMQOutput(),
+        new AckMQOutput(), new MQContext(),
       );
 
       const rows = await relationDb.select('queue_message', {
@@ -1402,13 +1315,11 @@ describe('MQProvider', () => {
       for (let i = 0; i < 3; i++) {
         await mq.sendMQ(
           { data: msg('alpha', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         );
         await mq.sendMQ(
           { data: msg('beta', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         );
       }
 
@@ -1416,23 +1327,21 @@ describe('MQProvider', () => {
       const alphaIds: string[] = [];
       for (let i = 0; i < 3; i++) {
         const out = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'alpha' } as ConsumeMQInput, new MQContext(), out);
+        await mq.consumeMQ({ queue: 'alpha' } as ConsumeMQInput, out, new MQContext());
         expect(out.message).not.toBeNull();
         expect(out.message!.queue).toBe('alpha');
         alphaIds.push(out.message!.id);
         await mq.ackMQ(
           { message_id: out.message!.id } as AckMQInput,
-          new MQContext(),
-          new AckMQOutput(),
+          new AckMQOutput(), new MQContext(),
         );
       }
 
       // beta 的消息应仍处于 PENDING
       const betaStats = new GetQueueStatsOutput();
-      await mq.getQueueStats(
+      await mq.soQueueStats(
         { queue: 'beta' } as GetQueueStatsInput,
-        new MQContext(),
-        betaStats,
+        betaStats, new MQContext(),
       );
       expect(betaStats.stats.pending).toBe(3);
       expect(betaStats.stats.total).toBe(3);
@@ -1440,19 +1349,18 @@ describe('MQProvider', () => {
       // 消费 beta
       for (let i = 0; i < 3; i++) {
         const out = new ConsumeMQOutput();
-        await mq.consumeMQ({ queue: 'beta' } as ConsumeMQInput, new MQContext(), out);
+        await mq.consumeMQ({ queue: 'beta' } as ConsumeMQInput, out, new MQContext());
         expect(out.message).not.toBeNull();
         expect(out.message!.queue).toBe('beta');
         await mq.ackMQ(
           { message_id: out.message!.id } as AckMQInput,
-          new MQContext(),
-          new AckMQOutput(),
+          new AckMQOutput(), new MQContext(),
         );
       }
 
       // 全部完成后各队列统计
       const allStats = new GetQueueStatsOutput();
-      await mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), allStats);
+      await mq.soQueueStats({} as GetQueueStatsInput, allStats, new MQContext());
       expect(allStats.stats.completed).toBe(6);
       expect(allStats.stats.total).toBe(6);
     });
@@ -1468,15 +1376,14 @@ describe('MQProvider', () => {
       for (let i = 0; i < 5; i++) {
         await mq.sendMQ(
           { data: msg('concurrent', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         );
       }
 
       // 同时消费（并发）
       const consumedIds = new Set<string>();
       const consumers = Array.from({ length: 10 }, () =>
-        mq.consumeMQ({ queue: 'concurrent' } as ConsumeMQInput, new MQContext(), new ConsumeMQOutput())
+        mq.consumeMQ({ queue: 'concurrent' } as ConsumeMQInput, new ConsumeMQOutput(), new MQContext())
           .then(() => null)
           .catch(() => null)
       );
@@ -1485,10 +1392,9 @@ describe('MQProvider', () => {
 
       // 实际消费到的消息数不应超过 5
       const out = new GetQueueStatsOutput();
-      await mq.getQueueStats(
+      await mq.soQueueStats(
         { queue: 'concurrent' } as GetQueueStatsInput,
-        new MQContext(),
-        out,
+        out, new MQContext(),
       );
       expect(out.stats.processing + out.stats.pending).toBeLessThanOrEqual(5);
     });
@@ -1547,7 +1453,7 @@ describe('MQProvider', () => {
 
     it('repeat initialize 不应覆盖已有配置', async () => {
       // 修改 config
-      await mq.enableMQ({ enable: false } as EnableMQInput, new MQContext(), new EnableMQOutput());
+      await mq.enableMQ({ enable: false } as EnableMQInput, new EnableMQOutput(), new MQContext());
 
       // 重新 initialize
       await mq.initialize();
@@ -1606,8 +1512,7 @@ describe('MQProvider', () => {
       const output = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(typeof output.elapsed_ms).toBe('number');
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
@@ -1615,14 +1520,14 @@ describe('MQProvider', () => {
 
     it('consumeMQ 的 output 应包含 elapsed_ms', async () => {
       const output = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), output);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, output, new MQContext());
       expect(typeof output.elapsed_ms).toBe('number');
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
 
-    it('getQueueStats 的 output 应包含 elapsed_ms', async () => {
+    it('soQueueStats 的 output 应包含 elapsed_ms', async () => {
       const output = new GetQueueStatsOutput();
-      await mq.getQueueStats({} as GetQueueStatsInput, new MQContext(), output);
+      await mq.soQueueStats({} as GetQueueStatsInput, output, new MQContext());
       expect(typeof output.elapsed_ms).toBe('number');
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
@@ -1638,16 +1543,14 @@ describe('MQProvider', () => {
       for (let i = 0; i < count; i++) {
         await mq.sendMQ(
           { data: msg('bulk', { idx: i }) } as SendMQInput,
-          new MQContext(),
-          new SendMQOutput(),
+          new SendMQOutput(), new MQContext(),
         );
       }
 
       const output = new GetQueueStatsOutput();
-      await mq.getQueueStats(
+      await mq.soQueueStats(
         { queue: 'bulk' } as GetQueueStatsInput,
-        new MQContext(),
-        output,
+        output, new MQContext(),
       );
       expect(output.stats.pending).toBe(count);
       expect(output.stats.total).toBe(count);
@@ -1667,12 +1570,11 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', complex) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.payload).toEqual(complex);
     });
 
@@ -1681,12 +1583,11 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', payload) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.payload).toEqual(payload);
     });
 
@@ -1694,12 +1595,11 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', 'just a string') } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
       expect(consumeOut.message!.payload).toBe('just a string');
     });
 
@@ -1707,8 +1607,7 @@ describe('MQProvider', () => {
       const sendOut = new SendMQOutput();
       await mq.sendMQ(
         { data: msg('task', { x: 1 }) } as SendMQInput,
-        new MQContext(),
-        sendOut,
+        sendOut, new MQContext(),
       );
 
       const beforeRows = await relationDb.select('queue_message', {
@@ -1719,7 +1618,7 @@ describe('MQProvider', () => {
       await new Promise((r) => setTimeout(r, 2));
 
       const consumeOut = new ConsumeMQOutput();
-      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, new MQContext(), consumeOut);
+      await mq.consumeMQ({ queue: 'task' } as ConsumeMQInput, consumeOut, new MQContext());
 
       const afterConsume = await relationDb.select('queue_message', {
         conditions: [{ field: 'id', operator: Operator.EQ, value: sendOut.id }],

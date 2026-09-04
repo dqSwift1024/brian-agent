@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type {
   RelationDBAccess,
   MCPAccess,
@@ -37,27 +38,18 @@ export class MCPCoreAccess {
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
-  async matchMCP(
-    input: MatchMcpInput,
-    context: McpCoreContext,
-    output: MatchMcpOutput,
+  async matchMCP(input: MatchMcpInput, output: MatchMcpOutput, context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.matchMCP(input, context, output);
+    return this.service.matchMCP(input, output, context, metrics, report);
   }
 
-  async optMCP(
-    input: OptMcpInput,
-    context: McpCoreContext,
-    output: OptMcpOutput,
+  async optMCP(input: OptMcpInput, output: OptMcpOutput, context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.optMCP(input, context, output);
+    return this.service.optMCP(input, output, context, metrics, report);
   }
 
-  async configMCPCore(
-    input: ConfigMcpCoreInput,
-    context: McpCoreContext,
-    output: ConfigMcpCoreOutput,
+  async configMCPCore(input: ConfigMcpCoreInput, output: ConfigMcpCoreOutput, context: McpCoreContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.configMCPCore(input, context, output);
+    return this.service.configMCPCore(input, output, context, metrics, report);
   }
 }

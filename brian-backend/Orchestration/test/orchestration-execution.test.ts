@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb, setupTestMocks, resetTestMocks, createMockAgentBuilder, createMockAgentExecution, createMockAgentLibrary, createMockInfoCore, createMockMQAccess, createMockMQCore, createMockLogger } from './test-helpers';
 import { RelationDBAccess, IdGenerator, Operator, DBContext, SelectOneDBInput, SelectOneDBOutput, SelectDBInput, SelectDBOutput, InsertDBInput, InsertDBOutput, DataObject } from '@brian-agent/base';
@@ -52,7 +53,7 @@ describe('OrchestrationExecution', () => {
         { field: 'metadata', value: '{}' },
       ] as DataObject[],
     });
-    await db.insertDB(insInput as InsertDBInput, new DBContext(), new InsertDBOutput());
+    await db.insertDB(insInput as InsertDBInput, new InsertDBOutput(), new DBContext());
   }
 
   beforeAll(async () => {
@@ -99,7 +100,7 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.buildAgentDAG(input, ctx, output);
+      const result = await exec.buildAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_dag.total_agent_count).toBe(3);
       expect(output.agent_dag.agent_nodes.length).toBe(3);
@@ -118,7 +119,7 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.buildAgentDAG(input, ctx, output);
+      const result = await exec.buildAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_dag.total_agent_count).toBe(1);
       expect(output.agent_dag.agent_nodes.length).toBe(1);
@@ -136,7 +137,7 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.buildAgentDAG(input, ctx, output);
+      const result = await exec.buildAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(agentBuilder.buildAgent).toHaveBeenCalled();
       expect(output.agent_dag.agent_nodes.length).toBe(1);
@@ -159,7 +160,7 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await exec.buildAgentDAG(input, ctx, output);
+      await exec.buildAgentDAG(input, output, ctx);
       expect(agentBuilder.buildAgent).toHaveBeenCalled();
       const buildCall = agentBuilder.buildAgent.mock.calls[0];
       expect(buildCall[0].force_new).toBe(true);
@@ -173,7 +174,7 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.buildAgentDAG(input, ctx, output);
+      const result = await exec.buildAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_dag.total_agent_count).toBe(0);
     });
@@ -189,11 +190,11 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await expect(exec.buildAgentDAG(input, ctx, output)).rejects.toThrow();
+      await expect(exec.buildAgentDAG(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-BAD-011: 某 Agent 构建失败', async () => {
-      agentBuilder.buildAgent.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'build failed'; return false; });
+      agentBuilder.buildAgent.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.error = 'build failed'; return false; });
       const taskDag: TaskDAG = {
         nodes: [{ task_id: 'task-1', task_content: 'Task 1', task_complexity: 30, task_domain: 'general', priority: 1 }],
         edges: [],
@@ -204,13 +205,13 @@ describe('OrchestrationExecution', () => {
       const output = new BuildAgentDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.buildAgentDAG(input, ctx, output);
+      const result = await exec.buildAgentDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_dag.agent_nodes[0].status).toBe('BUILD_FAILED');
     });
 
     it('TC-BAD-012: 跨 plan 复用同一对 Agent 的边不冲突（回归：原全局唯一索引触发 UNIQUE constraint）', async () => {
-      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         const content = (_i as { task_content?: string }).task_content ?? '';
         o.agent_id = `agent-${content}`;
         return true;
@@ -226,7 +227,7 @@ describe('OrchestrationExecution', () => {
       const outA = new BuildAgentDAGOutput();
       const okA = await exec.buildAgentDAG(
         Object.assign(new BuildAgentDAGInput(), { plan_id: 'pa', task_dag: taskDag, interact_id: 'ia' }),
-        new OrchestrationExecutionContext(), outA,
+        outA, new OrchestrationExecutionContext(),
       );
       expect(okA).toBe(true);
       expect(outA.agent_dag.agent_edges).toHaveLength(1);
@@ -234,7 +235,7 @@ describe('OrchestrationExecution', () => {
       const outB = new BuildAgentDAGOutput();
       const okB = await exec.buildAgentDAG(
         Object.assign(new BuildAgentDAGInput(), { plan_id: 'pb', task_dag: taskDag, interact_id: 'ib' }),
-        new OrchestrationExecutionContext(), outB,
+        outB, new OrchestrationExecutionContext(),
       );
       expect(okB).toBe(true);
       expect(outB.agent_dag.agent_edges).toHaveLength(1);
@@ -248,7 +249,7 @@ describe('OrchestrationExecution', () => {
     });
 
     it('TC-BAD-013: 同一 plan 内重复边自动去重', async () => {
-      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         const content = (_i as { task_content?: string }).task_content ?? '';
         o.agent_id = `agent-${content}`;
         return true;
@@ -266,7 +267,7 @@ describe('OrchestrationExecution', () => {
       const out = new BuildAgentDAGOutput();
       const ok = await exec.buildAgentDAG(
         Object.assign(new BuildAgentDAGInput(), { plan_id: 'pc', task_dag: taskDag, interact_id: 'ic' }),
-        new OrchestrationExecutionContext(), out,
+        out, new OrchestrationExecutionContext(),
       );
       expect(ok).toBe(true);
       expect(out.agent_dag.agent_edges).toHaveLength(1);
@@ -279,7 +280,7 @@ describe('OrchestrationExecution', () => {
 
     it('TC-BAD-014: 多 task 复用同一 Agent 时产出 task 级边（from_task_id/to_task_id）', async () => {
       // 模拟复用：task A / C 命中同一 Agent（shared），task B 命中另一个（mid）
-      agentBuilder.buildAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+      agentBuilder.buildAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
         const content = (_i as { task_content?: string }).task_content ?? '';
         o.agent_id = content === 'B' ? 'agent-mid' : 'agent-shared';
         return true;
@@ -298,7 +299,7 @@ describe('OrchestrationExecution', () => {
       const out = new BuildAgentDAGOutput();
       const ok = await exec.buildAgentDAG(
         Object.assign(new BuildAgentDAGInput(), { plan_id: 'p-shared', task_dag: taskDag, interact_id: 'i-shared' }),
-        new OrchestrationExecutionContext(), out,
+        out, new OrchestrationExecutionContext(),
       );
       expect(ok).toBe(true);
       // 即使 agent 级存在 shared → mid → shared 的回环，task 级边仍完整保留 2 条
@@ -327,7 +328,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execSingleAgent(input, ctx, output);
+      const result = await exec.execSingleAgent(input, output, ctx);
       expect(result).toBe(true);
       expect(agentExecution.execAgent).toHaveBeenCalled();
       expect(typeof output.answer).toBe('string');
@@ -344,12 +345,12 @@ describe('OrchestrationExecution', () => {
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await exec.execSingleAgent(input, ctx, output);
+      await exec.execSingleAgent(input, output, ctx);
 
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution', conditions: [{ field: 'work_id', operator: Operator.EQ, value: 'w2' }] },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -360,20 +361,20 @@ describe('OrchestrationExecution', () => {
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execSingleAgent(input, ctx, output);
+      const result = await exec.execSingleAgent(input, output, ctx);
       expect(result).toBe(true);
       expect(agentLibrary.recordAgentUsage).toHaveBeenCalledTimes(1);
     });
 
     it('TC-ESA-008: AgentExecution.execAgent 执行失败', async () => {
-      agentExecution.execAgent.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.error = 'exec failed'; return false; });
+      agentExecution.execAgent.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.error = 'exec failed'; return false; });
       const input = Object.assign(new ExecSingleAgentInput(), {
         work_id: 'w4', interact_id: 'i4', agent_id: 'a4', task_content: 'Test task',
       });
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execSingleAgent(input, ctx, output);
+      const result = await exec.execSingleAgent(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -384,7 +385,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execSingleAgent(input, ctx, output);
+      const result = await exec.execSingleAgent(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -413,7 +414,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i6-ed001' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(3);
@@ -442,7 +443,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i7-ed003' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(3);
@@ -468,7 +469,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i8-ed007' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(3);
@@ -494,7 +495,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i9-ed010' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(3);
@@ -510,7 +511,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i10-ed019' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results).toEqual([]);
@@ -527,7 +528,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i11-ed020' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(1);
@@ -551,7 +552,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i12-ed021' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(Array.isArray(output.agent_results)).toBe(true);
       expect(output.agent_results.length).toBe(2);
@@ -581,7 +582,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-deadlock' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(4);
       for (const r of output.agent_results) {
@@ -610,7 +611,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGOutput();
       const ctx = Object.assign(new OrchestrationExecutionContext(), { interact_id: 'i-cycle' });
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(3);
       for (const r of output.agent_results) {
@@ -635,22 +636,22 @@ describe('OrchestrationExecution', () => {
       const output = new ExecDAGAsyncOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execDAGAsync(input, ctx, output);
+      const result = await exec.execDAGAsync(input, output, ctx);
       expect(result).toBe(true);
       expect(output.job_id).toBeTruthy();
     });
   });
 
   // =========================================================================
-  // 5. getDAGProgress
+  // 5. soDAGProgress
   // =========================================================================
-  describe('getDAGProgress', () => {
+  describe('soDAGProgress', () => {
     it('TC-GDP-001: 查询执行中 DAG 的进度', async () => {
       const input = Object.assign(new GetDAGProgressInput(), { work_id: 'w6' });
       const output = new GetDAGProgressOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.getDAGProgress(input, ctx, output);
+      const result = await exec.soDAGProgress(input, output, ctx);
       expect(result).toBe(true);
       expect(output.progress).toBeTruthy();
     });
@@ -660,7 +661,7 @@ describe('OrchestrationExecution', () => {
       const output = new GetDAGProgressOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.getDAGProgress(input, ctx, output);
+      const result = await exec.soDAGProgress(input, output, ctx);
       expect(result).toBe(true);
       expect(output.progress!.total_tasks).toBe(0);
     });
@@ -675,7 +676,7 @@ describe('OrchestrationExecution', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.cancelExecution(input, ctx, output);
+      const result = await exec.cancelExecution(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -684,22 +685,22 @@ describe('OrchestrationExecution', () => {
       const output = new CancelExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.cancelExecution(input, ctx, output);
+      const result = await exec.cancelExecution(input, output, ctx);
       expect(result).toBe(true);
       expect(output.cancelled_count).toBe(0);
     });
   });
 
   // =========================================================================
-  // 7. getExecQueueStatus
+  // 7. soExecQueueStatus
   // =========================================================================
-  describe('getExecQueueStatus', () => {
+  describe('soExecQueueStatus', () => {
     it('TC-GQS-001: 查询队列统计信息', async () => {
       const input = new GetOrchestrationExecQueueStatusInput();
       const output = new GetOrchestrationExecQueueStatusOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.getExecQueueStatus(input, ctx, output);
+      const result = await exec.soExecQueueStatus(input, output, ctx);
       expect(result).toBe(true);
       expect(output.queue_stats).toBeTruthy();
     });
@@ -714,7 +715,7 @@ describe('OrchestrationExecution', () => {
       const output = new ConfigOrchestrationExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.configOrchestrationExecution(input, ctx, output);
+      const result = await exec.configOrchestrationExecution(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -723,7 +724,7 @@ describe('OrchestrationExecution', () => {
       const output = new ConfigOrchestrationExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await expect(exec.configOrchestrationExecution(input, ctx, output)).rejects.toThrow();
+      await expect(exec.configOrchestrationExecution(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-COE-010: dag_timeout_ms 为负数', async () => {
@@ -731,7 +732,7 @@ describe('OrchestrationExecution', () => {
       const output = new ConfigOrchestrationExecutionOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await expect(exec.configOrchestrationExecution(input, ctx, output)).rejects.toThrow();
+      await expect(exec.configOrchestrationExecution(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -746,7 +747,7 @@ describe('OrchestrationExecution', () => {
       const output = new ExecSingleAgentOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      await exec.execSingleAgent(input, ctx, output);
+      await exec.execSingleAgent(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });
@@ -760,7 +761,7 @@ describe('OrchestrationExecution', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_task_agent' },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows).toBeDefined();
     });
 
@@ -768,7 +769,7 @@ describe('OrchestrationExecution', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_dag' },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows).toBeDefined();
     });
 
@@ -776,7 +777,7 @@ describe('OrchestrationExecution', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_agent_execution' },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows).toBeDefined();
     });
   });

@@ -77,7 +77,7 @@ export class AddLogOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getLog
+// soLogById
 // ---------------------------------------------------------------------------
 
 export class GetLogInput extends Input {
@@ -212,4 +212,4 @@ export const DEFAULT_RETENTION_DAYS = 30;
 /** 默认日志最大保留条数（70 万条） */
 export const DEFAULT_MAX_LOG_COUNT = 700000;
 /** 默认最低日志级别（DEBUG，不过滤任何级别） */
-export const DEFAULT_MIN_LEVEL = 'DEBUG';
+export const DEFAULT_MIN_LEVEL = 'INFO';

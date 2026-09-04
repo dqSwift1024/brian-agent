@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, MQAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { InfoCoreAccess, MQCoreAccess, LLMCoreAccess } from '@brian-agent/core';
@@ -44,52 +45,45 @@ export class EvolutorAgentAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async evalWorkAgent(
-    i: EvalWorkAgentInput, c: EvolutorAgentContext, o: EvalWorkAgentOutput,
+  async evalWorkAgent(i: EvalWorkAgentInput, o: EvalWorkAgentOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.evalWorkAgent(i, c, o);
+    return this.service.evalWorkAgent(i, o, c, metrics, report);
   }
 
-  async evalWriterAgent(
-    i: EvalWriterAgentInput, c: EvolutorAgentContext, o: EvalWriterAgentOutput,
+  async evalWriterAgent(i: EvalWriterAgentInput, o: EvalWriterAgentOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.evalWriterAgent(i, c, o);
+    return this.service.evalWriterAgent(i, o, c, metrics, report);
   }
 
-  async startEvalSchedule(
-    i: StartEvalScheduleInput, c: EvolutorAgentContext, o: StartEvalScheduleOutput,
+  async startEvalSchedule(i: StartEvalScheduleInput, o: StartEvalScheduleOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.startEvalSchedule(i, c, o);
+    return this.service.startEvalSchedule(i, o, c, metrics, report);
   }
 
-  async stopEvalSchedule(
-    i: StopEvalScheduleInput, c: EvolutorAgentContext, o: StopEvalScheduleOutput,
+  async stopEvalSchedule(i: StopEvalScheduleInput, o: StopEvalScheduleOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.stopEvalSchedule(i, c, o);
+    return this.service.stopEvalSchedule(i, o, c, metrics, report);
   }
 
-  async getEvaluation(
-    i: GetEvaluationInput, c: EvolutorAgentContext, o: GetEvaluationOutput,
+  async soEvaluation(i: GetEvaluationInput, o: GetEvaluationOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getEvaluation(i, c, o);
+    return this.service.soEvaluation(i, o, c, metrics, report);
   }
 
-  async getEvolutionReport(
-    i: GetEvolutionReportInput, c: EvolutorAgentContext, o: GetEvolutionReportOutput,
+  async soEvolutionReport(i: GetEvolutionReportInput, o: GetEvolutionReportOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getEvolutionReport(i, c, o);
+    return this.service.soEvolutionReport(i, o, c, metrics, report);
   }
 
-  async configEvolutorAgent(
-    i: ConfigEvolutorAgentInput, c: EvolutorAgentContext, o: ConfigEvolutorAgentOutput,
+  async configEvolutorAgent(i: ConfigEvolutorAgentInput, o: ConfigEvolutorAgentOutput, c: EvolutorAgentContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configEvolutorAgent(i, c, o);
+    return this.service.configEvolutorAgent(i, o, c, metrics, report);
   }
 }

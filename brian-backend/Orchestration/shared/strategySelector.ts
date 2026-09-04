@@ -29,7 +29,7 @@ export async function selectOrchestrationStrategy(
     query_param: { table: 'orchestration_config' },
   });
   const selOutput = Object.assign(new SelectOneDBOutput(), {});
-  await relationDb.selectOneDB(selInput, new DBContext(), selOutput);
+  await relationDb.selectOneDB(selInput, selOutput, new DBContext());
   const config = (selOutput.row ?? {}) as Record<string, unknown>;
   const threshold = (config.complexity_decompose_threshold as number) ?? DEFAULT_THRESHOLD;
   const templateId = (config.strategy_prompt_template_id as string) || DEFAULT_TEMPLATE_ID;
@@ -58,7 +58,7 @@ export async function selectOrchestrationStrategy(
       variables,
     });
     const promptOutput = new ExecPromptOutput();
-    await promptsAccess.execPrompt(promptInput, new PromptContext(), promptOutput);
+    await promptsAccess.execPrompt(promptInput, promptOutput, new PromptContext());
     promptText = promptOutput.prompt;
     if (!promptText) {
       const tpl = getBuiltinTemplate(DEFAULT_TEMPLATE_ID);
@@ -83,7 +83,7 @@ export async function selectOrchestrationStrategy(
       max_tokens: 256,
     });
     const llmOutput = new ExecLLMOutput();
-    await llmAccess.execLLM(llmInput, new LLMContext(), llmOutput);
+    await llmAccess.execLLM(llmInput, llmOutput, new LLMContext());
 
     const rawText = llmOutput.result;
     const parsed = JsonParser.parseObject(rawText);

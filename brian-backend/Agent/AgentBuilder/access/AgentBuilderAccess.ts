@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess, StreamAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { LLMCoreAccess, MCPCoreAccess, SkillCoreAccess, SoulCoreAccess, InfoCoreAccess } from '@brian-agent/core';
@@ -41,31 +42,27 @@ export class AgentBuilderAccess {
 
   async initialize(): Promise<void> { await this.initPromise; }
 
-  async buildAgent(
-    i: BuildAgentInput, c: AgentBuilderContext, o: BuildAgentOutput,
+  async buildAgent(i: BuildAgentInput, o: BuildAgentOutput, c: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.buildAgent(i, c, o);
+    return this.service.buildAgent(i, o, c, metrics, report);
   }
 
-  async optimizeAgent(
-    i: OptimizeAgentInput, c: AgentBuilderContext, o: OptimizeAgentOutput,
+  async optimizeAgent(i: OptimizeAgentInput, o: OptimizeAgentOutput, c: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.optimizeAgent(i, c, o);
+    return this.service.optimizeAgent(i, o, c, metrics, report);
   }
 
-  async buildSystemAgent(
-    i: BuildSystemAgentInput, c: AgentBuilderContext, o: BuildSystemAgentOutput,
+  async buildSystemAgent(i: BuildSystemAgentInput, o: BuildSystemAgentOutput, c: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.buildSystemAgent(i, c, o);
+    return this.service.buildSystemAgent(i, o, c, metrics, report);
   }
 
-  async configAgentBuilder(
-    i: ConfigAgentBuilderInput, c: AgentBuilderContext, o: ConfigAgentBuilderOutput,
+  async configAgentBuilder(i: ConfigAgentBuilderInput, o: ConfigAgentBuilderOutput, c: AgentBuilderContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configAgentBuilder(i, c, o);
+    return this.service.configAgentBuilder(i, o, c, metrics, report);
   }
 }

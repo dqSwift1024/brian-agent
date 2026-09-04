@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import {
   createTestDb, setupTestMocks, resetTestMocks,
@@ -102,7 +103,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
       expect(output.work_id).toBeTruthy();
       expect(output.interact_id).toBeTruthy();
@@ -112,7 +113,7 @@ describe('Orchestration Integration', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: output.work_id }] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       expect(selOutput.row!.status).toBe('COMPLETED');
     });
 
@@ -121,7 +122,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       expect(plannerAgent.planHierarchical).not.toHaveBeenCalled();
     });
 
@@ -130,8 +131,8 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
-      expect(writerAgent.write).toHaveBeenCalled();
+      await entry.receiveWork(input, output, ctx);
+      expect(writerAgent.execWrite).toHaveBeenCalled();
     });
 
     it('TC-INT-004: Planning 策略端到端执行', async () => {
@@ -143,7 +144,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       await flushAllCallbacks();
       expect(result).toBe(true);
       expect(output.work_id).toBeTruthy();
@@ -160,7 +161,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -169,7 +170,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       const saveCalls = infoCore.saveInfo.mock.calls;
       const hasRequest = saveCalls.some((c: any[]) => c[0]?.info_type === 'REQUEST');
       const hasResponse = saveCalls.some((c: any[]) => c[0]?.info_type === 'RESPONSE');
@@ -182,7 +183,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       await flushAllCallbacks();
       const saveCalls = infoCore.saveInfo.mock.calls;
       const hasAgent = saveCalls.some((c: any[]) => c[0]?.info_creator_role === 'AGENT');
@@ -200,7 +201,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -208,7 +209,7 @@ describe('Orchestration Integration', () => {
       const selStratOut = Object.assign(new SelectOneDBOutput(), {});
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_strategy', conditions: [{ field: 'strategy_label', operator: Operator.EQ, value: 'SIMPLE' }] },
-      }) as SelectOneDBInput, new DBContext(), selStratOut);
+      }) as SelectOneDBInput, selStratOut, new DBContext());
       const originalJsonnodeDef = selStratOut.row!.jsonnode_definition;
       db.executeRaw(`UPDATE orchestration_strategy SET jsonnode_definition = 'invalid_json' WHERE strategy_label = 'SIMPLE'`);
       try {
@@ -217,7 +218,7 @@ describe('Orchestration Integration', () => {
         const output = new ReceiveWorkOutput();
         const ctx = new OrchestrationEntryContext();
 
-        const result = await entry.receiveWork(input, ctx, output);
+        const result = await entry.receiveWork(input, output, ctx);
         expect(result).toBe(false);
         expect(output.final_response).toBeTruthy();
       } finally {
@@ -236,7 +237,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       expect(promptsAccess.execPrompt).toHaveBeenCalled();
       expect(llmAccess.execLLM).toHaveBeenCalled();
     });
@@ -276,7 +277,7 @@ describe('Orchestration Integration', () => {
       const output = new ExecDAGOutput();
       const ctx = new OrchestrationExecutionContext();
 
-      const result = await exec.execDAG(input, ctx, output);
+      const result = await exec.execDAG(input, output, ctx);
       expect(result).toBe(true);
       expect(output.agent_results.length).toBe(3);
     });
@@ -304,7 +305,7 @@ describe('Orchestration Integration', () => {
       const output = new ExecutePostProcessingOutput();
       const ctx = new OrchestrationStrategyContext();
 
-      const result = await strategy.executePostProcessing(input, ctx, output);
+      const result = await strategy.executePostProcessing(input, output, ctx);
       await flushAllCallbacks();
       expect(result).toBe(true);
       expect(output.final_response).toBeTruthy();
@@ -352,7 +353,7 @@ describe('Orchestration Integration', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.execJSONNode(input, ctx, output);
+      const result = await jsonNode.execJSONNode(input, output, ctx);
       await flushAllCallbacks();
       expect(result).toBe(true);
       expect(output.shared_data.final_response).toBeTruthy();
@@ -368,13 +369,13 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
 
       const vizInput = Object.assign(new VisualizeAgentDAGInput(), { work_id: output.work_id });
       const vizOutput = new VisualizeAgentDAGOutput();
       const vizCtx = new OrchestrationVisualizationContext();
 
-      const vizResult = await viz.visualizeAgentDAG(vizInput, vizCtx, vizOutput);
+      const vizResult = await viz.visualizeAgentDAG(vizInput, vizOutput, vizCtx);
       expect(vizResult).toBe(true);
     });
   });
@@ -388,7 +389,7 @@ describe('Orchestration Integration', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });
@@ -402,18 +403,18 @@ describe('Orchestration Integration', () => {
       const selStratOut = Object.assign(new SelectOneDBOutput(), {});
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_strategy', conditions: [{ field: 'strategy_label', operator: Operator.EQ, value: 'SIMPLE' }] },
-      }) as SelectOneDBInput, new DBContext(), selStratOut);
+      }) as SelectOneDBInput, selStratOut, new DBContext());
       const originalJsonnodeDef = selStratOut.row!.jsonnode_definition;
       db.executeRaw(`UPDATE orchestration_strategy SET jsonnode_definition = 'invalid_json' WHERE strategy_label = 'SIMPLE'`);
       try {
         agentBuilder.buildAgent.mockRejectedValue(new Error('all failed'));
-        writerAgent.write.mockRejectedValue(new Error('write failed'));
+        writerAgent.execWrite.mockRejectedValue(new Error('write failed'));
 
         const input = Object.assign(new ReceiveWorkInput(), { session_id: 'int-s13', user_query: '你好' });
         const output = new ReceiveWorkOutput();
         const ctx = new OrchestrationEntryContext();
 
-        const result = await entry.receiveWork(input, ctx, output);
+        const result = await entry.receiveWork(input, output, ctx);
         await flushAllCallbacks();
         expect(result).toBe(false);
         expect(output.final_response).toBeTruthy();
@@ -427,7 +428,7 @@ describe('Orchestration Integration', () => {
       const selStratOut = Object.assign(new SelectOneDBOutput(), {});
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_strategy', conditions: [{ field: 'strategy_label', operator: Operator.EQ, value: 'SIMPLE' }] },
-      }) as SelectOneDBInput, new DBContext(), selStratOut);
+      }) as SelectOneDBInput, selStratOut, new DBContext());
       const originalJsonnodeDef = selStratOut.row!.jsonnode_definition;
       db.executeRaw(`UPDATE orchestration_strategy SET jsonnode_definition = 'invalid_json' WHERE strategy_label = 'SIMPLE'`);
       try {
@@ -436,7 +437,7 @@ describe('Orchestration Integration', () => {
         const output = new ReceiveWorkOutput();
         const ctx = new OrchestrationEntryContext();
 
-        const result = await entry.receiveWork(input, ctx, output);
+        const result = await entry.receiveWork(input, output, ctx);
         await flushAllCallbacks();
         expect(result).toBe(false);
       } finally {

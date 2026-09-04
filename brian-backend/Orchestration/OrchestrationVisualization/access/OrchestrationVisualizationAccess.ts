@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, Logger } from '@brian-agent/base';
 import { AopProxy } from '@brian-agent/base';
 import type { AgentLibraryAccess, AgentExecutionAccess } from '@brian-agent/agent';
@@ -30,31 +31,27 @@ export class OrchestrationVisualizationAccess {
     await this.initPromise;
   }
 
-  async visualizeAgentDAG(
-    i: VisualizeAgentDAGInput, c: OrchestrationVisualizationContext, o: VisualizeAgentDAGOutput,
+  async visualizeAgentDAG(i: VisualizeAgentDAGInput, o: VisualizeAgentDAGOutput, c: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.visualizeAgentDAG(i, c, o);
+    return this.service.visualizeAgentDAG(i, o, c, metrics, report);
   }
 
-  async visualizeWorkFlow(
-    i: VisualizeWorkFlowInput, c: OrchestrationVisualizationContext, o: VisualizeWorkFlowOutput,
+  async visualizeWorkFlow(i: VisualizeWorkFlowInput, o: VisualizeWorkFlowOutput, c: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.visualizeWorkFlow(i, c, o);
+    return this.service.visualizeWorkFlow(i, o, c, metrics, report);
   }
 
-  async getAgentNodeDetail(
-    i: GetAgentNodeDetailInput, c: OrchestrationVisualizationContext, o: GetAgentNodeDetailOutput,
+  async soAgentNodeDetail(i: GetAgentNodeDetailInput, o: GetAgentNodeDetailOutput, c: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.getAgentNodeDetail(i, c, o);
+    return this.service.soAgentNodeDetail(i, o, c, metrics, report);
   }
 
-  async configOrchestrationVisualization(
-    i: ConfigOrchestrationVisualizationInput, c: OrchestrationVisualizationContext, o: ConfigOrchestrationVisualizationOutput,
+  async configOrchestrationVisualization(i: ConfigOrchestrationVisualizationInput, o: ConfigOrchestrationVisualizationOutput, c: OrchestrationVisualizationContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     await this.initPromise;
-    return this.service.configOrchestrationVisualization(i, c, o);
+    return this.service.configOrchestrationVisualization(i, o, c, metrics, report);
   }
 }

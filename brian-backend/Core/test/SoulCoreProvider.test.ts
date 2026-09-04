@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -68,7 +69,7 @@ describe('SoulCoreProvider', () => {
   describe('configSoulCore', () => {
     it('should return config with default regen_rate', async () => {
       const output = new ConfigSoulCoreOutput();
-      await soulCore.configSoulCore(new ConfigSoulCoreInput(), new SoulCoreContext(), output);
+      await soulCore.configSoulCore(new ConfigSoulCoreInput(), output, new SoulCoreContext());
       expect(output.config).not.toBeNull();
       expect(output.config!.regen_rate).toBe(75);
     });
@@ -77,7 +78,7 @@ describe('SoulCoreProvider', () => {
       const input = new ConfigSoulCoreInput();
       input.regen_rate = 42;
       const output = new ConfigSoulCoreOutput();
-      await soulCore.configSoulCore(input, new SoulCoreContext(), output);
+      await soulCore.configSoulCore(input, output, new SoulCoreContext());
       expect(output.config!.regen_rate).toBe(42);
     });
 
@@ -86,7 +87,7 @@ describe('SoulCoreProvider', () => {
       input.regen_rate = 200;
 
       await expect(
-        soulCore.configSoulCore(input, new SoulCoreContext(), new ConfigSoulCoreOutput()),
+        soulCore.configSoulCore(input, new ConfigSoulCoreOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -95,7 +96,7 @@ describe('SoulCoreProvider', () => {
       input.regen_rate = -10;
 
       await expect(
-        soulCore.configSoulCore(input, new SoulCoreContext(), new ConfigSoulCoreOutput()),
+        soulCore.configSoulCore(input, new ConfigSoulCoreOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -103,13 +104,13 @@ describe('SoulCoreProvider', () => {
       const addInput = new AddPromptInput();
       addInput.data = { prompt_template_title: 'Test Soul Prompt', prompt_template: 'test template' };
       const addOutput = new AddPromptOutput();
-      await promptsAccess.addPrompt(addInput, new PromptContext(), addOutput);
+      await promptsAccess.addPrompt(addInput, addOutput, new PromptContext());
       const realId = addOutput.id;
 
       const input = new ConfigSoulCoreInput();
       input.prompt_template_id = realId;
       const output = new ConfigSoulCoreOutput();
-      await soulCore.configSoulCore(input, new SoulCoreContext(), output);
+      await soulCore.configSoulCore(input, output, new SoulCoreContext());
       expect(output.config!.prompt_template_id).toBe(realId);
     });
 
@@ -117,19 +118,18 @@ describe('SoulCoreProvider', () => {
       const input = new ConfigSoulCoreInput();
       input.prompt_template_id = IdGenerator.generate();
       await expect(
-        soulCore.configSoulCore(input, new SoulCoreContext(), new ConfigSoulCoreOutput()),
+        soulCore.configSoulCore(input, new ConfigSoulCoreOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
     it('should persist config across calls and support llm_id', async () => {
       await soulCore.configSoulCore(
         { regen_rate: 10, llm_id: 'custom-model-id' } as ConfigSoulCoreInput,
-        new SoulCoreContext(),
-        new ConfigSoulCoreOutput(),
+        new ConfigSoulCoreOutput(), new SoulCoreContext(),
       );
 
       const output = new ConfigSoulCoreOutput();
-      await soulCore.configSoulCore(new ConfigSoulCoreInput(), new SoulCoreContext(), output);
+      await soulCore.configSoulCore(new ConfigSoulCoreInput(), output, new SoulCoreContext());
       expect(output.config!.regen_rate).toBe(10);
       expect(output.config!.llm_id).toBe('custom-model-id');
     });
@@ -141,7 +141,7 @@ describe('SoulCoreProvider', () => {
       input.agent_id = '';
 
       await expect(
-        soulCore.matchSoul(input, new SoulCoreContext(), new MatchSoulOutput()),
+        soulCore.matchSoul(input, new MatchSoulOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -178,7 +178,7 @@ describe('SoulCoreProvider', () => {
       input.context_id = 'c1';
       input.interact_id = 'i1';
       const output = new MatchSoulOutput();
-      await soulCore.matchSoul(input, new SoulCoreContext(), output);
+      await soulCore.matchSoul(input, output, new SoulCoreContext());
       expect(output.from_cache).toBe(true);
     });
   });
@@ -207,14 +207,14 @@ describe('SoulCoreProvider', () => {
     it('should generate a complete Soul with soul_brief/content/usage', async () => {
       await insertEnabledLLM('llm-gen-1');
       const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
-        async (_input, _ctx, output) => {
+        async (_input, output, _ctx) => {
           output.result = '```json\n{"soul_brief":"编码专家","soul_content":"专业、严谨的编码专家。","soul_usage":"代码编写与调试"}\n```';
           return true;
         },
       );
 
       const output = new MatchSoulOutput();
-      await soulCore.matchSoul(buildMatchInput('agent-gen-1'), new SoulCoreContext(), output);
+      await soulCore.matchSoul(buildMatchInput('agent-gen-1'), output, new SoulCoreContext());
 
       expect(output.from_cache).toBe(false);
       expect(output.soul_id).toBeTruthy();
@@ -229,14 +229,14 @@ describe('SoulCoreProvider', () => {
     it('should parse JSON with surrounding text', async () => {
       await insertEnabledLLM('llm-gen-2');
       const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
-        async (_input, _ctx, output) => {
+        async (_input, output, _ctx) => {
           output.result = '好的，以下是生成的 Soul：\n{"soul_brief":"导师","soul_content":"严苛的导师。","soul_usage":"教学与答疑"}\n希望有帮助。';
           return true;
         },
       );
 
       const output = new MatchSoulOutput();
-      await soulCore.matchSoul(buildMatchInput('agent-gen-2'), new SoulCoreContext(), output);
+      await soulCore.matchSoul(buildMatchInput('agent-gen-2'), output, new SoulCoreContext());
 
       expect(output.soul!.soul_brief).toBe('导师');
       expect(output.soul!.soul_usage).toBe('教学与答疑');
@@ -248,7 +248,7 @@ describe('SoulCoreProvider', () => {
       await insertEnabledLLM('llm-gen-3');
       let calls = 0;
       const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
-        async (_input, _ctx, output) => {
+        async (_input, output, _ctx) => {
           calls += 1;
           if (calls === 1) {
             output.error = 'temporary failure';
@@ -260,7 +260,7 @@ describe('SoulCoreProvider', () => {
       );
 
       const output = new MatchSoulOutput();
-      await soulCore.matchSoul(buildMatchInput('agent-gen-3'), new SoulCoreContext(), output);
+      await soulCore.matchSoul(buildMatchInput('agent-gen-3'), output, new SoulCoreContext());
 
       expect(calls).toBe(2);
       expect(output.soul!.soul_brief).toBe('重试成功');
@@ -271,14 +271,14 @@ describe('SoulCoreProvider', () => {
     it('should use Chinese fallbacks for missing fields', async () => {
       await insertEnabledLLM('llm-gen-4');
       const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
-        async (_input, _ctx, output) => {
+        async (_input, output, _ctx) => {
           output.result = '{}';
           return true;
         },
       );
 
       const output = new MatchSoulOutput();
-      await soulCore.matchSoul(buildMatchInput('agent-gen-4'), new SoulCoreContext(), output);
+      await soulCore.matchSoul(buildMatchInput('agent-gen-4'), output, new SoulCoreContext());
 
       expect(output.soul!.soul_brief).toBe('自动生成的 Soul');
       expect(output.soul!.soul_content).toBe('乐于助人的 AI 助手。');
@@ -320,7 +320,7 @@ describe('SoulCoreProvider', () => {
 
       let calledModelId = '';
       const spy = vi.spyOn(llmAccess, 'execLLM').mockImplementation(
-        async (input, _ctx, output) => {
+        async (input, output, _ctx) => {
           calledModelId = input.id;
           output.result = '{}';
           return true;
@@ -328,13 +328,13 @@ describe('SoulCoreProvider', () => {
       );
 
       // Case 1: Configured model in soul_core_config -> passes model-configured to LLMProvider
-      await soulCore.configSoulCore({ llm_id: 'model-configured' } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
-      await soulCore.matchSoul(buildMatchInput('agent-tier-1'), new SoulCoreContext(), new MatchSoulOutput());
+      await soulCore.configSoulCore({ llm_id: 'model-configured' } as ConfigSoulCoreInput, new ConfigSoulCoreOutput(), new SoulCoreContext());
+      await soulCore.matchSoul(buildMatchInput('agent-tier-1'), new MatchSoulOutput(), new SoulCoreContext());
       expect(calledModelId).toBe('model-configured');
 
       // Case 2: No configured model (null/empty) -> passes empty id to LLMProvider for unified fallback
-      await soulCore.configSoulCore({ llm_id: null } as ConfigSoulCoreInput, new SoulCoreContext(), new ConfigSoulCoreOutput());
-      await soulCore.matchSoul(buildMatchInput('agent-tier-2'), new SoulCoreContext(), new MatchSoulOutput());
+      await soulCore.configSoulCore({ llm_id: null } as ConfigSoulCoreInput, new ConfigSoulCoreOutput(), new SoulCoreContext());
+      await soulCore.matchSoul(buildMatchInput('agent-tier-2'), new MatchSoulOutput(), new SoulCoreContext());
       expect(calledModelId).toBe('');
 
       spy.mockRestore();
@@ -348,7 +348,7 @@ describe('SoulCoreProvider', () => {
       input.soul_id = 'soul-1';
 
       await expect(
-        soulCore.optSoul(input, new SoulCoreContext(), new OptSoulOutput()),
+        soulCore.optSoul(input, new OptSoulOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -358,7 +358,7 @@ describe('SoulCoreProvider', () => {
       input.soul_id = '';
 
       await expect(
-        soulCore.optSoul(input, new SoulCoreContext(), new OptSoulOutput()),
+        soulCore.optSoul(input, new OptSoulOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -368,7 +368,7 @@ describe('SoulCoreProvider', () => {
       input.soul_id = 'soul-1';
 
       await expect(
-        soulCore.optSoul(input, new SoulCoreContext(), new OptSoulOutput()),
+        soulCore.optSoul(input, new OptSoulOutput(), new SoulCoreContext()),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -392,7 +392,7 @@ describe('SoulCoreProvider', () => {
       input.soul_id = soulId;
 
       await expect(
-        soulCore.optSoul(input, new SoulCoreContext(), new OptSoulOutput()),
+        soulCore.optSoul(input, new OptSoulOutput(), new SoulCoreContext()),
       ).rejects.toThrow();
     });
   });
@@ -400,7 +400,7 @@ describe('SoulCoreProvider', () => {
   describe('ageSoul', () => {
     it('should return aged_count 0 when no rules', async () => {
       const output = new AgeSoulOutput();
-      await soulCore.ageSoul(new AgeSoulInput(), new SoulCoreContext(), output);
+      await soulCore.ageSoul(new AgeSoulInput(), output, new SoulCoreContext());
       expect(output.aged_count).toBe(0);
     });
   });
@@ -408,7 +408,7 @@ describe('SoulCoreProvider', () => {
   describe('soSoulRule', () => {
     it('should return empty list when no rules', async () => {
       const output = new SoSoulRuleOutput();
-      await soulCore.soSoulRule(new SoSoulRuleInput(), new SoulCoreContext(), output);
+      await soulCore.soSoulRule(new SoSoulRuleInput(), output, new SoulCoreContext());
       expect(output.list).toEqual([]);
       expect(output.total).toBe(0);
     });
@@ -423,7 +423,7 @@ describe('SoulCoreProvider', () => {
       ]);
 
       const output = new SoSoulRuleOutput();
-      await soulCore.soSoulRule(new SoSoulRuleInput(), new SoulCoreContext(), output);
+      await soulCore.soSoulRule(new SoSoulRuleInput(), output, new SoulCoreContext());
       expect(output.list.length).toBe(1);
       expect(output.total).toBe(1);
       expect(output.list[0].days).toBe(14);
@@ -444,7 +444,7 @@ describe('SoulCoreProvider', () => {
       const input = new SoSoulRuleInput();
       input.page = { current: 1, size: 2 };
       const output = new SoSoulRuleOutput();
-      await soulCore.soSoulRule(input, new SoulCoreContext(), output);
+      await soulCore.soSoulRule(input, output, new SoulCoreContext());
       expect(output.list.length).toBe(2);
       expect(output.total).toBe(5);
     });
@@ -456,7 +456,7 @@ describe('SoulCoreProvider', () => {
       input.operations = [];
 
       await expect(
-        soulCore.updateSoulRule(input, new SoulCoreContext(), new UpdateSoulRuleOutput()),
+        soulCore.updateSoulRule(input, new UpdateSoulRuleOutput(), new SoulCoreContext()),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -481,10 +481,10 @@ describe('SoulCoreProvider', () => {
         },
       ];
 
-      await soulCore.updateSoulRule(input, new SoulCoreContext(), new UpdateSoulRuleOutput());
+      await soulCore.updateSoulRule(input, new UpdateSoulRuleOutput(), new SoulCoreContext());
 
       const soOut = new SoSoulRuleOutput();
-      await soulCore.soSoulRule(new SoSoulRuleInput(), new SoulCoreContext(), soOut);
+      await soulCore.soSoulRule(new SoSoulRuleInput(), soOut, new SoulCoreContext());
       expect(soOut.list.length).toBe(2);
 
       const ruleId = soOut.list[0].id;
@@ -503,10 +503,10 @@ describe('SoulCoreProvider', () => {
         },
       ];
 
-      await soulCore.updateSoulRule(updateInput, new SoulCoreContext(), new UpdateSoulRuleOutput());
+      await soulCore.updateSoulRule(updateInput, new UpdateSoulRuleOutput(), new SoulCoreContext());
 
       const soOut2 = new SoSoulRuleOutput();
-      await soulCore.soSoulRule(new SoSoulRuleInput(), new SoulCoreContext(), soOut2);
+      await soulCore.soSoulRule(new SoSoulRuleInput(), soOut2, new SoulCoreContext());
       expect(soOut2.list.length).toBe(1);
       expect(soOut2.list[0].days).toBe(99);
     });
@@ -515,13 +515,13 @@ describe('SoulCoreProvider', () => {
   describe('AOP integration', () => {
     it('should set elapsed_ms on output', async () => {
       const output = new ConfigSoulCoreOutput();
-      await soulCore.configSoulCore(new ConfigSoulCoreInput(), new SoulCoreContext(), output);
+      await soulCore.configSoulCore(new ConfigSoulCoreInput(), output, new SoulCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should set elapsed_ms on ageSoul output', async () => {
       const output = new AgeSoulOutput();
-      await soulCore.ageSoul(new AgeSoulInput(), new SoulCoreContext(), output);
+      await soulCore.ageSoul(new AgeSoulInput(), output, new SoulCoreContext());
       expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
     });
   });

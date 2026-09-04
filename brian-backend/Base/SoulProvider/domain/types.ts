@@ -97,10 +97,10 @@ export class UpdateSoulOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getSoul
+// soSoulById
 // ---------------------------------------------------------------------------
 
-/** getSoul 入参 */
+/** soSoulById 入参 */
 export class GetSoulInput extends Input {
   /** 按 ID 获取 */
   id?: string;
@@ -108,7 +108,7 @@ export class GetSoulInput extends Input {
   conditions?: Condition[];
 }
 
-/** getSoul 出参 */
+/** soSoulById 出参 */
 export class GetSoulOutput extends Output {
   /** Soul 信息，无匹配为 null */
   soul: SoulRecord | null = null;

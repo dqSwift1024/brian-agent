@@ -157,7 +157,7 @@ export class AnswerOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getTrace
+// soTrace
 // ---------------------------------------------------------------------------
 
 export class GetTraceInput extends Input {
@@ -179,7 +179,7 @@ export class GetTraceOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getExecQueueStatus
+// soExecQueueStatus
 // ---------------------------------------------------------------------------
 
 export class GetExecQueueStatusInput extends Input {}

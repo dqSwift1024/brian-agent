@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb, setupTestMocks, resetTestMocks, createMockAgentBuilder, createMockWriterAgent, createMockPlannerAgent, createMockEvolutorAgent, createMockExecutionAccess, createMockInfoCore, createMockMQAccess, createMockMQCore, createMockLLMAccess, createMockPromptsAccess, createMockLogger, flushAllCallbacks } from './test-helpers';
 import { RelationDBAccess, Operator, DBContext, SelectDBInput, SelectDBOutput } from '@brian-agent/base';
@@ -61,13 +62,13 @@ describe('JSONNode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    writerAgent.write.mockImplementation(async (_i: any, _c: any, o: any) => {
+    writerAgent.execWrite.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.response = 'This is a mock writer response.';
       o.response_format = 'MARKDOWN';
       o.token_usage = 50;
       return true;
     });
-    executionAccess.execSingleAgent.mockImplementation(async (_i: any, _c: any, o: any) => {
+    executionAccess.execSingleAgent.mockImplementation(async (_i: any, o: any, _c: any, ) => {
       o.answer = 'Mock agent answer.';
       o.trace_id = 'mock-trace-id';
       o.iterations = 3;
@@ -93,7 +94,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.execJSONNode(input, ctx, output);
+      const result = await jsonNode.execJSONNode(input, output, ctx);
       expect(result).toBe(true);
       expect(output.shared_data.final_response).toBeTruthy();
       expect(output.execution_trace.length).toBeGreaterThan(0);
@@ -108,7 +109,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       const traceIds = output.execution_trace.map(t => t.node_id);
       expect(traceIds[0]).toBe('de43b808-a9b7-48c1-8744-7602a483328f');
       expect(traceIds[1]).toBe('bea3c048-aa35-4ab3-bda7-c2de0c6b2713');
@@ -124,7 +125,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       await flushAllCallbacks();
       expect(output.shared_data.user_query).toBe('你好');
       expect(output.shared_data.final_response).toBeTruthy();
@@ -139,7 +140,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       expect(output.shared_data.session_id).toBe('s4');
       expect(output.shared_data.work_id).toBe('w4');
       expect(output.shared_data.user_query).toBe('Test');
@@ -158,7 +159,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.execJSONNode(input, ctx, output);
+      const result = await jsonNode.execJSONNode(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -175,7 +176,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.execJSONNode(input, ctx, output);
+      const result = await jsonNode.execJSONNode(input, output, ctx);
       expect(result).toBe(true);
       expect(output.execution_trace.length).toBe(1);
     });
@@ -189,7 +190,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       output.execution_trace.forEach(trace => {
         expect(trace.status).toBe('SUCCESS');
       });
@@ -204,7 +205,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       output.execution_trace.forEach(trace => {
         expect(trace.elapsed_ms).toBeGreaterThanOrEqual(0);
       });
@@ -223,7 +224,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.execJSONNode(input, ctx, output);
+      const result = await jsonNode.execJSONNode(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -251,7 +252,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       const traceIds = output.execution_trace.map(t => t.node_id);
       expect(traceIds).toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
       expect(traceIds).not.toContain('df33276c-4a7c-4990-bb6c-0caf40179685');
@@ -276,7 +277,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       const traceIds = output.execution_trace.map(t => t.node_id);
       expect(traceIds).toContain('df33276c-4a7c-4990-bb6c-0caf40179685');
       expect(traceIds).not.toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
@@ -301,7 +302,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       expect(output.execution_trace.map(t => t.node_id)).toContain('839f1f73-3902-4745-9a18-75c0b619ce61');
     });
   });
@@ -315,7 +316,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(true);
       expect(output.errors).toEqual([]);
@@ -327,7 +328,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
       expect(output.errors.some(e => e.includes('version'))).toBe(true);
@@ -339,7 +340,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
     });
@@ -350,7 +351,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
       expect(output.errors.some(e => e.includes('start_node'))).toBe(true);
@@ -365,7 +366,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
     });
@@ -382,7 +383,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
       expect(output.errors.some(e => e.toLowerCase().includes('duplicate') || e.includes('重复'))).toBe(true);
@@ -397,7 +398,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
     });
@@ -411,7 +412,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
     });
@@ -428,7 +429,7 @@ describe('JSONNode', () => {
       const output = new ValidateJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.validate(input, ctx, output);
+      const result = jsonNode.validate(input, output, ctx);
       expect(result).toBe(true);
       expect(output.valid).toBe(false);
       expect(output.errors.some(e => e.includes('环') || e.includes('cycle'))).toBe(true);
@@ -445,7 +446,7 @@ describe('JSONNode', () => {
       const output = new RegisterNodeTypeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.registerNodeType(input, ctx, output);
+      const result = jsonNode.registerNodeType(input, output, ctx);
       expect(result).toBe(true);
       expect(output.registered).toBe(true);
     });
@@ -456,7 +457,7 @@ describe('JSONNode', () => {
       const output = new RegisterNodeTypeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.registerNodeType(input, ctx, output);
+      const result = jsonNode.registerNodeType(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -466,7 +467,7 @@ describe('JSONNode', () => {
       const output = new RegisterNodeTypeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.registerNodeType(input, ctx, output);
+      const result = jsonNode.registerNodeType(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -475,7 +476,7 @@ describe('JSONNode', () => {
       const output = new RegisterNodeTypeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = jsonNode.registerNodeType(input, ctx, output);
+      const result = jsonNode.registerNodeType(input, output, ctx);
       expect(result).toBe(false);
     });
   });
@@ -489,7 +490,7 @@ describe('JSONNode', () => {
       const output = new ConfigJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.configJSONNode(input, ctx, output);
+      const result = await jsonNode.configJSONNode(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -498,7 +499,7 @@ describe('JSONNode', () => {
       const output = new ConfigJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await expect(jsonNode.configJSONNode(input, ctx, output)).rejects.toThrow();
+      await expect(jsonNode.configJSONNode(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-CJN-007: node_timeout_ms 为负数', async () => {
@@ -506,20 +507,20 @@ describe('JSONNode', () => {
       const output = new ConfigJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await expect(jsonNode.configJSONNode(input, ctx, output)).rejects.toThrow();
+      await expect(jsonNode.configJSONNode(input, output, ctx)).rejects.toThrow();
     });
   });
 
   // =========================================================================
-  // 6. getJSONNodeTrace
+  // 6. soJSONNodeTrace
   // =========================================================================
-  describe('getJSONNodeTrace', () => {
+  describe('soJSONNodeTrace', () => {
     it('TC-GJT-001: 查询执行追踪', async () => {
       const input = Object.assign(new GetJSONNodeTraceInput(), { orchestration_id: 'orch-1' });
       const output = new GetJSONNodeTraceOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.getJSONNodeTrace(input, ctx, output);
+      const result = await jsonNode.soJSONNodeTrace(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -528,7 +529,7 @@ describe('JSONNode', () => {
       const output = new GetJSONNodeTraceOutput();
       const ctx = new JSONNodeContext();
 
-      const result = await jsonNode.getJSONNodeTrace(input, ctx, output);
+      const result = await jsonNode.soJSONNodeTrace(input, output, ctx);
       expect(result).toBe(true);
       expect(output.trace).toEqual([]);
     });
@@ -547,7 +548,7 @@ describe('JSONNode', () => {
       const output = new ExecJSONNodeOutput();
       const ctx = new JSONNodeContext();
 
-      await jsonNode.execJSONNode(input, ctx, output);
+      await jsonNode.execJSONNode(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });

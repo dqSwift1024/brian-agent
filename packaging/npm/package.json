@@ -1,0 +1,31 @@
+{
+  "name": "brian-agent",
+  "version": "__BRIAN_VERSION__",
+  "description": "Brian-Agent CLI —— 智能个人 Agent 服务的安装与进程管理（brian start/stop/status/logs）。自包含发行包内置 Node 运行时与全部原生依赖。",
+  "license": "Apache-2.0",
+  "bin": {
+    "brian": "cli.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js || node -e \"console.warn('[brian-agent] postinstall 下载失败，可稍后重试: npm rebuild -g brian-agent')\""
+  },
+  "files": [
+    "cli.js",
+    "install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/__BRIAN_REPO__.git"
+  },
+  "homepage": "https://github.com/__BRIAN_REPO__#readme",
+  "keywords": [
+    "agent",
+    "ai",
+    "cli",
+    "self-hosted"
+  ]
+}

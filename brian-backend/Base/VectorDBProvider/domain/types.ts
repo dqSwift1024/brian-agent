@@ -182,16 +182,16 @@ export class SoVectorOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getVector
+// soVectorById
 // ---------------------------------------------------------------------------
 
-/** getVector 入参 */
+/** soVectorById 入参 */
 export class GetVectorInput extends Input {
   /** 向量 ID */
   id!: string;
 }
 
-/** getVector 出参 */
+/** soVectorById 出参 */
 export class GetVectorOutput extends Output {
   /** 向量信息，无匹配为 null */
   vector: VectorRecord | null = null;

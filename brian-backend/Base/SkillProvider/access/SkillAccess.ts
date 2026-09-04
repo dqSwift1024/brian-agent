@@ -9,10 +9,13 @@
  * 4. 通过简单改造即可将方法调用转换为 RPC 调用。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { SkillSchemaInitializer } from '../infrastructure/SkillSchemaInitializer';
 import { SkillService } from '../application/SkillService';
 import { IsolatedVMSandbox } from '../infrastructure/sandbox/IsolatedVMSandbox';
+import { UnavailableJsSandbox } from '../infrastructure/sandbox/UnavailableJsSandbox';
 import type { ISandbox } from '../infrastructure/sandbox/ISandbox';
 import {
   SkillContext,
@@ -49,15 +52,12 @@ import { AopProxy, type Logger } from '../../shared/aop/AopProxy';
  * const output = new AddSkillOutput();
  * await skillAccess.addSkill(
  *   { data: { skill_brief: '天气查询', work: 'result = params.city' } },
- *   new SkillContext(),
- *   output,
+ *   output, new SkillContext(),
  * );
  * ```
  */
 export class SkillAccess {
   private readonly service: SkillService;
-  private readonly sandbox: ISandbox;
-
   /**
    * @param relationDb RelationDBProvider 接入层实例
    * @param logger 可选日志记录器
@@ -65,10 +65,18 @@ export class SkillAccess {
   constructor(relationDb: RelationDBAccess, logger?: Logger) {
     // 初始化表结构
     new SkillSchemaInitializer(relationDb).init();
-    // 创建沙箱实例（自动检测平台，优先使用 isolated-vm，不可用时降级为 vm）
-    this.sandbox = new IsolatedVMSandbox();
+    // 创建沙箱实例：isolated-vm 预编译二进制缺失的平台（部分离线发行包）降级为
+    // 占位实现（.js Skill 执行时返回明确错误），保证服务可正常启动
+    let sandbox: ISandbox;
+    try {
+      sandbox = new IsolatedVMSandbox();
+    } catch (e) {
+      sandbox = new UnavailableJsSandbox((e as Error).message);
+      // eslint-disable-next-line no-console
+      console.warn(`[skill] JavaScript 沙箱不可用，.js Skill 已降级禁用: ${(e as Error).message}`);
+    }
     // 创建 Service 并通过代理模式增加切面注入能力
-    const rawService = new SkillService(relationDb, this.sandbox);
+    const rawService = new SkillService(relationDb, sandbox);
     this.service = AopProxy.wrap(rawService, { logger });
   }
 
@@ -80,65 +88,44 @@ export class SkillAccess {
   }
 
   /** 新增 Skill */
-  async addSkill(
-    input: AddSkillInput,
-    context: SkillContext,
-    output: AddSkillOutput,
+  async addSkill(input: AddSkillInput, output: AddSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.addSkill(input, context, output);
+    return this.service.addSkill(input, output, context, metrics, report);
   }
 
   /** 获取 Skill */
-  async getSkill(
-    input: GetSkillInput,
-    context: SkillContext,
-    output: GetSkillOutput,
+  async soSkillById(input: GetSkillInput, output: GetSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.getSkill(input, context, output);
+    return this.service.soSkillById(input, output, context, metrics, report);
   }
 
   /** 更新 Skill */
-  async updateSkill(
-    input: UpdateSkillInput,
-    context: SkillContext,
-    output: UpdateSkillOutput,
+  async updateSkill(input: UpdateSkillInput, output: UpdateSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.updateSkill(input, context, output);
+    return this.service.updateSkill(input, output, context, metrics, report);
   }
 
   /** 删除 Skill */
-  async delSkill(
-    input: DelSkillInput,
-    context: SkillContext,
-    output: DelSkillOutput,
+  async delSkill(input: DelSkillInput, output: DelSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.delSkill(input, context, output);
+    return this.service.delSkill(input, output, context, metrics, report);
   }
 
   /** 搜索 Skill */
-  async soSkill(
-    input: SoSkillInput,
-    context: SkillContext,
-    output: SoSkillOutput,
+  async soSkill(input: SoSkillInput, output: SoSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.soSkill(input, context, output);
+    return this.service.soSkill(input, output, context, metrics, report);
   }
 
   /** 执行 Skill（沙箱执行） */
-  async execSkill(
-    input: ExecSkillInput,
-    context: SkillContext,
-    output: ExecSkillOutput,
+  async execSkill(input: ExecSkillInput, output: ExecSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.execSkill(input, context, output);
+    return this.service.execSkill(input, output, context, metrics, report);
   }
 
   /** 启用/禁用 Skill 组件 */
-  async enableSkill(
-    input: EnableSkillInput,
-    context: SkillContext,
-    output: EnableSkillOutput,
+  async enableSkill(input: EnableSkillInput, output: EnableSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
-    return this.service.enableSkill(input, context, output);
+    return this.service.enableSkill(input, output, context, metrics, report);
   }
 }

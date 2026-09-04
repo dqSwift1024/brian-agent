@@ -18,6 +18,8 @@
  * 每个测试用例在 temp 目录中创建独立的数据库文件，测试后清理。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -291,7 +293,7 @@ describe('RelationDBProvider', () => {
 
     afterEach(async () => {
       try {
-        await access.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+        await access.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
       } catch {
         // 忽略已关闭的情况
       }
@@ -310,8 +312,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         access.selectDB(
           { query_param: { table: RELATIONDB_CONFIG_TABLE } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // 表存在则查询不抛错
         expect(output.rows).toBeDefined();
@@ -321,8 +322,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectOneDBOutput();
         access.selectOneDB(
           { query_param: { table: RELATIONDB_CONFIG_TABLE, conditions: [eq('config_key', 'enabled')] } },
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.row).not.toBeNull();
         expect(output.row!.config_value).toBe('true');
@@ -331,13 +331,13 @@ describe('RelationDBProvider', () => {
       it('should set enabled to true after initialize', async () => {
         const output = new InsertDBOutput();
         const data = makeRow();
-        await access.insertDB({ table: TEST_TABLE, data } as InsertDBInput, new DBContext(), output);
+        await access.insertDB({ table: TEST_TABLE, data } as InsertDBInput, output, new DBContext());
         expect(output.affected_rows).toBe(1);
       });
 
       it('should not overwrite existing config on re-initialize', async () => {
         // 先修改 enabled
-        await access.enableDB({ enable: false } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: false } as EnableDBInput, new EnableDBOutput(), new DBContext());
         // 重新初始化
         const access2 = new RelationDBAccess({ dbPath });
         await access2.initialize();
@@ -346,14 +346,14 @@ describe('RelationDBProvider', () => {
         const data = makeRow();
         const output = new InsertDBOutput();
         try {
-          await access2.insertDB({ table: TEST_TABLE, data } as InsertDBInput, new DBContext(), output);
+          await access2.insertDB({ table: TEST_TABLE, data } as InsertDBInput, output, new DBContext());
           // 如果没抛错，说明 enabled 为 true（不符合预期）
           expect('should have thrown').toBe('ComponentDisabledError');
         } catch (e) {
           expect(e).toBeInstanceOf(ComponentDisabledError);
         }
         // 清理 access2
-        await access2.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+        await access2.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
       });
     });
 
@@ -364,7 +364,7 @@ describe('RelationDBProvider', () => {
       it('should insert a single record and return true', async () => {
         const input: InsertDBInput = Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRow() });
         const output = new InsertDBOutput();
-        const ok = await access.insertDB(input, new DBContext(), output);
+        const ok = await access.insertDB(input, output, new DBContext());
         expect(ok).toBe(true);
         expect(output.affected_rows).toBe(1);
       });
@@ -386,15 +386,14 @@ describe('RelationDBProvider', () => {
           ],
         });
         const output = new InsertDBOutput();
-        await access.insertDB(input, new DBContext(), output);
+        await access.insertDB(input, output, new DBContext());
         expect(output.affected_rows).toBe(1);
 
         // 验证数据
         const sel = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'type-test-1')] } } as SelectOneDBInput,
-          new DBContext(),
-          sel,
+          sel, new DBContext(),
         );
         expect(sel.row!.name).toBe('typenames');
         expect(sel.row!.price).toBe(123.45);
@@ -404,7 +403,7 @@ describe('RelationDBProvider', () => {
       it('should return 0 affected_rows for empty data', async () => {
         const input: InsertDBInput = Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: [] });
         const output = new InsertDBOutput();
-        await access.insertDB(input, new DBContext(), output);
+        await access.insertDB(input, output, new DBContext());
         expect(output.affected_rows).toBe(0);
       });
 
@@ -414,7 +413,7 @@ describe('RelationDBProvider', () => {
           data: [{ field: 'x', value: 1 }],
         });
         const output = new InsertDBOutput();
-        expect(() => access.insertDB(input, new DBContext(), output)).rejects.toThrow();
+        expect(() => access.insertDB(input, output, new DBContext())).rejects.toThrow();
       });
     });
 
@@ -440,8 +439,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
         await access.insertDB(
           Object.assign(new InsertDBInput(), {
@@ -458,8 +456,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
         await access.insertDB(
           Object.assign(new InsertDBInput(), {
@@ -476,8 +473,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
       });
 
@@ -485,13 +481,12 @@ describe('RelationDBProvider', () => {
         const output = new DeleteDBOutput();
         await access.deleteDB(
           { table: TEST_TABLE, conditions: [eq('id', 'del-1')] } as DeleteDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(1);
 
         const cnt = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), cnt);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, cnt, new DBContext());
         expect(cnt.count).toBe(2);
       });
 
@@ -499,8 +494,7 @@ describe('RelationDBProvider', () => {
         const output = new DeleteDBOutput();
         await access.deleteDB(
           { table: TEST_TABLE, conditions: [eq('status', 'active')] } as DeleteDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(2);
       });
@@ -509,13 +503,12 @@ describe('RelationDBProvider', () => {
         const output = new DeleteDBOutput();
         await access.deleteDB(
           { table: TEST_TABLE } as DeleteDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(3);
 
         const cnt = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), cnt);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, cnt, new DBContext());
         expect(cnt.count).toBe(0);
       });
 
@@ -523,8 +516,7 @@ describe('RelationDBProvider', () => {
         const output = new DeleteDBOutput();
         await access.deleteDB(
           { table: TEST_TABLE, conditions: [eq('id', 'nonexistent')] } as DeleteDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(0);
       });
@@ -539,8 +531,7 @@ describe('RelationDBProvider', () => {
               { field: 'name', operator: Operator.EQ, value: 'beta', logic: 'OR' },
             ],
           } as DeleteDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(2);
       });
@@ -567,8 +558,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
         await access.insertDB(
           Object.assign(new InsertDBInput(), {
@@ -585,8 +575,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
       });
 
@@ -598,16 +587,14 @@ describe('RelationDBProvider', () => {
             data: [{ field: 'name', value: 'updated-name' }, { field: 'status', value: 'published' }],
             conditions: [eq('id', 'upd-1')],
           } as UpdateDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(1);
 
         const sel = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'upd-1')] } } as SelectOneDBInput,
-          new DBContext(),
-          sel,
+          sel, new DBContext(),
         );
         expect(sel.row!.name).toBe('updated-name');
         expect(sel.row!.status).toBe('published');
@@ -621,8 +608,7 @@ describe('RelationDBProvider', () => {
             data: [{ field: 'status', value: 'archived' }],
             conditions: [eq('status', 'draft')],
           } as UpdateDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(2);
       });
@@ -631,8 +617,7 @@ describe('RelationDBProvider', () => {
         const output = new UpdateDBOutput();
         await access.updateDB(
           { table: TEST_TABLE, data: [{ field: 'qty', value: 0 }] } as UpdateDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(2);
       });
@@ -641,8 +626,7 @@ describe('RelationDBProvider', () => {
         const output = new UpdateDBOutput();
         await access.updateDB(
           { table: TEST_TABLE, data: [], conditions: [eq('id', 'upd-1')] } as UpdateDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(0);
       });
@@ -655,8 +639,7 @@ describe('RelationDBProvider', () => {
             data: [{ field: 'name', value: 'nope' }],
             conditions: [eq('id', 'nonexistent')],
           } as UpdateDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.affected_rows).toBe(0);
       });
@@ -691,8 +674,7 @@ describe('RelationDBProvider', () => {
                 { field: 'updated', value: now },
               ],
             }),
-            new DBContext(),
-            new InsertDBOutput(),
+            new InsertDBOutput(), new DBContext(),
           );
         }
       });
@@ -701,8 +683,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(5);
         expect(output.total).toBe(5);
@@ -712,8 +693,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('status', 'active')] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3);
         expect(output.total).toBe(3);
@@ -723,8 +703,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'status', operator: Operator.NE, value: 'active' }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(2);
       });
@@ -733,8 +712,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'qty', operator: Operator.GT, value: 10 }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(2); // sel-2: qty=15, sel-4: qty=20
       });
@@ -743,8 +721,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'price', operator: Operator.GE, value: 30 }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // 30, 40, 50
       });
@@ -753,8 +730,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'price', operator: Operator.LT, value: 30 }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(2); // 10, 20
       });
@@ -763,8 +739,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'price', operator: Operator.LE, value: 30 }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // 10, 20, 30
       });
@@ -773,8 +748,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'name', operator: Operator.LIKE, value: '%l%' }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // Alpha, Delta, Epsilon contain 'l'
         expect(output.rows.length).toBeGreaterThanOrEqual(2);
@@ -789,8 +763,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'id', operator: Operator.IN, value: ['sel-1', 'sel-3', 'sel-5'] }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3);
       });
@@ -804,8 +777,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'id', operator: Operator.NOT_IN, value: ['sel-1', 'sel-2'] }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // sel-3, sel-4, sel-5
       });
@@ -814,8 +786,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'extra', operator: Operator.IS_NULL }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(2); // Beta, Delta have extra=null
       });
@@ -824,8 +795,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE, conditions: [{ field: 'extra', operator: Operator.IS_NOT_NULL }] } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // Alpha, Gamma, Epsilon
       });
@@ -839,8 +809,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'qty', operator: Operator.BETWEEN, value: [5, 15] }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // qty in [5,15]: Alpha(5), Gamma(8), Beta(15)
         expect(output.rows.length).toBe(3);
@@ -855,8 +824,7 @@ describe('RelationDBProvider', () => {
               order_by: [{ field: 'price', direction: 'ASC' }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows[0].price).toBe(10.0);
         expect(output.rows[4].price).toBe(50.0);
@@ -871,8 +839,7 @@ describe('RelationDBProvider', () => {
               order_by: [{ field: 'price', direction: 'DESC' }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows[0].price).toBe(50.0);
       });
@@ -887,8 +854,7 @@ describe('RelationDBProvider', () => {
               page: { current: 1, size: 2 },
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(2);
         expect(output.total).toBe(5); // total is always the unpaginated count
@@ -906,8 +872,7 @@ describe('RelationDBProvider', () => {
               page: { current: 3, size: 2 },
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(1); // only the 5th item on page 3
         expect(output.rows[0].price).toBe(50.0);
@@ -923,8 +888,7 @@ describe('RelationDBProvider', () => {
               group_by: ['status'],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // active, inactive, pending
       });
@@ -935,8 +899,7 @@ describe('RelationDBProvider', () => {
           {
             query_param: { table: TEST_TABLE, fields: ['id', 'name'] },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows[0]).toHaveProperty('id');
         expect(output.rows[0]).toHaveProperty('name');
@@ -956,8 +919,7 @@ describe('RelationDBProvider', () => {
               page: { current: 1, size: 3 },
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBeLessThanOrEqual(3);
         expect(output.total).toBeGreaterThanOrEqual(1);
@@ -975,8 +937,7 @@ describe('RelationDBProvider', () => {
               ],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // active + qty > 4: Alpha(5), Gamma(8)
         expect(output.rows.length).toBe(2);
@@ -991,8 +952,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'tags', operator: Operator.LIKE, value: '%tag-a%' }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(3); // Alpha, Gamma, Epsilon
       });
@@ -1019,8 +979,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
         await access.insertDB(
           Object.assign(new InsertDBInput(), {
@@ -1037,8 +996,7 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
       });
 
@@ -1046,8 +1004,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('status', 'active')] } } as SelectOneDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.row).not.toBeNull();
         expect(output.row!.status).toBe('active');
@@ -1057,8 +1014,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'nonexistent')] } } as SelectOneDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.row).toBeNull();
       });
@@ -1067,8 +1023,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE } } as SelectOneDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.row).not.toBeNull();
       });
@@ -1096,15 +1051,14 @@ describe('RelationDBProvider', () => {
                 { field: 'updated', value: now },
               ],
             }),
-            new DBContext(),
-            new InsertDBOutput(),
+            new InsertDBOutput(), new DBContext(),
           );
         }
       });
 
       it('should count all records', async () => {
         const output = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), output);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, output, new DBContext());
         expect(output.count).toBe(3);
       });
 
@@ -1112,8 +1066,7 @@ describe('RelationDBProvider', () => {
         const output = new CountDBOutput();
         await access.countDB(
           { table: TEST_TABLE, conditions: [eq('status', 'active')] } as CountDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.count).toBe(1);
       });
@@ -1122,17 +1075,16 @@ describe('RelationDBProvider', () => {
         const output = new CountDBOutput();
         await access.countDB(
           { table: TEST_TABLE, conditions: [eq('status', 'archived')] } as CountDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.count).toBe(0);
       });
 
       it('should count empty table', async () => {
         // delete all
-        await access.deleteDB({ table: TEST_TABLE } as DeleteDBInput, new DBContext(), new DeleteDBOutput());
+        await access.deleteDB({ table: TEST_TABLE } as DeleteDBInput, new DeleteDBOutput(), new DBContext());
         const output = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), output);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, output, new DBContext());
         expect(output.count).toBe(0);
       });
     });
@@ -1166,13 +1118,12 @@ describe('RelationDBProvider', () => {
               { type: 'INSERT', table: TEST_TABLE, data: makeRowData('txn-b', 'B') },
             ],
           } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
 
         const cnt = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), cnt);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, cnt, new DBContext());
         expect(cnt.count).toBe(2);
       });
 
@@ -1180,8 +1131,7 @@ describe('RelationDBProvider', () => {
         // 先插入一条
         await access.insertDB(
           Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRowData('txn-c', 'C') }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
 
         const output = new TransactionDBOutput();
@@ -1202,8 +1152,7 @@ describe('RelationDBProvider', () => {
               },
             ],
           } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
 
@@ -1211,16 +1160,14 @@ describe('RelationDBProvider', () => {
         const sel = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'txn-c')] } } as SelectOneDBInput,
-          new DBContext(),
-          sel,
+          sel, new DBContext(),
         );
         expect(sel.row!.name).toBe('C-updated');
 
         const sel2 = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'txn-d')] } } as SelectOneDBInput,
-          new DBContext(),
-          sel2,
+          sel2, new DBContext(),
         );
         expect(sel2.row).toBeNull();
       });
@@ -1229,8 +1176,7 @@ describe('RelationDBProvider', () => {
         // 先插入一条
         await access.insertDB(
           Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRowData('txn-e', 'E') }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
 
         const output = new TransactionDBOutput();
@@ -1242,8 +1188,7 @@ describe('RelationDBProvider', () => {
               { type: 'INSERT', table: 'nonexistent_table', data: [{ field: 'x', value: 1 }] },
             ],
           } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(false);
         expect(output.error).toBe('事务执行失败，已回滚');
@@ -1253,13 +1198,12 @@ describe('RelationDBProvider', () => {
         const sel = new SelectOneDBOutput();
         await access.selectOneDB(
           { query_param: { table: TEST_TABLE, conditions: [eq('id', 'txn-f')] } } as SelectOneDBInput,
-          new DBContext(),
-          sel,
+          sel, new DBContext(),
         );
         expect(sel.row).toBeNull();
         // txn-e 仍在
         const cnt = new CountDBOutput();
-        await access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), cnt);
+        await access.countDB({ table: TEST_TABLE } as CountDBInput, cnt, new DBContext());
         expect(cnt.count).toBe(1);
       });
 
@@ -1267,8 +1211,7 @@ describe('RelationDBProvider', () => {
         const output = new TransactionDBOutput();
         const ok = await access.transactionDB(
           { operations: [] } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
       });
@@ -1279,8 +1222,7 @@ describe('RelationDBProvider', () => {
           {
             operations: [{ type: 'INSERT', table: TEST_TABLE }],
           } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(false);
       });
@@ -1291,8 +1233,7 @@ describe('RelationDBProvider', () => {
           {
             operations: [{ type: 'UPDATE', table: TEST_TABLE, conditions: [eq('id', 'x')] }],
           } as TransactionDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(false);
       });
@@ -1306,8 +1247,7 @@ describe('RelationDBProvider', () => {
         const output = new VisualizedDBOutput();
         const ok = await access.visualizedDB(
           { scope: 'health' } as VisualizedDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
         expect(output.data.connected).toBe(true);
@@ -1332,15 +1272,13 @@ describe('RelationDBProvider', () => {
               { field: 'updated', value: now },
             ],
           }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
 
         const output = new VisualizedDBOutput();
         const ok = await access.visualizedDB(
           { scope: 'volume' } as VisualizedDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
         expect(output.data).toHaveProperty('tables');
@@ -1353,8 +1291,7 @@ describe('RelationDBProvider', () => {
         const output = new VisualizedDBOutput();
         const ok = await access.visualizedDB(
           { scope: 'diskUsage' } as VisualizedDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(true);
         expect(typeof output.data.disk_usage_bytes).toBe('number');
@@ -1365,8 +1302,7 @@ describe('RelationDBProvider', () => {
         const output = new VisualizedDBOutput();
         const ok = await access.visualizedDB(
           { scope: 'invalid_scope' } as VisualizedDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(ok).toBe(false);
         expect(output.error).toContain('未知的可视化范围');
@@ -1380,15 +1316,14 @@ describe('RelationDBProvider', () => {
     describe('enableDB / closeDB', () => {
       it('should disable and re-enable database', async () => {
         // 禁用
-        await access.enableDB({ enable: false } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: false } as EnableDBInput, new EnableDBOutput(), new DBContext());
 
         // 操作应抛错
         const output = new InsertDBOutput();
         try {
           await access.insertDB(
             { table: TEST_TABLE, data: makeRow() } as InsertDBInput,
-            new DBContext(),
-            output,
+            output, new DBContext(),
           );
           expect('should have thrown').toBe('ComponentDisabledError');
         } catch (e) {
@@ -1396,20 +1331,19 @@ describe('RelationDBProvider', () => {
         }
 
         // 重新启用
-        await access.enableDB({ enable: true } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: true } as EnableDBInput, new EnableDBOutput(), new DBContext());
 
         // 操作应恢复
         const output2 = new InsertDBOutput();
         await access.insertDB(
           { table: TEST_TABLE, data: makeRow() } as InsertDBInput,
-          new DBContext(),
-          output2,
+          output2, new DBContext(),
         );
         expect(output2.affected_rows).toBe(1);
       });
 
       it('should persist enable state to config table', async () => {
-        await access.enableDB({ enable: false } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: false } as EnableDBInput, new EnableDBOutput(), new DBContext());
 
         // 禁用后不能通过 service 层查询，使用 queryRaw 绕过 enabled 检查
         const rows = access.queryRaw(
@@ -1419,18 +1353,17 @@ describe('RelationDBProvider', () => {
         expect(rows[0].config_value).toBe('false');
 
         // 恢复启用状态以便后续 test 清理
-        await access.enableDB({ enable: true } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: true } as EnableDBInput, new EnableDBOutput(), new DBContext());
       });
 
       it('should prevent operations after closeDB', async () => {
-        await access.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+        await access.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
 
         const output = new InsertDBOutput();
         try {
           await access.insertDB(
             { table: TEST_TABLE, data: makeRow() } as InsertDBInput,
-            new DBContext(),
-            output,
+            output, new DBContext(),
           );
           expect('should have thrown').toBe('DatabaseError');
         } catch (e) {
@@ -1440,10 +1373,10 @@ describe('RelationDBProvider', () => {
       });
 
       it('should prevent enableDB after closeDB', async () => {
-        await access.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+        await access.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
 
         try {
-          await access.enableDB({ enable: true } as EnableDBInput, new DBContext(), new EnableDBOutput());
+          await access.enableDB({ enable: true } as EnableDBInput, new EnableDBOutput(), new DBContext());
           expect('should have thrown').toBe('DatabaseError');
         } catch (e) {
           expect(e).toBeInstanceOf(DatabaseError);
@@ -1452,17 +1385,17 @@ describe('RelationDBProvider', () => {
       });
 
       it('should block all CRUD operations when disabled', async () => {
-        await access.enableDB({ enable: false } as EnableDBInput, new DBContext(), new EnableDBOutput());
+        await access.enableDB({ enable: false } as EnableDBInput, new EnableDBOutput(), new DBContext());
 
         const tests = [
-          () => access.insertDB({ table: TEST_TABLE, data: makeRow() } as InsertDBInput, new DBContext(), new InsertDBOutput()),
-          () => access.deleteDB({ table: TEST_TABLE } as DeleteDBInput, new DBContext(), new DeleteDBOutput()),
-          () => access.updateDB({ table: TEST_TABLE, data: [{ field: 'qty', value: 1 }] } as UpdateDBInput, new DBContext(), new UpdateDBOutput()),
-          () => access.selectDB({ query_param: { table: TEST_TABLE } } as SelectDBInput, new DBContext(), new SelectDBOutput()),
-          () => access.selectOneDB({ query_param: { table: TEST_TABLE } } as SelectOneDBInput, new DBContext(), new SelectOneDBOutput()),
-          () => access.countDB({ table: TEST_TABLE } as CountDBInput, new DBContext(), new CountDBOutput()),
-          () => access.transactionDB({ operations: [] } as TransactionDBInput, new DBContext(), new TransactionDBOutput()),
-          () => access.visualizedDB({ scope: 'health' } as VisualizedDBInput, new DBContext(), new VisualizedDBOutput()),
+          () => access.insertDB({ table: TEST_TABLE, data: makeRow() } as InsertDBInput, new InsertDBOutput(), new DBContext()),
+          () => access.deleteDB({ table: TEST_TABLE } as DeleteDBInput, new DeleteDBOutput(), new DBContext()),
+          () => access.updateDB({ table: TEST_TABLE, data: [{ field: 'qty', value: 1 }] } as UpdateDBInput, new UpdateDBOutput(), new DBContext()),
+          () => access.selectDB({ query_param: { table: TEST_TABLE } } as SelectDBInput, new SelectDBOutput(), new DBContext()),
+          () => access.selectOneDB({ query_param: { table: TEST_TABLE } } as SelectOneDBInput, new SelectOneDBOutput(), new DBContext()),
+          () => access.countDB({ table: TEST_TABLE } as CountDBInput, new CountDBOutput(), new DBContext()),
+          () => access.transactionDB({ operations: [] } as TransactionDBInput, new TransactionDBOutput(), new DBContext()),
+          () => access.visualizedDB({ scope: 'health' } as VisualizedDBInput, new VisualizedDBOutput(), new DBContext()),
         ];
 
         for (const fn of tests) {
@@ -1667,8 +1600,7 @@ describe('RelationDBProvider', () => {
         const output = new InsertDBOutput();
         await access.insertDB(
           Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRow() }),
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(typeof output.elapsed_ms).toBe('number');
         expect(output.elapsed_ms).toBeGreaterThanOrEqual(0);
@@ -1678,8 +1610,7 @@ describe('RelationDBProvider', () => {
         const output = new SelectDBOutput();
         await access.selectDB(
           { query_param: { table: TEST_TABLE } } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(typeof output.elapsed_ms).toBe('number');
       });
@@ -1698,8 +1629,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'id', operator: Operator.IN, value: [] }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(0);
       });
@@ -1709,13 +1639,11 @@ describe('RelationDBProvider', () => {
         const now = IdGenerator.now();
         await access.insertDB(
           Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRow({ id: 'edge-1' }) }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
         await access.insertDB(
           Object.assign(new InsertDBInput(), { table: TEST_TABLE, data: makeRow({ id: 'edge-2' }) }),
-          new DBContext(),
-          new InsertDBOutput(),
+          new InsertDBOutput(), new DBContext(),
         );
 
         const output = new SelectDBOutput();
@@ -1726,8 +1654,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'id', operator: Operator.NOT_IN, value: [] }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // 空 NOT_IN 返回永真，应该返回所有行
         expect(output.rows.length).toBeGreaterThanOrEqual(2);
@@ -1742,8 +1669,7 @@ describe('RelationDBProvider', () => {
               conditions: [{ field: 'extra', operator: Operator.EQ, value: null }],
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         // EQ null 在 SQLite 中不会匹配 NULL 值（NULL != NULL）
         expect(output.rows.length).toBe(0);
@@ -1759,8 +1685,7 @@ describe('RelationDBProvider', () => {
               page: { current: 1, size: 10 },
             },
           } as SelectDBInput,
-          new DBContext(),
-          output,
+          output, new DBContext(),
         );
         expect(output.rows.length).toBe(0);
         expect(output.total).toBe(0);

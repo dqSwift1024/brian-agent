@@ -240,7 +240,7 @@ export class DagScheduler {
     const startedAt = Date.now();
 
     const topo = this.buildTopology(nodes, edges, config.logger);
-    const { adjList, incomingMap, indegree, nodeByKey } = topo;
+    const { adjList, indegree, nodeByKey } = topo;
 
     const outputs = new Map<string, string>();
     const results: AgentResult[] = [];

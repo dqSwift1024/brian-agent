@@ -5,6 +5,8 @@
  * 通过 AOP 代理注入日志记录与耗时统计切面。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { MCPSchemaInitializer } from '../infrastructure/MCPSchemaInitializer';
 import { MCPService } from '../application/MCPService';
@@ -79,67 +81,67 @@ export class MCPAccess {
   }
 
   // --- 提供商管理 ---
-  async addMcpProvider(i: AddMcpProviderInput, c: McpContext, o: AddMcpProviderOutput) {
-    return this.service.addMcpProvider(i, c, o);
+  async addMcpProvider(i: AddMcpProviderInput, o: AddMcpProviderOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.addMcpProvider(i, o, c, metrics, report);
   }
-  async delMcpProvider(i: DelMcpProviderInput, c: McpContext, o: DelMcpProviderOutput) {
-    return this.service.delMcpProvider(i, c, o);
+  async delMcpProvider(i: DelMcpProviderInput, o: DelMcpProviderOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.delMcpProvider(i, o, c, metrics, report);
   }
-  async updateMcpProvider(i: UpdateMcpProviderInput, c: McpContext, o: UpdateMcpProviderOutput) {
-    return this.service.updateMcpProvider(i, c, o);
+  async updateMcpProvider(i: UpdateMcpProviderInput, o: UpdateMcpProviderOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.updateMcpProvider(i, o, c, metrics, report);
   }
-  async soMcpProvider(i: SoMcpProviderInput, c: McpContext, o: SoMcpProviderOutput) {
-    return this.service.soMcpProvider(i, c, o);
+  async soMcpProvider(i: SoMcpProviderInput, o: SoMcpProviderOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.soMcpProvider(i, o, c, metrics, report);
   }
-  async testMcpProvider(i: TestMcpProviderInput, c: McpContext, o: TestMcpProviderOutput) {
-    return this.service.testMcpProvider(i, c, o);
+  async testMcpProvider(i: TestMcpProviderInput, o: TestMcpProviderOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.testMcpProvider(i, o, c, metrics, report);
   }
-  async listMcp(i: ListMcpInput, c: McpContext, o: ListMcpOutput) {
-    return this.service.listMcp(i, c, o);
+  async listMcp(i: ListMcpInput, o: ListMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.listMcp(i, o, c, metrics, report);
   }
 
   // --- MCP 管理 ---
-  async installMcp(i: InstallMcpInput, c: McpContext, o: InstallMcpOutput) {
-    return this.service.installMcp(i, c, o);
+  async installMcp(i: InstallMcpInput, o: InstallMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.installMcp(i, o, c, metrics, report);
   }
-  async startMcp(i: StartMcpInput, c: McpContext, o: StartMcpOutput) {
-    return this.service.startMcp(i, c, o);
+  async startMcp(i: StartMcpInput, o: StartMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.startMcp(i, o, c, metrics, report);
   }
-  async stopMcp(i: StopMcpInput, c: McpContext, o: StopMcpOutput) {
-    return this.service.stopMcp(i, c, o);
+  async stopMcp(i: StopMcpInput, o: StopMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.stopMcp(i, o, c, metrics, report);
   }
-  async startMcps(i: StartMcpsInput, c: McpContext, o: StartMcpsOutput) {
-    return this.service.startMcps(i, c, o);
+  async startMcps(i: StartMcpsInput, o: StartMcpsOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.startMcps(i, o, c, metrics, report);
   }
-  async refreshMcpStatus(i: RefreshMcpStatusInput, c: McpContext, o: RefreshMcpStatusOutput) {
-    return this.service.refreshMcpStatus(i, c, o);
+  async refreshMcpStatus(i: RefreshMcpStatusInput, o: RefreshMcpStatusOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.refreshMcpStatus(i, o, c, metrics, report);
   }
-  async uninstallMcp(i: UninstallMcpInput, c: McpContext, o: UninstallMcpOutput) {
-    return this.service.uninstallMcp(i, c, o);
+  async uninstallMcp(i: UninstallMcpInput, o: UninstallMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.uninstallMcp(i, o, c, metrics, report);
   }
-  async updateMcp(i: UpdateMcpInput, c: McpContext, o: UpdateMcpOutput) {
-    return this.service.updateMcp(i, c, o);
+  async updateMcp(i: UpdateMcpInput, o: UpdateMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.updateMcp(i, o, c, metrics, report);
   }
-  async upgradeMcp(i: UpgradeMcpInput, c: McpContext, o: UpgradeMcpOutput) {
-    return this.service.upgradeMcp(i, c, o);
+  async upgradeMcp(i: UpgradeMcpInput, o: UpgradeMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.upgradeMcp(i, o, c, metrics, report);
   }
-  async getMcp(i: GetMcpInput, c: McpContext, o: GetMcpOutput) {
-    return this.service.getMcp(i, c, o);
+  async soMcpById(i: GetMcpInput, o: GetMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.soMcpById(i, o, c, metrics, report);
   }
-  async soMcp(i: SoMcpInput, c: McpContext, o: SoMcpOutput) {
-    return this.service.soMcp(i, c, o);
+  async soMcp(i: SoMcpInput, o: SoMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.soMcp(i, o, c, metrics, report);
   }
 
   // --- MCP 调用 ---
-  async execMcp(i: ExecMcpInput, c: McpContext, o: ExecMcpOutput) {
-    return this.service.execMcp(i, c, o);
+  async execMcp(i: ExecMcpInput, o: ExecMcpOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.execMcp(i, o, c, metrics, report);
   }
 
   // --- 可视化与运维 ---
-  async enableMCP(i: EnableMCPInput, c: McpContext, o: EnableMCPOutput) {
-    return this.service.enableMCP(i, c, o);
+  async enableMCP(i: EnableMCPInput, o: EnableMCPOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.enableMCP(i, o, c, metrics, report);
   }
-  async getMcpUsage(i: GetMcpUsageInput, c: McpContext, o: GetMcpUsageOutput) {
-    return this.service.getMcpUsage(i, c, o);
+  async soMcpUsage(i: GetMcpUsageInput, o: GetMcpUsageOutput, c: McpContext, metrics?: Metrics, report?: Report) {
+    return this.service.soMcpUsage(i, o, c, metrics, report);
   }
 }

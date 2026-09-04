@@ -7,39 +7,14 @@
  * 实现所有用例：matchSoul / optSoul / ageSoul / soSoulRule / updateSoulRule / configSoulCore。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
+import { callLLMJson } from '@brian-agent/base';
 import type { RelationDBAccess } from '@brian-agent/base';
 import type { SoulAccess } from '@brian-agent/base';
 import type { LLMAccess } from '@brian-agent/base';
 import type { PromptsAccess } from '@brian-agent/base';
-import {
-  SoulContext,
-  AddSoulInput,
-  AddSoulOutput,
-  GetSoulInput,
-  GetSoulOutput,
-  UpdateSoulInput,
-  UpdateSoulOutput,
-  SoSoulInput,
-  SoSoulOutput,
-  RecordSoulUsageInput,
-  RecordSoulUsageOutput,
-  PromptContext,
-  GetPromptInput,
-  GetPromptOutput,
-  ExecPromptInput,
-  ExecPromptOutput,
-  LLMContext,
-  ExecLLMInput,
-  ExecLLMOutput,
-  Operator,
-  OperationType,
-  IdGenerator,
-  JsonParser,
-  ValidationError,
-  NotFoundError,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-} from '@brian-agent/base';
-import type { Condition, DataObject, Operation, OrderBy, Page } from '@brian-agent/base';
+import { SoulContext, AddSoulInput, AddSoulOutput, GetSoulInput, GetSoulOutput, UpdateSoulOutput, SoSoulOutput, RecordSoulUsageInput, RecordSoulUsageOutput, PromptContext, GetPromptInput, GetPromptOutput, ExecPromptInput, ExecPromptOutput, LLMContext, ExecLLMInput, ExecLLMOutput, Operator, OperationType, IdGenerator, JsonParser, ValidationError, NotFoundError, PROMPT_IDS, getBuiltinTemplate, renderTemplate } from '@brian-agent/base';
+import type { DataObject } from '@brian-agent/base';
 import {
   SoulCoreContext,
   SoulCoreConfigRecord,
@@ -64,15 +39,10 @@ import {
   SOUL_CORE_USAGE_TABLE,
 } from '../domain/types';
 import { ProcessingError } from '../../shared/errors';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
 import { AgingEngine } from '../../shared/AgingEngine';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 
 /**
  * SoulCoreProvider 应用服务。
@@ -81,7 +51,8 @@ import {
  * 上层不可直接操作 agent_soul / soul_core_usage / soul_opt_rule 表。
  */
 export class SoulCoreService {
-  private configCache: SoulCoreConfigRecord | null = null;
+  /** 单行配置仓 */
+  private readonly configStore: SingleRowConfigStore<SoulCoreConfigRecord>;
 
   /**
    * @param relationDb RelationDBProvider 接入层
@@ -94,7 +65,13 @@ export class SoulCoreService {
     private readonly soulAccess: SoulAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<SoulCoreConfigRecord>(this.relationDb, {
+      table: SOUL_CORE_CONFIG_TABLE,
+      toRecord: (raw) => this.toSoulCoreConfigRecord(raw),
+      defaults: [],
+    });
+  }
 
   /**
    * 初始化：确保默认配置存在。
@@ -113,10 +90,7 @@ export class SoulCoreService {
   /**
    * 为 Agent 匹配 Soul（persona，三层统一匹配/选择逻辑）。
    */
-  async matchSoul(
-    input: MatchSoulInput,
-    _context: SoulCoreContext,
-    output: MatchSoulOutput,
+  async matchSoul(input: MatchSoulInput, output: MatchSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, context_id, interact_id, task_content, task_domain } = input;
     if (!agent_id) {
@@ -125,14 +99,12 @@ export class SoulCoreService {
 
     const config = await this.getCoreConfig();
     const regenRate = config?.regen_rate ?? 75;
-    const similarityThreshold = config?.similarity_threshold ?? 0.7;
 
     // 获取可用 Soul 列表
     const soOutput = new SoSoulOutput();
     await this.soulAccess.soSoul(
       { conditions: [{ field: 'enable', operator: Operator.EQ, value: 1 }] },
-      new SoulContext(),
-      soOutput,
+      soOutput, new SoulContext(),
     );
     const availableSouls = soOutput.list;
 
@@ -186,10 +158,7 @@ export class SoulCoreService {
    * 4. 若候选更好则更新 agent_soul；
    * 5. 记录使用到 soul_core_usage。
    */
-  async optSoul(
-    input: OptSoulInput,
-    _context: SoulCoreContext,
-    output: OptSoulOutput,
+  async optSoul(input: OptSoulInput, output: OptSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { agent_id, soul_id } = input;
     if (!agent_id) {
@@ -239,8 +208,7 @@ export class SoulCoreService {
     // 5. 记录使用到 Soul Provider（Base 层）
     await this.soulAccess.recordSoulUsage(
       { soul_id } as RecordSoulUsageInput,
-      new SoulContext(),
-      new RecordSoulUsageOutput(),
+      new RecordSoulUsageOutput(), new SoulContext(),
     );
 
     // 6. 记录使用到 soul_core_usage
@@ -257,10 +225,7 @@ export class SoulCoreService {
   /**
    * 依据 soul_opt_rule 规则老化不活跃的 Soul。
    */
-  async ageSoul(
-    _input: AgeSoulInput,
-    _context: SoulCoreContext,
-    output: AgeSoulOutput,
+  async ageSoul(_input: AgeSoulInput, output: AgeSoulOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const engine = new AgingEngine(this.relationDb);
     const count = await engine.age({
@@ -273,8 +238,7 @@ export class SoulCoreService {
         const updateOutput = new UpdateSoulOutput();
         await this.soulAccess.updateSoul(
           { conditions: [{ field: 'id', operator: Operator.EQ, value: entityId }], data: { enable: false } },
-          new SoulContext(),
-          updateOutput,
+          updateOutput, new SoulContext(),
         );
       },
     });
@@ -289,10 +253,7 @@ export class SoulCoreService {
   /**
    * 查询 Soul 优化规则。
    */
-  async soSoulRule(
-    input: SoSoulRuleInput,
-    _context: SoulCoreContext,
-    output: SoSoulRuleOutput,
+  async soSoulRule(input: SoSoulRuleInput, output: SoSoulRuleOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.relationDb.select(SOUL_OPT_RULE_TABLE, {
       conditions: input.conditions,
@@ -315,10 +276,7 @@ export class SoulCoreService {
   /**
    * 批量更新 Soul 优化规则（事务）。
    */
-  async updateSoulRule(
-    input: UpdateSoulRuleInput,
-    _context: SoulCoreContext,
-    _output: UpdateSoulRuleOutput,
+  async updateSoulRule(input: UpdateSoulRuleInput, _output: UpdateSoulRuleOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.operations || input.operations.length === 0) {
       throw new ValidationError('updateSoulRule 需要提供 operations');
@@ -368,68 +326,9 @@ export class SoulCoreService {
   /**
    * 获取或更新 soul_core_config 配置（SET 语义）。
    */
-  // ===== 原始方法（保留作为参考）=====
-  // async configSoulCore(
-  //   input: ConfigSoulCoreInput,
-  //   _context: SoulCoreContext,
-  //   output: ConfigSoulCoreOutput,
-  // ): Promise<boolean> {
-  //   const existing = await this.getCoreConfig();
-  //   const now = IdGenerator.now();
-  //
-  //   if (input.regen_rate !== undefined || input.prompt_template_id !== undefined) {
-  //     const updateData: Array<{ field: string; value: unknown }> = [];
-  //     if (input.regen_rate !== undefined) {
-  //       if (input.regen_rate < 0 || input.regen_rate > 100) {
-  //         throw new ValidationError('regen_rate 必须在 0-100 之间');
-  //       }
-  //       updateData.push({ field: 'regen_rate', value: input.regen_rate });
-  //     }
-  //     if (input.prompt_template_id !== undefined) {
-  //       if (input.prompt_template_id) {
-  //         const getPromptOutput = new GetPromptOutput();
-  //         await this.promptsAccess.getPrompt(
-  //           { id: input.prompt_template_id } as GetPromptInput,
-  //           new PromptContext(),
-  //           getPromptOutput,
-  //         );
-  //         if (!getPromptOutput.prompt) {
-  //           throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
-  //         }
-  //       }
-  //       updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
-  //     }
-  //     updateData.push({ field: 'updated', value: now });
-  //
-  //     if (existing?.id) {
-  //       await this.relationDb.update(
-  //         SOUL_CORE_CONFIG_TABLE,
-  //         updateData,
-  //         [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-  //       );
-  //     } else {
-  //       await this.relationDb.insert(SOUL_CORE_CONFIG_TABLE, [
-  //         { field: 'id', value: IdGenerator.generate() },
-  //         { field: 'created', value: now },
-  //         ...updateData,
-  //       ]);
-  //     }
-  //     this.configCache = null;
-  //   }
-  //
-  //   output.config = await this.getCoreConfig();
-  //   return true;
-  // }
-
   // ===== 修改后的方法 =====
-  async configSoulCore(
-    input: ConfigSoulCoreInput,
-    _context: SoulCoreContext,
-    output: ConfigSoulCoreOutput,
+  async configSoulCore(input: ConfigSoulCoreInput, output: ConfigSoulCoreOutput, _context: SoulCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getCoreConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined || input.llm_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -447,10 +346,9 @@ export class SoulCoreService {
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
           const getPromptOutput = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -461,22 +359,7 @@ export class SoulCoreService {
       if (input.llm_id !== undefined) {
         updateData.push({ field: 'llm_id', value: input.llm_id || null });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing?.id) {
-        await this.relationDb.update(
-          SOUL_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(SOUL_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
-      this.configCache = null;
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getCoreConfig();
@@ -487,26 +370,9 @@ export class SoulCoreService {
   // 内部辅助 — 配置
   // ---------------------------------------------------------------------------
 
-  /** 加载第一行配置记录，写入缓存 */
-  private async loadCoreConfigRecord(): Promise<Record<string, unknown> | null> {
-    this.configCache = null;
-    const rows = await this.relationDb.select(SOUL_CORE_CONFIG_TABLE, {
-      page: { current: 1, size: 1 },
-    });
-    const raw = rows.length > 0 ? rows[0] : null;
-    this.configCache = raw
-      ? this.toSoulCoreConfigRecord(raw)
-      : null;
-    return raw;
-  }
-
-  /** 获取配置（优先缓存） */
+  /** 获取配置（单行配置仓：进程内缓存 + 空表回退默认值） */
   private async getCoreConfig(): Promise<SoulCoreConfigRecord | null> {
-    if (this.configCache !== null) {
-      return this.configCache;
-    }
-    await this.loadCoreConfigRecord();
-    return this.configCache;
+    return this.configStore.load();
   }
 
   // ---------------------------------------------------------------------------
@@ -528,13 +394,12 @@ export class SoulCoreService {
   // 内部辅助 — Soul 查询
   // ---------------------------------------------------------------------------
 
-  /** 通过 SoulAccess.getSoul 获取 Soul 详情 */
+  /** 通过 SoulAccess.soSoulById 获取 Soul 详情 */
   private async getSoulById(soulId: string): Promise<Record<string, unknown> | null> {
     const getOutput = new GetSoulOutput();
-    await this.soulAccess.getSoul(
+    await this.soulAccess.soSoulById(
       { id: soulId } as GetSoulInput,
-      new SoulContext(),
-      getOutput,
+      getOutput, new SoulContext(),
     );
     if (!getOutput.soul) return null;
     return {
@@ -583,35 +448,22 @@ export class SoulCoreService {
       '仅输出 JSON，不要包含其他内容。',
     ].join('\n');
 
-    // 最多重试 3 次，容忍 LLM 偶发失败 / 返回格式异常
-    let parsed: Record<string, unknown> | null = null;
-    let lastError = '未知错误';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const llmOutput = new ExecLLMOutput();
-      let ok = false;
-      try {
-        ok = await this.llmAccess.execLLM(
-          { id: llmId, prompt: generationPrompt },
-          new LLMContext(),
-          llmOutput,
-        );
-      } catch {
-        break;
+    // 最多重试 3 次，容忍 LLM 偶发失败 / 返回格式异常（callLLMJson 公共封装）
+    const parsed = await callLLMJson<Record<string, unknown>>(this.llmAccess, {
+      llmId,
+      prompt: generationPrompt,
+      retries: 2,
+      parse: (text) => JsonParser.parseObject(text),
+    }).then((res) => {
+      if (res === null) {
+        throw new ProcessingError('Soul 生成失败: LLM 输出 JSON 解析失败');
       }
-      if (!ok) {
-        lastError = llmOutput.error ?? '未知错误';
-        continue;
-      }
-      parsed = JsonParser.parseObject(llmOutput.result);
-      if (parsed) {
-        break;
-      }
-      lastError = 'LLM 生成的 Soul JSON 解析失败';
-    }
-
-    if (!parsed) {
-      throw new ProcessingError(`Soul 生成失败: ${lastError}`);
-    }
+      return res;
+    })
+    .catch((err: unknown) => {
+      if (err instanceof ProcessingError) throw err;
+      throw new ProcessingError(`Soul 生成失败: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
     const addOutput = new AddSoulOutput();
     await this.soulAccess.addSoul(
@@ -622,8 +474,7 @@ export class SoulCoreService {
           soul_usage: this.asTrimmedString(parsed.soul_usage) || '通用对话、信息查询、任务辅助',
         },
       } as AddSoulInput,
-      new SoulContext(),
-      addOutput,
+      addOutput, new SoulContext(),
     );
 
     return addOutput.id;
@@ -670,8 +521,7 @@ export class SoulCoreService {
           id: config.prompt_template_id,
           variables: selectionVariables,
         } as ExecPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       selectionPrompt = execPromptOutput.prompt;
       if (!selectionPrompt) selectionPrompt = this.renderDefault(selectionVariables);
@@ -690,8 +540,7 @@ export class SoulCoreService {
           temperature: 0.1,
           max_tokens: 256,
         } as ExecLLMInput,
-        new LLMContext(),
-        execLLMOutput,
+        execLLMOutput, new LLMContext(),
       );
     } catch {
       ok = false;
@@ -781,8 +630,7 @@ export class SoulCoreService {
     const llmOutput = new ExecLLMOutput();
     const ok = await this.llmAccess.execLLM(
       { id: llmId, prompt, temperature: 0.1, max_tokens: 256 },
-      new LLMContext(),
-      llmOutput,
+      llmOutput, new LLMContext(),
     );
     if (!ok) {
       throw new ProcessingError(

@@ -17,6 +17,10 @@
 export { Input } from './base/Input';
 export { Context } from './base/Context';
 export { Output } from './base/Output';
+export { Metrics } from './base/Metrics';
+export type { MetricsLogger } from './base/Metrics';
+export { Report } from './base/Report';
+export type { ReportChannel, ReportMeta } from './base/Report';
 export { InfoType, CollectionSource, ContextSource } from './base/InfoEnums';
 export {
   HandleResultType,
@@ -67,3 +71,7 @@ export type { PlatformInfo, LoadResult } from './native/NativeLoader';
 // Prompt 模板配置键常量
 export { PROMPT_SLOTS } from './prompt/PromptConfigKeys';
 export type { PromptSlot } from './prompt/PromptConfigKeys';
+
+// LLM 调用 + JSON 解析公共封装
+export { callLLMJson } from './llm/CallLLMJson';
+export type { CallLLMJsonOptions } from './llm/CallLLMJson';

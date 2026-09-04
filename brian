@@ -43,6 +43,10 @@ BACKEND_DIR="$ROOT/brian-backend"
 FRONTEND_DIR="$ROOT/brian-frontend"
 BACKEND_PORT="${BRIAN_PORT:-8000}"
 FRONTEND_PORT=5173
+# CDT（浏览器自动化）自动启动默认关闭：省一个常驻 Chrome（~400-600MB），低内存开发机建议保持
+# 需要浏览器自动化时设 BRIAN_CDT_AUTO=1，或启动后在 /tool 页手动启动 CDT
+export BRIAN_CDT_AUTO="${BRIAN_CDT_AUTO:-0}"
+
 BACKEND_LOG="/tmp/brian-backend.log"
 FRONTEND_LOG="/tmp/brian-frontend.log"
 BACKEND_PID_FILE="/tmp/brian-backend.pid"

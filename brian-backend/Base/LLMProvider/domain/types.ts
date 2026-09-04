@@ -362,7 +362,7 @@ export class UpdateLLMOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getLLM（保留类型供外部兼容，内部已合并到 soLLM）
+// soLLMById（保留类型供外部兼容，内部已合并到 soLLM）
 // ---------------------------------------------------------------------------
 
 export class GetLLMInput extends Input {
@@ -418,6 +418,10 @@ export class ExecLLMInput extends Input {
   extra?: Record<string, unknown>;
   /** 禁止模型降级回退（可选），true 时仅调用指定模型，不尝试其他候选模型 */
   no_fallback?: boolean;
+  /** 是否启用 SSE 流式返回（可选），true 时通过 onDelta 逐 token 回调 */
+  stream?: boolean;
+  /** 流式回调：每收到一个 delta token 时调用 */
+  onDelta?: (delta: string) => void;
 }
 
 /** execLLM 出参 */

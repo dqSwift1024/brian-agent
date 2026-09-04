@@ -16,3 +16,70 @@ export interface BookmarkItemRecord {
   folder_id: string; title: string; url: string;
   favicon: string; sort_order: number;
 }
+
+// ---------------------------------------------------------------------------
+// 标准签名类型：Boolean method(Input, Output, Context, Metrics, Report)
+// ---------------------------------------------------------------------------
+
+import { Input } from '../../shared/base/Input';
+import { Output } from '../../shared/base/Output';
+import { Context } from '../../shared/base/Context';
+
+export class BookmarkContext extends Context {}
+
+export class SoTreeInput extends Input {}
+export class SoTreeOutput extends Output {
+  tree: BookmarkFolderNode[] = [];
+}
+
+export class SoFlatFoldersInput extends Input {}
+export class SoFlatFoldersOutput extends Output {
+  folders: BookmarkFolderRecord[] = [];
+}
+
+export class AddFolderInput extends Input {
+  name!: string;
+  parent_id?: string;
+}
+export class AddFolderOutput extends Output {
+  folder!: BookmarkFolderRecord;
+}
+
+export class AddItemInput extends Input {
+  folder_id!: string;
+  title!: string;
+  url!: string;
+  favicon?: string;
+}
+export class AddItemOutput extends Output {
+  item!: BookmarkItemRecord;
+}
+
+export class UpdateFolderInput extends Input {
+  id!: string;
+  name!: string;
+}
+export class UpdateFolderOutput extends Output {}
+
+export class UpdateItemInput extends Input {
+  id!: string;
+  title!: string;
+  url!: string;
+}
+export class UpdateItemOutput extends Output {}
+
+export class DelFolderInput extends Input {
+  id!: string;
+}
+export class DelFolderOutput extends Output {}
+
+export class DelItemInput extends Input {
+  id!: string;
+}
+export class DelItemOutput extends Output {}
+
+export class MoveItemInput extends Input {
+  id!: string;
+  target_folder_id!: string;
+}
+export class MoveItemOutput extends Output {}

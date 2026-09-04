@@ -11,6 +11,7 @@
  * 达到上限后 MQProvider 的 nackMQ 自动将消息标记为 FAILED。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import {
   MQAccess,
   MQContext,
@@ -81,13 +82,22 @@ export class MQCoreService {
    *
    * @returns worker_id 写入 output.worker_id
    */
-  async startWorker(
-    input: StartWorkerInput,
-    _context: MQCoreContext,
-    output: StartWorkerOutput,
+  async startWorker(input: StartWorkerInput, output: StartWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const { queue, handler } = input;
     const interval = input.interval ?? 1000;
+
+    // 幂等防重：同一队列只保留一个常驻 worker，重复 start 直接复用既有实例。
+    // 调用方（startEvalSchedule / receiveWorkAsync / execAgentAsync 等）存在
+    // "重复调用以防重启"的路径，此前每次调用都会新建 setInterval 且永不停止，
+    // 造成定时器随业务量无界累积（每完成一次对话净增 3 个 1s 轮询）。
+    // 需要更换 handler 时应先 stopWorker（支持按队列批量停止）再 start。
+    for (const state of this.workers.values()) {
+      if (state.queue === queue) {
+        output.worker_id = state.worker_id;
+        return true;
+      }
+    }
 
     const workerId = uuidv4();
     const state: WorkerState = {
@@ -122,10 +132,7 @@ export class MQCoreService {
    * @param input.identifier 工作器 ID 或队列名
    * @returns 停止数量写入 output.stopped_count
    */
-  async stopWorker(
-    input: StopWorkerInput,
-    _context: MQCoreContext,
-    output: StopWorkerOutput,
+  async stopWorker(input: StopWorkerInput, output: StopWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const identifier = input.identifier;
     let stoppedCount = 0;
@@ -163,10 +170,7 @@ export class MQCoreService {
    * @param input.queue 可选队列名，不指定则返回全部
    * @returns 工作器列表写入 output.workers
    */
-  async soWorker(
-    input: SoWorkerInput,
-    _context: MQCoreContext,
-    output: SoWorkerOutput,
+  async soWorker(input: SoWorkerInput, output: SoWorkerOutput, _context: MQCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const queueFilter = input.queue;
     const result: WorkerInfo[] = [];
@@ -210,7 +214,7 @@ export class MQCoreService {
       const consumeOutput = new ConsumeMQOutput();
       const consumeInput = new ConsumeMQInput();
       consumeInput.queue = state.queue;
-      await this.mqAccess.consumeMQ(consumeInput, new MQContext(), consumeOutput);
+      await this.mqAccess.consumeMQ(consumeInput, consumeOutput, new MQContext());
 
       const msg = consumeOutput.message;
       if (!msg) {
@@ -222,7 +226,7 @@ export class MQCoreService {
         if (ok) {
           const ackInput = new AckMQInput();
           ackInput.message_id = msg.id;
-          await this.mqAccess.ackMQ(ackInput, new MQContext(), new AckMQOutput());
+          await this.mqAccess.ackMQ(ackInput, new AckMQOutput(), new MQContext());
 
           // 成功后清理重试计数
           this.retryMap.delete(msg.id);
@@ -262,7 +266,7 @@ export class MQCoreService {
     const nackInput = new NackMQInput();
     nackInput.message_id = msg.id;
     nackInput.reason = `handler returned false or threw (attempt ${nextAttempt}/${MAX_RETRIES})`;
-    await this.mqAccess.nackMQ(nackInput, new MQContext(), new NackMQOutput());
+    await this.mqAccess.nackMQ(nackInput, new NackMQOutput(), new MQContext());
 
     state.error_count++;
   }

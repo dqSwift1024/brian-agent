@@ -2,11 +2,11 @@
  * @fileoverview LogProvider 模块测试。
  *
  * 测试范围：
- * - 日志管理：addLog / getLog / soLog / delLog / countLog
+ * - 日志管理：addLog / soLogById / soLog / delLog / countLog
  * - 可视化：visualizedLog（health / volume / levelDistribution / sourceDistribution）
  * - 运维：enableLog（日志规则配置）/ configLog（组件配置）
  * - 老化策略：applyAging（按保留天数 / 最大条数清理）
- * - AOP 切面：LogInterceptor（beforeExecute / afterExecute）
+ * - AOP 切面：LogInterceptor（仅失败时记录 ERROR，invoke/done 埋点已移除）
  * - 组件生命周期：initialize / enabled 状态
  *
  * 日志仅持久化于 SQLite（log_record 表），不写入本地文件。
@@ -14,6 +14,8 @@
  * 每个测试用例在 temp 目录中创建独立的数据库文件，测试后清理。
  */
 
+import { Metrics } from '../shared/base/Metrics';
+import { Report } from '../shared/base/Report';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -108,7 +110,7 @@ describe('LogProvider', () => {
 
   afterEach(async () => {
     try {
-      await relationDb.closeDB(new CloseDBInput(), new DBContext(), new CloseDBOutput());
+      await relationDb.closeDB(new CloseDBInput(), new CloseDBOutput(), new DBContext());
     } catch {
       // 可能已关闭
     }
@@ -131,8 +133,7 @@ describe('LogProvider', () => {
       const output = new AddLogOutput();
       const ok = await logAccess.addLog(
         { data: makeLogData() } as AddLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(ok).toBe(true);
       expect(output.id).toBeTruthy();
@@ -142,8 +143,7 @@ describe('LogProvider', () => {
     it('日志应持久化到 SQLite（log_record 表）', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'SqlitePersist', message: 'persist me' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const rows = relationDb.queryRaw(
@@ -157,8 +157,7 @@ describe('LogProvider', () => {
     it('写入的日志包含级别、模块名、消息', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.WARN, source: 'TestModule', message: '警告消息' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -171,8 +170,7 @@ describe('LogProvider', () => {
     it('写入的日志应包含 trace_id', async () => {
       await logAccess.addLog(
         { data: makeLogData({ trace_id: 'trace-abc-123' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -182,8 +180,7 @@ describe('LogProvider', () => {
     it('trace_id 为空时应为 undefined', async () => {
       await logAccess.addLog(
         { data: makeLogData({ trace_id: undefined }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -193,8 +190,7 @@ describe('LogProvider', () => {
     it('写入的日志应包含 metadata JSON', async () => {
       await logAccess.addLog(
         { data: makeLogData({ metadata: { key: 'value', num: 42 } }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -204,8 +200,7 @@ describe('LogProvider', () => {
     it('无 metadata 时应为 undefined', async () => {
       await logAccess.addLog(
         { data: makeLogData({ metadata: undefined }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -215,8 +210,7 @@ describe('LogProvider', () => {
     it('写入的日志应包含 elapsed_ms', async () => {
       await logAccess.addLog(
         { data: makeLogData({ elapsed_ms: 123 }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -226,8 +220,7 @@ describe('LogProvider', () => {
     it('caller 字段应正确存储', async () => {
       await logAccess.addLog(
         { data: makeLogData({ caller: 'TestCaller' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -237,13 +230,11 @@ describe('LogProvider', () => {
     it('不同模块的日志应存储为不同 source', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'ModuleA', message: 'A msg' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'ModuleB', message: 'B msg' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const qlA = await logAccess.queryLogs({ source: 'ModuleA' });
@@ -255,13 +246,11 @@ describe('LogProvider', () => {
     it('同一模块多次写入应全部存储', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'RepeatedModule', message: 'first' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'RepeatedModule', message: 'second' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'RepeatedModule' });
@@ -271,8 +260,7 @@ describe('LogProvider', () => {
     it('level 为空时使用默认级别 INFO', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: '', source: 'DefaultLevelTest' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'DefaultLevelTest' });
@@ -285,8 +273,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.addLog(
           { data: makeLogData({ source: '' }) } as AddLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -296,8 +283,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.addLog(
           { data: makeLogData({ message: '' }) } as AddLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -315,17 +301,17 @@ describe('LogProvider', () => {
       await expect(
         logAccess.addLog(
           { data: makeLogData() } as AddLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
 
-    it('应支持 DEBUG 级别日志', async () => {
+    it('应支持 DEBUG 级别日志（需调低 min_level）', async () => {
+      // 默认 min_level=INFO 会丢弃 DEBUG；显式调低后 DEBUG 应可写入并查回
+      await logAccess.configLog({ min_level: LogLevel.DEBUG } as any, {} as any, new LogContext());
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.DEBUG }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -335,8 +321,7 @@ describe('LogProvider', () => {
     it('应支持 ERROR 级别日志', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.ERROR }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'TestModule' });
@@ -347,8 +332,7 @@ describe('LogProvider', () => {
       const out1 = new AddLogOutput();
       await logAccess.addLog(
         { data: makeLogData() } as AddLogInput,
-        new LogContext(),
-        out1,
+        out1, new LogContext(),
       );
 
       await wait(5);
@@ -356,8 +340,7 @@ describe('LogProvider', () => {
       const out2 = new AddLogOutput();
       await logAccess.addLog(
         { data: makeLogData() } as AddLogInput,
-        new LogContext(),
-        out2,
+        out2, new LogContext(),
       );
 
       expect(out1.id).not.toBe(out2.id);
@@ -372,8 +355,7 @@ describe('LogProvider', () => {
     it('addLog 后不产生日志文件', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'NoFileModule', message: 'no file' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       // 确认 temp 目录下没有 .log 文件
@@ -384,12 +366,11 @@ describe('LogProvider', () => {
     it('soLog 与 queryLogs 均可查询 SQLite 中的日志', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'SqliteMode', message: 'sqlite only' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const soOutput = new SoLogOutput();
-      await logAccess.soLog({ source: 'SqliteMode' } as SoLogInput, new LogContext(), soOutput);
+      await logAccess.soLog({ source: 'SqliteMode' } as SoLogInput, soOutput, new LogContext());
       expect(soOutput.list.length).toBe(1);
 
       const ql = await logAccess.queryLogs({ source: 'SqliteMode' });
@@ -398,25 +379,24 @@ describe('LogProvider', () => {
   });
 
   // ==========================================================================
-  // getLog - 获取单条日志
+  // soLogById - 获取单条日志
   // ==========================================================================
 
-  describe('getLog', () => {
+  describe('soLogById', () => {
     it('应返回 null 当没有日志', async () => {
       const output = new GetLogOutput();
-      await logAccess.getLog(new GetLogInput(), new LogContext(), output);
+      await logAccess.soLogById(new GetLogInput(), output, new LogContext());
       expect(output.log).toBeNull();
     });
 
     it('应返回存在的日志', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'GetLogModule', message: 'findme' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const output = new GetLogOutput();
-      await logAccess.getLog(new GetLogInput(), new LogContext(), output);
+      await logAccess.soLogById(new GetLogInput(), output, new LogContext());
       expect(output.log).not.toBeNull();
       expect(output.log!.message).toContain('findme');
       expect(output.log!.source).toBe('GetLogModule');
@@ -433,7 +413,7 @@ describe('LogProvider', () => {
 
       const output = new GetLogOutput();
       await expect(
-        logAccess.getLog(new GetLogInput(), new LogContext(), output),
+        logAccess.soLogById(new GetLogInput(), output, new LogContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -446,29 +426,25 @@ describe('LogProvider', () => {
     beforeEach(async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'ServiceA', level: LogLevel.INFO, message: '用户登录成功' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'ServiceA', level: LogLevel.ERROR, message: '数据库连接失败' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'ServiceB', level: LogLevel.WARN, message: '内存使用率高' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
-        { data: makeLogData({ source: 'ServiceB', level: LogLevel.DEBUG, message: '调试信息', trace_id: 'trace-001' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        { data: makeLogData({ source: 'ServiceB', level: LogLevel.INFO, message: '调试信息', trace_id: 'trace-001' }) } as AddLogInput,
+        new AddLogOutput(), new LogContext(),
       );
     });
 
     it('应返回所有日志', async () => {
       const output = new SoLogOutput();
-      await logAccess.soLog(new SoLogInput(), new LogContext(), output);
+      await logAccess.soLog(new SoLogInput(), output, new LogContext());
       expect(output.list.length).toBe(4);
       expect(output.total).toBe(4);
     });
@@ -477,8 +453,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { level: LogLevel.ERROR } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(1);
       expect(output.list[0].level).toBe(LogLevel.ERROR);
@@ -488,8 +463,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { source: 'ServiceA' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(2);
       for (const log of output.list) {
@@ -501,8 +475,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { keyword: '登录' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(1);
       expect(output.list[0].message).toContain('登录');
@@ -512,8 +485,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { trace_id: 'trace-001' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(1);
       expect(output.list[0].trace_id).toBe('trace-001');
@@ -524,15 +496,13 @@ describe('LogProvider', () => {
       const beforeTime = Date.now();
       await logAccess.addLog(
         { data: makeLogData({ source: 'TimeModule', message: 'after' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const output = new SoLogOutput();
       await logAccess.soLog(
         { start_time: beforeTime } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(1);
       expect(output.list[0].message).toBe('after');
@@ -545,8 +515,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { end_time: cutoffTime } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(4);
     });
@@ -555,8 +524,7 @@ describe('LogProvider', () => {
       const out1 = new SoLogOutput();
       await logAccess.soLog(
         { page: { current: 1, size: 2 } } as SoLogInput,
-        new LogContext(),
-        out1,
+        out1, new LogContext(),
       );
       expect(out1.list.length).toBe(2);
       expect(out1.total).toBe(4);
@@ -564,8 +532,7 @@ describe('LogProvider', () => {
       const out2 = new SoLogOutput();
       await logAccess.soLog(
         { page: { current: 2, size: 2 } } as SoLogInput,
-        new LogContext(),
-        out2,
+        out2, new LogContext(),
       );
       expect(out2.list.length).toBe(2);
       expect(out2.total).toBe(4);
@@ -575,8 +542,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { keyword: '不存在的关键字@@@' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(0);
       expect(output.total).toBe(0);
@@ -584,7 +550,7 @@ describe('LogProvider', () => {
 
     it('默认 page 应返回前 50 条', async () => {
       const output = new SoLogOutput();
-      await logAccess.soLog(new SoLogInput(), new LogContext(), output);
+      await logAccess.soLog(new SoLogInput(), output, new LogContext());
       expect(output.total).toBe(4);
     });
 
@@ -599,7 +565,7 @@ describe('LogProvider', () => {
 
       const output = new SoLogOutput();
       await expect(
-        logAccess.soLog(new SoLogInput(), new LogContext(), output),
+        logAccess.soLog(new SoLogInput(), output, new LogContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -634,7 +600,7 @@ describe('LogProvider', () => {
       await insertRawLog(relationDb, { id: 'new-1', created: now, source: 'AgingModule', message: 'new message' });
 
       // 将保留天数设为 1，2 天前的日志应被立即清理
-      await logAccess.configLog({ retention_days: 1 } as any, new LogContext(), {} as any);
+      await logAccess.configLog({ retention_days: 1 } as any, {} as any, new LogContext());
 
       const ql = await logAccess.queryLogs({ source: 'AgingModule' });
       const messages = ql.logs.map((l) => l.message);
@@ -648,7 +614,7 @@ describe('LogProvider', () => {
         await insertRawLog(relationDb, { id: `bulk-${i}`, created: now + i, source: 'BulkAging', message: `msg-${i}` });
       }
 
-      await logAccess.configLog({ max_log_count: 3 } as any, new LogContext(), {} as any);
+      await logAccess.configLog({ max_log_count: 3 } as any, {} as any, new LogContext());
 
       const ql = await logAccess.queryLogs({ source: 'BulkAging' });
       expect(ql.total).toBe(3);
@@ -658,7 +624,7 @@ describe('LogProvider', () => {
 
     it('保留天数与最大条数应可从配置中心读取（默认值正确）', async () => {
       const output: any = {};
-      await logAccess.configLog({} as any, new LogContext(), output);
+      await logAccess.configLog({} as any, output, new LogContext());
       expect(output.config.retention_days).toBe(DEFAULT_RETENTION_DAYS);
       expect(output.config.max_log_count).toBe(DEFAULT_MAX_LOG_COUNT);
       expect(output.config.min_level).toBe(DEFAULT_MIN_LEVEL);
@@ -670,28 +636,25 @@ describe('LogProvider', () => {
   // ==========================================================================
 
   describe('min_level 过滤', () => {
-    it('默认 min_level 为 DEBUG，不过滤任何级别', async () => {
+    it('默认 min_level 为 INFO，DEBUG 日志应被丢弃', async () => {
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.DEBUG, source: 'MinLevelModule', message: 'debug log' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
-      expect(ql.total).toBe(1);
+      expect(ql.total).toBe(0);
     });
 
     it('min_level=INFO 时应丢弃 DEBUG 日志', async () => {
-      await logAccess.configLog({ min_level: LogLevel.INFO } as any, new LogContext(), {} as any);
+      await logAccess.configLog({ min_level: LogLevel.INFO } as any, {} as any, new LogContext());
 
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.DEBUG, source: 'MinLevelModule', message: 'debug log' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ level: LogLevel.INFO, source: 'MinLevelModule', message: 'info log' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
@@ -700,13 +663,12 @@ describe('LogProvider', () => {
     });
 
     it('min_level=ERROR 时应丢弃 DEBUG/INFO/WARN，仅保留 ERROR', async () => {
-      await logAccess.configLog({ min_level: LogLevel.ERROR } as any, new LogContext(), {} as any);
+      await logAccess.configLog({ min_level: LogLevel.ERROR } as any, {} as any, new LogContext());
 
       for (const level of [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR]) {
         await logAccess.addLog(
           { data: makeLogData({ level, source: 'MinLevelModule', message: `${level} log` }) } as AddLogInput,
-          new LogContext(),
-          new AddLogOutput(),
+          new AddLogOutput(), new LogContext(),
         );
       }
 
@@ -716,12 +678,11 @@ describe('LogProvider', () => {
     });
 
     it('未指定 level 时先补 default_level 再按 min_level 过滤', async () => {
-      await logAccess.configLog({ min_level: LogLevel.WARN } as any, new LogContext(), {} as any);
+      await logAccess.configLog({ min_level: LogLevel.WARN } as any, {} as any, new LogContext());
 
       await logAccess.addLog(
         { data: makeLogData({ level: '', source: 'MinLevelModule', message: 'no level' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'MinLevelModule' });
@@ -730,7 +691,7 @@ describe('LogProvider', () => {
 
     it('configLog 校验非法 min_level 应抛错', async () => {
       await expect(
-        logAccess.configLog({ min_level: 'VERBOSE' } as any, new LogContext(), {} as any),
+        logAccess.configLog({ min_level: 'VERBOSE' } as any, {} as any, new LogContext()),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -743,13 +704,11 @@ describe('LogProvider', () => {
     beforeEach(async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'DelModule', message: 'to delete' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'KeepModule', message: 'to keep' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
     });
 
@@ -757,8 +716,7 @@ describe('LogProvider', () => {
       const output = new DelLogOutput();
       await logAccess.delLog(
         { ids: ['DelModule'] } as DelLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const qlDel = await logAccess.queryLogs({ source: 'DelModule' });
@@ -772,8 +730,7 @@ describe('LogProvider', () => {
       const output = new DelLogOutput();
       await logAccess.delLog(
         { ids: ['DelModule'] } as DelLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.affected_rows).toBe(1);
     });
@@ -782,8 +739,7 @@ describe('LogProvider', () => {
       const output = new DelLogOutput();
       await logAccess.delLog(
         { ids: ['NonExistent'] } as DelLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.affected_rows).toBe(0);
     });
@@ -794,15 +750,13 @@ describe('LogProvider', () => {
 
       await logAccess.addLog(
         { data: makeLogData({ source: 'KeepModule', message: 'new message' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const output = new DelLogOutput();
       await logAccess.delLog(
         { before_time: cutoff } as DelLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'KeepModule' });
@@ -821,7 +775,7 @@ describe('LogProvider', () => {
 
       const output = new DelLogOutput();
       await expect(
-        logAccess.delLog({ ids: ['DelModule'] } as DelLogInput, new LogContext(), output),
+        logAccess.delLog({ ids: ['DelModule'] } as DelLogInput, output, new LogContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -834,24 +788,21 @@ describe('LogProvider', () => {
     beforeEach(async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'CountA', level: LogLevel.INFO, message: 'msg1' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'CountA', level: LogLevel.ERROR, message: 'msg2' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'CountB', level: LogLevel.INFO, message: 'msg3' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
     });
 
     it('应统计所有日志数量', async () => {
       const output = new CountLogOutput();
-      await logAccess.countLog(new CountLogInput(), new LogContext(), output);
+      await logAccess.countLog(new CountLogInput(), output, new LogContext());
       expect(output.count).toBe(3);
     });
 
@@ -859,8 +810,7 @@ describe('LogProvider', () => {
       const output = new CountLogOutput();
       await logAccess.countLog(
         { level: LogLevel.ERROR } as CountLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.count).toBe(1);
     });
@@ -869,8 +819,7 @@ describe('LogProvider', () => {
       const output = new CountLogOutput();
       await logAccess.countLog(
         { source: 'CountA' } as CountLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.count).toBe(2);
     });
@@ -879,8 +828,7 @@ describe('LogProvider', () => {
       const output = new CountLogOutput();
       await logAccess.countLog(
         { start_time: 0, end_time: Date.now() + 10000 } as CountLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.count).toBe(3);
     });
@@ -889,8 +837,7 @@ describe('LogProvider', () => {
       const output = new CountLogOutput();
       await logAccess.countLog(
         { level: 'NONEXISTENT' } as CountLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.count).toBe(0);
     });
@@ -906,7 +853,7 @@ describe('LogProvider', () => {
 
       const output = new CountLogOutput();
       await expect(
-        logAccess.countLog(new CountLogInput(), new LogContext(), output),
+        logAccess.countLog(new CountLogInput(), output, new LogContext()),
       ).rejects.toThrow(ComponentDisabledError);
     });
   });
@@ -919,18 +866,15 @@ describe('LogProvider', () => {
     beforeEach(async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'VisA', level: LogLevel.INFO, message: 'a' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
         { data: makeLogData({ source: 'VisA', level: LogLevel.ERROR, message: 'b' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await logAccess.addLog(
-        { data: makeLogData({ source: 'VisB', level: LogLevel.DEBUG, message: 'c' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        { data: makeLogData({ source: 'VisB', level: LogLevel.WARN, message: 'c' }) } as AddLogInput,
+        new AddLogOutput(), new LogContext(),
       );
     });
 
@@ -938,8 +882,7 @@ describe('LogProvider', () => {
       const output = new VisualizedLogOutput();
       await logAccess.visualizedLog(
         { scope: 'health' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const data = output.data as Record<string, unknown>;
@@ -953,8 +896,7 @@ describe('LogProvider', () => {
       const output = new VisualizedLogOutput();
       await logAccess.visualizedLog(
         { scope: 'volume' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const data = output.data as Record<string, unknown>;
@@ -965,24 +907,22 @@ describe('LogProvider', () => {
       const output = new VisualizedLogOutput();
       await logAccess.visualizedLog(
         { scope: 'levelDistribution' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const data = output.data as Record<string, unknown>;
       const distribution = data.distribution as Record<string, number>;
       expect(distribution.INFO).toBe(1);
       expect(distribution.ERROR).toBe(1);
-      expect(distribution.DEBUG).toBe(1);
-      expect(distribution.WARN).toBe(0);
+      expect(distribution.WARN).toBe(1);
+      expect(distribution.DEBUG).toBe(0);
     });
 
     it('scope=sourceDistribution 应返回模块分布', async () => {
       const output = new VisualizedLogOutput();
       await logAccess.visualizedLog(
         { scope: 'sourceDistribution' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       const data = output.data as Record<string, unknown>;
@@ -996,8 +936,7 @@ describe('LogProvider', () => {
       const output = new VisualizedLogOutput();
       const ok = await logAccess.visualizedLog(
         { scope: 'invalidScope' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(ok).toBe(false);
       expect(output.error).toContain('未知的可视化范围');
@@ -1017,8 +956,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.visualizedLog(
           { scope: 'health' } as VisualizedLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
@@ -1033,8 +971,7 @@ describe('LogProvider', () => {
       const output = new EnableLogOutput();
       const ok = await logAccess.enableLog(
         { rules: [{ source: 'SoulService', method: 'addSoul', enable: true }] } as EnableLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(ok).toBe(true);
     });
@@ -1042,8 +979,7 @@ describe('LogProvider', () => {
     it('保存规则后规则应持久化到数据库', async () => {
       await logAccess.enableLog(
         { rules: [{ source: 'SoulService', method: 'addSoul', enable: true }] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rows = await relationDb.select(LOG_RULE_TABLE, {
@@ -1062,8 +998,7 @@ describe('LogProvider', () => {
           { source: '*', method: '*', enable: false },
           { source: 'SoulService', method: '*', enable: true },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1076,8 +1011,7 @@ describe('LogProvider', () => {
     it('应支持通配符 `*` 匹配所有模块', async () => {
       await logAccess.enableLog(
         { rules: [{ source: '*', method: '*', enable: false }] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1090,8 +1024,7 @@ describe('LogProvider', () => {
           { source: '*', method: '*', enable: false },
           { source: 'AllowModule', method: '*', enable: true },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1105,8 +1038,7 @@ describe('LogProvider', () => {
           { source: 'FlexModule', method: '*', enable: false },
           { source: 'FlexModule', method: 'allowedMethod', enable: true },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1122,14 +1054,12 @@ describe('LogProvider', () => {
     it('应支持 upsert 更新已有规则', async () => {
       await logAccess.enableLog(
         { rules: [{ source: 'UpsertModule', method: 'test', enable: true }] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       await logAccess.enableLog(
         { rules: [{ source: 'UpsertModule', method: 'test', enable: false }] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1152,8 +1082,7 @@ describe('LogProvider', () => {
           { source: 'Module1', method: 'method2', enable: false },
           { source: 'Module2', method: '*', enable: true },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const rawService = logAccess.getRawService();
@@ -1167,8 +1096,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.enableLog(
           { rules: [] } as EnableLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -1178,8 +1106,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.enableLog(
           { rules: [{ source: '', method: 'test', enable: true }] } as EnableLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -1189,8 +1116,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.enableLog(
           { rules: [{ source: 'Test', method: '', enable: true }] } as EnableLogInput,
-          new LogContext(),
-          output,
+          output, new LogContext(),
         ),
       ).rejects.toThrow(ValidationError);
     });
@@ -1207,8 +1133,7 @@ describe('LogProvider', () => {
       const output = new EnableLogOutput();
       const ok = await logAccess.enableLog(
         { rules: [{ source: 'Test', method: 'test', enable: true }] } as EnableLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(ok).toBe(true);
     });
@@ -1227,28 +1152,11 @@ describe('LogProvider', () => {
       interceptor = new LogInterceptor(rawService);
     });
 
-    it('beforeExecute 应写入 DEBUG 级别日志', async () => {
-      const ctx: InterceptContext = {
-        targetName: 'SoulService',
-        methodName: 'addSoul',
-        input: undefined,
-        context: undefined,
-        output: undefined,
-        startedAt: Date.now(),
-        elapsedMs: 0,
-      };
-
-      interceptor.beforeExecute(ctx);
-      await wait(30);
-
-      const ql = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(ql.logs.length).toBeGreaterThan(0);
-      const debugLog = ql.logs.find((l) => l.level === 'DEBUG');
-      expect(debugLog).toBeDefined();
-      expect(debugLog!.message).toContain('addSoul invoke');
+    it('invoke/done 埋点已移除：不应再有 beforeExecute 钩子', () => {
+      expect((interceptor as unknown as Record<string, unknown>).beforeExecute).toBeUndefined();
     });
 
-    it('afterExecute 成功时应写入 INFO 级别日志', async () => {
+    it('afterExecute 成功时不应写入任何日志', async () => {
       const startedAt = Date.now();
       await wait(5);
       const ctx: InterceptContext = {
@@ -1265,7 +1173,7 @@ describe('LogProvider', () => {
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(ql.logs.some((l) => l.level === 'INFO' && l.message.includes('addSoul done'))).toBe(true);
+      expect(ql.total).toBe(0);
     });
 
     it('afterExecute 失败时应写入 ERROR 级别日志', async () => {
@@ -1289,7 +1197,7 @@ describe('LogProvider', () => {
       expect(errorLog!.message).toContain('连接超时');
     });
 
-    it('beforeExecute 应提取 input.trace_id', async () => {
+    it('失败日志应提取 input.trace_id', async () => {
       const ctx: InterceptContext = {
         targetName: 'TraceService',
         methodName: 'tracedMethod',
@@ -1300,14 +1208,14 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'TraceService' });
       expect(ql.logs[0].trace_id).toBe('trace-from-input');
     });
 
-    it('afterExecute 应包含 elapsed_ms', async () => {
+    it('失败日志应包含 elapsed_ms', async () => {
       const ctx: InterceptContext = {
         targetName: 'ElapsedService',
         methodName: 'slowMethod',
@@ -1318,14 +1226,14 @@ describe('LogProvider', () => {
         elapsedMs: 250,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'ElapsedService' });
       expect(ql.logs[0].elapsed_ms).toBe(250);
     });
 
-    it('afterExecute 应提取 context.caller', async () => {
+    it('失败日志应提取 context.caller', async () => {
       const ctx: InterceptContext = {
         targetName: 'CallerService',
         methodName: 'calledMethod',
@@ -1336,14 +1244,14 @@ describe('LogProvider', () => {
         elapsedMs: 10,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'CallerService' });
       expect(ql.logs[0].caller).toBe('test-caller-id');
     });
 
-    it('日志中应包含 AOP 来源标识', async () => {
+    it('失败日志应包含 AOP 来源标识', async () => {
       const ctx: InterceptContext = {
         targetName: 'AopModule',
         methodName: 'aopMethod',
@@ -1354,21 +1262,39 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'AopModule' });
       expect(ql.logs[0].metadata).toEqual({ log_source: 'AOP' });
     });
 
-    it('应遵循 enableLog 规则（未启用的模块不记录）', async () => {
+    it('失败日志应提取 work_id / interact_id', async () => {
+      const ctx: InterceptContext = {
+        targetName: 'WorkIdService',
+        methodName: 'workMethod',
+        input: { work_id: 'w-1', interact_id: 'i-1' },
+        context: undefined,
+        output: undefined,
+        startedAt: Date.now(),
+        elapsedMs: 0,
+      };
+
+      interceptor.afterExecute(ctx, new Error('boom'));
+      await wait(30);
+
+      const ql = await logAccess.queryLogs({ source: 'WorkIdService' });
+      expect(ql.logs[0].work_id).toBe('w-1');
+      expect(ql.logs[0].interact_id).toBe('i-1');
+    });
+
+    it('应遵循 enableLog 规则（未启用的模块失败也不记录）', async () => {
       await logAccess.enableLog(
         { rules: [
           { source: '*', method: '*', enable: false },
           { source: 'SoulService', method: '*', enable: true },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const allowedCtx: InterceptContext = {
@@ -1391,24 +1317,23 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      interceptor.beforeExecute(allowedCtx);
-      interceptor.beforeExecute(blockedCtx);
+      interceptor.afterExecute(allowedCtx, new Error('boom'));
+      interceptor.afterExecute(blockedCtx, new Error('boom'));
       await wait(30);
 
       const allowedQl = await logAccess.queryLogs({ source: 'SoulService' });
-      expect(allowedQl.logs.some((l) => l.message.includes('allowedMethod invoke'))).toBe(true);
+      expect(allowedQl.logs.some((l) => l.message.includes('allowedMethod failed'))).toBe(true);
 
       const blockedQl = await logAccess.queryLogs({ source: 'BlockedService' });
       expect(blockedQl.total).toBe(0);
     });
 
-    it('afterExecute 在规则禁用时不应写入日志', async () => {
+    it('afterExecute 在规则禁用时不写入失败日志', async () => {
       await logAccess.enableLog(
         { rules: [
           { source: '*', method: '*', enable: false },
         ] } as EnableLogInput,
-        new LogContext(),
-        new EnableLogOutput(),
+        new EnableLogOutput(), new LogContext(),
       );
 
       const ctx: InterceptContext = {
@@ -1421,14 +1346,14 @@ describe('LogProvider', () => {
         elapsedMs: 100,
       };
 
-      interceptor.afterExecute(ctx);
+      interceptor.afterExecute(ctx, new Error('boom'));
       await wait(30);
 
       const ql = await logAccess.queryLogs({ source: 'DisabledService' });
       expect(ql.total).toBe(0);
     });
 
-    it('interceptor 应能处理无 input 的上下文', async () => {
+    it('应能处理无 input 的上下文（失败路径不抛错）', () => {
       const ctx: InterceptContext = {
         targetName: 'NoInputService',
         methodName: 'noInputMethod',
@@ -1439,35 +1364,7 @@ describe('LogProvider', () => {
         elapsedMs: 0,
       };
 
-      expect(() => interceptor.beforeExecute(ctx)).not.toThrow();
-    });
-
-    it('beforeExecute 和 afterExecute 应各自记录独立的日志', async () => {
-      const startedAt = Date.now();
-      const ctx: InterceptContext = {
-        targetName: 'FullCycle',
-        methodName: 'cycleMethod',
-        input: undefined,
-        context: undefined,
-        output: undefined,
-        startedAt,
-        elapsedMs: 0,
-      };
-
-      interceptor.beforeExecute(ctx);
-
-      await wait(10);
-      const afterCtx: InterceptContext = {
-        ...ctx,
-        elapsedMs: Date.now() - startedAt,
-      };
-      interceptor.afterExecute(afterCtx);
-      await wait(30);
-
-      const ql = await logAccess.queryLogs({ source: 'FullCycle' });
-      expect(ql.total).toBe(2);
-      expect(ql.logs.some((l) => l.message.includes('invoke'))).toBe(true);
-      expect(ql.logs.some((l) => l.message.includes('done'))).toBe(true);
+      expect(() => interceptor.afterExecute(ctx, new Error('boom'))).not.toThrow();
     });
   });
 
@@ -1502,8 +1399,7 @@ describe('LogProvider', () => {
       const output = new VisualizedLogOutput();
       await logAccess.visualizedLog(
         { scope: 'health' } as VisualizedLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect((output.data as Record<string, unknown>).enabled).toBe(true);
     });
@@ -1530,8 +1426,7 @@ describe('LogProvider', () => {
       await expect(
         logAccess.visualizedLog(
           { scope: 'health' } as VisualizedLogInput,
-          new LogContext(),
-          new VisualizedLogOutput(),
+          new VisualizedLogOutput(), new LogContext(),
         ),
       ).rejects.toThrow(ComponentDisabledError);
     });
@@ -1556,8 +1451,7 @@ describe('LogProvider', () => {
       const specialMsg = '特殊字符: !@#$%^&*()_+-={}[]|;:"<>,.?/~`';
       await logAccess.addLog(
         { data: makeLogData({ source: 'SpecialModule', message: specialMsg }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'SpecialModule' });
@@ -1568,8 +1462,7 @@ describe('LogProvider', () => {
       const multilineMsg = 'line1\nline2\nline3';
       await logAccess.addLog(
         { data: makeLogData({ source: 'MultilineModule', message: multilineMsg }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'MultilineModule' });
@@ -1582,8 +1475,7 @@ describe('LogProvider', () => {
       const output = new SoLogOutput();
       await logAccess.soLog(
         { source: 'NonExistentModule' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
       expect(output.list.length).toBe(0);
       expect(output.total).toBe(0);
@@ -1599,8 +1491,7 @@ describe('LogProvider', () => {
           metadata: { a: 1 },
           elapsed_ms: 100,
         }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: 'ParseModule' });
@@ -1619,16 +1510,14 @@ describe('LogProvider', () => {
       for (let i = 0; i < count; i++) {
         await logAccess.addLog(
           { data: makeLogData({ source: 'BulkModule', message: `msg-${i}` }) } as AddLogInput,
-          new LogContext(),
-          new AddLogOutput(),
+          new AddLogOutput(), new LogContext(),
         );
       }
 
       const countOutput = new CountLogOutput();
       await logAccess.countLog(
         { source: 'BulkModule' } as CountLogInput,
-        new LogContext(),
-        countOutput,
+        countOutput, new LogContext(),
       );
       expect(countOutput.count).toBe(count);
     });
@@ -1636,21 +1525,18 @@ describe('LogProvider', () => {
     it('soLog 按时间倒序返回（最新的在前）', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: 'OrderModule', message: 'first' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
       await wait(10);
       await logAccess.addLog(
         { data: makeLogData({ source: 'OrderModule', message: 'second' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const output = new SoLogOutput();
       await logAccess.soLog(
         { source: 'OrderModule' } as SoLogInput,
-        new LogContext(),
-        output,
+        output, new LogContext(),
       );
 
       expect(output.list[0].message).toBe('second');
@@ -1660,8 +1546,7 @@ describe('LogProvider', () => {
     it('LogData 中 source 为 AOP 枚举值时应正确存储', async () => {
       await logAccess.addLog(
         { data: makeLogData({ source: LogSource.AOP, message: 'AOP source test' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       const ql = await logAccess.queryLogs({ source: LogSource.AOP });
@@ -1680,8 +1565,7 @@ describe('LogProvider', () => {
 
       await standaloneLogAccess.addLog(
         { data: makeLogData({ source: 'IsolatedModule', message: 'isolated log test' }) } as AddLogInput,
-        new LogContext(),
-        new AddLogOutput(),
+        new AddLogOutput(), new LogContext(),
       );
 
       expect(() => {

@@ -1,13 +1,33 @@
+/**
+ * @fileoverview BookmarkService 业务实现。
+ *
+ * 签名规范：`Boolean method(Input, Output, Context, Metrics, Report)`。
+ * Bookmark 为无状态读 + SQLite 持久化写，读方法用 queryRaw 直查。
+ */
+
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { BOOKMARK_FOLDER_TABLE, BOOKMARK_ITEM_TABLE } from '../domain/types';
 import type { BookmarkFolderRecord, BookmarkFolderNode, BookmarkItemRecord } from '../domain/types';
+import type {
+  SoTreeInput, SoTreeOutput,
+  SoFlatFoldersInput, SoFlatFoldersOutput,
+  AddFolderInput, AddFolderOutput,
+  AddItemInput, AddItemOutput,
+  UpdateFolderInput, UpdateFolderOutput,
+  UpdateItemInput, UpdateItemOutput,
+  MoveItemInput, MoveItemOutput,
+  BookmarkContext,
+} from '../domain/types';
+import { DelFolderInput, DelFolderOutput, DelItemInput, DelItemOutput } from '../domain/types';
 
 export class BookmarkService {
   constructor(private readonly relationDb: RelationDBAccess) {}
 
-  getTree(): BookmarkFolderNode[] {
+  async soTree(_input: SoTreeInput, output: SoTreeOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const folders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT * FROM "${BOOKMARK_FOLDER_TABLE}" ORDER BY "sort_order", "created"`,
       [],
@@ -34,17 +54,21 @@ export class BookmarkService {
         }));
     };
 
-    return buildTree('');
+    output.tree = buildTree('');
+    return true;
   }
 
-  getFlatFolders(): BookmarkFolderRecord[] {
-    return this.relationDb.queryRaw<BookmarkFolderRecord>(
+  async soFlatFolders(_input: SoFlatFoldersInput, output: SoFlatFoldersOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+    output.folders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT * FROM "${BOOKMARK_FOLDER_TABLE}" ORDER BY "name"`,
       [],
     );
+    return true;
   }
 
-  createFolder(name: string, parentId: string = ''): BookmarkFolderRecord {
+  async addFolder(input: AddFolderInput, output: AddFolderOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+    const name = input.name;
+    const parentId = input.parent_id || '';
     const id = IdGenerator.generate();
     const now = IdGenerator.now();
     const nextOrder = this.relationDb.queryRaw<{ c: number }>(
@@ -60,10 +84,15 @@ export class BookmarkService {
       { field: 'parent_id', value: parentId },
       { field: 'sort_order', value: nextOrder },
     ]);
-    return { id, created: now, updated: now, name, parent_id: parentId, sort_order: nextOrder };
+    output.folder = { id, created: now, updated: now, name, parent_id: parentId, sort_order: nextOrder };
+    return true;
   }
 
-  createItem(folderId: string, title: string, url: string, favicon = ''): BookmarkItemRecord {
+  async addItem(input: AddItemInput, output: AddItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
+    const folderId = input.folder_id;
+    const title = input.title;
+    const url = input.url;
+    const favicon = input.favicon || '';
     const id = IdGenerator.generate();
     const now = IdGenerator.now();
     const nextOrder = this.relationDb.queryRaw<{ c: number }>(
@@ -81,66 +110,78 @@ export class BookmarkService {
       { field: 'favicon', value: favicon },
       { field: 'sort_order', value: nextOrder },
     ]);
-    return { id, created: now, updated: now, folder_id: folderId, title, url, favicon, sort_order: nextOrder };
+    output.item = { id, created: now, updated: now, folder_id: folderId, title, url, favicon, sort_order: nextOrder };
+    return true;
   }
 
-  updateFolder(id: string, name: string): void {
+  async updateFolder(input: UpdateFolderInput, _output: UpdateFolderOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.update(
       BOOKMARK_FOLDER_TABLE,
       [
         { field: 'updated', value: IdGenerator.now() },
-        { field: 'name', value: name },
+        { field: 'name', value: input.name },
       ],
-      [{ field: 'id', operator: Operator.EQ, value: id }],
+      [{ field: 'id', operator: Operator.EQ, value: input.id }],
     );
+    return true;
   }
 
-  updateItem(id: string, title: string, url: string): void {
+  async updateItem(input: UpdateItemInput, _output: UpdateItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.update(
       BOOKMARK_ITEM_TABLE,
       [
         { field: 'updated', value: IdGenerator.now() },
-        { field: 'title', value: title },
-        { field: 'url', value: url },
+        { field: 'title', value: input.title },
+        { field: 'url', value: input.url },
       ],
-      [{ field: 'id', operator: Operator.EQ, value: id }],
+      [{ field: 'id', operator: Operator.EQ, value: input.id }],
     );
+    return true;
   }
 
-  deleteFolder(id: string): void {
+  async delFolder(input: DelFolderInput, _output: DelFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
     const childFolders = this.relationDb.queryRaw<BookmarkFolderRecord>(
       `SELECT "id" FROM "${BOOKMARK_FOLDER_TABLE}" WHERE "parent_id" = ?`,
-      [id],
+      [input.id],
     );
-    for (const f of childFolders) this.deleteFolder(f.id);
+    for (const f of childFolders) {
+      await this.delFolder(
+        Object.assign(new DelFolderInput(), { id: f.id }),
+        new DelFolderOutput(),
+        context, metrics, report,
+      );
+    }
 
     this.relationDb.delete(BOOKMARK_ITEM_TABLE, [
-      { field: 'folder_id', operator: Operator.EQ, value: id },
+      { field: 'folder_id', operator: Operator.EQ, value: input.id },
     ]);
     this.relationDb.delete(BOOKMARK_FOLDER_TABLE, [
-      { field: 'id', operator: Operator.EQ, value: id },
+      { field: 'id', operator: Operator.EQ, value: input.id },
     ]);
+    return true;
   }
 
-  deleteItem(id: string): void {
+  async delItem(input: DelItemInput, _output: DelItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     this.relationDb.delete(BOOKMARK_ITEM_TABLE, [
-      { field: 'id', operator: Operator.EQ, value: id },
+      { field: 'id', operator: Operator.EQ, value: input.id },
     ]);
+    return true;
   }
 
-  moveItem(id: string, targetFolderId: string): void {
+  async moveItem(input: MoveItemInput, _output: MoveItemOutput, _context: BookmarkContext, _metrics?: Metrics, _report?: Report): Promise<boolean> {
     const nextOrder = this.relationDb.queryRaw<{ c: number }>(
       `SELECT COUNT(*) as c FROM "${BOOKMARK_ITEM_TABLE}" WHERE "folder_id" = ?`,
-      [targetFolderId],
+      [input.target_folder_id],
     )[0]?.c || 0;
     this.relationDb.update(
       BOOKMARK_ITEM_TABLE,
       [
         { field: 'updated', value: IdGenerator.now() },
-        { field: 'folder_id', value: targetFolderId },
+        { field: 'folder_id', value: input.target_folder_id },
         { field: 'sort_order', value: nextOrder },
       ],
-      [{ field: 'id', operator: Operator.EQ, value: id }],
+      [{ field: 'id', operator: Operator.EQ, value: input.id }],
     );
+    return true;
   }
 }

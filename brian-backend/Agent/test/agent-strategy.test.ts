@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ValidationError, NotFoundError } from '@brian-agent/base';
 import { AgentStrategyService } from '../AgentStrategy/application/AgentStrategyService';
@@ -25,7 +26,7 @@ describe('AgentStrategy', () => {
       await service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: `test-${uid()}`, suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), out);
+      }), out, new AgentStrategyContext());
       expect(out.strategy_id).toBeTruthy();
     });
 
@@ -33,14 +34,14 @@ describe('AgentStrategy', () => {
       await expect(service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: '', suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), new AddStrategyOutput())).rejects.toThrow(ValidationError);
+      }), new AddStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-AS-003: complexity 范围非法', async () => {
       await expect(service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: `bad-${uid()}`, suitable_complexity_min: 80, suitable_complexity_max: 30,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), new AddStrategyOutput())).rejects.toThrow(ValidationError);
+      }), new AddStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-AS-004: 重复 label 抛异常', async () => {
@@ -48,25 +49,25 @@ describe('AgentStrategy', () => {
       await service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: label, suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), new AddStrategyOutput());
+      }), new AddStrategyOutput(), new AgentStrategyContext());
       await expect(service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: label, suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), new AddStrategyOutput())).rejects.toThrow(ValidationError);
+      }), new AddStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-AS-005: execution_rule 无效 JSON', async () => {
       await expect(service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: `bad-json-${uid()}`, suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: 'not-json',
-      }), new AgentStrategyContext(), new AddStrategyOutput())).rejects.toThrow(ValidationError);
+      }), new AddStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
 
     it('TC-AS-006: execution_rule 不含 steps/phases', async () => {
       await expect(service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: `no-steps-${uid()}`, suitable_complexity_min: 0, suitable_complexity_max: 100,
         suitable_domains: '["*"]', execution_rule: '{"version":"1.0"}',
-      }), new AgentStrategyContext(), new AddStrategyOutput())).rejects.toThrow(ValidationError);
+      }), new AddStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
   });
 
@@ -75,39 +76,39 @@ describe('AgentStrategy', () => {
       await service.addStrategy(Object.assign(new AddStrategyInput(), {
         strategy_label: `low-${uid()}`, suitable_complexity_min: 0, suitable_complexity_max: 30,
         suitable_domains: '["*"]', execution_rule: ruleJson(),
-      }), new AgentStrategyContext(), new AddStrategyOutput());
+      }), new AddStrategyOutput(), new AgentStrategyContext());
       const m = new MatchStrategyOutput();
       await service.matchStrategy(Object.assign(new MatchStrategyInput(), {
         task_content: 'test', task_complexity: 20, task_domain: 'general',
-      }), new AgentStrategyContext(), m);
+      }), m, new AgentStrategyContext());
       expect(m.strategy_id).toBeTruthy();
     });
   });
 
-  describe('getStrategy', () => {
+  describe('soStrategyById', () => {
     it('TC-AS-021: 不存在抛 NotFoundError', async () => {
-      await expect(service.getStrategy(Object.assign(new GetStrategyInput(), { strategy_id: 'nonexistent-strat-xyz' }),
-        new AgentStrategyContext(), new GetStrategyOutput())).rejects.toThrow(NotFoundError);
+      await expect(service.soStrategyById(Object.assign(new GetStrategyInput(), { strategy_id: 'nonexistent-strat-xyz' }),
+        new GetStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(NotFoundError);
     });
   });
 
   describe('updateStrategy', () => {
     it('TC-AS-032: 不存在抛 NotFoundError', async () => {
       await expect(service.updateStrategy(Object.assign(new UpdateStrategyInput(), { strategy_id: 'nx-strat-xyz', strategy_label: 'x' }),
-        new AgentStrategyContext(), new UpdateStrategyOutput())).rejects.toThrow(NotFoundError);
+        new UpdateStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(NotFoundError);
     });
   });
 
   describe('configAgentStrategy', () => {
     it('TC-AS-050: 配置可用', async () => {
       const out = new ConfigAgentStrategyOutput();
-      await service.configAgentStrategy(new ConfigAgentStrategyInput(), new AgentStrategyContext(), out);
+      await service.configAgentStrategy(new ConfigAgentStrategyInput(), out, new AgentStrategyContext());
       expect(out.config).toBeTruthy();
     });
 
     it('TC-AS-052: default_strategy_id 不存在抛异常', async () => {
       await expect(service.configAgentStrategy(Object.assign(new ConfigAgentStrategyInput(), { default_strategy_id: 'nx-strat-xyz' }),
-        new AgentStrategyContext(), new ConfigAgentStrategyOutput())).rejects.toThrow(ValidationError);
+        new ConfigAgentStrategyOutput(), new AgentStrategyContext())).rejects.toThrow(ValidationError);
     });
   });
 });

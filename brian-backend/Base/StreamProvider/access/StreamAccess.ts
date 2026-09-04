@@ -5,6 +5,8 @@
  * 提供标准 (Input, Context, Output) 方法及便捷推送方法。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { StreamSchemaInitializer } from '../infrastructure/StreamSchemaInitializer';
 import { StreamService } from '../application/StreamService';
@@ -31,10 +33,7 @@ export class StreamAccess {
     this.service = new StreamService(relationDb, logger);
   }
 
-  async registerStream(
-    input: RegisterStreamInput,
-    _context: StreamContext,
-    output: RegisterStreamOutput,
+  async registerStream(input: RegisterStreamInput, output: RegisterStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.registerStream(input, output);
   }
@@ -47,25 +46,19 @@ export class StreamAccess {
     return this.service.pushStream(input, output);
   }
 
-  async closeStream(
-    input: CloseStreamInput,
-    _context: StreamContext,
-    output: CloseStreamOutput,
+  async closeStream(input: CloseStreamInput, output: CloseStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.closeStream(input, output);
   }
 
-  async getStreamStats(
+  async soStreamStats(
     _context: StreamContext,
     output: GetStreamStatsOutput,
   ): Promise<boolean> {
-    return this.service.getStreamStats(output);
+    return this.service.soStreamStats(output);
   }
 
-  async configStream(
-    input: ConfigStreamInput,
-    _context: StreamContext,
-    output: ConfigStreamOutput,
+  async configStream(input: ConfigStreamInput, output: ConfigStreamOutput, _context: StreamContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     return this.service.configStream(input, output);
   }

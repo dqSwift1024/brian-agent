@@ -38,7 +38,7 @@
 
 **功能**：新增一个 Soul
 
-**方法签名**：`Boolean addSoul(AddSoulInput input, SoulContext context, AddSoulOutput output)`
+**方法签名**：`Boolean addSoul(AddSoulInput input, AddSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（AddSoulInput extends Input）**：
 
@@ -58,7 +58,7 @@
 
 **功能**：删除指定的 Soul，支持按 ID 批量删除或按条件删除
 
-**方法签名**：`Boolean delSoul(DelSoulInput input, SoulContext context, DelSoulOutput output)`
+**方法签名**：`Boolean delSoul(DelSoulInput input, DelSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（DelSoulInput extends Input）**：
 
@@ -80,7 +80,7 @@
 
 **功能**：更新指定的 Soul，支持按 ID 或按条件更新
 
-**方法签名**：`Boolean updateSoul(UpdateSoulInput input, SoulContext context, UpdateSoulOutput output)`
+**方法签名**：`Boolean updateSoul(UpdateSoulInput input, UpdateSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（UpdateSoulInput extends Input）**：
 
@@ -102,11 +102,11 @@
 
 > 注：资源级 Soul 的启用 / 禁用通过 updateSoul 修改 `enable` 字段实现，不再单独提供资源级 enable 方法。
 
-#### 3.1.4. 获取 Soul（getSoul）
+#### 3.1.4. 获取 Soul（soSoulById）
 
 **功能**：获取指定的 Soul，支持按 ID 或按条件获取第一条
 
-**方法签名**：`Boolean getSoul(GetSoulInput input, SoulContext context, GetSoulOutput output)`
+**方法签名**：`Boolean soSoulById(GetSoulInput input, GetSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（GetSoulInput extends Input）**：
 
@@ -128,7 +128,7 @@
 
 **功能**：搜索 Soul，支持关键词、条件过滤、排序、分页
 
-**方法签名**：`Boolean soSoul(SoSoulInput input, SoulContext context, SoSoulOutput output)`
+**方法签名**：`Boolean soSoul(SoSoulInput input, SoSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（SoSoulInput extends Input）**：
 
@@ -155,7 +155,7 @@
 
 **功能**：启用或禁用 Soul 组件，用于运行时控制 Soul 组件的可用状态
 
-**方法签名**：`Boolean enableSoul(EnableSoulInput input, SoulContext context, EnableSoulOutput output)`
+**方法签名**：`Boolean enableSoul(EnableSoulInput input, EnableSoulOutput output, SoulContext context, SoulMetrics metrics, SoulReport report)`
 
 **入参（EnableSoulInput extends Input）**：
 
@@ -242,3 +242,13 @@
 5. SoulProvider 用到的所有配置项（含 Soul 组件启用 / 禁用状态 `enabled`）统一存储于关系数据库配置表 soul_config（库名 `soul`，见 4.3），运行时按需读取；enableSoul 的启用 / 禁用状态同步持久化，组件初始化时恢复，避免状态丢失；
 6. `enableSoul` 为运行时启用 / 禁用（可恢复），`closeSoul` 为系统关闭时的终态释放（不可恢复，需重新初始化组件）；
 7. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；
+
+
+## 6. 代码变更记录
+
+### 2026-08-29 DDD 重构
+
+- 方法签名统一为五参 `(Input, Output, Context, Metrics, Report)`；`getSoul` 更名 `soSoulById`。
+- 数据加工下沉领域服务 `domain/services/SoulDomainService.ts`：目标条件解析（resolveTargetConditions，归一 del/update/soById 三处同构逻辑）、关键词 LIKE 条件组装（buildKeywordConditions）、usage 四维统计聚合（aggregateUsageStats）、usage 排序与分页（sortByOrder/paginate）。
+- 记录组装复用 `Base/shared/query/RecordBuilder`（newRecord/newPatch），消除手写 id/created/updated 样板。
+- 应用服务瘦身为流程编排；全方法补全 JSDoc。

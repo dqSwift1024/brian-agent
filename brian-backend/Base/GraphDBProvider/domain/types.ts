@@ -34,7 +34,7 @@ export enum GraphTarget {
 /**
  * 图遍历方向枚举。
  *
- * getGraphNeighbors 方法的 direction 参数取值，指定遍历方向。
+ * soGraphNeighbors 方法的 direction 参数取值，指定遍历方向。
  */
 export enum GraphDirection {
   /** 出边（从当前节点出发的边） */
@@ -143,16 +143,16 @@ export class AddGraphNodeOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getGraphNode
+// soGraphNode
 // ---------------------------------------------------------------------------
 
-/** getGraphNode 入参 */
+/** soGraphNode 入参 */
 export class GetGraphNodeInput extends Input {
   /** 节点 ID */
   id!: string;
 }
 
-/** getGraphNode 出参 */
+/** soGraphNode 出参 */
 export class GetGraphNodeOutput extends Output {
   /** 节点信息，无匹配为 null */
   node: GraphNodeRecord | null = null;
@@ -209,16 +209,16 @@ export class AddGraphEdgeOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getGraphEdge
+// soGraphEdge
 // ---------------------------------------------------------------------------
 
-/** getGraphEdge 入参 */
+/** soGraphEdge 入参 */
 export class GetGraphEdgeInput extends Input {
   /** 边 ID */
   id!: string;
 }
 
-/** getGraphEdge 出参 */
+/** soGraphEdge 出参 */
 export class GetGraphEdgeOutput extends Output {
   /** 边信息，无匹配为 null */
   edge: GraphEdgeRecord | null = null;
@@ -287,10 +287,10 @@ export class SelectGraphOutput extends Output {
 }
 
 // ---------------------------------------------------------------------------
-// getGraphNeighbors
+// soGraphNeighbors
 // ---------------------------------------------------------------------------
 
-/** getGraphNeighbors 入参 */
+/** soGraphNeighbors 入参 */
 export class GetGraphNeighborsInput extends Input {
   /** 起始节点 ID */
   node_id!: string;
@@ -304,7 +304,7 @@ export class GetGraphNeighborsInput extends Input {
   only_active?: boolean;
 }
 
-/** getGraphNeighbors 出参 */
+/** soGraphNeighbors 出参 */
 export class GetGraphNeighborsOutput extends Output {
   /** 邻居节点列表（不含起始节点） */
   list: GraphNodeRecord[] = [];
@@ -384,7 +384,7 @@ export class CloseGraphDBOutput extends Output {}
 /** 图节点表名 */
 export const GRAPH_NODE_TABLE = 'graph_node';
 
-/** 图边表名 */
+/** 图激活事件表名 */
 export const GRAPH_ACTIVATION_EVENT_TABLE = 'graph_activation_event';
 
 /** 图边表名 */

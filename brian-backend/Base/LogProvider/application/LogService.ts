@@ -8,15 +8,19 @@
  * - retention_days：日志保留天数，默认 30 天，超过自动清理；
  * - max_log_count：日志最大保留条数，默认 70 万条，超过自动清理最旧记录。
  *
- * 实现所有用例：addLog / getLog / soLog / delLog / countLog / visualizedLog / enableLog。
+ * 实现所有用例：addLog / soLogById / soLog / delLog / countLog / visualizedLog / enableLog。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { newRecord } from '../../shared/query';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
 import { Operator } from '../../shared/query';
 import type { Condition } from '../../shared/query';
+import { buildLogConditions, rowToLogRecord } from '../domain/services/LogDomainService';
 import {
   LogContext,
   LogRecord,
@@ -202,57 +206,8 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 写入日志到 SQLite（addLog） */
-  // ===== 原始方法（保留作为参考）=====
-  // async addLog(
-  //   input: AddLogInput,
-  //   _context: LogContext,
-  //   output: AddLogOutput,
-  // ): Promise<boolean> {
-  //   this.ensureEnabled();
-  //   const data = input.data;
-  //   if (!data.level) {
-  //     data.level = this.defaultLevel;
-  //   }
-  //   if (!data.source) {
-  //     throw new ValidationError('source 不能为空');
-  //   }
-  //   if (!data.message) {
-  //     throw new ValidationError('message 不能为空');
-  //   }
-  //
-  //   const logId = IdGenerator.generate();
-  //   const now = IdGenerator.now();
-  //
-  //   try {
-  //     await this.relationDb.insert(LOG_RECORD_TABLE, [
-  //       { field: 'id', value: logId },
-  //       { field: 'created', value: now },
-  //       { field: 'updated', value: now },
-  //       { field: 'level', value: data.level },
-  //       { field: 'source', value: data.source },
-  //       { field: 'message', value: data.message },
-  //       { field: 'trace_id', value: data.trace_id ?? null },
-  //       { field: 'caller', value: data.caller ?? null },
-  //       { field: 'work_id', value: data.work_id ?? null },
-  //       { field: 'interact_id', value: data.interact_id ?? null },
-  //       { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
-  //       { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
-  //     ]);
-  //   } catch {
-  //     // SQLite 写入失败不影响业务
-  //   }
-  //
-  //   this.scheduleAging();
-  //
-  //   output.id = logId;
-  //   return true;
-  // }
-
   // ===== 修改后的方法（增加 min_level 过滤）=====
-  async addLog(
-    input: AddLogInput,
-    _context: LogContext,
-    output: AddLogOutput,
+  async addLog(input: AddLogInput, output: AddLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const data = input.data;
@@ -272,23 +227,23 @@ export class LogService {
     }
 
     const logId = IdGenerator.generate();
-    const now = IdGenerator.now();
 
     try {
-      await this.relationDb.insert(LOG_RECORD_TABLE, [
-        { field: 'id', value: logId },
-        { field: 'created', value: now },
-        { field: 'updated', value: now },
-        { field: 'level', value: data.level },
-        { field: 'source', value: data.source },
-        { field: 'message', value: data.message },
-        { field: 'trace_id', value: data.trace_id ?? null },
-        { field: 'caller', value: data.caller ?? null },
-        { field: 'work_id', value: data.work_id ?? null },
-        { field: 'interact_id', value: data.interact_id ?? null },
-        { field: 'metadata', value: data.metadata ? JSON.stringify(data.metadata) : null },
-        { field: 'elapsed_ms', value: data.elapsed_ms ?? null },
-      ]);
+      await this.relationDb.insert(
+        LOG_RECORD_TABLE,
+        newRecord({
+          id: logId,
+          level: data.level,
+          source: data.source,
+          message: data.message,
+          trace_id: data.trace_id ?? null,
+          caller: data.caller ?? null,
+          work_id: data.work_id ?? null,
+          interact_id: data.interact_id ?? null,
+          metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+          elapsed_ms: data.elapsed_ms ?? null,
+        }),
+      );
     } catch {
       // SQLite 写入失败不影响业务
     }
@@ -301,9 +256,6 @@ export class LogService {
 
   /** 判断某级别日志是否应被 min_level 过滤丢弃 */
   private shouldDropByMinLevel(level: string): boolean {
-    if (this.minLevel === DEFAULT_MIN_LEVEL) {
-      return false;
-    }
     const weight = LogService.LEVEL_WEIGHT[level.toUpperCase()];
     if (weight === undefined) {
       return false;
@@ -314,36 +266,11 @@ export class LogService {
 
   /** 将数据库行转换为 LogRecord */
   private rowToLogRecord(row: Record<string, unknown>): LogRecord {
-    return {
-      id: String(row.id),
-      created: Number(row.created),
-      updated: Number(row.updated),
-      level: String(row.level),
-      source: String(row.source),
-      message: String(row.message),
-      trace_id: row.trace_id ? String(row.trace_id) : undefined,
-      caller: row.caller ? String(row.caller) : undefined,
-      work_id: row.work_id ? String(row.work_id) : undefined,
-      interact_id: row.interact_id ? String(row.interact_id) : undefined,
-      metadata: row.metadata ? this.parseMetadata(String(row.metadata)) : undefined,
-      elapsed_ms: row.elapsed_ms ? Number(row.elapsed_ms) : undefined,
-    };
+    return rowToLogRecord(row);
   }
 
-  /** 解析 metadata JSON 字符串 */
-  private parseMetadata(raw: string): Record<string, unknown> | undefined {
-    try {
-      return JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** 获取日志（getLog）- 从 SQLite 中查找第一条匹配记录 */
-  async getLog(
-    input: GetLogInput,
-    _context: LogContext,
-    output: GetLogOutput,
+  /** 获取日志（soLogById）- 从 SQLite 中查找第一条匹配记录 */
+  async soLogById(input: GetLogInput, output: GetLogOutput, _context: LogContext, metrics?: Metrics, report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -370,48 +297,19 @@ export class LogService {
       }
     }
     soInput.page = { current: 1, size: 1 };
-    await this.soLog(soInput, _context, soOutput);
+    await this.soLog(soInput, soOutput, _context, metrics, report);
     output.log = soOutput.list.length > 0 ? soOutput.list[0] : null;
     return true;
   }
 
   /** 搜索日志（soLog）- 从 SQLite 查询并过滤 */
-  async soLog(
-    input: SoLogInput,
-    _context: LogContext,
-    output: SoLogOutput,
+  async soLog(input: SoLogInput, output: SoLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
-    const conditions: Condition[] = [];
-    if (input.level) {
-      conditions.push({ field: 'level', operator: Operator.EQ, value: input.level });
-    }
-    if (input.source) {
-      conditions.push({ field: 'source', operator: Operator.EQ, value: input.source });
-    }
-    if (input.trace_id) {
-      conditions.push({ field: 'trace_id', operator: Operator.EQ, value: input.trace_id });
-    }
-    if (input.work_id) {
-      conditions.push({ field: 'work_id', operator: Operator.EQ, value: input.work_id });
-    }
-    if (input.interact_id) {
-      conditions.push({ field: 'interact_id', operator: Operator.EQ, value: input.interact_id });
-    }
-    if (input.keyword) {
-      conditions.push({ field: 'message', operator: Operator.LIKE, value: `%${input.keyword}%` });
-    }
-    if (input.start_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.GE, value: input.start_time });
-    }
-    if (input.end_time !== undefined) {
-      conditions.push({ field: 'created', operator: Operator.LE, value: input.end_time });
-    }
-
+    const queryConditions = buildLogConditions(input);
     const orderBy = input.order_by ?? [{ field: 'created', direction: 'DESC' }];
     const page = input.page ?? { current: 1, size: 50 };
-    const queryConditions = conditions.length > 0 ? conditions : undefined;
 
     const rows = await this.relationDb.select(LOG_RECORD_TABLE, {
       conditions: queryConditions,
@@ -426,10 +324,7 @@ export class LogService {
   }
 
   /** 删除日志（delLog）- 从 SQLite 删除 */
-  async delLog(
-    input: DelLogInput,
-    _context: LogContext,
-    output: DelLogOutput,
+  async delLog(input: DelLogInput, output: DelLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -464,10 +359,7 @@ export class LogService {
   }
 
   /** 统计日志数量（countLog）- 从 SQLite 统计 */
-  async countLog(
-    input: CountLogInput,
-    _context: LogContext,
-    output: CountLogOutput,
+  async countLog(input: CountLogInput, output: CountLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -497,10 +389,7 @@ export class LogService {
   // -------------------------------------------------------------------------
 
   /** 可视化数据（visualizedLog） */
-  async visualizedLog(
-    input: VisualizedLogInput,
-    _context: LogContext,
-    output: VisualizedLogOutput,
+  async visualizedLog(input: VisualizedLogInput, output: VisualizedLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
     const scope = String(input.scope);
@@ -562,10 +451,7 @@ export class LogService {
   }
 
   /** 配置日志记录规则（enableLog） */
-  async enableLog(
-    input: EnableLogInput,
-    _context: LogContext,
-    _output: EnableLogOutput,
+  async enableLog(input: EnableLogInput, _output: EnableLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.rules || input.rules.length === 0) {
       throw new ValidationError('rules 不能为空');
@@ -592,14 +478,14 @@ export class LogService {
           ],
         );
       } else {
-        await this.relationDb.insert(LOG_RULE_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          { field: 'updated', value: now },
-          { field: 'source', value: rule.source },
-          { field: 'method', value: rule.method },
-          { field: 'enable', value: rule.enable ? 1 : 0 },
-        ]);
+        await this.relationDb.insert(
+          LOG_RULE_TABLE,
+          newRecord({
+            source: rule.source,
+            method: rule.method,
+            enable: rule.enable ? 1 : 0,
+          }),
+        );
       }
     }
     await this.loadRules();
@@ -607,10 +493,7 @@ export class LogService {
   }
 
   /** 配置日志组件（configLog） */
-  async configLog(
-    input: ConfigLogInput,
-    _context: LogContext,
-    output: ConfigLogOutput,
+  async configLog(input: ConfigLogInput, output: ConfigLogOutput, _context: LogContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let agingChanged = false;
     if (input.enabled !== undefined) {
@@ -707,8 +590,10 @@ export class LogService {
       conditions.push({ field: 'created', operator: Operator.LE, value: options.end_time });
     }
 
-    const page = options.page ?? 1;
-    const pageSize = options.pageSize ?? 50;
+    // 分页参数钳制：pageSize 上限 500，防止异常入参一次性物化大量行
+    // 阻塞事件循环（log_record 为高频写入大表，全量拉取代价高）
+    const page = Math.max(1, Math.floor(options.page ?? 1) || 1);
+    const pageSize = Math.min(500, Math.max(1, Math.floor(options.pageSize ?? 50) || 50));
 
     const selectOpts: Record<string, unknown> = {
       order_by: [{ field: 'created', direction: 'DESC' }],
@@ -726,8 +611,8 @@ export class LogService {
     return { logs, total };
   }
 
-  /** 从 SQLite 统计日志级别分布（getLogStats） */
-  async getLogStats(options?: {
+  /** 从 SQLite 统计日志级别分布（soLogStats） */
+  async soLogStats(options?: {
     start_time?: number;
     end_time?: number;
   }): Promise<{ distribution: Array<{ level: string; count: number }> }> {

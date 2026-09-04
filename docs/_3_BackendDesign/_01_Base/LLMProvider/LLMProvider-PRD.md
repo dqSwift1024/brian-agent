@@ -53,7 +53,7 @@
 
 **功能**：向系统中新增一个 LLM 提供商
 
-**方法签名**：`Boolean addLLMProvider(AddLLMProviderInput input, LLMContext context, AddLLMProviderOutput output)`
+**方法签名**：`Boolean addLLMProvider(AddLLMProviderInput input, AddLLMProviderOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（AddLLMProviderInput extends Input）**：
 
@@ -74,7 +74,7 @@
 
 **功能**：更新指定的 LLM 提供商，支持按 ID 或按条件更新
 
-**方法签名**：`Boolean updateLLMProvider(UpdateLLMProviderInput input, LLMContext context, UpdateLLMProviderOutput output)`
+**方法签名**：`Boolean updateLLMProvider(UpdateLLMProviderInput input, UpdateLLMProviderOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（UpdateLLMProviderInput extends Input）**：
 
@@ -99,7 +99,7 @@
 
 **功能**：删除指定的 LLM 提供商，支持按 ID 批量删除或按条件删除
 
-**方法签名**：`Boolean delLLMProvider(DelLLMProviderInput input, LLMContext context, DelLLMProviderOutput output)`
+**方法签名**：`Boolean delLLMProvider(DelLLMProviderInput input, DelLLMProviderOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（DelLLMProviderInput extends Input）**：
 
@@ -121,7 +121,7 @@
 
 **功能**：搜索 LLM 提供商，支持关键词、条件过滤、排序、分页
 
-**方法签名**：`Boolean soLLMProvider(SoLLMProviderInput input, LLMContext context, SoLLMProviderOutput output)`
+**方法签名**：`Boolean soLLMProvider(SoLLMProviderInput input, SoLLMProviderOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（SoLLMProviderInput extends Input）**：
 
@@ -143,7 +143,7 @@
 
 **功能**：测试 LLM 提供商的网络连通性
 
-**方法签名**：`Boolean testLLMProvider(TestLLMProviderInput input, LLMContext context, TestLLMProviderOutput output)`
+**方法签名**：`Boolean testLLMProvider(TestLLMProviderInput input, TestLLMProviderOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（TestLLMProviderInput extends Input）**：
 
@@ -163,7 +163,7 @@
 
 **功能**：从 LLM 提供商获取可用的模型列表并缓存到本地
 
-**方法签名**：`Boolean listLLM(ListLLMInput input, LLMContext context, ListLLMOutput output)`
+**方法签名**：`Boolean listLLM(ListLLMInput input, ListLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（ListLLMInput extends Input）**：
 
@@ -190,7 +190,7 @@
 
 **功能**：将一个 LLM 模型添加到系统可用列表
 
-**方法签名**：`Boolean addLLM(AddLLMInput input, LLMContext context, AddLLMOutput output)`
+**方法签名**：`Boolean addLLM(AddLLMInput input, AddLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（AddLLMInput extends Input）**：
 
@@ -210,7 +210,7 @@
 
 **功能**：删除指定的 LLM，支持按 ID 批量删除或按条件删除
 
-**方法签名**：`Boolean delLLM(DelLLMInput input, LLMContext context, DelLLMOutput output)`
+**方法签名**：`Boolean delLLM(DelLLMInput input, DelLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（DelLLMInput extends Input）**：
 
@@ -231,7 +231,7 @@
 
 **功能**：更新指定的 LLM，支持按 ID 或按条件更新
 
-**方法签名**：`Boolean updateLLM(UpdateLLMInput input, LLMContext context, UpdateLLMOutput output)`
+**方法签名**：`Boolean updateLLM(UpdateLLMInput input, UpdateLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（UpdateLLMInput extends Input）**：
 
@@ -259,7 +259,7 @@
 
 **功能**：搜索系统可用模型，支持关键词（按名称）、条件过滤、排序、分页
 
-**方法签名**：`Boolean soLLM(SoLLMInput input, LLMContext context, SoLLMOutput output)`
+**方法签名**：`Boolean soLLM(SoLLMInput input, SoLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（SoLLMInput extends Input）**：
 
@@ -285,7 +285,7 @@
 
 **功能**：调用指定的 LLM 执行推理
 
-**方法签名**：`Boolean execLLM(ExecLLMInput input, LLMContext context, ExecLLMOutput output)`
+**方法签名**：`Boolean execLLM(ExecLLMInput input, ExecLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（ExecLLMInput extends Input）**：
 
@@ -334,7 +334,7 @@
 
 **功能**：调用指定的 embedding 模型生成向量
 
-**方法签名**：`Boolean embedLLM(EmbedLLMInput input, LLMContext context, EmbedLLMOutput output)`
+**方法签名**：`Boolean embedLLM(EmbedLLMInput input, EmbedLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（EmbedLLMInput extends Input）**：
 
@@ -369,7 +369,7 @@
 
 **功能**：为指定模型一键生成「简介」（llm_brief）与「模型用途」（model_usage）并保存到 `llm_available` 表
 
-**方法签名**：`Boolean genLLMAttr(GenLLMAttrInput input, LLMContext context, GenLLMAttrOutput output)`
+**方法签名**：`Boolean genLLMAttr(GenLLMAttrInput input, GenLLMAttrOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（GenLLMAttrInput extends Input）**：
 
@@ -404,7 +404,7 @@
 
 **功能**：获取 LLM 服务的可视化信息
 
-**方法签名**：`Boolean visualizedLLM(VisualizedLLMInput input, LLMContext context, VisualizedLLMOutput output)`
+**方法签名**：`Boolean visualizedLLM(VisualizedLLMInput input, VisualizedLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（VisualizedLLMInput extends Input）**：
 
@@ -425,7 +425,7 @@
 
 **功能**：启用或禁用 LLM 组件，用于运行时控制 LLM 服务的可用状态
 
-**方法签名**：`Boolean enableLLM(EnableLLMInput input, LLMContext context, EnableLLMOutput output)`
+**方法签名**：`Boolean enableLLM(EnableLLMInput input, EnableLLMOutput output, LLMContext context, LLMMetrics metrics, LLMReport report)`
 
 **入参（EnableLLMInput extends Input）**：
 
@@ -604,3 +604,14 @@
 12. `enableLLM` 为运行时启用/禁用（可恢复），启用/禁用状态持久化到 `llm_config`；
 13. 所有写操作推荐使用 `transactionDB` 保证原子性；
 14. 所有方法通过代理模式增加切面注入能力，默认记录日志和耗时；
+
+
+## 6. 代码变更记录
+
+### 2026-08-29 DDD 重构
+
+- 方法签名统一为五参 `(Input, Output, Context, Metrics, Report)`。
+- 补录 `soLLMById`（按 ID 精查 LLM；与列表搜索 soLLM 并存，采用 soXxxById 消歧命名）。
+- 模型缓存数据处理下沉领域服务 `domain/services/LLMCacheDomainService.ts`：缓存新鲜度判定（isModelsCacheFresh / TTL 6h）、远端错误详情提取（extractRemoteErrorDetail）、llm_cache 插入/更新字段映射（toCacheInsertRecord / toCacheUpdatePatch，复用 RecordBuilder）。
+- strategies/ 目录维持 Strategy + Factory + Template Method（BaseLLMStrategy.buildEndpoint/buildHeaders 钩子）。
+- 应用服务瘦身为流程编排；listLLM 不再内联字段映射。

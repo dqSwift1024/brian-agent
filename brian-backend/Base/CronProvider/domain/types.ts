@@ -52,6 +52,9 @@ export interface CronTaskRunRecord {
 // ---------------------------------------------------------------------------
 
 /** listCronTasks 出参 */
+export class ListCronTasksInput extends Input {
+}
+
 export class ListCronTasksOutput extends Output {
   tasks: CronTaskRecord[] = [];
 }
@@ -60,12 +63,12 @@ export class ListCronTasksOutput extends Output {
 // 查询单个任务
 // ---------------------------------------------------------------------------
 
-/** getCronTask 入参 */
+/** soCronTask 入参 */
 export class GetCronTaskInput extends Input {
   name!: string;
 }
 
-/** getCronTask 出参 */
+/** soCronTask 出参 */
 export class GetCronTaskOutput extends Output {
   task: CronTaskRecord | null = null;
 }

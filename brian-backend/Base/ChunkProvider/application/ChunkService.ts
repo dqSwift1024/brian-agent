@@ -6,6 +6,8 @@
  * - chunkFile：对流式读取的文件进行分块（避免大文件内存占用）
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { ValidationError } from '../../shared/errors';
@@ -32,10 +34,7 @@ export class ChunkService {
   /**
    * 对文本字符串进行滑动窗口 + 重叠分块。
    */
-  async chunkText(
-    input: ChunkTextInput,
-    _context: ChunkContext,
-    output: ChunkTextOutput,
+  async chunkText(input: ChunkTextInput, output: ChunkTextOutput, _context: ChunkContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.content) {
       throw new ValidationError('content 不能为空');
@@ -52,10 +51,7 @@ export class ChunkService {
    * 先将全部行读入内存后合并为完整文本，再用滑动窗口分块。
    * 对于超大文件（>1000行），使用缓冲区滚动机制限制内存占用。
    */
-  async chunkFile(
-    input: ChunkFileInput,
-    _context: ChunkContext,
-    output: ChunkFileOutput,
+  async chunkFile(input: ChunkFileInput, output: ChunkFileOutput, _context: ChunkContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.filePath) {
       throw new ValidationError('filePath 不能为空');
@@ -65,7 +61,6 @@ export class ChunkService {
     const bufferMaxLines = Math.ceil(config.windowSize / 30) + 100; // 估算行数容量
     let buffer = '';
     let lineCount = 0;
-    let totalOffset = 0;
     const chunks: ChunkResult[] = [];
 
     const stream = createReadStream(input.filePath, { encoding: 'utf-8' });
@@ -74,7 +69,6 @@ export class ChunkService {
     for await (const line of rl) {
       buffer += line + '\n';
       lineCount++;
-      totalOffset += line.length + 1;
 
       // 缓冲区滚动：超过容量时，对缓冲区做分块，保留末尾重叠部分
       if (lineCount >= bufferMaxLines) {

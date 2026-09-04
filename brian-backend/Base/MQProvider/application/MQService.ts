@@ -4,18 +4,22 @@
  * 依赖 RelationDBAccess（通过 IConfigStorage / executeRaw）操作关系数据库，
  * 依赖 ConfigService 管理 mq_config 配置表。
  *
- * 实现所有用例：sendMQ / consumeMQ / ackMQ / nackMQ / getQueueStats / enableMQ。
+ * 实现所有用例：sendMQ / consumeMQ / ackMQ / nackMQ / soQueueStats / enableMQ。
  *
  * MQ 基于 RelationDBProvider 实现，无需引入外部消息队列中间件，
  * 通过 Repository 接口封装底层消息队列操作。
  */
 
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { ConfigService } from '../../shared/config/ConfigService';
 import { ComponentDisabledError, ValidationError, NotFoundError } from '../../shared/errors';
 import { IdGenerator } from '../../ToolProvider/IdGenerator';
-import { Operator, Direction } from '../../shared/query';
-import type { Condition, DataObject } from '../../shared/query';
+import { Operator } from '../../shared/query';
+import type { Condition } from '../../shared/query';
+import { newRecord } from '../../shared/query';
+import { validateSendMessage, validatePriority } from '../domain/services/MQDomainService';
 import {
   MQContext,
   MessageRecord,
@@ -87,10 +91,7 @@ export class MQService {
   /**
    * 启用/禁用 MQ 组件。
    */
-  async enableMQ(
-    input: EnableMQInput,
-    _context: MQContext,
-    _output: EnableMQOutput,
+  async enableMQ(input: EnableMQInput, _output: EnableMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (this.closed) {
       throw new ComponentDisabledError('MQ');
@@ -103,10 +104,7 @@ export class MQService {
   /**
    * 终态关闭 MQ 组件（不可恢复）。
    */
-  async closeMQ(
-    _input: CloseMQInput,
-    _context: MQContext,
-    _output: CloseMQOutput,
+  async closeMQ(_input: CloseMQInput, _output: CloseMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.closed = true;
     this.enabled = false;
@@ -170,54 +168,39 @@ export class MQService {
    * priority 未指定时从 mq_config 读取 default_priority（默认 5）；
    * max_retries 从 mq_config 读取 default_max_retries（默认 3）。
    */
-  async sendMQ(
-    input: SendMQInput,
-    _context: MQContext,
-    output: SendMQOutput,
+  async sendMQ(input: SendMQInput, output: SendMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
-
     const data = input.data;
-    if (!data) {
-      throw new ValidationError('data 不能为空');
-    }
-    if (!data.queue || typeof data.queue !== 'string') {
-      throw new ValidationError('queue 不能为空');
-    }
-    if (data.payload === undefined || data.payload === null) {
-      throw new ValidationError('payload 不能为空');
-    }
+    validateSendMessage(data);
 
-    // 优先级：未指定时取配置默认值
-    let priority = data.priority;
-    if (priority === undefined || priority === null) {
-      priority = await this.config.getInt('default_priority', 5);
-    }
-    if (typeof priority !== 'number' || priority < 0 || priority > 10) {
-      throw new ValidationError('priority 必须为 0-10 之间的整数');
-    }
-
-    // 最大重试次数：从配置读取
+    const priority = await this.resolvePriority(data!.priority);
     const maxRetries = await this.config.getInt('default_max_retries', 3);
-
     const id = IdGenerator.generate();
-    const now = IdGenerator.now();
 
-    const dataObjects: DataObject[] = [
-      { field: 'id', value: id },
-      { field: 'created', value: now },
-      { field: 'updated', value: now },
-      { field: 'queue', value: data.queue },
-      { field: 'payload', value: JSON.stringify(data.payload) },
-      { field: 'priority', value: priority },
-      { field: 'status', value: MESSAGE_STATUS_PENDING },
-      { field: 'retry_count', value: 0 },
-      { field: 'max_retries', value: maxRetries },
-    ];
-
-    await this.relationDb.insert(QUEUE_MESSAGE_TABLE, dataObjects);
+    await this.relationDb.insert(
+      QUEUE_MESSAGE_TABLE,
+      newRecord({
+        id,
+        queue: data!.queue,
+        payload: JSON.stringify(data!.payload),
+        priority,
+        status: MESSAGE_STATUS_PENDING,
+        retry_count: 0,
+        max_retries: maxRetries,
+      }),
+    );
     output.id = id;
     return true;
+  }
+
+  /**
+   * 解析消息优先级：未指定时回退配置默认值，并做 0-10 范围校验。
+   */
+  private async resolvePriority(priority: number | null | undefined): Promise<number> {
+    const resolved = priority ?? await this.config.getInt('default_priority', 5);
+    validatePriority(resolved);
+    return resolved;
   }
 
   /**
@@ -227,10 +210,7 @@ export class MQService {
    * 按优先级降序、创建时间升序获取一条 PENDING 状态的消息，
    * 将状态更新为 PROCESSING，返回消息内容。
    */
-  async consumeMQ(
-    input: ConsumeMQInput,
-    _context: MQContext,
-    output: ConsumeMQOutput,
+  async consumeMQ(input: ConsumeMQInput, output: ConsumeMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -287,10 +267,7 @@ export class MQService {
    *
    * PRD 3.1.3 条：确认消息已处理完成，将状态更新为 COMPLETED 并记录处理完成时间。
    */
-  async ackMQ(
-    input: AckMQInput,
-    _context: MQContext,
-    output: AckMQOutput,
+  async ackMQ(input: AckMQInput, output: AckMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -324,10 +301,7 @@ export class MQService {
    * 若 retry_count < max_retries，递增 retry_count 并将状态回退为 PENDING；
    * 否则将状态更新为 FAILED。
    */
-  async nackMQ(
-    input: NackMQInput,
-    _context: MQContext,
-    output: NackMQOutput,
+  async nackMQ(input: NackMQInput, output: NackMQOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 
@@ -403,15 +377,12 @@ export class MQService {
   // -------------------------------------------------------------------------
 
   /**
-   * 获取队列统计（getQueueStats）。
+   * 获取队列统计（soQueueStats）。
    *
    * PRD 3.2.1 条：统计 queue_message 表中各状态（PENDING/PROCESSING/COMPLETED/FAILED）
    * 的消息数量。queue 不指定则返回所有队列统计。
    */
-  async getQueueStats(
-    input: GetQueueStatsInput,
-    _context: MQContext,
-    output: GetQueueStatsOutput,
+  async soQueueStats(input: GetQueueStatsInput, output: GetQueueStatsOutput, _context: MQContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     this.ensureEnabled();
 

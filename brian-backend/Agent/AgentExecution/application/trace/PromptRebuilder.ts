@@ -85,10 +85,10 @@ export class PromptRebuilder {
     if (!soulId) return '';
     try {
       const out = new GetSoulOutput();
-      await this.soulAccess.getSoul(
+      await this.soulAccess.soSoulById(
         Object.assign(new GetSoulInput(), { id: soulId }),
-        new SoulContext(),
         out,
+        new SoulContext(),
       );
       return out.soul?.soul_content ?? out.soul?.soul_brief ?? '';
     } catch {
@@ -100,8 +100,8 @@ export class PromptRebuilder {
     const out = new ExecPromptOutput();
     const ok = await this.promptsAccess.execPrompt(
       Object.assign(new ExecPromptInput(), { id: templateId, variables }),
-      new PromptContext(),
       out,
+      new PromptContext(),
     );
     return ok && out.prompt ? out.prompt : '';
   }

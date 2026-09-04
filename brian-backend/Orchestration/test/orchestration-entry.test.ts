@@ -1,3 +1,4 @@
+import { Metrics, Report } from '@brian-agent/base';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb, setupTestMocks, resetTestMocks, createMockStrategyAccess, createMockExecutionAccess, createMockInfoCore, createMockWriterAgent, createMockLLMAccess, createMockPromptsAccess, createMockMQAccess, createMockMQCore, createMockLogger, initOrchestrationSchema } from './test-helpers';
 import { RelationDBAccess, IdGenerator, Operator, DBContext, SelectOneDBInput, SelectOneDBOutput, SelectDBInput, SelectDBOutput } from '@brian-agent/base';
@@ -58,7 +59,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
 
       expect(result).toBe(true);
       expect(output.work_id).toBeTruthy();
@@ -69,7 +70,7 @@ describe('OrchestrationEntry', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: output.work_id }] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       expect(selOutput.row).toBeTruthy();
       expect(selOutput.row!.status).toBe('COMPLETED');
     });
@@ -79,7 +80,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
       expect(output.work_id).toBeTruthy();
     });
@@ -92,7 +93,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
       expect(output.orchestration_strategy).toBe('SIMPLE');
     });
@@ -104,7 +105,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
       expect(output.orchestration_strategy).toBe('PLANNING');
     });
@@ -117,7 +118,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -126,7 +127,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -135,7 +136,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -146,7 +147,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       expect(output.orchestration_strategy).toBe('INVALID');
     });
 
@@ -156,7 +157,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWork(input, ctx, output);
+      const result = await entry.receiveWork(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -165,12 +166,12 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
 
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_work', conditions: [{ field: 'work_id', operator: Operator.EQ, value: output.work_id }] },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       expect(selOutput.row!.status).toBe('COMPLETED');
     });
 
@@ -185,7 +186,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       const startCall = (strategyAccess.startOrchestration as any).mock.calls[0];
       expect(startCall[0].citing_msg_ids).toEqual(['info-1', 'info-2']);
       expect(startCall[0].info_type).toBe('REQUEST');
@@ -203,7 +204,7 @@ describe('OrchestrationEntry', () => {
       const output = new SelectOrchestrationStrategyOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.selectOrchestrationStrategy(input, ctx, output);
+      const result = await entry.selectOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategy).toBeTruthy();
     });
@@ -215,7 +216,7 @@ describe('OrchestrationEntry', () => {
       const output = new SelectOrchestrationStrategyOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.selectOrchestrationStrategy(input, ctx, output);
+      const result = await entry.selectOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -224,7 +225,7 @@ describe('OrchestrationEntry', () => {
       const output = new SelectOrchestrationStrategyOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.selectOrchestrationStrategy(input, ctx, output);
+      const result = await entry.selectOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategy).toBe('SIMPLE');
       expect(output.reason).toBeTruthy();
@@ -235,7 +236,7 @@ describe('OrchestrationEntry', () => {
       const output = new SelectOrchestrationStrategyOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.selectOrchestrationStrategy(input, ctx, output);
+      const result = await entry.selectOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategy).toBe('SIMPLE');
       expect(output.complexity).toBeLessThan(50);
@@ -250,7 +251,7 @@ describe('OrchestrationEntry', () => {
       const output = new SelectOrchestrationStrategyOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.selectOrchestrationStrategy(input, ctx, output);
+      const result = await entry.selectOrchestrationStrategy(input, output, ctx);
       expect(result).toBe(true);
       expect(output.strategy).toBe('PLANNING');
       expect(output.complexity).toBeGreaterThanOrEqual(50);
@@ -271,7 +272,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkAsyncOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWorkAsync(input, ctx, output);
+      const result = await entry.receiveWorkAsync(input, output, ctx);
       expect(result).toBe(true);
       expect(output.work_id).toBeTruthy();
       expect(output.interact_id).toBeTruthy();
@@ -283,7 +284,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkAsyncOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWorkAsync(input, ctx, output);
+      const result = await entry.receiveWorkAsync(input, output, ctx);
       expect(result).toBe(true);
       expect(output.job_id).toBeTruthy();
     });
@@ -293,7 +294,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkAsyncOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWorkAsync(input, ctx, output);
+      const result = await entry.receiveWorkAsync(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -304,7 +305,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkAsyncOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.receiveWorkAsync(input, ctx, output);
+      const result = await entry.receiveWorkAsync(input, output, ctx);
       expect(result).toBe(true);
     });
   });
@@ -320,7 +321,7 @@ describe('OrchestrationEntry', () => {
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(true);
       expect(output.work_context).toBeTruthy();
       expect(output.work_context.work_id).toBe('w1');
@@ -337,32 +338,32 @@ describe('OrchestrationEntry', () => {
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(true);
       expect(output.work_context.recent_works).toEqual([]);
     });
 
     it('TC-BWC-003: 无用户画像时构建上下文', async () => {
-      writerAgent.getUserProfile.mockImplementationOnce(async (_i: any, _c: any, o: any) => { o.user_profile = null; return true; });
+      writerAgent.soUserProfile.mockImplementationOnce(async (_i: any, o: any, _c: any, ) => { o.user_profile = null; return true; });
       const input = Object.assign(new BuildWorkContextInput(), {
         session_id: 's17', work_id: 'w3', user_query: '你好',
       });
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(true);
     });
 
-    it('TC-BWC-006: WriterAgent.getUserProfile 调用失败', async () => {
-      writerAgent.getUserProfile.mockRejectedValueOnce(new Error('profile failed'));
+    it('TC-BWC-006: WriterAgent.soUserProfile 调用失败', async () => {
+      writerAgent.soUserProfile.mockRejectedValueOnce(new Error('profile failed'));
       const input = Object.assign(new BuildWorkContextInput(), {
         session_id: 's18', work_id: 'w4', user_query: '你好',
       });
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -371,7 +372,7 @@ describe('OrchestrationEntry', () => {
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -380,7 +381,7 @@ describe('OrchestrationEntry', () => {
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.buildWorkContext(input, ctx, output);
+      const result = await entry.buildWorkContext(input, output, ctx);
       expect(result).toBe(false);
     });
 
@@ -391,26 +392,26 @@ describe('OrchestrationEntry', () => {
       const output = new BuildWorkContextOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.buildWorkContext(input, ctx, output);
+      await entry.buildWorkContext(input, output, ctx);
       const meta = output.work_context.metadata as Record<string, unknown>;
       expect(meta.orchestration_version).toBe('1.0');
     });
   });
 
   // =========================================================================
-  // 5. getWorkStatus
+  // 5. soWorkStatus
   // =========================================================================
-  describe('getWorkStatus', () => {
+  describe('soWorkStatus', () => {
     it('TC-GWS-001: 按 work_id 查询单个 work', async () => {
       const rwInput = Object.assign(new ReceiveWorkInput(), { session_id: 's21', user_query: '你好' });
       const rwOutput = new ReceiveWorkOutput();
-      await entry.receiveWork(rwInput, new OrchestrationEntryContext(), rwOutput);
+      await entry.receiveWork(rwInput, rwOutput, new OrchestrationEntryContext());
 
       const input = Object.assign(new GetWorkStatusInput(), { work_id: rwOutput.work_id });
       const output = new GetWorkStatusOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.getWorkStatus(input, ctx, output);
+      const result = await entry.soWorkStatus(input, output, ctx);
       expect(result).toBe(true);
       expect(output.works.length).toBe(1);
       expect(output.works[0].work_id).toBe(rwOutput.work_id);
@@ -419,13 +420,13 @@ describe('OrchestrationEntry', () => {
     it('TC-GWS-002: 按 session_id 查询所有 work', async () => {
       const rwInput = Object.assign(new ReceiveWorkInput(), { session_id: 's22', user_query: '问题1' });
       const rwOutput = new ReceiveWorkOutput();
-      await entry.receiveWork(rwInput, new OrchestrationEntryContext(), rwOutput);
+      await entry.receiveWork(rwInput, rwOutput, new OrchestrationEntryContext());
 
       const input = Object.assign(new GetWorkStatusInput(), { session_id: 's22' });
       const output = new GetWorkStatusOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.getWorkStatus(input, ctx, output);
+      const result = await entry.soWorkStatus(input, output, ctx);
       expect(result).toBe(true);
       expect(output.works.length).toBeGreaterThanOrEqual(1);
     });
@@ -435,7 +436,7 @@ describe('OrchestrationEntry', () => {
       const output = new GetWorkStatusOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.getWorkStatus(input, ctx, output);
+      const result = await entry.soWorkStatus(input, output, ctx);
       expect(result).toBe(true);
       output.works.forEach(w => expect(w.status).toBe('COMPLETED'));
     });
@@ -445,7 +446,7 @@ describe('OrchestrationEntry', () => {
       const output = new GetWorkStatusOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.getWorkStatus(input, ctx, output);
+      const result = await entry.soWorkStatus(input, output, ctx);
       expect(result).toBe(true);
       expect(output.works).toEqual([]);
     });
@@ -453,13 +454,13 @@ describe('OrchestrationEntry', () => {
     it('TC-GWS-006: 返回字段完整性', async () => {
       const rwInput = Object.assign(new ReceiveWorkInput(), { session_id: 's23', user_query: '你好' });
       const rwOutput = new ReceiveWorkOutput();
-      await entry.receiveWork(rwInput, new OrchestrationEntryContext(), rwOutput);
+      await entry.receiveWork(rwInput, rwOutput, new OrchestrationEntryContext());
 
       const input = Object.assign(new GetWorkStatusInput(), { work_id: rwOutput.work_id });
       const output = new GetWorkStatusOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.getWorkStatus(input, ctx, output);
+      await entry.soWorkStatus(input, output, ctx);
       const work = output.works[0];
       expect(work.work_id).toBeDefined();
       expect(work.interact_id).toBeDefined();
@@ -481,13 +482,13 @@ describe('OrchestrationEntry', () => {
     it('TC-CW-001: 取消正在执行的 work', async () => {
       const rwInput = Object.assign(new ReceiveWorkInput(), { session_id: 's24', user_query: '你好' });
       const rwOutput = new ReceiveWorkOutput();
-      await entry.receiveWork(rwInput, new OrchestrationEntryContext(), rwOutput);
+      await entry.receiveWork(rwInput, rwOutput, new OrchestrationEntryContext());
 
       const input = Object.assign(new CancelWorkInput(), { work_id: rwOutput.work_id, reason: '用户主动取消' });
       const output = new CancelWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.cancelWork(input, ctx, output);
+      const result = await entry.cancelWork(input, output, ctx);
       expect(result).toBe(false);
       expect(output.cancelled).toBe(false);
     });
@@ -497,7 +498,7 @@ describe('OrchestrationEntry', () => {
       const output = new CancelWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.cancelWork(input, ctx, output)).rejects.toThrow();
+      await expect(entry.cancelWork(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -510,7 +511,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
       expect(output.config).toBeTruthy();
     });
@@ -520,7 +521,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -529,7 +530,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -538,7 +539,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -547,7 +548,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -556,7 +557,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -565,7 +566,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.configOrchestrationEntry(input, ctx, output)).rejects.toThrow();
+      await expect(entry.configOrchestrationEntry(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-CONF-008: complexity_decompose_threshold 为负数', async () => {
@@ -573,7 +574,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.configOrchestrationEntry(input, ctx, output)).rejects.toThrow();
+      await expect(entry.configOrchestrationEntry(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-CONF-009: complexity_decompose_threshold 为边界值 0', async () => {
@@ -581,7 +582,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -590,7 +591,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      const result = await entry.configOrchestrationEntry(input, ctx, output);
+      const result = await entry.configOrchestrationEntry(input, output, ctx);
       expect(result).toBe(true);
     });
 
@@ -599,7 +600,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.configOrchestrationEntry(input, ctx, output)).rejects.toThrow();
+      await expect(entry.configOrchestrationEntry(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-CONF-013: max_recent_works 为非正整数', async () => {
@@ -607,7 +608,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.configOrchestrationEntry(input, ctx, output)).rejects.toThrow();
+      await expect(entry.configOrchestrationEntry(input, output, ctx)).rejects.toThrow();
     });
 
     it('TC-CONF-015: async_worker_interval 为负数', async () => {
@@ -615,7 +616,7 @@ describe('OrchestrationEntry', () => {
       const output = new ConfigOrchestrationEntryOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await expect(entry.configOrchestrationEntry(input, ctx, output)).rejects.toThrow();
+      await expect(entry.configOrchestrationEntry(input, output, ctx)).rejects.toThrow();
     });
   });
 
@@ -628,7 +629,7 @@ describe('OrchestrationEntry', () => {
       const output = new ReceiveWorkOutput();
       const ctx = new OrchestrationEntryContext();
 
-      await entry.receiveWork(input, ctx, output);
+      await entry.receiveWork(input, output, ctx);
       expect(output.elapsed_ms).toBeDefined();
       expect(output.elapsed_ms!).toBeGreaterThanOrEqual(0);
     });
@@ -642,7 +643,7 @@ describe('OrchestrationEntry', () => {
       const selOutput = new SelectDBOutput();
       await db.selectDB(Object.assign(new SelectDBInput(), {
         query_param: { table: 'orchestration_work' },
-      }) as SelectDBInput, new DBContext(), selOutput);
+      }) as SelectDBInput, selOutput, new DBContext());
       expect(selOutput.rows.length).toBeGreaterThanOrEqual(0);
     });
 
@@ -650,7 +651,7 @@ describe('OrchestrationEntry', () => {
       const selOutput = new SelectOneDBOutput();
       await db.selectOneDB(Object.assign(new SelectOneDBInput(), {
         query_param: { table: 'orchestration_config' },
-      }) as SelectOneDBInput, new DBContext(), selOutput);
+      }) as SelectOneDBInput, selOutput, new DBContext());
       expect(selOutput.row).toBeTruthy();
     });
   });

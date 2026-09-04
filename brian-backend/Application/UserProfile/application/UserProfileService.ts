@@ -1,21 +1,12 @@
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
-import {
-  IdGenerator, Operator, Direction, ValidationError, DataObject as DataObjectType,
-  ExecLLMInput, ExecLLMOutput, LLMContext,
-  ExecPromptInput, ExecPromptOutput, PromptContext,
-  NotFoundError, JsonParser,
-  PROMPT_IDS, getBuiltinTemplate, renderTemplate,
-  type DataObject,
-} from '@brian-agent/base';
+import { IdGenerator, Operator, Direction, ValidationError, ExecLLMInput, ExecLLMOutput, LLMContext, ExecPromptInput, ExecPromptOutput, PromptContext, JsonParser, PROMPT_IDS, getBuiltinTemplate, renderTemplate, type DataObject } from '@brian-agent/base';
 import type { InfoCoreAccess, LLMCoreAccess } from '@brian-agent/core';
 import {
   LastNInfoInput, LastNInfoOutput, RelationKInfoInput, RelationKInfoOutput, InfoCoreContext,
   SoCitationEdgesInput, SoCitationEdgesOutput,
 } from '@brian-agent/core';
-import {
-  MatchLLMInput, MatchLLMOutput, CheckLLMQuotaInput, CheckLLMQuotaOutput,
-  RecordLLMUsageInput, RecordLLMUsageOutput, LLMCoreContext,
-} from '@brian-agent/core';
+import { MatchLLMInput, MatchLLMOutput, RecordLLMUsageInput, RecordLLMUsageOutput, LLMCoreContext } from '@brian-agent/core';
 import type { WriterAgentAccess } from '@brian-agent/agent';
 import {
   SaveUserProfileInput, SaveUserProfileOutput, GetUserProfileInput as WriterGetUserProfileInput,
@@ -59,10 +50,7 @@ export class UserProfileService {
     private readonly logger?: { error?: (msg: string, meta?: Record<string, unknown>) => void },
   ) {}
 
-  async configProfileDirection(
-    input: ConfigProfileDirectionInput,
-    _ctx: UserProfileContext,
-    _output: ConfigProfileDirectionOutput,
+  async configProfileDirection(input: ConfigProfileDirectionInput, _output: ConfigProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     for (const dir of input.directions) {
       const existing = await this.relationDb.selectOne(USER_PROFILE_DIRECTION_TABLE, [
@@ -104,10 +92,7 @@ export class UserProfileService {
     return true;
   }
 
-  async deleteProfileDirection(
-    input: DeleteProfileDirectionInput,
-    _ctx: UserProfileContext,
-    _output: DeleteProfileDirectionOutput,
+  async deleteProfileDirection(input: DeleteProfileDirectionInput, _output: DeleteProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     await this.relationDb.delete(USER_PROFILE_DIRECTION_TABLE, [
       { field: 'direction_key', operator: Operator.EQ, value: input.direction_key },
@@ -115,10 +100,7 @@ export class UserProfileService {
     return true;
   }
 
-  async getProfileDirection(
-    _input: GetProfileDirectionInput,
-    _ctx: UserProfileContext,
-    output: GetProfileDirectionOutput,
+  async soProfileDirection(_input: GetProfileDirectionInput, output: GetProfileDirectionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const rows = await this.queryTable(USER_PROFILE_DIRECTION_TABLE, [], [
       { field: 'weight', direction: Direction.DESC },
@@ -127,10 +109,7 @@ export class UserProfileService {
     return true;
   }
 
-  async getUserProfile(
-    input: GetUserProfileInput,
-    _ctx: UserProfileContext,
-    output: GetUserProfileOutput,
+  async soUserProfile(input: GetUserProfileInput, output: GetUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sessionId = input.session_id;
     output.session_id = sessionId;
@@ -139,10 +118,10 @@ export class UserProfileService {
     if (sessionId) {
       try {
         const wo = new WriterGetUserProfileOutput();
-        await this.writerAgent.getUserProfile(
+        await this.writerAgent.soUserProfile(
           Object.assign(new WriterGetUserProfileInput(), { session_id: sessionId }),
-          new WriterAgentContext(),
           wo,
+          new WriterAgentContext(),
         );
         writerPreferences = wo.user_profile;
       } catch { /* best-effort */ }
@@ -169,14 +148,14 @@ export class UserProfileService {
     const dimensions: Record<string, unknown> = {};
     const now = IdGenerator.now();
 
-    // 读取最低置信度阈值，与 getProfileByVersion 保持一致，过滤低置信度维度
+    // 读取最低置信度阈值，与 soProfileByVersion 保持一致，过滤低置信度维度
     const profileConfig = await this.getConfig();
     const minConfidence = Number(profileConfig.min_confidence_threshold ?? 0.5);
 
     // 前一个已生成版本的维度数据，用于计算每个维度的稳定性（stable/drifting/emerging）
     const prevVersionDimensions = await this.loadPrevVersionDimensions(sessionId, latestRecord);
 
-    // 最新版本已生成的 LLM 分析维度（与 generateProfile / getProfileByVersion 同一数据源）
+    // 最新版本已生成的 LLM 分析维度（与 generateProfile / soProfileByVersion 同一数据源）
     const storedDimensions = latestRecord
       ? await this.loadStoredDimensions(String(latestRecord.id))
       : {};
@@ -232,10 +211,7 @@ export class UserProfileService {
     return true;
   }
 
-  async generateProfile(
-    input: GenerateProfileInput,
-    _ctx: UserProfileContext,
-    output: GenerateProfileOutput,
+  async generateProfile(input: GenerateProfileInput, output: GenerateProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const sessionId = input.session_id;
     const config = await this.getConfig();
@@ -259,8 +235,8 @@ export class UserProfileService {
           session_id: sessionId,
           lastN: maxSampleCount,
         }),
-        new InfoCoreContext(),
         lastNOut,
+        new InfoCoreContext(),
       );
     } catch { /* best-effort */ }
 
@@ -338,8 +314,8 @@ export class UserProfileService {
         const saveOut = new SaveUserProfileOutput();
         await this.writerAgent.saveUserProfile(
           Object.assign(new SaveUserProfileInput(), { session_id: sessionId }),
-          new WriterAgentContext(),
           saveOut,
+          new WriterAgentContext(),
         );
       } catch { /* best-effort */ }
     }
@@ -363,10 +339,7 @@ export class UserProfileService {
     return true;
   }
 
-  async saveUserPreference(
-    input: SaveUserPreferenceInput,
-    _ctx: UserProfileContext,
-    _output: SaveUserPreferenceOutput,
+  async saveUserPreference(input: SaveUserPreferenceInput, _output: SaveUserPreferenceOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.session_id) {
       throw new ValidationError('session_id is required');
@@ -404,16 +377,13 @@ export class UserProfileService {
         format: input.format,
         additional_preferences: input.additional_preferences,
       }),
-      new WriterAgentContext(),
       saveOut,
+      new WriterAgentContext(),
     );
     return true;
   }
 
-  async getProfileHistory(
-    input: GetProfileHistoryInput,
-    _ctx: UserProfileContext,
-    output: GetProfileHistoryOutput,
+  async soProfileHistory(input: GetProfileHistoryInput, output: GetProfileHistoryOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const limit = input.limit ?? 20;
     const conditions = input.session_id
@@ -436,10 +406,7 @@ export class UserProfileService {
     return true;
   }
 
-  async getProfileByVersion(
-    input: GetProfileByVersionInput,
-    _ctx: UserProfileContext,
-    output: GetProfileByVersionOutput,
+  async soProfileByVersion(input: GetProfileByVersionInput, output: GetProfileByVersionOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = input.session_id
       ? [
@@ -494,10 +461,7 @@ export class UserProfileService {
     return true;
   }
 
-  async resetUserProfile(
-    input: ResetUserProfileInput,
-    _ctx: UserProfileContext,
-    output: ResetUserProfileOutput,
+  async resetUserProfile(input: ResetUserProfileInput, output: ResetUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const conditions = input.session_id
       ? [{ field: 'session_id', operator: Operator.EQ, value: input.session_id }]
@@ -520,10 +484,7 @@ export class UserProfileService {
     return true;
   }
 
-  async configUserProfile(
-    input: ConfigUserProfileInput,
-    _ctx: UserProfileContext,
-    output: ConfigUserProfileOutput,
+  async configUserProfile(input: ConfigUserProfileInput, output: ConfigUserProfileOutput, _ctx: UserProfileContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     let config = await this.getConfigRecord();
     const now = IdGenerator.now();
@@ -621,8 +582,8 @@ export class UserProfileService {
     try {
       await this.generateProfile(
         Object.assign(new GenerateProfileInput(), { session_id: undefined }),
-        new UserProfileContext(),
         new GenerateProfileOutput(),
+        new UserProfileContext(),
       );
     } finally {
       this.autoGenerating = false;
@@ -819,10 +780,14 @@ export class UserProfileService {
       try { value = JSON.parse(String(d.dimension_value ?? 'null')); } catch { value = d.dimension_value; }
       try { evidence = JSON.parse(String(d.evidence ?? '[]')); } catch { evidence = d.evidence; }
 
+      const fallbackEvidence = [{ source: 'generated_profile', version: latestRecord.version }];
+      const evidenceList = Array.isArray(evidence) && evidence.length > 0
+        ? (evidence as Array<Record<string, unknown>>)
+        : fallbackEvidence;
       return {
         value,
         confidence: Number(d.confidence),
-        evidence: [{ source: 'generated_profile', version: latestRecord.version }],
+        evidence: evidenceList,
       };
     } catch {
       return { value: null, confidence: 0, evidence: [{ source: 'error' }] };
@@ -836,7 +801,7 @@ export class UserProfileService {
     } | null,
   ): Promise<{ value: unknown; confidence: number; evidence: Array<Record<string, unknown>> }> {
     const evidence: Array<Record<string, unknown>> = [];
-    let value: unknown = writerPreferences?.language ?? 'zh-CN';
+    const value: unknown = writerPreferences?.language ?? 'zh-CN';
 
     if (writerPreferences?.language) {
       evidence.push({ source: 'writer_agent', type: 'explicit', value: writerPreferences.language });
@@ -847,8 +812,8 @@ export class UserProfileService {
         const out = new LastNInfoOutput();
         await this.infoCore.lastNInfo(
           Object.assign(new LastNInfoInput(), { session_id: sessionId, lastN: 50 }),
-          new InfoCoreContext(),
           out,
+          new InfoCoreContext(),
         );
         if (out.list?.length > 0) {
           const sample = out.list.slice(0, 5).map((r) => r.info).join(' ');
@@ -893,8 +858,8 @@ export class UserProfileService {
         const nOut = new LastNInfoOutput();
         await this.infoCore.lastNInfo(
           Object.assign(new LastNInfoInput(), { session_id: sessionId, lastN: 50 }),
-          new InfoCoreContext(),
           nOut,
+          new InfoCoreContext(),
         );
         if (nOut.list?.length > 0) {
           const firstInfoId = nOut.list[0].info_id;
@@ -902,8 +867,8 @@ export class UserProfileService {
             const rOut = new RelationKInfoOutput();
             await this.infoCore.relationKInfo(
               Object.assign(new RelationKInfoInput(), { info_id: firstInfoId, topN: 10 }),
-              new InfoCoreContext(),
               rOut,
+              new InfoCoreContext(),
             );
             evidence.push({ source: 'relation_k_info', count: rOut.list?.length ?? 0 });
           }
@@ -953,7 +918,7 @@ export class UserProfileService {
 
       try {
         const citeOut = new SoCitationEdgesOutput();
-        await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { session_id: sessionId }), new InfoCoreContext(), citeOut);
+        await this.infoCore.soCitationEdges(Object.assign(new SoCitationEdgesInput(), { session_id: sessionId }), citeOut, new InfoCoreContext());
         citingFrequency = citeOut.edges.length;
         evidence.push({ source: 'graph_citation', citing_count: citingFrequency });
       } catch { /* best-effort */ }
@@ -972,7 +937,7 @@ export class UserProfileService {
     try {
       const evalOut = new GetEvaluationOutput();
       const evalIn = Object.assign(new GetEvaluationInput(), {});
-      await this.evolutorAgent.getEvaluation(evalIn, new EvolutorAgentContext(), evalOut);
+      await this.evolutorAgent.soEvaluation(evalIn, evalOut, new EvolutorAgentContext());
       const evaluations = (evalOut as any).evaluations ?? [];
       evaluationCount = evaluations.length;
       if (evaluationCount > 0) {
@@ -1068,8 +1033,8 @@ export class UserProfileService {
             context_id: 'user_profile',
             interact_id: IdGenerator.generate(),
           }),
-          new LLMCoreContext(),
           matchOut,
+          new LLMCoreContext(),
         );
         llmId = matchOut.llm_id || '';
       }
@@ -1088,8 +1053,8 @@ export class UserProfileService {
           temperature,
           max_tokens: maxTokens,
         }),
-        new LLMContext(),
         llmOut,
+        new LLMContext(),
       );
 
       try {
@@ -1100,8 +1065,8 @@ export class UserProfileService {
             tokens_used: estimatedTokens,
             call_count: 1,
           }),
-          new LLMCoreContext(),
           new RecordLLMUsageOutput(),
+          new LLMCoreContext(),
         );
       } catch {
         /* best-effort usage recording */
@@ -1141,8 +1106,8 @@ export class UserProfileService {
       const promptOut = new ExecPromptOutput();
       await this.promptsAccess.execPrompt(
         Object.assign(new ExecPromptInput(), { id, variables }),
-        new PromptContext(),
         promptOut,
+        new PromptContext(),
       );
       if (promptOut.prompt) return promptOut.prompt;
     } catch { /* use fallback */ }

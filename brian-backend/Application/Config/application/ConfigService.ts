@@ -8,10 +8,12 @@
  * 4. Base 资源管理代理（LLM/Soul/Skill/MCP/Prompt）
  */
 
-import type { RelationDBAccess, Logger, IdGenerator, CronAccess } from '@brian-agent/base';
+import { Metrics, Report } from '@brian-agent/base';
+import type { RelationDBAccess, CronAccess } from '@brian-agent/base';
+import { IdGenerator } from '@brian-agent/base';
 import { GetCronTaskInput, GetCronTaskOutput, CronContext, SetCronTaskInput, SetCronTaskOutput } from '@brian-agent/base';
 import { Operator, ValidationError, NotFoundError } from '@brian-agent/base';
-import type { DataObject, Condition } from '@brian-agent/base';
+import type { DataObject } from '@brian-agent/base';
 import {
   ConfigService as BaseConfigService,
   LLM_CONFIG_TABLE,
@@ -35,20 +37,8 @@ import {
   SoInfoTagConfigOutput, SoInfoSummaryConfigOutput, SoInfoConfigOutput,
   SoInfoVectorConfigOutput, SoInfoContextConfigOutput,
 } from '@brian-agent/core';
-import type {
-  ConfigLLMCoreInput, LLMCoreContext,
-  LimitLLMInput, LimitLLMOutput, CheckLLMQuotaInput, CheckLLMQuotaOutput,
-} from '@brian-agent/core';
-import type {
-  UpdateInfoTagConfigInput, UpdateInfoTagConfigOutput,
-  UpdateInfoSummaryConfigInput, UpdateInfoSummaryConfigOutput,
-  UpdateInfoConfigInput, UpdateInfoConfigOutput,
-  UpdateInfoVectorConfigInput, UpdateInfoVectorConfigOutput,
-  UpdateInfoContextConfigInput, UpdateInfoContextConfigOutput,
-  SoInfoTagConfigInput, SoInfoSummaryConfigInput,
-  SoInfoConfigInput, SoInfoVectorConfigInput, SoInfoContextConfigInput,
-  InfoCoreContext,
-} from '@brian-agent/core';
+import type { ConfigLLMCoreInput, LLMCoreContext } from '@brian-agent/core';
+import type { SoInfoTagConfigInput, SoInfoSummaryConfigInput, SoInfoConfigInput, SoInfoVectorConfigInput, SoInfoContextConfigInput, InfoCoreContext } from '@brian-agent/core';
 import type {
   ConfigMcpCoreInput, McpCoreContext,
 } from '@brian-agent/core';
@@ -69,57 +59,14 @@ import type {
   PlannerAgentAccess,
 } from '@brian-agent/agent';
 import type {
-  ConfigWriterAgentInput, ConfigWriterAgentOutput, WriterAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigEvolutorAgentInput, ConfigEvolutorAgentOutput, EvolutorAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigPlannerAgentInput, ConfigPlannerAgentOutput, PlannerAgentContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentLibraryInput, ConfigAgentLibraryOutput, AgentLibraryContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentBuilderInput, ConfigAgentBuilderOutput, AgentBuilderContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentExecutionInput, ConfigAgentExecutionOutput, AgentExecutionContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentStrategyInput, ConfigAgentStrategyOutput, AgentStrategyContext,
-} from '@brian-agent/agent';
-import type {
-  ConfigAgentContextInput, ConfigAgentContextOutput, AgentContextContext,
-} from '@brian-agent/agent';
-
-import type {
   OrchestrationEntryAccess, OrchestrationStrategyAccess,
   OrchestrationExecutionAccess, OrchestrationVisualizationAccess, JSONNodeAccess,
 } from '@brian-agent/orchestration';
 import type {
-  ConfigOrchestrationEntryInput, ConfigOrchestrationEntryOutput, OrchestrationEntryContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationStrategyInput, ConfigOrchestrationStrategyOutput, OrchestrationStrategyContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationExecutionInput, ConfigOrchestrationExecutionOutput, OrchestrationExecutionContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigOrchestrationVisualizationInput, ConfigOrchestrationVisualizationOutput, OrchestrationVisualizationContext,
-} from '@brian-agent/orchestration';
-import type {
-  ConfigJSONNodeInput, ConfigJSONNodeOutput, JSONNodeContext,
-} from '@brian-agent/orchestration';
-
-import type {
   LLMAccess, SoulAccess, SkillAccess, MCPAccess, PromptsAccess, LogAccess,
   MQAccess, GraphDBAccess, VectorDBAccess,
 } from '@brian-agent/base';
-import type {
-  ConfigLogInput, ConfigLogOutput, LogContext,
-} from '@brian-agent/base';
+import type { ConfigLogInput, LogContext } from '@brian-agent/base';
 import type {
   AddLLMProviderInput, AddLLMProviderOutput, UpdateLLMProviderInput, UpdateLLMProviderOutput,
   DelLLMProviderInput, DelLLMProviderOutput, SoLLMProviderInput, SoLLMProviderOutput,
@@ -154,8 +101,6 @@ import type {
   PromptContext,
 } from '@brian-agent/base';
 import { PROMPT_SLOTS } from '@brian-agent/base';
-
-import type { Input, Context, Output } from '@brian-agent/base';
 
 import {
   ConfigContext,
@@ -307,10 +252,7 @@ export class ConfigService {
   // updateLayerPrivilege
   // =========================================================================
 
-  async updateLayerPrivilege(
-    input: UpdateLayerPrivilegeInput,
-    _context: ConfigContext,
-    output: UpdateLayerPrivilegeOutput,
+  async updateLayerPrivilege(input: UpdateLayerPrivilegeInput, output: UpdateLayerPrivilegeOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.layer || !VALID_LAYERS.includes(input.layer as any)) {
       throw new ValidationError(`layer 必须是 ${VALID_LAYERS.join('/')} 之一`);
@@ -352,10 +294,7 @@ export class ConfigService {
   // updateModulePrivilege
   // =========================================================================
 
-  async updateModulePrivilege(
-    input: UpdateModulePrivilegeInput,
-    _context: ConfigContext,
-    output: UpdateModulePrivilegeOutput,
+  async updateModulePrivilege(input: UpdateModulePrivilegeInput, output: UpdateModulePrivilegeOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.module) {
       throw new ValidationError('module 不能为空');
@@ -419,13 +358,10 @@ export class ConfigService {
   }
 
   // =========================================================================
-  // getConfigDetail
+  // soConfigDetail
   // =========================================================================
 
-  async getConfigDetail(
-    input: GetConfigDetailInput,
-    _context: ConfigContext,
-    output: GetConfigDetailOutput,
+  async soConfigDetail(input: GetConfigDetailInput, output: GetConfigDetailOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const layerRows = await this.relationDb.select(CONFIG_LAYER_PRIVILEGE_TABLE);
     const moduleRows = await this.relationDb.select(CONFIG_MODULE_PRIVILEGE_TABLE);
@@ -551,13 +487,10 @@ export class ConfigService {
   }
 
   // =========================================================================
-  // getConfigItem
+  // soConfigItem
   // =========================================================================
 
-  async getConfigItem(
-    input: GetConfigItemInput,
-    _context: ConfigContext,
-    output: GetConfigItemOutput,
+  async soConfigItem(input: GetConfigItemInput, output: GetConfigItemOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -615,10 +548,7 @@ export class ConfigService {
   // updateConfig
   // =========================================================================
 
-  async updateConfig(
-    input: UpdateConfigInput,
-    _context: ConfigContext,
-    output: UpdateConfigOutput,
+  async updateConfig(input: UpdateConfigInput, _output: UpdateConfigOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.config_key) {
       throw new ValidationError('config_key 不能为空');
@@ -662,10 +592,7 @@ export class ConfigService {
   // configConfig (self-config)
   // =========================================================================
 
-  async configConfig(
-    input: ConfigConfigInput,
-    _context: ConfigContext,
-    output: ConfigConfigOutput,
+  async configConfig(input: ConfigConfigInput, output: ConfigConfigOutput, _context: ConfigContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     const existing = await this.relationDb.selectOne(CONFIG_CONFIG_TABLE, []);
     const now = Date.now();
@@ -703,7 +630,6 @@ export class ConfigService {
   // =========================================================================
 
   private generateId(): string {
-    const { IdGenerator } = require('@brian-agent/base');
     return IdGenerator.generate();
   }
 
@@ -857,54 +783,54 @@ export class ConfigService {
     }
     if (configKey.startsWith('log_provider.')) {
       const out: any = {};
-      await this.logAccess.configLog({} as ConfigLogInput, {} as LogContext, out);
+      await this.logAccess.configLog({} as ConfigLogInput, out, {} as LogContext);
       const cfg = (out.config ?? {}) as Record<string, unknown>;
       const field = configKey.split('.').pop() ?? '';
       return field ? (cfg[field] ?? null) : null;
     }
     if (configKey.startsWith('info_core.tag_config.')) {
       const out = new SoInfoTagConfigOutput();
-      await this.infoCore.soInfoTagConfig({} as SoInfoTagConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoTagConfig({} as SoInfoTagConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'tag_config', configKey);
     }
     if (configKey.startsWith('info_core.summary_config.')) {
       const out = new SoInfoSummaryConfigOutput();
-      await this.infoCore.soInfoSummaryConfig({} as SoInfoSummaryConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoSummaryConfig({} as SoInfoSummaryConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'summary_config', configKey);
     }
     if (configKey.startsWith('info_core.vector_config.')) {
       const out = new SoInfoVectorConfigOutput();
-      await this.infoCore.soInfoVectorConfig({} as SoInfoVectorConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoVectorConfig({} as SoInfoVectorConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'vector_config', configKey);
     }
     if (configKey.startsWith('info_core.context_config.')) {
       const out = new SoInfoContextConfigOutput();
-      await this.infoCore.soInfoContextConfig({} as SoInfoContextConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoContextConfig({} as SoInfoContextConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'context_config', configKey);
     }
     if (configKey.startsWith('info_core.config.')) {
       const out = new SoInfoConfigOutput();
-      await this.infoCore.soInfoConfig({} as SoInfoConfigInput, {} as InfoCoreContext, out);
+      await this.infoCore.soInfoConfig({} as SoInfoConfigInput, out, {} as InfoCoreContext);
       return this.extractConfigValue(out, 'config', configKey);
     }
     if (configKey.startsWith('llm_core.')) {
       const out = new ConfigLLMCoreOutput();
-      await this.llmCore.configLLMCore({} as ConfigLLMCoreInput, {} as LLMCoreContext, out);
+      await this.llmCore.configLLMCore({} as ConfigLLMCoreInput, out, {} as LLMCoreContext);
       return this.extractConfigValue(out, 'llm_core', configKey);
     }
     if (configKey.startsWith('mcp_core.')) {
       const out = new ConfigMcpCoreOutput();
-      await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, {} as McpCoreContext, out);
+      await this.mcpCore.configMCPCore({} as ConfigMcpCoreInput, out, {} as McpCoreContext);
       return this.extractConfigValue(out, 'mcp_core', configKey);
     }
     if (configKey.startsWith('skill_core.regen_rate') || configKey.startsWith('skill_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
       const out = new ConfigSkillCoreOutput();
-      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, {} as SkillCoreContext, out);
+      await this.skillCore.configSkillCore({} as ConfigSkillCoreInput, out, {} as SkillCoreContext);
       return this.extractConfigValue(out, 'skill_core', configKey);
     }
     if (configKey.startsWith('skill_core.opt_rule')) {
       const out = new SoSkillRuleOutput();
-      await this.skillCore.soSkillRule({} as SoSkillRuleInput, {} as SkillCoreContext, out);
+      await this.skillCore.soSkillRule({} as SoSkillRuleInput, out, {} as SkillCoreContext);
       const first = (out.list ?? [])[0];
       if (!first) return null;
       const key = configKey.split('skill_core.opt_rule.')[1];
@@ -912,12 +838,12 @@ export class ConfigService {
     }
     if (configKey.startsWith('soul_core.regen_rate') || configKey.startsWith('soul_core.similarity_threshold') || configKey.startsWith(PROMPT_SLOTS.SOUL_MATCH) || configKey.startsWith('soul_core.llm_id')) {
       const out = new ConfigSoulCoreOutput();
-      await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, {} as SoulCoreContext, out);
+      await this.soulCore.configSoulCore({} as ConfigSoulCoreInput, out, {} as SoulCoreContext);
       return this.extractConfigValue(out, 'soul_core', configKey);
     }
     if (configKey.startsWith('soul_core.opt_rule')) {
       const out = new SoSoulRuleOutput();
-      await this.soulCore.soSoulRule({} as SoSoulRuleInput, {} as SoulCoreContext, out);
+      await this.soulCore.soSoulRule({} as SoSoulRuleInput, out, {} as SoulCoreContext);
       const first = (out.list ?? [])[0];
       if (!first) return null;
       const key = configKey.split('soul_core.opt_rule.')[1];
@@ -926,19 +852,19 @@ export class ConfigService {
     if (configKey.startsWith('planner_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'planner_agent',
-        (i: any, c: any, o: any) => this.plannerAgent.configPlannerAgent(i, c, o),
+        (i: any, c: any, o: any) => this.plannerAgent.configPlannerAgent(i, o, c),
       );
     }
     if (configKey.startsWith('writer_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'writer_agent',
-        (i: any, c: any, o: any) => this.writerAgent.configWriterAgent(i, c, o),
+        (i: any, c: any, o: any) => this.writerAgent.configWriterAgent(i, o, c),
       );
     }
     if (configKey.startsWith('evolutor_agent.')) {
       return this.getConfigFromAccess(
         configKey, 'evolutor_agent',
-        (i: any, c: any, o: any) => this.evolutorAgent.configEvolutorAgent(i, c, o),
+        (i: any, c: any, o: any) => this.evolutorAgent.configEvolutorAgent(i, o, c),
       );
     }
     if (configKey.startsWith('agent_context.')) {
@@ -950,25 +876,25 @@ export class ConfigService {
     if (configKey.startsWith('agent_library.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_library',
-        (i: any, c: any, o: any) => this.agentLibrary.configAgentLibrary(i, c, o),
+        (i: any, c: any, o: any) => this.agentLibrary.configAgentLibrary(i, o, c),
       );
     }
     if (configKey.startsWith('agent_builder.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_builder',
-        (i: any, c: any, o: any) => this.agentBuilder.configAgentBuilder(i, c, o),
+        (i: any, c: any, o: any) => this.agentBuilder.configAgentBuilder(i, o, c),
       );
     }
     if (configKey.startsWith('agent_execution.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_execution',
-        (i: any, c: any, o: any) => this.agentExecution.configAgentExecution(i, c, o),
+        (i: any, c: any, o: any) => this.agentExecution.configAgentExecution(i, o, c),
       );
     }
     if (configKey.startsWith('agent_strategy.')) {
       return this.getConfigFromAccess(
         configKey, 'agent_strategy',
-        (i: any, c: any, o: any) => this.agentStrategy.configAgentStrategy(i, c, o),
+        (i: any, c: any, o: any) => this.agentStrategy.configAgentStrategy(i, o, c),
       );
     }
     if (configKey.startsWith('orchestration.')) {
@@ -995,7 +921,7 @@ export class ConfigService {
     if (configKey.startsWith('chat.')) {
       return this.getConfigFromAccess(
         configKey, 'chat',
-        (i: any, c: any, o: any) => this.chatAccess.configChat(i, c, o),
+        (i: any, c: any, o: any) => this.chatAccess.configChat(i, o, c),
       );
     }
     if (configKey.startsWith('self_learning.')) {
@@ -1003,18 +929,18 @@ export class ConfigService {
       if (configKey === 'self_learning.tag_aging_cron' || configKey === 'self_learning.orphan_tag_check_cron') {
         const taskName = configKey === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
         const out = new GetCronTaskOutput();
-        await this.cronAccess.getCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), new CronContext(), out);
+        await this.cronAccess.soCronTask(Object.assign(new GetCronTaskInput(), { name: taskName }), out, new CronContext());
         return out.task ? out.task.cron : null;
       }
       return this.getConfigFromAccess(
         configKey, 'self_learning',
-        (i: any, c: any, o: any) => this.selfLearningAccess.configSelfLearning(i, c, o),
+        (i: any, c: any, o: any) => this.selfLearningAccess.configSelfLearning(i, o, c),
       );
     }
     if (configKey.startsWith('user_profile.')) {
       return this.getConfigFromAccess(
         configKey, 'user_profile',
-        (i: any, c: any, o: any) => this.userProfileAccess.configUserProfile(i, c, o),
+        (i: any, c: any, o: any) => this.userProfileAccess.configUserProfile(i, o, c),
       );
     }
     if (configKey.startsWith('visualization.')) {
@@ -1125,16 +1051,72 @@ export class ConfigService {
     }
   }
 
+  /** 配置写入路由表：按匹配顺序分发到对应分组的写入处理器 */
+  private readonly updateConfigRoutes: Array<[
+    (prefix: string) => boolean,
+    (prefix: string, value: unknown) => Promise<void>,
+  ]> = [
+    [(prefix) => prefix.startsWith('log_provider.'), (prefix, value) => this.writeLogProviderConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.LLM_MATCH), (prefix, value) => this.writeLLMCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('llm_core.quota_'), (prefix, value) => this.writeLLMCoreQuotaConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('mcp_core.'), (prefix, value) => this.writeMCPCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH), (prefix, value) => this.writeSkillCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('skill_core.opt_rule'), (prefix, value) => this.writeSkillOptRuleConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH) || prefix.startsWith('soul_core.llm_id'), (prefix, value) => this.writeSoulCoreConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('soul_core.opt_rule'), (prefix, value) => this.writeSoulOptRuleConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.tag_config.'), (prefix, value) => this.writeInfoTagConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.summary_config.'), (prefix, value) => this.writeInfoSummaryConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.vector_config.'), (prefix, value) => this.writeInfoVectorConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.context_config.'), (prefix, value) => this.writeInfoContextConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('info_core.config.'), (prefix, value) => this.writeInfoCoreConfigConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('planner_agent.'), (prefix, value) => this.writePlannerAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('writer_agent.'), (prefix, value) => this.writeWriterAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('evolutor_agent.'), (prefix, value) => this.writeEvolutorAgentConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_context.'), (prefix, value) => this.writeAgentContextConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_library.'), (prefix, value) => this.writeAgentLibraryConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_builder.'), (prefix, value) => this.writeAgentBuilderConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_execution.'), (prefix, value) => this.writeAgentExecutionConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('agent_strategy.'), (prefix, value) => this.writeAgentStrategyConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.entry'), (prefix, value) => this.writeOrchestrationEntryConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.strategy'), (prefix, value) => this.writeOrchestrationStrategyConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.execution'), (prefix, value) => this.writeOrchestrationExecutionConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.visualization'), (prefix, value) => this.writeOrchestrationVisualizationConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('orchestration.jsonnode'), (prefix, value) => this.writeOrchestrationJsonnodeConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('chat.'), (prefix, value) => this.writeChatConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('self_learning.'), (prefix, value) => this.writeSelfLearningConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('user_profile.'), (prefix, value) => this.writeUserProfileConfig(prefix, value)],
+    [(prefix) => prefix.startsWith('visualization.'), (prefix, value) => this.writeVisualizationConfig(prefix, value)],
+  ];
+
+  /**
+   * 配置写入路由：仅做前缀匹配与分发，字段映射在各 writeXxxConfig 处理器内。
+   *
+   * @param configKey 配置键
+   * @param value 配置值
+   * @throws ValidationError 当配置键未命中任何路由
+   */
   private async routeUpdateConfig(configKey: string, value: unknown): Promise<void> {
     const baseModule = this.matchBaseProviderModule(configKey);
     if (baseModule) {
       await this.writeBaseProviderConfig(configKey, baseModule, value);
       return;
     }
+    for (const [match, handle] of this.updateConfigRoutes) {
+      if (match(configKey)) {
+        await handle(configKey, value);
+        return;
+      }
+    }
+    throw new ValidationError(`配置项 ${configKey} 未实现修改路由`);
+  }
 
-    const prefix = configKey;
-
-    if (prefix.startsWith('log_provider.')) {
+  /**
+   * 写入 `log_provider.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLogProviderConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('log_provider.enabled')) input.enabled = value as boolean;
       else if (prefix.startsWith('log_provider.default_level')) input.default_level = value as string;
@@ -1142,11 +1124,17 @@ export class ConfigService {
       else if (prefix.startsWith('log_provider.retention_days')) input.retention_days = value as number;
       else if (prefix.startsWith('log_provider.max_log_count')) input.max_log_count = value as number;
       const output: any = {};
-      await this.logAccess.configLog(input as ConfigLogInput, {} as LogContext, output);
+      await this.logAccess.configLog(input as ConfigLogInput, output, {} as LogContext);
       return;
-    }
+  }
 
-    if (prefix.startsWith('llm_core.regen_rate') || prefix.startsWith('llm_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.LLM_MATCH)) {
+  /**
+   * 写入 `llm_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLLMCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('llm_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('llm_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1154,14 +1142,28 @@ export class ConfigService {
       const output: any = {};
       await this.llmCore.configLLMCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('llm_core.quota_')) {
-      const input = { config_key: configKey, value } as any;
+  }
+
+  /**
+   * 写入 `llm_core.quota_*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeLLMCoreQuotaConfig(prefix: string, value: unknown): Promise<void> {
+      const input = { config_key: prefix, value } as any;
       const output: any = {};
       await this.llmCore.limitLLM(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('mcp_core.')) {
+  }
+
+  /**
+   * 写入 `mcp_core.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeMCPCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('mcp_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('mcp_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1169,8 +1171,15 @@ export class ConfigService {
       const output: any = {};
       await this.mcpCore.configMCPCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('skill_core.regen_rate') || prefix.startsWith('skill_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SKILL_MATCH)) {
+  }
+
+  /**
+   * 写入 `skill_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSkillCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('skill_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('skill_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1178,8 +1187,15 @@ export class ConfigService {
       const output: any = {};
       await this.skillCore.configSkillCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('skill_core.opt_rule')) {
+  }
+
+  /**
+   * 写入 `skill_core.opt_rule*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSkillOptRuleConfig(prefix: string, value: unknown): Promise<void> {
       const key = prefix.split('skill_core.opt_rule.')[1];
       if (key) {
         const existing = await this.relationDb.selectOne('skill_opt_rule', []);
@@ -1201,8 +1217,15 @@ export class ConfigService {
         }
       }
       return;
-    }
-    if (prefix.startsWith('soul_core.regen_rate') || prefix.startsWith('soul_core.similarity_threshold') || prefix.startsWith(PROMPT_SLOTS.SOUL_MATCH) || prefix.startsWith('soul_core.llm_id')) {
+  }
+
+  /**
+   * 写入 `soul_core.regen_rate*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSoulCoreConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('soul_core.regen_rate')) input.regen_rate = value;
       if (prefix.startsWith('soul_core.similarity_threshold')) input.similarity_threshold = value;
@@ -1211,8 +1234,15 @@ export class ConfigService {
       const output: any = {};
       await this.soulCore.configSoulCore(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('soul_core.opt_rule')) {
+  }
+
+  /**
+   * 写入 `soul_core.opt_rule*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSoulOptRuleConfig(prefix: string, value: unknown): Promise<void> {
       const key = prefix.split('soul_core.opt_rule.')[1];
       if (key) {
         const existing = await this.relationDb.selectOne('soul_opt_rule', []);
@@ -1234,8 +1264,15 @@ export class ConfigService {
         }
       }
       return;
-    }
-    if (prefix.startsWith('info_core.tag_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.tag_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoTagConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.tag_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.INFO_TAG)) input.prompt_template_id = value as string;
@@ -1244,8 +1281,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoTagConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.summary_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.summary_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoSummaryConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.summary_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.INFO_SUMMARY)) input.prompt_template_id = value as string;
@@ -1255,8 +1299,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoSummaryConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.vector_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.vector_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoVectorConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.vector_config.llm_id')) input.llm_id = value as string;
       else if (prefix.startsWith('info_core.vector_config.dimension')) input.dimension = Number(value);
@@ -1264,8 +1315,15 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoVectorConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.context_config.')) {
+  }
+
+  /**
+   * 写入 `info_core.context_config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoContextConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.context_config.base_timeline_count')) input.base_timeline_count = Number(value);
       else if (prefix.startsWith('info_core.context_config.base_tag_relative_count')) input.base_tag_relative_count = Number(value);
@@ -1279,15 +1337,29 @@ export class ConfigService {
       const output: any = {};
       await this.infoCore.updateInfoContextConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('info_core.config.')) {
+  }
+
+  /**
+   * 写入 `info_core.config.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeInfoCoreConfigConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('info_core.config.alive_max_days')) input.alive_max_days = Number(value);
       const output: any = {};
       await this.infoCore.updateInfoConfig(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('planner_agent.')) {
+  }
+
+  /**
+   * 写入 `planner_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writePlannerAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('planner_agent.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith(PROMPT_SLOTS.PLAN)) input.plan_prompt_template_id = value as string;
@@ -1296,8 +1368,15 @@ export class ConfigService {
       const output: any = {};
       await this.plannerAgent.configPlannerAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('writer_agent.')) {
+  }
+
+  /**
+   * 写入 `writer_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeWriterAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.WRITE)) input.write_prompt_template_id = value as string;
       else if (prefix.startsWith('writer_agent.llm_id')) input.llm_id = value as string;
@@ -1308,8 +1387,15 @@ export class ConfigService {
       const output: any = {};
       await this.writerAgent.configWriterAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('evolutor_agent.')) {
+  }
+
+  /**
+   * 写入 `evolutor_agent.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeEvolutorAgentConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.EVAL_WORK)) input.eval_work_prompt_template_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.EVAL_WRITE)) input.eval_write_prompt_template_id = value as string;
@@ -1321,16 +1407,30 @@ export class ConfigService {
       const output: any = {};
       await this.evolutorAgent.configEvolutorAgent(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_context.')) {
+  }
+
+  /**
+   * 写入 `agent_context.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentContextConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('agent_context.max_context_items')) input.max_context_items = value as number;
       else if (prefix.startsWith('agent_context.enable_snapshot_persistence')) input.enable_snapshot_persistence = value as boolean;
       const output: any = {};
       await this.agentContext.configAgentContext(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_library.')) {
+  }
+
+  /**
+   * 写入 `agent_library.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentLibraryConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('agent_library.regen_rate')) input.regen_rate = value;
       else if (prefix.startsWith('agent_library.similarity_threshold')) input.similarity_threshold = value;
@@ -1339,16 +1439,30 @@ export class ConfigService {
       const output: any = {};
       await this.agentLibrary.configAgentLibrary(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_builder.')) {
+  }
+
+  /**
+   * 写入 `agent_builder.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentBuilderConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.TASK_ANALYSIS)) input.task_analysis_prompt_template_id = value as string;
       else if (prefix.startsWith('agent_builder.auto_optimize')) input.auto_optimize = value as boolean;
       const output: any = {};
       await this.agentBuilder.configAgentBuilder(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_execution.')) {
+  }
+
+  /**
+   * 写入 `agent_execution.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentExecutionConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith(PROMPT_SLOTS.THINK)) input.think_prompt_template_id = value as string;
       else if (prefix.startsWith(PROMPT_SLOTS.REFLECT)) input.reflect_prompt_template_id = value as string;
@@ -1358,14 +1472,28 @@ export class ConfigService {
       const output: any = {};
       await this.agentExecution.configAgentExecution(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('agent_strategy.')) {
-      const input = { config_key: configKey, value } as any;
+  }
+
+  /**
+   * 写入 `agent_strategy.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeAgentStrategyConfig(prefix: string, value: unknown): Promise<void> {
+      const input = { config_key: prefix, value } as any;
       const output: any = {};
       await this.agentStrategy.configAgentStrategy(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.entry')) {
+  }
+
+  /**
+   * 写入 `orchestration.entry*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationEntryConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.entry.complexity_decompose_threshold')) input.complexity_decompose_threshold = value as number;
       else if (prefix.startsWith(PROMPT_SLOTS.STRATEGY_SELECTOR)) input.strategy_prompt_template_id = value as string;
@@ -1376,16 +1504,30 @@ export class ConfigService {
       const output: any = {};
       await this.orchestrationEntry.configOrchestrationEntry(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.strategy')) {
+  }
+
+  /**
+   * 写入 `orchestration.strategy*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationStrategyConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.strategy.default_strategy_id')) input.default_strategy_id = value as string;
       else if (prefix.startsWith('orchestration.strategy.max_plan_retries')) input.max_plan_retries = value as number;
       const output: any = {};
       await this.orchestrationStrategy.configOrchestrationStrategy(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.execution')) {
+  }
+
+  /**
+   * 写入 `orchestration.execution*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationExecutionConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.execution.max_concurrent')) input.max_concurrent = value as number;
       else if (prefix.startsWith('orchestration.execution.dag_timeout_ms')) input.dag_timeout_ms = value as number;
@@ -1393,15 +1535,29 @@ export class ConfigService {
       const output: any = {};
       await this.orchestrationExecution.configOrchestrationExecution(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.visualization')) {
+  }
+
+  /**
+   * 写入 `orchestration.visualization*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationVisualizationConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.visualization.max_nodes_in_graph')) input.max_nodes_in_graph = value as number;
       const output: any = {};
       await this.orchestrationVisualization.configOrchestrationVisualization(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('orchestration.jsonnode')) {
+  }
+
+  /**
+   * 写入 `orchestration.jsonnode*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeOrchestrationJsonnodeConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('orchestration.jsonnode.max_execution_depth')) input.max_execution_depth = value as number;
       else if (prefix.startsWith('orchestration.jsonnode.node_timeout_ms')) input.node_timeout_ms = value as number;
@@ -1409,8 +1565,15 @@ export class ConfigService {
       const output: any = {};
       await this.jsonNode.configJSONNode(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('chat.')) {
+  }
+
+  /**
+   * 写入 `chat.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeChatConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('chat.max_messages_per_session')) input.max_messages_per_session = Number(value);
       else if (prefix.startsWith('chat.sse_heartbeat_interval_ms')) input.sse_heartbeat_interval_ms = Number(value);
@@ -1418,12 +1581,19 @@ export class ConfigService {
       const output: any = {};
       await this.chatAccess.configChat(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('self_learning.')) {
+  }
+
+  /**
+   * 写入 `self_learning.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeSelfLearningConfig(prefix: string, value: unknown): Promise<void> {
       // 定时任务 cron 写入 CronProvider（与定时任务展示页面同一时间源）
       if (prefix === 'self_learning.tag_aging_cron' || prefix === 'self_learning.orphan_tag_check_cron') {
         const taskName = prefix === 'self_learning.tag_aging_cron' ? 'tag_aging' : 'orphan_tag_check';
-        await this.cronAccess.setCronTask(Object.assign(new SetCronTaskInput(), { name: taskName, cron: value as string }), new CronContext(), new SetCronTaskOutput());
+        await this.cronAccess.setCronTask(Object.assign(new SetCronTaskInput(), { name: taskName, cron: value as string }), new SetCronTaskOutput(), new CronContext());
         return;
       }
       const input: any = {};
@@ -1443,8 +1613,15 @@ export class ConfigService {
       const output: any = {};
       await this.selfLearningAccess.configSelfLearning(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('user_profile.')) {
+  }
+
+  /**
+   * 写入 `user_profile.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeUserProfileConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('user_profile.auto_generate_interval_ms')) input.auto_generate_interval_ms = Number(value);
       else if (prefix.startsWith(PROMPT_SLOTS.PROFILE_ANALYSIS)) input.profile_analysis_prompt_template_id = value as string;
@@ -1454,8 +1631,15 @@ export class ConfigService {
       const output: any = {};
       await this.userProfileAccess.configUserProfile(input, {} as any, output);
       return;
-    }
-    if (prefix.startsWith('visualization.')) {
+  }
+
+  /**
+   * 写入 `visualization.*` 配置分组（由 routeUpdateConfig 路由表调用）。
+   *
+   * @param prefix 配置键
+   * @param value 配置值
+   */
+  private async writeVisualizationConfig(prefix: string, value: unknown): Promise<void> {
       const input: any = {};
       if (prefix.startsWith('visualization.max_nodes_per_graph')) input.max_nodes_per_graph = value as number;
       else if (prefix.startsWith('visualization.default_message_summary_length')) input.default_message_summary_length = value as number;
@@ -1463,205 +1647,202 @@ export class ConfigService {
       const output: any = {};
       await this.visualizationAccess.configVisualization(input, {} as any, output);
       return;
-    }
-
-    // 未匹配到具体模块路由：静态定义中的配置项应全部有对应修改路由
-    throw new ValidationError(`配置项 ${configKey} 未实现修改路由`);
   }
+
 
   // =========================================================================
   // LLM Proxy methods
   // =========================================================================
 
-  async addLLMProviderProxy(input: AddLLMProviderInput, context: LLMContext, output: AddLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.addLLMProvider(input, context, output);
+  async addLLMProviderProxy(input: AddLLMProviderInput, output: AddLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.addLLMProvider(input, output, context, metrics, report);
   }
 
-  async updateLLMProviderProxy(input: UpdateLLMProviderInput, context: LLMContext, output: UpdateLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.updateLLMProvider(input, context, output);
+  async updateLLMProviderProxy(input: UpdateLLMProviderInput, output: UpdateLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.updateLLMProvider(input, output, context, metrics, report);
   }
 
-  async delLLMProviderProxy(input: DelLLMProviderInput, context: LLMContext, output: DelLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.delLLMProvider(input, context, output);
+  async delLLMProviderProxy(input: DelLLMProviderInput, output: DelLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.delLLMProvider(input, output, context, metrics, report);
   }
 
-  async soLLMProviderProxy(input: SoLLMProviderInput, context: LLMContext, output: SoLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.soLLMProvider(input, context, output);
+  async soLLMProviderProxy(input: SoLLMProviderInput, output: SoLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLMProvider(input, output, context, metrics, report);
   }
 
-  async testLLMProviderProxy(input: TestLLMProviderInput, context: LLMContext, output: TestLLMProviderOutput): Promise<boolean> {
-    return this.llmAccess.testLLMProvider(input, context, output);
+  async testLLMProviderProxy(input: TestLLMProviderInput, output: TestLLMProviderOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.testLLMProvider(input, output, context, metrics, report);
   }
 
-  async listLLMProxy(input: ListLLMInput, context: LLMContext, output: ListLLMOutput): Promise<boolean> {
-    return this.llmAccess.listLLM(input, context, output);
+  async listLLMProxy(input: ListLLMInput, output: ListLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.listLLM(input, output, context, metrics, report);
   }
 
-  async addLLMProxy(input: AddLLMInput, context: LLMContext, output: AddLLMOutput): Promise<boolean> {
-    return this.llmAccess.addLLM(input, context, output);
+  async addLLMProxy(input: AddLLMInput, output: AddLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.addLLM(input, output, context, metrics, report);
   }
 
-  async updateLLMProxy(input: UpdateLLMInput, context: LLMContext, output: UpdateLLMOutput): Promise<boolean> {
-    return this.llmAccess.updateLLM(input, context, output);
+  async updateLLMProxy(input: UpdateLLMInput, output: UpdateLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.updateLLM(input, output, context, metrics, report);
   }
 
-  async delLLMProxy(input: DelLLMInput, context: LLMContext, output: DelLLMOutput): Promise<boolean> {
-    return this.llmAccess.delLLM(input, context, output);
+  async delLLMProxy(input: DelLLMInput, output: DelLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.delLLM(input, output, context, metrics, report);
   }
 
-  async soLLMProxy(input: SoLLMInput, context: LLMContext, output: SoLLMOutput): Promise<boolean> {
-    return this.llmAccess.soLLM(input, context, output);
+  async soLLMProxy(input: SoLLMInput, output: SoLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLM(input, output, context, metrics, report);
   }
 
-  async getLLMProxy(input: GetLLMInput, context: LLMContext, output: GetLLMOutput): Promise<boolean> {
-    return this.llmAccess.getLLM(input, context, output);
+  async getLLMProxy(input: GetLLMInput, output: GetLLMOutput, context: LLMContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.llmAccess.soLLMById(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Soul Proxy methods
   // =========================================================================
 
-  async addSoulProxy(input: AddSoulInput, context: SoulContext, output: AddSoulOutput): Promise<boolean> {
-    return this.soulAccess.addSoul(input, context, output);
+  async addSoulProxy(input: AddSoulInput, output: AddSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.addSoul(input, output, context, metrics, report);
   }
 
-  async updateSoulProxy(input: UpdateSoulInput, context: SoulContext, output: UpdateSoulOutput): Promise<boolean> {
-    return this.soulAccess.updateSoul(input, context, output);
+  async updateSoulProxy(input: UpdateSoulInput, output: UpdateSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.updateSoul(input, output, context, metrics, report);
   }
 
-  async delSoulProxy(input: DelSoulInput, context: SoulContext, output: DelSoulOutput): Promise<boolean> {
-    return this.soulAccess.delSoul(input, context, output);
+  async delSoulProxy(input: DelSoulInput, output: DelSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.delSoul(input, output, context, metrics, report);
   }
 
-  async soSoulProxy(input: SoSoulInput, context: SoulContext, output: SoSoulOutput): Promise<boolean> {
-    return this.soulAccess.soSoul(input, context, output);
+  async soSoulProxy(input: SoSoulInput, output: SoSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.soSoul(input, output, context, metrics, report);
   }
 
-  async getSoulProxy(input: GetSoulInput, context: SoulContext, output: GetSoulOutput): Promise<boolean> {
-    return this.soulAccess.getSoul(input, context, output);
+  async getSoulProxy(input: GetSoulInput, output: GetSoulOutput, context: SoulContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulAccess.soSoulById(input, output, context, metrics, report);
   }
 
-  async getSoulRuleProxy(input: SoSoulRuleInput, context: SoulCoreContext, output: SoSoulRuleOutput): Promise<boolean> {
-    return this.soulCore.soSoulRule(input, context, output);
+  async getSoulRuleProxy(input: SoSoulRuleInput, output: SoSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulCore.soSoulRule(input, output, context, metrics, report);
   }
 
-  async updateSoulRuleProxy(input: UpdateSoulRuleInput, context: SoulCoreContext, output: UpdateSoulRuleOutput): Promise<boolean> {
-    return this.soulCore.updateSoulRule(input, context, output);
+  async updateSoulRuleProxy(input: UpdateSoulRuleInput, output: UpdateSoulRuleOutput, context: SoulCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.soulCore.updateSoulRule(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Skill Proxy methods
   // =========================================================================
 
-  async addSkillProxy(input: AddSkillInput, context: SkillContext, output: AddSkillOutput): Promise<boolean> {
-    return this.skillAccess.addSkill(input, context, output);
+  async addSkillProxy(input: AddSkillInput, output: AddSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.addSkill(input, output, context, metrics, report);
   }
 
-  async updateSkillProxy(input: UpdateSkillInput, context: SkillContext, output: UpdateSkillOutput): Promise<boolean> {
-    return this.skillAccess.updateSkill(input, context, output);
+  async updateSkillProxy(input: UpdateSkillInput, output: UpdateSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.updateSkill(input, output, context, metrics, report);
   }
 
-  async delSkillProxy(input: DelSkillInput, context: SkillContext, output: DelSkillOutput): Promise<boolean> {
-    return this.skillAccess.delSkill(input, context, output);
+  async delSkillProxy(input: DelSkillInput, output: DelSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.delSkill(input, output, context, metrics, report);
   }
 
-  async soSkillProxy(input: SoSkillInput, context: SkillContext, output: SoSkillOutput): Promise<boolean> {
-    return this.skillAccess.soSkill(input, context, output);
+  async soSkillProxy(input: SoSkillInput, output: SoSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.soSkill(input, output, context, metrics, report);
   }
 
-  async execSkillProxy(input: ExecSkillInput, context: SkillContext, output: ExecSkillOutput): Promise<boolean> {
-    return this.skillAccess.execSkill(input, context, output);
+  async execSkillProxy(input: ExecSkillInput, output: ExecSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.execSkill(input, output, context, metrics, report);
   }
 
-  async getSkillProxy(input: GetSkillInput, context: SkillContext, output: GetSkillOutput): Promise<boolean> {
-    return this.skillAccess.getSkill(input, context, output);
+  async getSkillProxy(input: GetSkillInput, output: GetSkillOutput, context: SkillContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillAccess.soSkillById(input, output, context, metrics, report);
   }
 
-  async getSkillRuleProxy(input: SoSkillRuleInput, context: SkillCoreContext, output: SoSkillRuleOutput): Promise<boolean> {
-    return this.skillCore.soSkillRule(input, context, output);
+  async getSkillRuleProxy(input: SoSkillRuleInput, output: SoSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillCore.soSkillRule(input, output, context, metrics, report);
   }
 
-  async updateSkillRuleProxy(input: UpdateSkillRuleInput, context: SkillCoreContext, output: UpdateSkillRuleOutput): Promise<boolean> {
-    return this.skillCore.updateSkillRule(input, context, output);
+  async updateSkillRuleProxy(input: UpdateSkillRuleInput, output: UpdateSkillRuleOutput, context: SkillCoreContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.skillCore.updateSkillRule(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // MCP Proxy methods
   // =========================================================================
 
-  async addMcpProviderProxy(input: AddMcpProviderInput, context: McpContext, output: AddMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.addMcpProvider(input, context, output);
+  async addMcpProviderProxy(input: AddMcpProviderInput, output: AddMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.addMcpProvider(input, output, context, metrics, report);
   }
 
-  async updateMcpProviderProxy(input: UpdateMcpProviderInput, context: McpContext, output: UpdateMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.updateMcpProvider(input, context, output);
+  async updateMcpProviderProxy(input: UpdateMcpProviderInput, output: UpdateMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.updateMcpProvider(input, output, context, metrics, report);
   }
 
-  async delMcpProviderProxy(input: DelMcpProviderInput, context: McpContext, output: DelMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.delMcpProvider(input, context, output);
+  async delMcpProviderProxy(input: DelMcpProviderInput, output: DelMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.delMcpProvider(input, output, context, metrics, report);
   }
 
-  async soMcpProviderProxy(input: SoMcpProviderInput, context: McpContext, output: SoMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.soMcpProvider(input, context, output);
+  async soMcpProviderProxy(input: SoMcpProviderInput, output: SoMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcpProvider(input, output, context, metrics, report);
   }
 
-  async testMcpProviderProxy(input: TestMcpProviderInput, context: McpContext, output: TestMcpProviderOutput): Promise<boolean> {
-    return this.mcpAccess.testMcpProvider(input, context, output);
+  async testMcpProviderProxy(input: TestMcpProviderInput, output: TestMcpProviderOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.testMcpProvider(input, output, context, metrics, report);
   }
 
-  async listMcpProxy(input: ListMcpInput, context: McpContext, output: ListMcpOutput): Promise<boolean> {
-    return this.mcpAccess.listMcp(input, context, output);
+  async listMcpProxy(input: ListMcpInput, output: ListMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.listMcp(input, output, context, metrics, report);
   }
 
-  async installMcpProxy(input: InstallMcpInput, context: McpContext, output: InstallMcpOutput): Promise<boolean> {
-    return this.mcpAccess.installMcp(input, context, output);
+  async installMcpProxy(input: InstallMcpInput, output: InstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.installMcp(input, output, context, metrics, report);
   }
 
-  async startMcpProxy(input: StartMcpInput, context: McpContext, output: StartMcpOutput): Promise<boolean> {
-    return this.mcpAccess.startMcp(input, context, output);
+  async startMcpProxy(input: StartMcpInput, output: StartMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.startMcp(input, output, context, metrics, report);
   }
 
-  async stopMcpProxy(input: StopMcpInput, context: McpContext, output: StopMcpOutput): Promise<boolean> {
-    return this.mcpAccess.stopMcp(input, context, output);
+  async stopMcpProxy(input: StopMcpInput, output: StopMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.stopMcp(input, output, context, metrics, report);
   }
 
-  async uninstallMcpProxy(input: UninstallMcpInput, context: McpContext, output: UninstallMcpOutput): Promise<boolean> {
-    return this.mcpAccess.uninstallMcp(input, context, output);
+  async uninstallMcpProxy(input: UninstallMcpInput, output: UninstallMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.uninstallMcp(input, output, context, metrics, report);
   }
 
-  async updateMcpProxy(input: UpdateMcpInput, context: McpContext, output: UpdateMcpOutput): Promise<boolean> {
-    return this.mcpAccess.updateMcp(input, context, output);
+  async updateMcpProxy(input: UpdateMcpInput, output: UpdateMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.updateMcp(input, output, context, metrics, report);
   }
 
-  async getMcpProxy(input: GetMcpInput, context: McpContext, output: GetMcpOutput): Promise<boolean> {
-    return this.mcpAccess.getMcp(input, context, output);
+  async getMcpProxy(input: GetMcpInput, output: GetMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcpById(input, output, context, metrics, report);
   }
 
-  async soMcpProxy(input: SoMcpInput, context: McpContext, output: SoMcpOutput): Promise<boolean> {
-    return this.mcpAccess.soMcp(input, context, output);
+  async soMcpProxy(input: SoMcpInput, output: SoMcpOutput, context: McpContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.mcpAccess.soMcp(input, output, context, metrics, report);
   }
 
   // =========================================================================
   // Prompt Proxy methods
   // =========================================================================
 
-  async addPromptProxy(input: AddPromptInput, context: PromptContext, output: AddPromptOutput): Promise<boolean> {
-    return this.promptsAccess.addPrompt(input, context, output);
+  async addPromptProxy(input: AddPromptInput, output: AddPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.addPrompt(input, output, context, metrics, report);
   }
 
-  async updatePromptProxy(input: UpdatePromptInput, context: PromptContext, output: UpdatePromptOutput): Promise<boolean> {
-    return this.promptsAccess.updatePrompt(input, context, output);
+  async updatePromptProxy(input: UpdatePromptInput, output: UpdatePromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.updatePrompt(input, output, context, metrics, report);
   }
 
-  async delPromptProxy(input: DelPromptInput, context: PromptContext, output: DelPromptOutput): Promise<boolean> {
-    return this.promptsAccess.delPrompt(input, context, output);
+  async delPromptProxy(input: DelPromptInput, output: DelPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.delPrompt(input, output, context, metrics, report);
   }
 
-  async soPromptProxy(input: SoPromptInput, context: PromptContext, output: SoPromptOutput): Promise<boolean> {
-    return this.promptsAccess.soPrompt(input, context, output);
+  async soPromptProxy(input: SoPromptInput, output: SoPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.soPrompt(input, output, context, metrics, report);
   }
 
-  async getPromptProxy(input: GetPromptInput, context: PromptContext, output: GetPromptOutput): Promise<boolean> {
-    return this.promptsAccess.getPrompt(input, context, output);
+  async getPromptProxy(input: GetPromptInput, output: GetPromptOutput, context: PromptContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.promptsAccess.soPromptById(input, output, context, metrics, report);
   }
 }

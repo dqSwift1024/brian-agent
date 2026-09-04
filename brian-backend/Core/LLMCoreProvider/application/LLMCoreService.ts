@@ -7,20 +7,16 @@
  * 实现所有用例：matchLLM / limitLLM / checkLLMQuota / configLLMCore / recordLLMUsage。
  */
 
+import { Metrics, Report } from '@brian-agent/base';
 import type { RelationDBAccess, LLMAccess, PromptsAccess } from '@brian-agent/base';
 import { IdGenerator, Operator } from '@brian-agent/base';
 import {
   ValidationError,
   NotFoundError,
 } from '../../shared/errors';
+import { SingleRowConfigStore } from '../../shared/SingleRowConfigStore';
 import { ensureDefaultConfig } from '../../shared/ConfigHelper';
-import {
-  simpleSimilarity,
-  shouldReuseByRegenRate,
-  checkMatchCache,
-  clearMatchCache,
-  persistMatchBinding,
-} from '../../shared';
+import { checkMatchCache, clearMatchCache, persistMatchBinding } from '../../shared';
 import type { LLMProviderQuotaRecord, LLMCoreConfigRecord } from '../domain/types';
 import {
   LLMCoreContext,
@@ -39,15 +35,7 @@ import {
   LLM_PROVIDER_QUOTA_TABLE,
   LLM_CORE_USAGE_TABLE,
 } from '../domain/types';
-import {
-  SoLLMInput,
-  SoLLMOutput,
-  GetLLMInput,
-  GetLLMOutput,
-  ExecLLMInput,
-  ExecLLMOutput,
-  LLMContext,
-} from '@brian-agent/base';
+import { SoLLMInput, SoLLMOutput, ExecLLMInput, ExecLLMOutput, LLMContext } from '@brian-agent/base';
 import {
   GetPromptInput,
   GetPromptOutput,
@@ -67,7 +55,8 @@ import {
  * 提供 LLM 提供商选择（匹配 + 缓存）和配额/限额管理能力。
  */
 export class LLMCoreService {
-  private configCache: LLMCoreConfigRecord | null = null;
+  /** 单行配置仓（读取缓存 + upsert 收敛） */
+  private readonly configStore: SingleRowConfigStore<LLMCoreConfigRecord>;
 
   /**
    * @param relationDb RelationDBProvider 接入层实例
@@ -78,7 +67,13 @@ export class LLMCoreService {
     private readonly relationDb: RelationDBAccess,
     private readonly llmAccess: LLMAccess,
     private readonly promptsAccess: PromptsAccess,
-  ) {}
+  ) {
+    this.configStore = new SingleRowConfigStore<LLMCoreConfigRecord>(relationDb, {
+      table: LLM_CORE_CONFIG_TABLE,
+      toRecord: (raw) => this.toCoreConfigRecord(raw),
+      defaults: [],
+    });
+  }
 
   /**
    * 初始化：确保默认配置存在。
@@ -97,10 +92,7 @@ export class LLMCoreService {
   /**
    * 为指定 Agent 匹配合适的 LLM 提供商（三层统一匹配/选择逻辑）。
    */
-  async matchLLM(
-    input: MatchLLMInput,
-    _context: LLMCoreContext,
-    output: MatchLLMOutput,
+  async matchLLM(input: MatchLLMInput, output: MatchLLMOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.agent_id) {
       throw new ValidationError('matchLLM 需要提供 agent_id');
@@ -108,11 +100,10 @@ export class LLMCoreService {
 
     const config = await this.getCoreConfig();
     const regenRate = config?.regen_rate ?? 75;
-    const similarityThreshold = config?.similarity_threshold ?? 0.7;
 
     // 搜索可用 LLM
     const soOutput = new SoLLMOutput();
-    await this.llmAccess.soLLM({} as SoLLMInput, new LLMContext(), soOutput);
+    await this.llmAccess.soLLM({} as SoLLMInput, soOutput, new LLMContext());
     const availableLLMs = soOutput.list;
 
     // ===== 第 1 层：simpleSimilarity 匹配历史/已有绑定与关联特征 =====
@@ -157,8 +148,7 @@ export class LLMCoreService {
           id: config.prompt_template_id,
           variables: selectionVariables,
         } as ExecPromptInput,
-        new PromptContext(),
-        execPromptOutput,
+        execPromptOutput, new PromptContext(),
       );
       selectionPrompt = execPromptOutput.prompt;
       if (!selectionPrompt) {
@@ -177,8 +167,7 @@ export class LLMCoreService {
         temperature: 0.1,
         max_tokens: 256,
       } as ExecLLMInput,
-      new LLMContext(),
-      execLLMOutput,
+      execLLMOutput, new LLMContext(),
     );
 
     let selectedLLMId = this.parseSelectionResult(
@@ -210,10 +199,7 @@ export class LLMCoreService {
    *
    * 采用 upsert 语义：若提供商已存在配额记录则更新，否则新建。
    */
-  async limitLLM(
-    input: LimitLLMInput,
-    _context: LLMCoreContext,
-    output: LimitLLMOutput,
+  async limitLLM(input: LimitLLMInput, output: LimitLLMOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('limitLLM 需要提供 llm_provider_id');
@@ -273,10 +259,7 @@ export class LLMCoreService {
    *
    * 读取配额限制与实际用量，返回每个周期（日/周/月）的配额状态。
    */
-  async checkLLMQuota(
-    input: CheckLLMQuotaInput,
-    _context: LLMCoreContext,
-    output: CheckLLMQuotaOutput,
+  async checkLLMQuota(input: CheckLLMQuotaInput, output: CheckLLMQuotaOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('checkLLMQuota 需要提供 llm_provider_id');
@@ -323,14 +306,8 @@ export class LLMCoreService {
    *
    * 支持配置 regen_rate 和 prompt_template_id。
    */
-  async configLLMCore(
-    input: ConfigLLMCoreInput,
-    _context: LLMCoreContext,
-    output: ConfigLLMCoreOutput,
+  async configLLMCore(input: ConfigLLMCoreInput, output: ConfigLLMCoreOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
-    const existing = await this.getCoreConfig();
-    const now = IdGenerator.now();
-
     if (input.regen_rate !== undefined || input.similarity_threshold !== undefined || input.prompt_template_id !== undefined) {
       const updateData: Array<{ field: string; value: unknown }> = [];
       if (input.regen_rate !== undefined) {
@@ -348,10 +325,9 @@ export class LLMCoreService {
       if (input.prompt_template_id !== undefined) {
         if (input.prompt_template_id) {
           const getPromptOutput = new GetPromptOutput();
-          await this.promptsAccess.getPrompt(
+          await this.promptsAccess.soPromptById(
             { id: input.prompt_template_id } as GetPromptInput,
-            new PromptContext(),
-            getPromptOutput,
+            getPromptOutput, new PromptContext(),
           );
           if (!getPromptOutput.prompt) {
             throw new ValidationError(`prompt_template_id ${input.prompt_template_id} 不存在`);
@@ -359,22 +335,7 @@ export class LLMCoreService {
         }
         updateData.push({ field: 'prompt_template_id', value: input.prompt_template_id || null });
       }
-      updateData.push({ field: 'updated', value: now });
-
-      if (existing?.id) {
-        await this.relationDb.update(
-          LLM_CORE_CONFIG_TABLE,
-          updateData,
-          [{ field: 'id', operator: Operator.EQ, value: existing.id }],
-        );
-      } else {
-        await this.relationDb.insert(LLM_CORE_CONFIG_TABLE, [
-          { field: 'id', value: IdGenerator.generate() },
-          { field: 'created', value: now },
-          ...updateData,
-        ]);
-      }
-      this.configCache = null;
+      await this.configStore.upsert(updateData);
     }
 
     output.config = await this.getCoreConfig();
@@ -388,10 +349,7 @@ export class LLMCoreService {
   /**
    * 记录一次 LLM 调用的用量，用于配额统计。
    */
-  async recordLLMUsage(
-    input: RecordLLMUsageInput,
-    _context: LLMCoreContext,
-    output: RecordLLMUsageOutput,
+  async recordLLMUsage(input: RecordLLMUsageInput, output: RecordLLMUsageOutput, _context: LLMCoreContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
     if (!input.llm_provider_id) {
       throw new ValidationError('recordLLMUsage 需要提供 llm_provider_id');
@@ -418,26 +376,9 @@ export class LLMCoreService {
   // Private helpers — 配置
   // ---------------------------------------------------------------------------
 
-  /** 加载第一行配置记录，写入缓存 */
-  private async loadCoreConfigRecord(): Promise<Record<string, unknown> | null> {
-    this.configCache = null;
-    const rows = await this.relationDb.select(LLM_CORE_CONFIG_TABLE, {
-      page: { current: 1, size: 1 },
-    });
-    const raw = rows.length > 0 ? rows[0] : null;
-    this.configCache = raw
-      ? this.toCoreConfigRecord(raw)
-      : null;
-    return raw;
-  }
-
-  /** 获取配置（优先缓存） */
+  /** 获取配置（单行配置仓：进程内缓存 + 空表回退默认值） */
   private async getCoreConfig(): Promise<LLMCoreConfigRecord | null> {
-    if (this.configCache !== null) {
-      return this.configCache;
-    }
-    await this.loadCoreConfigRecord();
-    return this.configCache;
+    return this.configStore.load();
   }
 
   /** 将原始 DB 行转为 LLMCoreConfigRecord */
@@ -461,8 +402,7 @@ export class LLMCoreService {
     const soOutput = new SoLLMOutput();
     await this.llmAccess.soLLM(
       { conditions: [{ field: 'id', operator: Operator.EQ, value: llmId }] } as SoLLMInput,
-      new LLMContext(),
-      soOutput,
+      soOutput, new LLMContext(),
     );
     const llm = soOutput.list[0];
     if (!llm) return null;

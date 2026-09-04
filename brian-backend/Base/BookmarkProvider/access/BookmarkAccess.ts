@@ -1,23 +1,70 @@
+/**
+ * @fileoverview BookmarkProvider 接入层。
+ *
+ * 封装 BookmarkService 并通过 AOP 代理注入切面；
+ * 签名规范：`Boolean method(Input, Output, Context, Metrics, Report)`。
+ */
+
 import type { RelationDBAccess } from '../../RelationDBProvider/access/RelationDBAccess';
 import { BookmarkSchemaInitializer } from '../infrastructure/BookmarkSchemaInitializer';
 import { BookmarkService } from '../application/BookmarkService';
-import type { BookmarkFolderRecord, BookmarkItemRecord, BookmarkFolderNode } from '../domain/types';
+import { AopProxy } from '../../shared/aop/AopProxy';
+import {
+  SoTreeInput, SoTreeOutput,
+  SoFlatFoldersInput, SoFlatFoldersOutput,
+  AddFolderInput, AddFolderOutput,
+  AddItemInput, AddItemOutput,
+  UpdateFolderInput, UpdateFolderOutput,
+  UpdateItemInput, UpdateItemOutput,
+  DelFolderInput, DelFolderOutput,
+  DelItemInput, DelItemOutput,
+  MoveItemInput, MoveItemOutput,
+  BookmarkContext,
+} from '../domain/types';
+import { Metrics } from '../../shared/base/Metrics';
+import { Report } from '../../shared/base/Report';
 
 export class BookmarkAccess {
   private readonly service: BookmarkService;
 
   constructor(relationDb: RelationDBAccess, _logger?: unknown) {
     new BookmarkSchemaInitializer(relationDb).init();
-    this.service = new BookmarkService(relationDb);
+    this.service = AopProxy.wrap(new BookmarkService(relationDb));
   }
 
-  getTree(): BookmarkFolderNode[] { return this.service.getTree(); }
-  getFlatFolders(): BookmarkFolderRecord[] { return this.service.getFlatFolders(); }
-  createFolder(name: string, parentId?: string): BookmarkFolderRecord { return this.service.createFolder(name, parentId); }
-  createItem(folderId: string, title: string, url: string, favicon?: string): BookmarkItemRecord { return this.service.createItem(folderId, title, url, favicon); }
-  updateFolder(id: string, name: string): void { this.service.updateFolder(id, name); }
-  updateItem(id: string, title: string, url: string): void { this.service.updateItem(id, title, url); }
-  deleteFolder(id: string): void { this.service.deleteFolder(id); }
-  deleteItem(id: string): void { this.service.deleteItem(id); }
-  moveItem(id: string, targetFolderId: string): void { this.service.moveItem(id, targetFolderId); }
+  async soTree(input: SoTreeInput, output: SoTreeOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soTree(input, output, context, metrics, report);
+  }
+
+  async soFlatFolders(input: SoFlatFoldersInput, output: SoFlatFoldersOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.soFlatFolders(input, output, context, metrics, report);
+  }
+
+  async addFolder(input: AddFolderInput, output: AddFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addFolder(input, output, context, metrics, report);
+  }
+
+  async addItem(input: AddItemInput, output: AddItemOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.addItem(input, output, context, metrics, report);
+  }
+
+  async updateFolder(input: UpdateFolderInput, output: UpdateFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateFolder(input, output, context, metrics, report);
+  }
+
+  async updateItem(input: UpdateItemInput, output: UpdateItemOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.updateItem(input, output, context, metrics, report);
+  }
+
+  async delFolder(input: DelFolderInput, output: DelFolderOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delFolder(input, output, context, metrics, report);
+  }
+
+  async delItem(input: DelItemInput, output: DelItemOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.delItem(input, output, context, metrics, report);
+  }
+
+  async moveItem(input: MoveItemInput, output: MoveItemOutput, context: BookmarkContext, metrics?: Metrics, report?: Report): Promise<boolean> {
+    return this.service.moveItem(input, output, context, metrics, report);
+  }
 }
