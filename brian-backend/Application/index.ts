@@ -3,3 +3,5 @@ export * from './Config';
 export * from './SelfLearning';
 export * from './UserProfile';
 export * from './Visualization';
+export * from './Monitor';
+export * from './Feedback';

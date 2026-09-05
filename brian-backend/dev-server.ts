@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
-import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, Operator } from '@brian-agent/base';
+import { IdGenerator, ToolAccess, HttpAccess, SystemMonitorAccess, ToolSchemaInitializer, ConfigService, TOOL_CONFIG_TABLE, InfoType, Operator, ValidationError, NotFoundError } from '@brian-agent/base';
 import { RelationDBAccess } from './Base/RelationDBProvider';
 import { applySystemSeed } from './seed/systemSeed';
 import { LLMAccess } from './Base/LLMProvider';
@@ -136,7 +136,31 @@ import {
   GetResourceInput, GetResourceOutput,
   GraphVisualizationConfigInput, GraphVisualizationConfigOutput,
   ConfigVisualizationInput, ConfigVisualizationOutput,
+  GetAgentChainInput, GetAgentChainOutput,
 } from './Application/Visualization/domain/types';
+import { MonitorAccess } from './Application/Monitor/access/MonitorAccess';
+import {
+  MonitorContext,
+  GetHealthAllInput, GetHealthAllOutput,
+  GetResourcesInput, GetResourcesOutput,
+  GetTokenTrendInput, GetTokenTrendOutput,
+  GetModelDistributionInput, GetModelDistributionOutput,
+  GetTokenUsageInput, GetTokenUsageOutput,
+  QueryLogsInput, QueryLogsOutput,
+  GetLogStatsInput, GetLogStatsOutput,
+  GetLogSourcesInput, GetLogSourcesOutput,
+  DeleteLogsInput, DeleteLogsOutput,
+  ClearLogsInput, ClearLogsOutput,
+} from './Application/Monitor/domain/types';
+import { FeedbackAccess } from './Application/Feedback/access/FeedbackAccess';
+import {
+  FeedbackContext,
+  SubmitFeedbackInput, SubmitFeedbackOutput,
+  GetFeedbackInput, GetFeedbackOutput,
+  ListFeedbackInput, ListFeedbackOutput,
+  GetFeedbackStatsInput, GetFeedbackStatsOutput,
+  UpdateFeedbackStatusInput, UpdateFeedbackStatusOutput,
+} from './Application/Feedback/domain/types';
 
 // Config types
 import {
@@ -144,6 +168,9 @@ import {
   GetConfigDetailInput, GetConfigDetailOutput,
   GetConfigItemInput, GetConfigItemOutput,
   UpdateConfigInput, UpdateConfigOutput,
+  GetWorkConfigsInput, GetWorkConfigsOutput,
+  UpdateWorkConfigInput, UpdateWorkConfigOutput,
+  DeleteWorkConfigInput, DeleteWorkConfigOutput,
 } from './Application/Config/domain/types';
 import { ALL_CONFIG_REGISTRATIONS } from './Application/Config/domain/configRegistrations';
 
@@ -734,6 +761,12 @@ async function buildContext() {
   const visualizationAccess = new VisualizationAccess(relationDb, orchestrationVisualization, agentExecution, agentLibrary, agentContext, evolutorAgent, plannerAgent, infoCore, llmAccess, soulAccess, skillAccess, mcpAccess, promptsAccess, graphDBAccess, logger);
   await visualizationAccess.initialize();
 
+  const monitorAccess = new MonitorAccess(
+    relationDb, logAccess, llmAccess, graphDBAccess, vectorDBAccess, mqAccess, systemMonitorAccess, logger,
+  );
+  const feedbackAccess = new FeedbackAccess(relationDb, logger);
+  await feedbackAccess.initialize();
+
   // Config
   const configAccess = new ConfigAccess(
     relationDb,
@@ -886,6 +919,7 @@ async function buildContext() {
     orchestrationExecution, orchestrationVisualization, jsonNode,
     orchestrationStrategy, orchestrationEntry,
     chatAccess, configAccess, selfLearningAccess, userProfileAccess, visualizationAccess,
+    monitorAccess, feedbackAccess,
   };
 }
 
@@ -3157,7 +3191,14 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { work_id: workId, nodes, edges });
 
       } else if (method === 'GET' && pathname.startsWith('/api/chat/agent-chain/')) {
-        sendJson(res, 200, { nodes: [] });
+        const exchangeId = decodeURIComponent(pathname.split('/api/chat/agent-chain/')[1] || '');
+        const out = new GetAgentChainOutput();
+        await ctx.visualizationAccess.soAgentChain(
+          Object.assign(new GetAgentChainInput(), { exchange_id: exchangeId }),
+          out,
+          new VisualizationContext(),
+        );
+        sendJson(res, 200, { nodes: out.nodes });
 
       // ===== Memory Routes =====
       } else if (method === 'GET' && pathname === '/api/memory/list') {
@@ -3838,7 +3879,85 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
 
       // ===== Feedback Routes =====
-      } else if (method === 'POST' && pathname === '/api/feedback') { sendJson(res, 200, { success: true });
+      } else if (method === 'POST' && pathname === '/api/feedback') {
+        try {
+          const b = (body || {}) as Record<string, unknown>;
+          const out = new SubmitFeedbackOutput();
+          await ctx.feedbackAccess.submitFeedback(
+            Object.assign(new SubmitFeedbackInput(), {
+              msg_id: String(b.msg_id || b.messageId || ''),
+              type: String(b.type || 'rating'),
+              score: b.score !== undefined ? Number(b.score) : (b.rating !== undefined ? Number(b.rating) : undefined),
+              comment: b.comment ? String(b.comment) : undefined,
+              work_id: b.work_id ? String(b.work_id) : undefined,
+              session_id: b.session_id ? String(b.session_id) : undefined,
+            }),
+            out,
+            new FeedbackContext(),
+          );
+          sendJson(res, 200, { success: true, feedback: out.feedback });
+        } catch (e: unknown) {
+          const status = e instanceof ValidationError ? 400 : 500;
+          sendJson(res, status, { error: e instanceof Error ? e.message : '提交反馈失败' });
+        }
+
+      } else if (method === 'GET' && pathname === '/api/feedback/list') {
+        const out = new ListFeedbackOutput();
+        await ctx.feedbackAccess.soFeedback(
+          Object.assign(new ListFeedbackInput(), {
+            status: params.get('status') || undefined,
+            type: params.get('type') || undefined,
+            msg_id: params.get('msg_id') || undefined,
+            session_id: params.get('session_id') || undefined,
+            page: params.get('page') ? Number(params.get('page')) : undefined,
+            pageSize: params.get('pageSize') ? Number(params.get('pageSize')) : undefined,
+          }),
+          out,
+          new FeedbackContext(),
+        );
+        sendJson(res, 200, { feedbacks: out.feedbacks, total: out.total });
+
+      } else if (method === 'GET' && pathname === '/api/feedback/stats') {
+        const out = new GetFeedbackStatsOutput();
+        await ctx.feedbackAccess.soFeedbackStats(
+          Object.assign(new GetFeedbackStatsInput(), {
+            start_time: params.get('start') ? Number(params.get('start')) : undefined,
+            end_time: params.get('end') ? Number(params.get('end')) : undefined,
+          }),
+          out,
+          new FeedbackContext(),
+        );
+        sendJson(res, 200, out);
+
+      } else if (method === 'GET' && pathname.startsWith('/api/feedback/') && pathname !== '/api/feedback/list' && pathname !== '/api/feedback/stats') {
+        const id = pathname.split('/api/feedback/')[1];
+        try {
+          const out = new GetFeedbackOutput();
+          await ctx.feedbackAccess.soFeedbackById(
+            Object.assign(new GetFeedbackInput(), { id }),
+            out,
+            new FeedbackContext(),
+          );
+          sendJson(res, 200, { feedback: out.feedback });
+        } catch (e: unknown) {
+          const status = e instanceof NotFoundError ? 404 : (e instanceof ValidationError ? 400 : 500);
+          sendJson(res, status, { error: e instanceof Error ? e.message : '查询反馈失败' });
+        }
+
+      } else if (method === 'PUT' && pathname.startsWith('/api/feedback/') && pathname.endsWith('/status')) {
+        const id = pathname.split('/api/feedback/')[1].replace(/\/status$/, '');
+        try {
+          const out = new UpdateFeedbackStatusOutput();
+          await ctx.feedbackAccess.updateFeedbackStatus(
+            Object.assign(new UpdateFeedbackStatusInput(), { id, status: String((body as Record<string, unknown>).status || '') }),
+            out,
+            new FeedbackContext(),
+          );
+          sendJson(res, 200, { feedback: out.feedback });
+        } catch (e: unknown) {
+          const status = e instanceof NotFoundError ? 404 : (e instanceof ValidationError ? 400 : 500);
+          sendJson(res, status, { error: e instanceof Error ? e.message : '更新反馈状态失败' });
+        }
 
       // ===== Profile Routes =====
       } else if (method === 'GET' && pathname === '/api/profile') {
@@ -3914,202 +4033,138 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         sendJson(res, 200, { success: true });
       // ===== Monitor Routes =====
       } else if (method === 'GET' && pathname === '/api/monitor/health-all') {
-        const components: Array<{ name: string; status: string; message?: string; details?: Record<string, string | number> }> = [];
-
-        // RelationDB
-        try {
-          const start = Date.now();
-          ctx.relationDb.queryRaw('SELECT 1');
-          const tables = ctx.relationDb.queryRaw<{ name: string }>(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-          );
-          components.push({
-            name: 'RelationDB', status: 'healthy', message: `${Date.now() - start}ms`,
-            details: { '数据表': tables.length },
-          });
-        } catch (e: any) {
-          components.push({ name: 'RelationDB', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        // GraphDB
-        try {
-          const { GraphContext, VisualizedGraphInput, VisualizedGraphOutput } = await import('./Base/GraphDBProvider/domain/types');
-          const o = new VisualizedGraphOutput();
-          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'health' }), o, new GraphContext());
-          const d = o.data || {};
-          const vo = new VisualizedGraphOutput();
-          await ctx.graphDBAccess.visualizedGraph(Object.assign(new VisualizedGraphInput(), { scope: 'volume' }), vo, new GraphContext());
-          const vd = vo.data || {};
-          components.push({
-            name: 'GraphDB',
-            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
-            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
-            details: { '节点': Number(vd.total_nodes) || 0, '边': Number(vd.total_edges) || 0 },
-          });
-        } catch (e: any) {
-          components.push({ name: 'GraphDB', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        // VectorDB
-        try {
-          const { VectorContext, VisualizedVectorInput, VisualizedVectorOutput } = await import('./Base/VectorDBProvider/domain/types');
-          const o = new VisualizedVectorOutput();
-          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'health' }), o, new VectorContext());
-          const d = o.data || {};
-          const vo = new VisualizedVectorOutput();
-          await ctx.vectorDBAccess.visualizedVector(Object.assign(new VisualizedVectorInput(), { scope: 'volume' }), vo, new VectorContext());
-          const vd = vo.data || {};
-          components.push({
-            name: 'VectorDB',
-            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
-            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
-            details: { '向量': Number(vd.total_vectors) || 0, '维度': Number(vd.dimension) || 0 },
-          });
-        } catch (e: any) {
-          components.push({ name: 'VectorDB', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        // LLM Provider
-        try {
-          const { VisualizedLLMInput, VisualizedLLMOutput } = await import('./Base/LLMProvider/domain/types');
-          const o = new VisualizedLLMOutput();
-          await ctx.llmAccess.visualizedLLM(Object.assign(new VisualizedLLMInput(), { scope: 'health' }), o, new LLMContext());
-          const d = o.data || {};
-          const enabledProviderCount = await ctx.relationDb.count('llm_provider', [
-            { field: 'enable', operator: Operator.EQ, value: 1 },
-          ]);
-          components.push({
-            name: 'LLM Provider',
-            status: d.connected === false ? 'unhealthy' : (d.enabled === false ? 'degraded' : 'healthy'),
-            message: d.connected === false ? '未连接' : `${d.response_time_ms ?? 0}ms`,
-            details: { '启用提供商': enabledProviderCount, '启用模型': Number(d.enabled_llm_count) || 0 },
-          });
-        } catch (e: any) {
-          components.push({ name: 'LLM Provider', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        // MCP
-        try {
-          const enabledProviderCount = await ctx.relationDb.count('mcp_provider', [
-            { field: 'enable', operator: Operator.EQ, value: 1 },
-          ]);
-          const enabledMcpCount = await ctx.relationDb.count('mcp_install', [
-            { field: 'enable', operator: Operator.EQ, value: 1 },
-          ]);
-          components.push({
-            name: 'MCP',
-            status: 'healthy',
-            message: `${enabledMcpCount} 个启用 MCP`,
-            details: { '启用提供商': enabledProviderCount, '启用 MCP': enabledMcpCount },
-          });
-        } catch (e: any) {
-          components.push({ name: 'MCP', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        // MQ
-        try {
-          const o = new GetQueueStatsOutput();
-          await ctx.mqAccess.soQueueStats(new GetQueueStatsInput(), o, new MQContext());
-          const s = o.stats || {};
-          components.push({
-            name: 'MQ', status: 'healthy', message: `${s.total ?? 0} 条消息`,
-            details: { '待处理': s.pending ?? 0, '处理中': s.processing ?? 0, '完成': s.completed ?? 0, '失败': s.failed ?? 0 },
-          });
-        } catch (e: any) {
-          components.push({ name: 'MQ', status: 'unhealthy', message: e?.message || '连接失败' });
-        }
-
-        const status = components.some((c) => c.status === 'unhealthy')
-          ? 'unhealthy'
-          : components.some((c) => c.status === 'degraded')
-            ? 'degraded'
-            : 'healthy';
-        sendJson(res, 200, { status, uptime: Math.round(process.uptime()), components });
+        const out = new GetHealthAllOutput();
+        await ctx.monitorAccess.soHealthAll(new GetHealthAllInput(), out, new MonitorContext());
+        sendJson(res, 200, out);
 
       } else if (method === 'GET' && pathname === '/api/monitor/resources') {
-        const resMonOut = new SoResourceOutput();
-        await ctx.systemMonitorAccess.soResource(new SoResourceInput(), resMonOut, new SystemMonitorContext());
-        const metrics = resMonOut.metrics;
-        sendJson(res, 200, { cpu: metrics.cpu, memory: metrics.memory, disk: metrics.disk });
+        const out = new GetResourcesOutput();
+        await ctx.monitorAccess.soResources(new GetResourcesInput(), out, new MonitorContext());
+        sendJson(res, 200, out);
+
       } else if (method === 'GET' && pathname === '/api/analytics/token-trend') {
-        // 按天聚合 llm_usage 的 token 用量（input_tokens + output_tokens）
-        const rows = ctx.relationDb.queryRaw<{ date: string; tokens: number }>(
-          'SELECT "usage_date" AS "date", SUM(COALESCE("input_tokens",0) + COALESCE("output_tokens",0)) AS "tokens" FROM "llm_usage" GROUP BY "usage_date" ORDER BY "usage_date" ASC',
-          [],
-        );
-        sendJson(res, 200, { points: (rows || []).map(r => ({ date: r.date, tokens: Number(r.tokens) || 0 })) });
+        const out = new GetTokenTrendOutput();
+        await ctx.monitorAccess.soTokenTrend(new GetTokenTrendInput(), out, new MonitorContext());
+        sendJson(res, 200, { points: out.points });
 
       } else if (method === 'GET' && pathname === '/api/analytics/model-distribution') {
-        // 按模型聚合 token 用量（关联 llm_available 取模型名与类型，模型已删除时标记 deleted），分别统计输入/输出 token
-        const rows = ctx.relationDb.queryRaw<{ model: string; tokens: number; input_tokens: number; output_tokens: number; deleted: number; type: string }>(
-          'SELECT COALESCE(e."llm_title", u."llm_available_id") AS "model", COALESCE(e."llm_type", \'deleted\') AS "type", (e."llm_title" IS NULL) AS "deleted", SUM(COALESCE(u."input_tokens",0) + COALESCE(u."output_tokens",0)) AS "tokens", SUM(COALESCE(u."input_tokens",0)) AS "input_tokens", SUM(COALESCE(u."output_tokens",0)) AS "output_tokens" FROM "llm_usage" u LEFT JOIN "llm_available" e ON e."id" = u."llm_available_id" GROUP BY u."llm_available_id" ORDER BY "tokens" DESC',
-          [],
-        );
-        sendJson(res, 200, { models: (rows || []).map(r => ({ model: r.model, type: r.type || 'deleted', tokens: Number(r.tokens) || 0, input_tokens: Number(r.input_tokens) || 0, output_tokens: Number(r.output_tokens) || 0, deleted: !!r.deleted })) });
+        const out = new GetModelDistributionOutput();
+        await ctx.monitorAccess.soModelDistribution(new GetModelDistributionInput(), out, new MonitorContext());
+        sendJson(res, 200, { models: out.models });
+
+      } else if (method === 'GET' && pathname === '/api/analytics/token-usage') {
+        const out = new GetTokenUsageOutput();
+        await ctx.monitorAccess.soTokenUsage(new GetTokenUsageInput(), out, new MonitorContext());
+        sendJson(res, 200, out);
 
       } else if (method === 'GET' && pathname === '/api/monitor/logs/sources') {
         try {
-          const sources = await ctx.logAccess.listSources();
-          sendJson(res, 200, { sources: sources || [] });
+          const out = new GetLogSourcesOutput();
+          await ctx.monitorAccess.soLogSources(new GetLogSourcesInput(), out, new MonitorContext());
+          sendJson(res, 200, { sources: out.sources });
         } catch (e: any) {
           sendJson(res, 500, { error: e?.message || '日志来源查询失败' });
         }
 
-      } else if (method === 'GET' && pathname === '/api/monitor/logs/query') {
-        const level = params.get('level') || undefined;
-        const source = params.get('source') || undefined;
-        const keyword = params.get('keyword') || undefined;
-        const traceId = params.get('trace_id') || undefined;
-        const workId = params.get('work_id') || undefined;
-        const interactId = params.get('interact_id') || undefined;
-        const logSource = params.get('log_source') || undefined;
-        const startTime = params.get('start_time') ? Number(params.get('start_time')) : undefined;
-        const endTime = params.get('end_time') ? Number(params.get('end_time')) : undefined;
-        const page = params.get('page') ? Number(params.get('page')) : 1;
-        const pageSize = params.get('pageSize') ? Number(params.get('pageSize')) : (params.get('limit') ? Number(params.get('limit')) : 50);
+      } else if (method === 'GET' && pathname === '/api/monitor/logs/stats') {
         try {
-          const result = await ctx.logAccess.queryLogs({ level, source, keyword, trace_id: traceId, work_id: workId, interact_id: interactId, log_source: logSource, start_time: startTime, end_time: endTime, page, pageSize });
-          sendJson(res, 200, {
-            entries: (result.logs || []).map(l => ({
-              id: l.id,
-              timestamp: l.created,
-              level: String(l.level).toLowerCase(),
-              source: l.source,
-              message: l.message,
-              trace_id: l.trace_id || '',
-              caller: l.caller || '',
-              work_id: l.work_id || '',
-              interact_id: l.interact_id || '',
-            })),
-            total: result.total,
-            page,
-            pageSize,
-          });
+          const out = new GetLogStatsOutput();
+          await ctx.monitorAccess.soLogStats(
+            Object.assign(new GetLogStatsInput(), {
+              start_time: params.get('start_time') ? Number(params.get('start_time')) : undefined,
+              end_time: params.get('end_time') ? Number(params.get('end_time')) : undefined,
+            }),
+            out,
+            new MonitorContext(),
+          );
+          sendJson(res, 200, { distribution: out.distribution });
+        } catch (e: any) {
+          sendJson(res, 500, { error: e?.message || '日志统计失败' });
+        }
+
+      } else if (method === 'GET' && pathname === '/api/monitor/logs/query') {
+        try {
+          const out = new QueryLogsOutput();
+          await ctx.monitorAccess.soLogs(
+            Object.assign(new QueryLogsInput(), {
+              level: params.get('level') || undefined,
+              source: params.get('source') || undefined,
+              keyword: params.get('keyword') || undefined,
+              trace_id: params.get('trace_id') || undefined,
+              work_id: params.get('work_id') || undefined,
+              interact_id: params.get('interact_id') || undefined,
+              log_source: params.get('log_source') || undefined,
+              start_time: params.get('start_time') ? Number(params.get('start_time')) : undefined,
+              end_time: params.get('end_time') ? Number(params.get('end_time')) : undefined,
+              page: params.get('page') ? Number(params.get('page')) : undefined,
+              pageSize: params.get('pageSize') ? Number(params.get('pageSize')) : (params.get('limit') ? Number(params.get('limit')) : undefined),
+            }),
+            out,
+            new MonitorContext(),
+          );
+          sendJson(res, 200, out);
         } catch (e: any) {
           sendJson(res, 500, { error: e?.message || '日志查询失败' });
         }
 
       } else if (method === 'DELETE' && pathname === '/api/monitor/logs') {
-        const rawIds = (body as Record<string, unknown>).ids;
-        const ids = Array.isArray(rawIds)
-          ? (rawIds as unknown[]).map((x) => String(x)).filter(Boolean)
-          : [];
-        if (ids.length === 0) {
-          sendJson(res, 400, { error: 'ids 必须为非空数组' });
-          return;
+        try {
+          const rawIds = (body as Record<string, unknown>).ids;
+          const out = new DeleteLogsOutput();
+          await ctx.monitorAccess.delLogs(
+            Object.assign(new DeleteLogsInput(), { ids: Array.isArray(rawIds) ? rawIds.map((x) => String(x)).filter(Boolean) : [] }),
+            out,
+            new MonitorContext(),
+          );
+          sendJson(res, 200, { deleted_count: out.deleted_count });
+        } catch (e: unknown) {
+          const status = e instanceof ValidationError ? 400 : 500;
+          sendJson(res, status, { error: e instanceof Error ? e.message : '删除日志失败' });
         }
-        const output = new DelLogOutput();
-        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { ids }), output, new LogContext());
-        sendJson(res, 200, { deleted_count: output.affected_rows });
 
       } else if (method === 'DELETE' && pathname === '/api/monitor/logs/all') {
-        const output = new DelLogOutput();
-        // 使用未来时间作为 before_time，删除全部日志
-        await ctx.logAccess.delLog(Object.assign(new DelLogInput(), { before_time: Date.now() + 86400000 }), output, new LogContext());
-        sendJson(res, 200, { deleted_count: output.affected_rows });
+        const out = new ClearLogsOutput();
+        await ctx.monitorAccess.clearLogs(new ClearLogsInput(), out, new MonitorContext());
+        sendJson(res, 200, { deleted_count: out.deleted_count });
 
       } else if (method === 'GET' && pathname === '/api/config/work') {
-        sendJson(res, 200, []);
+        const out = new GetWorkConfigsOutput();
+        await ctx.configAccess.soWork(new GetWorkConfigsInput(), out, new ConfigContext());
+        sendJson(res, 200, out.works);
+
+      } else if (method === 'PUT' && pathname.startsWith('/api/config/work/')) {
+        const id = decodeURIComponent(pathname.split('/api/config/work/')[1] || '');
+        try {
+          const b = (body || {}) as Record<string, unknown>;
+          await ctx.configAccess.updateWork(
+            Object.assign(new UpdateWorkConfigInput(), {
+              id,
+              name: b.name !== undefined ? String(b.name) : undefined,
+              description: b.description !== undefined ? String(b.description) : undefined,
+              enabled: b.enabled !== undefined ? !!b.enabled : (b.enabled === undefined && b.enable !== undefined ? !!b.enable : undefined),
+            }),
+            new UpdateWorkConfigOutput(),
+            new ConfigContext(),
+          );
+          sendJson(res, 200, { success: true });
+        } catch (e: unknown) {
+          const status = e instanceof NotFoundError ? 404 : (e instanceof ValidationError ? 400 : 500);
+          sendJson(res, status, { error: e instanceof Error ? e.message : '更新工作配置失败' });
+        }
+
+      } else if (method === 'DELETE' && pathname.startsWith('/api/config/work/')) {
+        const id = decodeURIComponent(pathname.split('/api/config/work/')[1] || '');
+        try {
+          await ctx.configAccess.deleteWork(
+            Object.assign(new DeleteWorkConfigInput(), { id }),
+            new DeleteWorkConfigOutput(),
+            new ConfigContext(),
+          );
+          sendJson(res, 200, { success: true });
+        } catch (e: unknown) {
+          const status = e instanceof NotFoundError ? 404 : (e instanceof ValidationError ? 400 : 500);
+          sendJson(res, status, { error: e instanceof Error ? e.message : '删除工作配置失败' });
+        }
 
       // ---- Orchestration Strategies ----
       } else if (method === 'GET' && pathname === '/api/orchestration/strategies') {
