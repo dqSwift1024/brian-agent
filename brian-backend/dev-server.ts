@@ -774,6 +774,19 @@ function serveFrontend(res: http.ServerResponse, pathname: string): boolean {
   return true;
 }
 
+function cancelActiveWork(
+  ctx: Awaited<ReturnType<typeof buildContext>>,
+  workId: string | undefined,
+  reason: string,
+): void {
+  if (!workId) return;
+  ctx.chatAccess.cancelWork(
+    Object.assign(new CancelWorkInput(), { work_id: workId, reason }),
+    new CancelWorkOutput(),
+    new ChatContext(),
+  ).catch(() => {});
+}
+
 function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Server {
   return http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { sendJson(res, 204, ''); return; }
@@ -2098,8 +2111,10 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         });
 
         let clientClosed = false;
+        let activeWorkId: string | undefined;
         req.on('close', () => {
           clientClosed = true;
+          cancelActiveWork(ctx, activeWorkId, 'Client disconnected');
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
             new CloseStreamOutput(),
@@ -2112,7 +2127,6 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
           try { res.write(str); } catch { /* ignore */ }
         };
 
-        // 注册到 Base 层 StreamProvider（由 StreamProvider 统一管理心跳与结构化数据分发）
         await ctx.streamAccess.registerStream(
           Object.assign(new RegisterStreamInput(), {
             session_id: sessionId,
@@ -2129,7 +2143,9 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         );
 
         const onEvent = (evt: { event: string; data: Record<string, unknown> }) => {
-          // 兼容旧格式（若有监听器直接调用）
+          if (evt.event === 'loading' && evt.data.work_id) {
+            activeWorkId = String(evt.data.work_id);
+          }
           write(`data: ${JSON.stringify({ event: evt.event, ...evt.data })}\n\n`);
         };
 
@@ -2201,7 +2217,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         const output = new CancelWorkOutput();
         const context = new ChatContext();
         await ctx.chatAccess.cancelWork(input, output, context);
-        sendJson(res, 200, { cancelled: true });
+        sendJson(res, 200, { cancelled: output.cancelled });
 
       } else if (method === 'POST' && pathname === '/api/chat/confirm-intent') {
         const sessionId = typeof body.session_id === 'string' ? body.session_id : (params.get('sessionId') || '');
@@ -2224,6 +2240,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         let clientClosed = false;
         req.on('close', () => {
           clientClosed = true;
+          cancelActiveWork(ctx, workId, 'Client disconnected');
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
             new CloseStreamOutput(),
@@ -2291,6 +2308,7 @@ function createServer(ctx: Awaited<ReturnType<typeof buildContext>>): http.Serve
         let clientClosed = false;
         req.on('close', () => {
           clientClosed = true;
+          cancelActiveWork(ctx, workId, 'Client disconnected');
           ctx.streamAccess.closeStream(
             Object.assign(new CloseStreamInput(), { session_id: sessionId, reason: 'Client disconnected' }),
             new CloseStreamOutput(),

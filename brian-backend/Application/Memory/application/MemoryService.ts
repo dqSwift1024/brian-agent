@@ -201,30 +201,34 @@ export class MemoryService {
 
   async soTagGraph(input: GetCooccurGraphInput, output: GetCooccurGraphOutput, ctx: MemoryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
+    const limit = Math.min(500, Math.max(1, input.limit || 100));
     try {
-      const limit = Math.min(500, Math.max(1, input.limit || 100));
       const g = await this.buildCooccurGraphFromGraphDBCached(ctx, 'Tag', 'tag', 'cooccur', limit);
       output.nodes = g.nodes;
       output.edges = g.edges;
+      output.error = '';
     } catch (err) {
-      this.logger?.debug?.('[MemoryService] soTagGraph failed', { error: err instanceof Error ? err.message : String(err) });
       output.nodes = [];
       output.edges = [];
+      output.error = err instanceof Error ? err.message : '标签图谱加载失败';
+      this.logger?.warn?.('[MemoryService] soTagGraph failed', { error: output.error });
     }
     return true;
   }
 
   async soKeywordGraph(input: GetCooccurGraphInput, output: GetCooccurGraphOutput, ctx: MemoryContext, _metrics?: Metrics, _report?: Report,
   ): Promise<boolean> {
+    const limit = Math.min(500, Math.max(1, input.limit || 100));
     try {
-      const limit = Math.min(500, Math.max(1, input.limit || 100));
       const g = await this.buildCooccurGraphFromGraphDBCached(ctx, 'keyword', 'keyword', 'keywordCooccur', limit);
       output.nodes = g.nodes;
       output.edges = g.edges;
+      output.error = '';
     } catch (err) {
-      this.logger?.debug?.('[MemoryService] soKeywordGraph failed', { error: err instanceof Error ? err.message : String(err) });
       output.nodes = [];
       output.edges = [];
+      output.error = err instanceof Error ? err.message : '关键词图谱加载失败';
+      this.logger?.warn?.('[MemoryService] soKeywordGraph failed', { error: output.error });
     }
     return true;
   }
@@ -334,10 +338,12 @@ export class MemoryService {
 
       output.root_tags = Array.from(tagInfoMap, ([tag, info_ids]) => ({ tag, info_ids }));
       output.paths = paths;
+      output.error = '';
     } catch (err) {
-      this.logger?.debug?.('[MemoryService] graphSearchMemory failed', { error: err instanceof Error ? err.message : String(err) });
       output.root_tags = [];
       output.paths = [];
+      output.error = err instanceof Error ? err.message : '图搜索失败';
+      this.logger?.warn?.('[MemoryService] graphSearchMemory failed', { error: output.error });
     }
     return true;
   }

@@ -123,36 +123,28 @@ export const tryHandleMemoryRoutes: RouteHandler = async (
   }
 
   if (method === 'GET' && pathname === '/api/memory/tag-graph') {
-    try {
-      const out = new GetCooccurGraphOutput();
-      await ctx.memoryAccess.soTagGraph(
-        Object.assign(new GetCooccurGraphInput(), {
-          limit: Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100)),
-        }),
-        out,
-        new MemoryContext(),
-      );
-      sendJson(res, 200, out);
-    } catch {
-      sendJson(res, 200, { nodes: [], edges: [] });
-    }
+    const out = new GetCooccurGraphOutput();
+    await ctx.memoryAccess.soTagGraph(
+      Object.assign(new GetCooccurGraphInput(), {
+        limit: Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100)),
+      }),
+      out,
+      new MemoryContext(),
+    );
+    sendJson(res, out.error ? 503 : 200, out);
     return true;
   }
 
   if (method === 'GET' && pathname === '/api/memory/keyword-graph') {
-    try {
-      const out = new GetCooccurGraphOutput();
-      await ctx.memoryAccess.soKeywordGraph(
-        Object.assign(new GetCooccurGraphInput(), {
-          limit: Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100)),
-        }),
-        out,
-        new MemoryContext(),
-      );
-      sendJson(res, 200, out);
-    } catch {
-      sendJson(res, 200, { nodes: [], edges: [] });
-    }
+    const out = new GetCooccurGraphOutput();
+    await ctx.memoryAccess.soKeywordGraph(
+      Object.assign(new GetCooccurGraphInput(), {
+        limit: Math.min(500, Math.max(1, parseInt(params.get('limit') || '100', 10) || 100)),
+      }),
+      out,
+      new MemoryContext(),
+    );
+    sendJson(res, out.error ? 503 : 200, out);
     return true;
   }
 
@@ -184,21 +176,17 @@ export const tryHandleMemoryRoutes: RouteHandler = async (
       sendJson(res, 400, { error: 'query is required' });
       return true;
     }
-    try {
-      const out = new GraphSearchMemoryOutput();
-      await ctx.memoryAccess.graphSearchMemory(
-        Object.assign(new GraphSearchMemoryInput(), {
-          query,
-          max_depth: typeof body.max_depth === 'number' && body.max_depth > 0 ? Math.min(body.max_depth, 5) : 2,
-          only_active: body.only_active !== false,
-        }),
-        out,
-        new MemoryContext(),
-      );
-      sendJson(res, 200, { root_tags: out.root_tags, paths: out.paths });
-    } catch {
-      sendJson(res, 200, { root_tags: [], paths: [] });
-    }
+    const out = new GraphSearchMemoryOutput();
+    await ctx.memoryAccess.graphSearchMemory(
+      Object.assign(new GraphSearchMemoryInput(), {
+        query,
+        max_depth: typeof body.max_depth === 'number' && body.max_depth > 0 ? Math.min(body.max_depth, 5) : 2,
+        only_active: body.only_active !== false,
+      }),
+      out,
+      new MemoryContext(),
+    );
+    sendJson(res, out.error ? 503 : 200, { root_tags: out.root_tags, paths: out.paths, error: out.error || undefined });
     return true;
   }
 

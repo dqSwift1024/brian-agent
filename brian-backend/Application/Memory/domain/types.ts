@@ -63,6 +63,7 @@ export class GetCooccurGraphInput extends Input {
 export class GetCooccurGraphOutput extends Output {
   nodes: Array<{ id: string; name: string; weight: number; degree: number }> = [];
   edges: Array<{ source: string; target: string; weight: number }> = [];
+  error = '';
 }
 
 export class ClearTagGraphInput extends Input {}
@@ -89,6 +90,7 @@ export class GraphSearchMemoryOutput extends Output {
     nodes: Array<{ id: string; tag: string; info_ids: string[]; depth: number }>;
     edges: Array<{ from_id: string; to_id: string; weight: number; active: boolean; compositeWeight: number }>;
   }> = [];
+  error = '';
 }
 
 export class GetMemoryStatsInput extends Input {}
